@@ -191,4 +191,51 @@ final class RenderingTests: XCTestCase {
         // Section A is 1 measure of 4 beats at 0.5s/beat = 2s before section B starts.
         XCTAssertEqual(notes.map(\.startSeconds), [2.0])
     }
+
+    // MARK: - harmonicTimeline
+
+    func testHarmonicTimelineResolvesOneChordPerEventInSeconds() {
+        let section = Section(
+            name: "A",
+            lengthInMeasures: 2,
+            mode: ModeReference(tonic: 2, scaleID: "dorian"),
+            chordProgression: [
+                ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 2, chordTemplateID: "mi7")),
+                ChordEvent(measure: 2, beat: 1, durationBeats: 4, chord: ChordReference(root: 7, chordTemplateID: "7")),
+            ]
+        )
+        let piece = Piece(title: "t", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [section])
+        // 120 BPM => 0.5s/beat, 4 beats/measure => 2s/measure.
+        let timeline = piece.harmonicTimeline()
+        XCTAssertEqual(timeline.count, 2)
+        XCTAssertEqual(timeline[0].startSeconds, 0)
+        XCTAssertEqual(timeline[0].endSeconds, 2.0)
+        XCTAssertEqual(timeline[0].chord, ChordReference(root: 2, chordTemplateID: "mi7"))
+        XCTAssertEqual(timeline[0].mode, ModeReference(tonic: 2, scaleID: "dorian"))
+        XCTAssertEqual(timeline[1].startSeconds, 2.0)
+        XCTAssertEqual(timeline[1].endSeconds, 4.0)
+        XCTAssertEqual(timeline[1].chord, ChordReference(root: 7, chordTemplateID: "7"))
+    }
+
+    func testHarmonicTimelineOffsetsSecondSectionAndCarriesItsOwnMode() {
+        let sectionA = Section(
+            name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"),
+            chordProgression: [ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 0, chordTemplateID: "Ma7"))]
+        )
+        let sectionB = Section(
+            name: "B", lengthInMeasures: 1, mode: ModeReference(tonic: 7, scaleID: "mixolydian"),
+            chordProgression: [ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 7, chordTemplateID: "7"))]
+        )
+        let piece = Piece(title: "t", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [sectionA, sectionB])
+        let timeline = piece.harmonicTimeline()
+        XCTAssertEqual(timeline.map(\.startSeconds), [0, 2.0])
+        XCTAssertEqual(timeline[1].mode, ModeReference(tonic: 7, scaleID: "mixolydian"))
+    }
+
+    func testHarmonicTimelineEmptyForAPieceWithNoChords() {
+        let piece = Piece(title: "t", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [
+            Section(name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian")),
+        ])
+        XCTAssertEqual(piece.harmonicTimeline(), [])
+    }
 }

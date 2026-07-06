@@ -3,13 +3,27 @@ import PieceModel
 import MIDIEngine
 @testable import AppCore
 import RecognitionEngine
+@testable import LLMEngine
 import Foundation
+
+// Mirrors the same helper in Tests/AppCoreTests/ImprovSessionTests.swift — compares by
+// description so a new SessionError case doesn't also require updating this.
+extension ImprovSession.SessionError: Equatable {
+    public static func == (lhs: ImprovSession.SessionError, rhs: ImprovSession.SessionError) -> Bool {
+        lhs.description == rhs.description
+    }
+}
 
 // Stand-in for the real XCTest suites in Tests/PieceModelTests (which this file mirrors
 // case-for-case): this machine has no Xcode, only Command Line Tools, so `swift test`
 // fails with "no such module 'XCTest'". Run with `swift run SanityChecks`. If you ever
 // install full Xcode, prefer `swift test` (or Xcode's test navigator) and let this file
 // go stale — it's a workaround, not a replacement.
+
+// Unbuffered: if a check ever crashes the process (a real concurrency bug did, once —
+// see ImprovSession.playbackStateQueue), the fully-buffered default would swallow every
+// check printed before the crash, making the failure look like silent, output-less death.
+setvbuf(stdout, nil, _IONBF, 0)
 
 nonisolated(unsafe) var checks = 0
 nonisolated(unsafe) var failures = 0
@@ -324,6 +338,45 @@ func testPieceRenderedNotesOffsetsSecondSectionByFirstSectionsLength() {
     check(notes.map(\.startSeconds), [2.0], "piece rendered notes second section offset")
 }
 
+func testHarmonicTimelineResolvesOneChordPerEventInSeconds() {
+    let section = Section(
+        name: "A", lengthInMeasures: 2, mode: ModeReference(tonic: 2, scaleID: "dorian"),
+        chordProgression: [
+            ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 2, chordTemplateID: "mi7")),
+            ChordEvent(measure: 2, beat: 1, durationBeats: 4, chord: ChordReference(root: 7, chordTemplateID: "7")),
+        ]
+    )
+    let piece = Piece(title: "t", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [section])
+    let timeline = piece.harmonicTimeline()
+    check(timeline.count, 2, "harmonic timeline event count")
+    check(timeline.map(\.startSeconds), [0, 2.0], "harmonic timeline start seconds")
+    check(timeline.map(\.endSeconds), [2.0, 4.0], "harmonic timeline end seconds")
+    check(timeline.map(\.chord), [ChordReference(root: 2, chordTemplateID: "mi7"), ChordReference(root: 7, chordTemplateID: "7")], "harmonic timeline chords")
+    check(timeline.map(\.mode), [ModeReference(tonic: 2, scaleID: "dorian"), ModeReference(tonic: 2, scaleID: "dorian")], "harmonic timeline mode carried per event")
+}
+
+func testHarmonicTimelineOffsetsSecondSectionAndCarriesItsOwnMode() {
+    let sectionA = Section(
+        name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"),
+        chordProgression: [ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 0, chordTemplateID: "Ma7"))]
+    )
+    let sectionB = Section(
+        name: "B", lengthInMeasures: 1, mode: ModeReference(tonic: 7, scaleID: "mixolydian"),
+        chordProgression: [ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 7, chordTemplateID: "7"))]
+    )
+    let piece = Piece(title: "t", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [sectionA, sectionB])
+    let timeline = piece.harmonicTimeline()
+    check(timeline.map(\.startSeconds), [0, 2.0], "harmonic timeline section offset")
+    check(timeline[1].mode, ModeReference(tonic: 7, scaleID: "mixolydian"), "harmonic timeline second section mode")
+}
+
+func testHarmonicTimelineEmptyForAPieceWithNoChords() {
+    let piece = Piece(title: "t", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [
+        Section(name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian")),
+    ])
+    check(piece.harmonicTimeline(), [], "harmonic timeline empty for chordless piece")
+}
+
 // MARK: - PieceTests
 
 func testFragmentLookupByIDFindsMatch() {
@@ -467,6 +520,79 @@ func testPlayWithoutAPieceLoadedThrows() {
     }
 }
 
+func testPlayTracksPlaybackStateSynchronouslyThenClearsItWhenFinished() {
+    do {
+        let session = ImprovSession()
+        try session.start()
+
+        let section = Section(
+            name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"),
+            chordProgression: [ChordEvent(measure: 1, beat: 1, durationBeats: 1, chord: ChordReference(root: 0, chordTemplateID: "Ma7"))]
+        )
+        // A very fast tempo so playback finishes almost immediately and this check doesn't
+        // need to sleep long to observe the "cleared after finishing" half of the behavior.
+        let piece = Piece(title: "fast", tempoBPM: 6000, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [section])
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        try JSONEncoder().encode(piece).write(to: tempFile)
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.loadPiece(fromJSONFile: tempFile.path)
+
+        try session.play()
+        check(session.isPlaying, true, "play sets isPlaying")
+        check(session.playbackTimeline.count, 1, "play populates playbackTimeline")
+        check(session.playbackTimeline.first?.chord, ChordReference(root: 0, chordTemplateID: "Ma7"), "playbackTimeline carries the chord")
+        check(session.playbackCurrentChordIndex, 0, "play starts at chord index 0")
+
+        Thread.sleep(forTimeInterval: 0.5)
+        check(session.isPlaying, false, "playback finished clears isPlaying")
+        checkNil(session.playbackCurrentChordIndex, "playback finished clears playbackCurrentChordIndex")
+        check(session.playbackHeldPitches, [], "playback finished clears playbackHeldPitches")
+    } catch {
+        failures += 1
+        print("FAIL [play tracks playback state]: threw \(error)")
+    }
+}
+
+func testUseMIDISourceInvalidIndexThrows() {
+    let session = ImprovSession()
+    checks += 1
+    do {
+        try session.useMIDISource(atIndex: 999)
+        failures += 1
+        print("FAIL [use-midi-source invalid index throws]: did not throw")
+    } catch ImprovSession.SessionError.invalidMIDISourceIndex {
+        // expected
+    } catch {
+        failures += 1
+        print("FAIL [use-midi-source invalid index throws]: wrong error \(error)")
+    }
+}
+
+func testDefaultMIDISourceSelectionIsNilMeaningAllSources() {
+    let session = ImprovSession()
+    checkNil(session.selectedMIDISourceIndex, "default MIDI source selection is nil")
+}
+
+func testUseMIDISourceSelectsItAndUseAllMIDISourcesResetsIt() {
+    do {
+        let session = ImprovSession()
+        let sources = session.availableMIDISources()
+        // No real MIDI source is guaranteed to be visible in every environment this runs
+        // in (CI, a fresh machine) — the selection *logic* under test doesn't need a real
+        // source, only a valid index into whatever list `availableMIDISources()` returns.
+        guard !sources.isEmpty else { return }
+
+        try session.useMIDISource(atIndex: sources.count - 1)
+        check(session.selectedMIDISourceIndex, sources.count - 1, "useMIDISource selects the index")
+
+        session.useAllMIDISources()
+        checkNil(session.selectedMIDISourceIndex, "useAllMIDISources resets the selection")
+    } catch {
+        failures += 1
+        print("FAIL [use-midi-source selects and resets]: threw \(error)")
+    }
+}
+
 func testSaveThenLoadRoundTripsThePieceThroughJSON() {
     let session = ImprovSession()
     session.loadDemoPiece()
@@ -491,6 +617,110 @@ func testLoadingAMissingFileThrows() {
         try session.loadPiece(fromJSONFile: "/no/such/file.json")
         failures += 1
         print("FAIL [improv session load missing file throws]: did not throw")
+    } catch {
+        // expected
+    }
+}
+
+func testListPieceFilesFindsJSONFilesAndIgnoresOthers() {
+    checks += 1
+    do {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data().write(to: folder.appendingPathComponent("b.json"))
+        try Data().write(to: folder.appendingPathComponent("a.json"))
+        try Data().write(to: folder.appendingPathComponent("notes.txt"))
+
+        let session = ImprovSession()
+        try session.listPieceFiles(in: folder.path)
+        if session.pieceFiles != ["a.json", "b.json"] {
+            failures += 1
+            print("FAIL [list piece files finds json, ignores others]: \(session.pieceFiles)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [list piece files finds json, ignores others]: threw \(error)")
+    }
+}
+
+func testUsePieceByIndexAndNameLoadFromTheListedFolder() {
+    checks += 2
+    do {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let writer = ImprovSession()
+        writer.loadDemoPiece()
+        try writer.savePiece(toJSONFile: folder.appendingPathComponent("demo.json").path)
+
+        let session = ImprovSession()
+        try session.listPieceFiles(in: folder.path)
+        try session.loadPiece(atIndex: 0)
+        if session.piece?.title != "ii-V-I demo" {
+            failures += 1
+            print("FAIL [use-piece by index]: \(String(describing: session.piece?.title))")
+        }
+
+        let byName = ImprovSession()
+        try byName.listPieceFiles(in: folder.path)
+        try byName.loadPiece(named: "demo.json")
+        if byName.piece?.title != "ii-V-I demo" {
+            failures += 1
+            print("FAIL [use-piece by name]: \(String(describing: byName.piece?.title))")
+        }
+    } catch {
+        failures += 2
+        print("FAIL [use-piece by index/name]: threw \(error)")
+    }
+}
+
+func testSaveWithoutEverLoadingOrSavingThrows() {
+    let session = ImprovSession()
+    session.loadDemoPiece()
+    checks += 1
+    do {
+        try session.savePiece()
+        failures += 1
+        print("FAIL [bare save without a current file throws]: did not throw")
+    } catch {
+        // expected
+    }
+}
+
+func testSaveAsThenBareSaveRoundTripToTheSameFile() {
+    checks += 1
+    do {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let session = ImprovSession()
+        session.loadDemoPiece()
+        try session.listPieceFiles(in: folder.path)
+        try session.savePiece(as: "my-piece")
+
+        let expectedPath = folder.appendingPathComponent("my-piece.json").path
+        if session.currentPieceFilePath != expectedPath || !FileManager.default.fileExists(atPath: expectedPath) {
+            failures += 1
+            print("FAIL [save-as then bare save]: currentPieceFilePath=\(String(describing: session.currentPieceFilePath))")
+        }
+        try session.savePiece() // re-save to the same resolved path, should not throw
+    } catch {
+        failures += 1
+        print("FAIL [save-as then bare save]: threw \(error)")
+    }
+}
+
+func testSaveAsWithoutAPieceFolderListedThrowsForABareName() {
+    let session = ImprovSession()
+    session.loadDemoPiece()
+    checks += 1
+    do {
+        try session.savePiece(as: "my-piece")
+        failures += 1
+        print("FAIL [save-as bare name without folder throws]: did not throw")
     } catch {
         // expected
     }
@@ -582,10 +812,142 @@ func testResetClearsHeldNotesAndHistory() {
     check(engine.recognizeModes(activityThreshold: 0), [], "recognition reset clears mode history")
 }
 
+// MARK: - LLMPieceComposerTests (mirrors Tests/LLMEngineTests/LLMPieceComposerTests.swift)
+
+func testParsesNaturalNoteNames() {
+    check(parsePitchClass("C"), 0, "parsePitchClass C")
+    check(parsePitchClass("D"), 2, "parsePitchClass D")
+    check(parsePitchClass("B"), 11, "parsePitchClass B")
+}
+
+func testParsesSharpsAndFlats() {
+    check(parsePitchClass("C#"), 1, "parsePitchClass C#")
+    check(parsePitchClass("Db"), 1, "parsePitchClass Db")
+    check(parsePitchClass("Cb"), 11, "parsePitchClass Cb")
+    check(parsePitchClass("B#"), 0, "parsePitchClass B#")
+}
+
+func testRejectsGarbagePitchClass() {
+    checkNil(parsePitchClass("H"), "parsePitchClass rejects H")
+    checkNil(parsePitchClass(""), "parsePitchClass rejects empty")
+    checkNil(parsePitchClass("C##"), "parsePitchClass rejects C##")
+}
+
+func testExtractJSONStripsMarkdownFence() {
+    let fenced = "```json\n{\"a\":1}\n```"
+    check(LLMPieceComposer.extractJSON(from: fenced), "{\"a\":1}", "extractJSON strips fence")
+}
+
+func minimalValidDTOJSON(chords: String = "[{\"measure\":1,\"root\":\"D\",\"templateID\":\"mi7\"}]") -> String {
+    """
+    { "title": "Test", "tempoBPM": 100, "tonic": "C", "scaleID": "ionian",
+      "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "C", "scaleID": "ionian", "chords": \(chords) } ] }
+    """
+}
+
+func testValidResponseProducesAPiece() {
+    let (piece, warnings) = LLMPieceComposer.parseAndValidate(responseText: minimalValidDTOJSON())
+    check(piece?.title, "Test", "llm compose valid response title")
+    check(piece?.key, ModeReference(tonic: 0, scaleID: "ionian"), "llm compose valid response key")
+    check(piece?.sections.first?.chordProgression.first?.chord, ChordReference(root: 2, chordTemplateID: "mi7"), "llm compose valid response chord")
+    check(warnings, [], "llm compose valid response has no warnings")
+}
+
+func testInvalidTopLevelKeyRejectsEverything() {
+    let json = "{ \"title\": \"T\", \"tempoBPM\": 100, \"tonic\": \"Z\", \"scaleID\": \"not-real\", \"sections\": [] }"
+    let (piece, warnings) = LLMPieceComposer.parseAndValidate(responseText: json)
+    checkNil(piece, "llm compose invalid key rejects everything")
+    checks += 1
+    if warnings.isEmpty {
+        failures += 1
+        print("FAIL [llm compose invalid key has warnings]: empty")
+    }
+}
+
+func testInvalidChordIsDroppedButValidOnesSurvive() {
+    let json = minimalValidDTOJSON(chords: "[{\"measure\":1,\"root\":\"D\",\"templateID\":\"mi7\"},{\"measure\":2,\"root\":\"Q\",\"templateID\":\"nope\"}]")
+    let (piece, warnings) = LLMPieceComposer.parseAndValidate(responseText: json)
+    check(piece?.sections.first?.chordProgression.count, 1, "llm compose drops invalid chord, keeps valid")
+    checks += 1
+    if !warnings.contains(where: { $0.contains("dropped chord") }) {
+        failures += 1
+        print("FAIL [llm compose warns about dropped chord]: \(warnings)")
+    }
+}
+
+func testSectionWithNoValidChordsIsDropped() {
+    let json = minimalValidDTOJSON(chords: "[{\"measure\":1,\"root\":\"Z\",\"templateID\":\"nope\"}]")
+    let (piece, warnings) = LLMPieceComposer.parseAndValidate(responseText: json)
+    checkNil(piece, "llm compose section with no valid chords is dropped")
+    checks += 1
+    if !warnings.contains(where: { $0.contains("no valid chords") }) {
+        failures += 1
+        print("FAIL [llm compose warns about no valid chords]: \(warnings)")
+    }
+}
+
+func testMelodyNotesOutOfMIDIRangeAreDropped() {
+    let json = """
+    { "title": "Test", "tempoBPM": 100, "tonic": "C", "scaleID": "ionian",
+      "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "C", "scaleID": "ionian",
+        "chords": [{"measure":1,"root":"C","templateID":"Ma7"}],
+        "melody": [{"measure":1,"beat":1,"durationBeats":1,"pitch":60},{"measure":1,"beat":2,"durationBeats":1,"pitch":200}]
+      } ] }
+    """
+    let (piece, warnings) = LLMPieceComposer.parseAndValidate(responseText: json)
+    check(piece?.sections.first?.tracks.first?.melodyEvents.count, 1, "llm compose drops out-of-range melody note")
+    checks += 1
+    if !warnings.contains(where: { $0.contains("out-of-range") }) {
+        failures += 1
+        print("FAIL [llm compose warns about out-of-range note]: \(warnings)")
+    }
+}
+
+func testTempoIsClampedToAReasonableRange() {
+    let json = """
+    { "title": "T", "tempoBPM": 999, "tonic": "C", "scaleID": "ionian",
+      "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "C", "scaleID": "ionian",
+        "chords": [{"measure":1,"root":"C","templateID":"Ma7"}] } ] }
+    """
+    let (piece, _) = LLMPieceComposer.parseAndValidate(responseText: json)
+    check(piece?.tempoBPM, 240, "llm compose clamps tempo")
+}
+
+func testUnparsableJSONReturnsNilWithAWarning() {
+    let (piece, warnings) = LLMPieceComposer.parseAndValidate(responseText: "not json at all")
+    checkNil(piece, "llm compose unparsable json returns nil")
+    checks += 1
+    if warnings.isEmpty {
+        failures += 1
+        print("FAIL [llm compose unparsable json has warnings]: empty")
+    }
+}
+
+func testBuildPromptEmbedsSourceTextAndVocabulary() {
+    let prompt = LLMPieceComposer.buildPrompt(sourceText: "Roses are red")
+    checks += 3
+    if !prompt.contains("Roses are red") { failures += 1; print("FAIL [prompt contains source text]") }
+    if !prompt.contains("ionian") { failures += 1; print("FAIL [prompt contains scale vocabulary]") }
+    if !prompt.contains("Ma7") { failures += 1; print("FAIL [prompt contains chord vocabulary]") }
+}
+
 // MARK: - Run
 
 testChordVocabularySizeIncludesTriads()
 testChordVocabularyCMajorTriad()
+
+testParsesNaturalNoteNames()
+testParsesSharpsAndFlats()
+testRejectsGarbagePitchClass()
+testExtractJSONStripsMarkdownFence()
+testValidResponseProducesAPiece()
+testInvalidTopLevelKeyRejectsEverything()
+testInvalidChordIsDroppedButValidOnesSurvive()
+testSectionWithNoValidChordsIsDropped()
+testMelodyNotesOutOfMIDIRangeAreDropped()
+testTempoIsClampedToAReasonableRange()
+testUnparsableJSONReturnsNilWithAWarning()
+testBuildPromptEmbedsSourceTextAndVocabulary()
 
 testResolveValidScaleIDMatchesDirectConstruction()
 testResolveUnknownScaleIDReturnsNil()
@@ -614,6 +976,9 @@ testChordScheduledNotesArpeggioUpSpreadsNotesAcrossDuration()
 testChordScheduledNotesUnknownTemplateProducesNoNotes()
 testPieceRenderedNotesCombinesChordsAndTracksInSeconds()
 testPieceRenderedNotesOffsetsSecondSectionByFirstSectionsLength()
+testHarmonicTimelineResolvesOneChordPerEventInSeconds()
+testHarmonicTimelineOffsetsSecondSectionAndCarriesItsOwnMode()
+testHarmonicTimelineEmptyForAPieceWithNoChords()
 
 testFragmentLookupByIDFindsMatch()
 testFragmentLookupByIDReturnsNilWhenMissing()
@@ -632,8 +997,17 @@ testMIDIEmptyBufferProducesNoEvents()
 
 testLoadDemoPieceSetsPieceAndLogsIt()
 testPlayWithoutAPieceLoadedThrows()
+testPlayTracksPlaybackStateSynchronouslyThenClearsItWhenFinished()
+testUseMIDISourceInvalidIndexThrows()
+testDefaultMIDISourceSelectionIsNilMeaningAllSources()
+testUseMIDISourceSelectsItAndUseAllMIDISourcesResetsIt()
 testSaveThenLoadRoundTripsThePieceThroughJSON()
 testLoadingAMissingFileThrows()
+testListPieceFilesFindsJSONFilesAndIgnoresOthers()
+testUsePieceByIndexAndNameLoadFromTheListedFolder()
+testSaveWithoutEverLoadingOrSavingThrows()
+testSaveAsThenBareSaveRoundTripToTheSameFile()
+testSaveAsWithoutAPieceFolderListedThrowsForABareName()
 
 testRecognizesBareMajorTriadAsATriadNotA7thChord()
 testRecognizesRootPositionSeventhChord()
@@ -668,6 +1042,259 @@ func testHandlingIncomingMIDIEventsDetectsChordWhileListenOnly() {
     }
 }
 testHandlingIncomingMIDIEventsDetectsChordWhileListenOnly()
+
+func testNewPieceStartsBlank() {
+    let session = ImprovSession()
+    session.newPiece(title: "My Poem Piece")
+    check(session.piece?.title, "My Poem Piece", "new piece title")
+    check(session.piece?.sections, [], "new piece starts with no sections")
+    checkNil(session.currentPieceFilePath, "new piece has no current file")
+}
+
+func testSetSourceTextStoresItAndLogs() {
+    let session = ImprovSession()
+    session.setSourceText("Roses are red")
+    check(session.sourceText, "Roses are red", "source text stored")
+    checks += 1
+    if !session.log.contains(where: { $0.contains("Source text set") }) {
+        failures += 1
+        print("FAIL [source text logs it]: \(session.log)")
+    }
+}
+
+func testListLLMConnectionsFindsJSONFiles() {
+    checks += 1
+    do {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let connection = LLMConnection(name: "Local Ollama", provider: "ollama", baseURL: "http://localhost:11434", model: "llama3")
+        try JSONEncoder().encode(connection).write(to: folder.appendingPathComponent("ollama.json"))
+        try Data().write(to: folder.appendingPathComponent("notes.txt"))
+
+        let session = ImprovSession()
+        try session.listLLMConnections(in: folder.path)
+        if session.llmConnections != ["ollama.json"] {
+            failures += 1
+            print("FAIL [list llm connections finds json]: \(session.llmConnections)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [list llm connections finds json]: threw \(error)")
+    }
+}
+
+func testUseLLMConnectionByIndexAndNameLoadFromTheListedFolder() {
+    checks += 2
+    do {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let connection = LLMConnection(name: "Local Ollama", provider: "ollama", baseURL: "http://localhost:11434", model: "llama3")
+        try JSONEncoder().encode(connection).write(to: folder.appendingPathComponent("ollama.json"))
+
+        let session = ImprovSession()
+        try session.listLLMConnections(in: folder.path)
+        try session.useLLMConnection(atIndex: 0)
+        if session.currentLLMConnection != connection {
+            failures += 1
+            print("FAIL [use-llm by index]: \(String(describing: session.currentLLMConnection))")
+        }
+
+        let byName = ImprovSession()
+        try byName.listLLMConnections(in: folder.path)
+        try byName.useLLMConnection(named: "ollama.json")
+        if byName.currentLLMConnection != connection {
+            failures += 1
+            print("FAIL [use-llm by name]: \(String(describing: byName.currentLLMConnection))")
+        }
+    } catch {
+        failures += 2
+        print("FAIL [use-llm by index/name]: threw \(error)")
+    }
+}
+
+func testComposeFromTextWithoutSourceTextThrows() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try JSONEncoder().encode(LLMConnection(name: "x", provider: "ollama", baseURL: "http://x", model: "x"))
+            .write(to: folder.appendingPathComponent("x.json"))
+        try session.listLLMConnections(in: folder.path)
+        try session.useLLMConnection(atIndex: 0)
+
+        try session.composeFromText()
+        failures += 1
+        print("FAIL [compose without source text throws]: did not throw")
+    } catch let error as ImprovSession.SessionError where error == .noSourceText {
+        // expected
+    } catch {
+        failures += 1
+        print("FAIL [compose without source text throws]: wrong error \(error)")
+    }
+}
+
+func testComposeFromTextWithoutAConnectionThrows() {
+    let session = ImprovSession()
+    session.setSourceText("a poem")
+    checks += 1
+    do {
+        try session.composeFromText()
+        failures += 1
+        print("FAIL [compose without connection throws]: did not throw")
+    } catch let error as ImprovSession.SessionError where error == .noLLMConnectionSelected {
+        // expected
+    } catch {
+        failures += 1
+        print("FAIL [compose without connection throws]: wrong error \(error)")
+    }
+}
+
+func testComposeFromTextWithAFakeGeneratorProducesAValidatedPiece() {
+    checks += 1
+    do {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
+            .write(to: folder.appendingPathComponent("fake.json"))
+
+        let session = ImprovSession()
+        session.setSourceText("a poem about the sea")
+        try session.listLLMConnections(in: folder.path)
+        try session.useLLMConnection(atIndex: 0)
+
+        let fakeResponse = """
+        { "title": "The Sea", "tempoBPM": 80, "tonic": "D", "scaleID": "dorian",
+          "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
+            "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
+        """
+        try session.composeFromText { _, _ in fakeResponse }
+
+        if session.piece?.title != "The Sea" {
+            failures += 1
+            print("FAIL [compose with fake generator]: \(String(describing: session.piece?.title))")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [compose with fake generator]: threw \(error)")
+    }
+}
+
+func testComposeFromTextWithInvalidResponseThrowsWithWarnings() {
+    checks += 1
+    do {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
+            .write(to: folder.appendingPathComponent("fake.json"))
+
+        let session = ImprovSession()
+        session.setSourceText("a poem")
+        try session.listLLMConnections(in: folder.path)
+        try session.useLLMConnection(atIndex: 0)
+
+        try session.composeFromText { _, _ in "not json at all" }
+        failures += 1
+        print("FAIL [compose with invalid response throws]: did not throw")
+    } catch let error as ImprovSession.SessionError {
+        if case .llmComposeFailed = error {
+            // expected
+        } else {
+            failures += 1
+            print("FAIL [compose with invalid response throws llmComposeFailed]: got \(error)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [compose with invalid response throws]: threw \(error)")
+    }
+}
+
+testNewPieceStartsBlank()
+testSetSourceTextStoresItAndLogs()
+testListLLMConnectionsFindsJSONFiles()
+testUseLLMConnectionByIndexAndNameLoadFromTheListedFolder()
+testComposeFromTextWithoutSourceTextThrows()
+testComposeFromTextWithoutAConnectionThrows()
+testComposeFromTextWithAFakeGeneratorProducesAValidatedPiece()
+testComposeFromTextWithInvalidResponseThrowsWithWarnings()
+
+// MARK: - LLMProviderTests (mirrors Tests/LLMEngineTests/LLMProviderTests.swift)
+
+func testAnthropicProviderThrowsMissingAPIKeyWhenConnectionHasNoEnvVar() {
+    checks += 1
+    let connection = LLMConnection(name: "Claude", provider: "anthropic", baseURL: "https://api.anthropic.com", model: "claude-opus-4-8")
+    do {
+        _ = try AnthropicProvider().generate(prompt: "hello", connection: connection)
+        failures += 1
+        print("FAIL [anthropic no envVar throws]: did not throw")
+    } catch LLMError.missingAPIKey(let envVar) where envVar == "ANTHROPIC_API_KEY" {
+        // expected
+    } catch {
+        failures += 1
+        print("FAIL [anthropic no envVar throws]: wrong error \(error)")
+    }
+}
+
+func testAnthropicProviderThrowsMissingAPIKeyWhenEnvVarIsUnset() {
+    checks += 1
+    let envVar = "ANTHROPIC_API_KEY_DOES_NOT_EXIST_IN_ENVIRONMENT"
+    let connection = LLMConnection(name: "Claude", provider: "anthropic", baseURL: "https://api.anthropic.com", model: "claude-opus-4-8", apiKeyEnvVar: envVar)
+    do {
+        _ = try AnthropicProvider().generate(prompt: "hello", connection: connection)
+        failures += 1
+        print("FAIL [anthropic unset envVar throws]: did not throw")
+    } catch LLMError.missingAPIKey(let reportedVar) where reportedVar == envVar {
+        // expected
+    } catch {
+        failures += 1
+        print("FAIL [anthropic unset envVar throws]: wrong error \(error)")
+    }
+}
+
+func testLLMClientDispatchesAnthropicProviderByName() {
+    checks += 1
+    let connection = LLMConnection(name: "Claude", provider: "anthropic", baseURL: "https://api.anthropic.com", model: "claude-opus-4-8")
+    do {
+        _ = try LLMClient.generate(prompt: "hello", connection: connection)
+        failures += 1
+        print("FAIL [LLMClient dispatches anthropic]: did not throw")
+    } catch LLMError.missingAPIKey {
+        // expected — proves the anthropic case ran instead of falling through
+    } catch {
+        failures += 1
+        print("FAIL [LLMClient dispatches anthropic]: wrong error \(error)")
+    }
+}
+
+func testLLMClientThrowsUnsupportedProviderForUnknownName() {
+    checks += 1
+    let connection = LLMConnection(name: "Mystery", provider: "mystery-provider", baseURL: "https://example.com", model: "x")
+    do {
+        _ = try LLMClient.generate(prompt: "hello", connection: connection)
+        failures += 1
+        print("FAIL [LLMClient unsupported provider throws]: did not throw")
+    } catch LLMError.unsupportedProvider(let provider) where provider == "mystery-provider" {
+        // expected
+    } catch {
+        failures += 1
+        print("FAIL [LLMClient unsupported provider throws]: wrong error \(error)")
+    }
+}
+
+func testUnsupportedProviderDescriptionMentionsAnthropic() {
+    check(LLMError.unsupportedProvider("x").description.contains("anthropic"), true, "unsupportedProvider description mentions anthropic")
+}
+
+testAnthropicProviderThrowsMissingAPIKeyWhenConnectionHasNoEnvVar()
+testAnthropicProviderThrowsMissingAPIKeyWhenEnvVarIsUnset()
+testLLMClientDispatchesAnthropicProviderByName()
+testLLMClientThrowsUnsupportedProviderForUnknownName()
+testUnsupportedProviderDescriptionMentionsAnthropic()
 
 print("\(checks) checks, \(failures) failures")
 if failures > 0 {

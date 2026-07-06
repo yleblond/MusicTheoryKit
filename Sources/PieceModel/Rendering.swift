@@ -173,3 +173,54 @@ public extension Piece {
         return notes.sorted { $0.startSeconds < $1.startSeconds }
     }
 }
+
+/// One chord event resolved to absolute seconds within the whole piece, carrying its
+/// section's mode along with it — the granularity a "where are we right now" playback
+/// display needs (which chord, which mode), as opposed to `renderedNotes()`, which explodes
+/// everything down to individually-voiced notes and loses that structure.
+public struct TimedChordEvent: Equatable, Sendable {
+    public var startSeconds: Double
+    public var endSeconds: Double
+    public var chord: ChordReference
+    public var mode: ModeReference
+    public var sectionName: String
+    public var measure: Int
+
+    public init(startSeconds: Double, endSeconds: Double, chord: ChordReference, mode: ModeReference, sectionName: String, measure: Int) {
+        self.startSeconds = startSeconds
+        self.endSeconds = endSeconds
+        self.chord = chord
+        self.mode = mode
+        self.sectionName = sectionName
+        self.measure = measure
+    }
+}
+
+public extension Piece {
+    /// Flattens every section's chord progression (ignoring melody/fragments) into one
+    /// absolute-time timeline in seconds — the chord-level granularity a playback-position
+    /// display needs, using the same beat math as `renderedNotes()`.
+    func harmonicTimeline() -> [TimedChordEvent] {
+        let secondsPerBeat = 60.0 / tempoBPM
+        let beatsPerMeasure = timeSignature.beatsPerMeasure
+
+        var events: [TimedChordEvent] = []
+        var sectionStartBeat = 0.0
+        for section in sections {
+            for chordEvent in section.chordProgression {
+                let startBeat = sectionStartBeat + section.absoluteBeat(measure: chordEvent.measure, beat: chordEvent.beat, beatsPerMeasure: beatsPerMeasure)
+                let endBeat = startBeat + chordEvent.durationBeats
+                events.append(TimedChordEvent(
+                    startSeconds: startBeat * secondsPerBeat,
+                    endSeconds: endBeat * secondsPerBeat,
+                    chord: chordEvent.chord,
+                    mode: section.mode,
+                    sectionName: section.name,
+                    measure: chordEvent.measure
+                ))
+            }
+            sectionStartBeat += Double(section.lengthInMeasures) * Double(beatsPerMeasure)
+        }
+        return events.sorted { $0.startSeconds < $1.startSeconds }
+    }
+}

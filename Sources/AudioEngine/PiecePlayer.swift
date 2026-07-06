@@ -46,6 +46,21 @@ public final class PiecePlayer {
                 sampler.stopNote(Self.clampedByte(note.pitch), onChannel: 0)
             }
         }
+        // Safety net: when a chord and a melody share a pitch class (common — see the demo
+        // piece's G7 measure), two overlapping note-ons for the same key can leave the
+        // sampler's voice for that pitch retriggered by one part while the other part's own
+        // note-off (scheduled for its own, earlier end time) is the one that actually reaches
+        // the sampler — the later-ending part's note-off then targets a voice that already
+        // considers itself off, and the key is left audibly stuck. Force every pitch used in
+        // this piece off once, right after the piece's true last note-off should have fired,
+        // so nothing is ever left ringing regardless of which overlap caused it.
+        let totalDuration = Self.totalDuration(of: notes)
+        let uniquePitches = Set(notes.map(\.pitch))
+        DispatchQueue.global().asyncAfter(deadline: now + totalDuration + 0.05) { [sampler] in
+            for pitch in uniquePitches {
+                sampler.stopNote(Self.clampedByte(pitch), onChannel: 0)
+            }
+        }
     }
 
     /// Triggers a note immediately — the realtime counterpart to `play(_:)`, for live

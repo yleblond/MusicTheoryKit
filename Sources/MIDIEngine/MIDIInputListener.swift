@@ -40,6 +40,15 @@ public final class MIDIInputListener {
         }
     }
 
+    /// Connects only the source at `index` in `sourceNames()`'s order — for when several
+    /// sources are visible and only one of them should feed the app (e.g. a physical
+    /// keyboard, ignoring an unrelated virtual IAC bus). Out-of-range indices are ignored
+    /// rather than trapping, matching `connectAllSources()`'s no-throw shape.
+    public func connectSource(atIndex index: Int) {
+        guard (0..<MIDIGetNumberOfSources()).contains(index) else { return }
+        MIDIPortConnectSource(inputPort, MIDIGetSource(index), nil)
+    }
+
     public static func sourceNames() -> [String] {
         (0..<MIDIGetNumberOfSources()).map { index in
             let source = MIDIGetSource(index)

@@ -14,6 +14,7 @@ let package = Package(
         .library(name: "MIDIEngine", targets: ["MIDIEngine"]),
         .library(name: "AppCore", targets: ["AppCore"]),
         .library(name: "RecognitionEngine", targets: ["RecognitionEngine"]),
+        .library(name: "LLMEngine", targets: ["LLMEngine"]),
     ],
     targets: [
         .target(name: "MusicTheoryKit"),
@@ -25,11 +26,13 @@ let package = Package(
         .testTarget(name: "MIDIEngineTests", dependencies: ["MIDIEngine"]),
         .target(name: "RecognitionEngine", dependencies: ["MusicTheoryKit"]),
         .testTarget(name: "RecognitionEngineTests", dependencies: ["RecognitionEngine"]),
+        .target(name: "LLMEngine", dependencies: ["MusicTheoryKit", "PieceModel"]),
+        .testTarget(name: "LLMEngineTests", dependencies: ["LLMEngine", "MusicTheoryKit", "PieceModel"]),
         // Presentation-agnostic app state/behavior: a CLI drives it today, a future
         // SwiftUI front-end can bind to the same `ImprovSession` instance later.
-        .target(name: "AppCore", dependencies: ["MusicTheoryKit", "PieceModel", "AudioEngine", "MIDIEngine", "RecognitionEngine"]),
-        .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit"]),
+        .target(name: "AppCore", dependencies: ["MusicTheoryKit", "PieceModel", "AudioEngine", "MIDIEngine", "RecognitionEngine", "LLMEngine"]),
+        .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit", "LLMEngine"]),
         .executableTarget(name: "ImprovCLI", dependencies: ["AppCore"]),
-        .executableTarget(name: "SanityChecks", dependencies: ["MusicTheoryKit", "PieceModel", "MIDIEngine", "AppCore", "RecognitionEngine"]),
+        .executableTarget(name: "SanityChecks", dependencies: ["MusicTheoryKit", "PieceModel", "MIDIEngine", "AppCore", "RecognitionEngine", "LLMEngine"]),
     ]
 )
