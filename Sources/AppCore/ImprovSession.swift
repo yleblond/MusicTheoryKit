@@ -30,6 +30,21 @@ public final class ImprovSession: @unchecked Sendable {
     /// (the default) means "connect every visible source", same as the original behavior
     /// before source selection existed. Set via `useMIDISource(atIndex:)`.
     public private(set) var selectedMIDISourceIndex: Int?
+    /// Whether `startMicrophoneListening()` is currently active — separate from
+    /// `isListening` (which is MIDI-specific) since the two can, in principle, run at once.
+    public private(set) var isListeningToMicrophone = false
+    /// The most recent pitches reported by the microphone's FFT analysis — empty for
+    /// silence/no clear pitch, one element for a single note, more than one when several
+    /// simultaneous pitches were found (see `FFTPitchAnalyzer.dominantFrequencies`'s doc
+    /// comment for how reliable that is). Kept so a UI can show what the microphone is
+    /// currently hearing alongside `heldPitches`.
+    public private(set) var lastDetectedPitches: [DetectedPitch] = []
+    /// The microphone's current raw input level (RMS), reported even when no pitch was
+    /// detected — compare against `FFTPitchAnalyzer.minimumRMSForDetection` to tell "the
+    /// microphone isn't receiving any signal at all" (permission/device problem — this
+    /// stays at/near 0) apart from "receiving audio, but it's not resolving to a clear
+    /// pitch" (this is clearly above the floor).
+    public private(set) var microphoneInputLevel: Float = 0
     /// The current piece's chord progression, flattened to absolute seconds — computed
     /// once when `play()` starts, so a UI can show "where we are" without recomputing it
     /// every frame. Empty when nothing has ever been played.
@@ -66,6 +81,11 @@ public final class ImprovSession: @unchecked Sendable {
 
     private let player = PiecePlayer()
     private var listener: MIDIInputListener?
+    private var microphoneListener: MicrophonePitchListener?
+    /// The MIDI pitches `handleDetectedPitches` last turned into note-ons, so it knows which
+    /// ones are new (need a note-on) and which have dropped out (need a note-off) on the
+    /// next detection round, instead of resending the same held notes every ~93ms.
+    private var lastDetectedMIDIPitches: Set<Int> = []
     private let recognizer = RecognitionEngine()
     /// Serializes `handleIncomingMIDIEvent` regardless of which thread calls it. It used to
     /// run wherever the caller happened to be — fine while the only callers were the single
@@ -403,6 +423,26 @@ public final class ImprovSession: @unchecked Sendable {
         handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOff, pitch: pitch, velocity: 0, channel: channel))
     }
 
+    /// Everything a note on/off does to recognition state: logging, `heldPitches`, feeding
+    /// the recognizer. Shared by real MIDI input and microphone pitch detection — both are
+    /// "a note started/stopped", just from different sources — but does **not** touch the
+    /// player; callers decide separately whether/how to sound it (MIDI can; microphone
+    /// deliberately never does, see `handleDetectedPitch`). Must run inside
+    /// `liveInputQueue.sync` — this touches `recognizer`/`heldPitches` without its own
+    /// synchronization, relying on the caller for that.
+    private func updateRecognitionState(pitch: Int, isNoteOn: Bool, velocity: Int, channel: Int, source: String) {
+        lastMIDIEvent = MIDINoteEvent(kind: isNoteOn ? .noteOn : .noteOff, pitch: pitch, velocity: isNoteOn ? velocity : 0, channel: channel)
+        append("\(source) \(isNoteOn ? "on " : "off")pitch=\(pitch) vel=\(isNoteOn ? velocity : 0) ch=\(channel)")
+        if isNoteOn {
+            recognizer.noteOn(pitch: pitch)
+            heldPitches.insert(pitch)
+        } else {
+            recognizer.noteOff(pitch: pitch)
+            heldPitches.remove(pitch)
+        }
+        refreshRecognition()
+    }
+
     /// Everything that happens per incoming MIDI event: logging, feeding the recognizer,
     /// and (unless `listenOnly`) sounding the note. Extracted out of the `MIDIInputListener`
     /// closure so it's directly callable from tests without needing real CoreMIDI input.
@@ -412,18 +452,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// updated by the time the call returns.
     func handleIncomingMIDIEvent(_ event: MIDINoteEvent) {
         liveInputQueue.sync {
-            lastMIDIEvent = event
-            append("MIDI \(event.kind == .noteOn ? "on " : "off")pitch=\(event.pitch) vel=\(event.velocity) ch=\(event.channel)")
-
-            switch event.kind {
-            case .noteOn:
-                recognizer.noteOn(pitch: event.pitch)
-                heldPitches.insert(event.pitch)
-            case .noteOff:
-                recognizer.noteOff(pitch: event.pitch)
-                heldPitches.remove(event.pitch)
-            }
-            refreshRecognition()
+            updateRecognitionState(pitch: event.pitch, isNoteOn: event.kind == .noteOn, velocity: event.velocity, channel: event.channel, source: "MIDI")
 
             guard !listenOnly else { return }
             switch event.kind {
@@ -446,6 +475,64 @@ public final class ImprovSession: @unchecked Sendable {
             recognizedModes = []
             heldPitches = []
             append("Stopped listening to MIDI.")
+        }
+    }
+
+    /// Starts pitch detection from the default microphone (see
+    /// `MicrophonePitchListener`/`FFTPitchAnalyzer` for how, and their documented
+    /// limitations — heuristic multi-peak detection, not real chord transcription; can
+    /// occasionally lock onto a harmonic instead of a true fundamental). Deliberately never
+    /// sounds detected pitches through `player` — the microphone is already picking up a
+    /// real acoustic sound, and also sounding it through the app's own output would risk
+    /// audible feedback (the mic would then pick up the speaker too).
+    public func startMicrophoneListening() throws {
+        guard !isListeningToMicrophone else { return }
+        let newListener = MicrophonePitchListener { [weak self] detected, level in
+            self?.handleDetectedPitches(detected, level: level)
+        }
+        try newListener.start()
+        microphoneListener = newListener
+        isListeningToMicrophone = true
+        append("Listening to the microphone (FFT pitch detection, up to several simultaneous notes).")
+    }
+
+    public func stopMicrophoneListening() {
+        guard isListeningToMicrophone else { return }
+        microphoneListener?.stop()
+        microphoneListener = nil
+        isListeningToMicrophone = false
+        liveInputQueue.sync {
+            // Only release whatever notes the microphone itself contributed — not a full
+            // `recognizer.reset()` the way `stopListening()` does, since MIDI input could
+            // still be active at the same time and its held notes aren't this call's to clear.
+            for pitch in lastDetectedMIDIPitches {
+                updateRecognitionState(pitch: pitch, isNoteOn: false, velocity: 0, channel: 0, source: "Micro")
+            }
+            lastDetectedMIDIPitches = []
+            lastDetectedPitches = []
+            microphoneInputLevel = 0
+            append("Stopped listening to the microphone.")
+        }
+    }
+
+    /// Turns a stream of "here are the pitches right now, or empty for silence" reports into
+    /// discrete note-on/note-off transitions: a note-off for every previously-held pitch
+    /// that dropped out, a note-on for every new one that appeared — the same shape as how
+    /// MIDI note-on/note-off events already drive `heldPitches`/`recognizer`, so several
+    /// simultaneously-detected pitches naturally feed the same chord recognition real MIDI
+    /// chords already use. Runs on whichever thread `MicrophonePitchListener` calls back on.
+    private func handleDetectedPitches(_ detected: [DetectedPitch], level: Float) {
+        liveInputQueue.sync {
+            microphoneInputLevel = level
+            lastDetectedPitches = detected
+            let newPitches = Set(detected.map(\.midiPitch))
+            for droppedPitch in lastDetectedMIDIPitches.subtracting(newPitches) {
+                updateRecognitionState(pitch: droppedPitch, isNoteOn: false, velocity: 0, channel: 0, source: "Micro")
+            }
+            for newPitch in newPitches.subtracting(lastDetectedMIDIPitches) {
+                updateRecognitionState(pitch: newPitch, isNoteOn: true, velocity: 100, channel: 0, source: "Micro")
+            }
+            lastDetectedMIDIPitches = newPitches
         }
     }
 

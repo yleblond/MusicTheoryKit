@@ -22,6 +22,7 @@ let package = Package(
         .target(name: "PieceModel", dependencies: ["MusicTheoryKit"]),
         .testTarget(name: "PieceModelTests", dependencies: ["PieceModel"]),
         .target(name: "AudioEngine", dependencies: ["PieceModel"]),
+        .testTarget(name: "AudioEngineTests", dependencies: ["AudioEngine"]),
         .target(name: "MIDIEngine"),
         .testTarget(name: "MIDIEngineTests", dependencies: ["MIDIEngine"]),
         .target(name: "RecognitionEngine", dependencies: ["MusicTheoryKit"]),
@@ -33,6 +34,6 @@ let package = Package(
         .target(name: "AppCore", dependencies: ["MusicTheoryKit", "PieceModel", "AudioEngine", "MIDIEngine", "RecognitionEngine", "LLMEngine"]),
         .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit", "LLMEngine"]),
         .executableTarget(name: "ImprovCLI", dependencies: ["AppCore"]),
-        .executableTarget(name: "SanityChecks", dependencies: ["MusicTheoryKit", "PieceModel", "MIDIEngine", "AppCore", "RecognitionEngine", "LLMEngine"]),
+        .executableTarget(name: "SanityChecks", dependencies: ["MusicTheoryKit", "PieceModel", "AudioEngine", "MIDIEngine", "AppCore", "RecognitionEngine", "LLMEngine"]),
     ]
 )

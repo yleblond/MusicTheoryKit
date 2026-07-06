@@ -45,7 +45,7 @@ func printHelp() {
       listen [--listen-only]  ecoute le MIDI (avec ou sans son produit par l'appli)
       stop-listen             arrete l'ecoute MIDI
       keyboard-source         bascule la source clavier (touches du clavier -> notes, dans 'watch')
-      microphone-source       source micro (pas encore implementee, backlog)
+      microphone-source       bascule la source micro (detection de note par FFT, monophonique)
       press <pitch>           simule l'appui d'une touche (0-127), sans materiel MIDI
       release <pitch>         simule le relachement d'une touche
       samples <dossier>       liste les fichiers .sf2/.dls/.aupreset du dossier
@@ -96,6 +96,31 @@ func midiSourceStatusText() -> String {
     return sources.indices.contains(index) ? sources[index] : "toutes"
 }
 
+/// A MIDI pitch number as a note name + octave (e.g. 60 -> "C4"), matching `Keyboard.swift`'s
+/// octave numbering (octave 4 starts at C4 = pitch 60).
+func noteNameWithOctave(_ pitch: Int) -> String {
+    let pitchClass = ((pitch % 12) + 12) % 12
+    return "\(PitchClass(pitchClass).name())\(pitch / 12 - 1)"
+}
+
+/// "(coupee)" when off, else every currently-detected note (one or several — see
+/// `FFTPitchAnalyzer.dominantFrequencies`) or "(silence)" when on but hearing nothing right
+/// now — shared by `printStatus()` and `renderWatchFrame()`. The raw input level is always
+/// included, even in silence — the only way to tell "nothing is reaching the microphone at
+/// all" (permission/device problem: stays near 0) apart from "receiving audio, just no
+/// clear pitch in it" (clearly above 0) without guessing.
+func microphoneStatusText() -> String {
+    guard session.isListeningToMicrophone else { return TextStyle.placeholder("(coupee)") }
+    let level = String(format: "%.4f", session.microphoneInputLevel)
+    let detected = session.lastDetectedPitches
+    guard !detected.isEmpty else { return TextStyle.placeholder("(silence, niveau \(level))") }
+    let notesText = detected
+        .sorted { $0.frequencyHz < $1.frequencyHz }
+        .map { noteNameWithOctave($0.midiPitch) }
+        .joined(separator: " ")
+    return "\(notesText) (niveau \(level))"
+}
+
 func printStatus() {
     print(TextStyle.field("Piece", session.piece.map { $0.title } ?? TextStyle.placeholder("(aucun)")))
     print(TextStyle.field("Fichier", session.currentPieceFilePath ?? TextStyle.placeholder("(jamais sauvegarde)")))
@@ -103,7 +128,11 @@ func printStatus() {
     print(TextStyle.field("Source MIDI", midiSourceStatusText()))
     let listeningValue = TextStyle.flag(session.isListening) + (session.isListening ? (session.listenOnly ? " (listen-only)" : " (son via l'appli)") : "")
     print(TextStyle.field("Listening", listeningValue))
-    if session.isListening {
+    print(TextStyle.field("Micro", microphoneStatusText()))
+    if session.isListeningToMicrophone && session.microphoneInputLevel < 0.0005 {
+        print(TextStyle.placeholder("  (niveau quasi nul: le micro ne semble rien recevoir. Verifie qu'il n'est pas coupe/mute, que c'est le bon peripherique d'entree, et que ce terminal a la permission microphone dans Reglages Systeme > Confidentialite et securite > Microphone)"))
+    }
+    if session.isListening || session.isListeningToMicrophone {
         let chordText = session.recognizedChord.map { "\($0.root.name())\($0.chordTemplateID)" } ?? TextStyle.placeholder("(aucun)")
         print(TextStyle.field("Chord", chordText))
         let modesText = session.recognizedModes.isEmpty
@@ -167,7 +196,7 @@ func triggerComputerKeyboardNote(_ pitch: Int) {
 /// event live, and these plain `print`s would otherwise interleave with (and visually
 /// corrupt) that redraw — keeps ticking regardless, so it resumes the instant `watch` exits.
 func pollLogWhileListening() {
-    guard session.isListening else { return }
+    guard session.isListening || session.isListeningToMicrophone else { return }
     if !isInWatchMode {
         drainLog()
     }
@@ -225,6 +254,7 @@ func renderWatchFrame() {
     line(TextStyle.field("Source MIDI", midiSourceStatusText()))
     let listeningValue = TextStyle.flag(session.isListening) + (session.isListening ? (session.listenOnly ? " (listen-only)" : " (son via l'appli)") : "")
     line(TextStyle.field("Listening", listeningValue))
+    line(TextStyle.field("Micro", microphoneStatusText()))
     line()
     let chordText = session.recognizedChord.map { chord -> String in
         let slash = chord.bass != chord.root ? "/\(chord.bass.name())" : ""
@@ -238,9 +268,9 @@ func renderWatchFrame() {
     line()
     let lastEventText = session.lastMIDIEvent.map { "\($0.kind == .noteOn ? "on " : "off")pitch=\($0.pitch) vel=\($0.velocity)" } ?? "-"
     line(TextStyle.field("Dernier evt MIDI", lastEventText))
-    if !session.isListening {
+    if !session.isListening && !session.isListeningToMicrophone {
         line()
-        line(TextStyle.placeholder("(tape 'listen' avant 'watch' pour voir l'accord/mode se mettre a jour)"))
+        line(TextStyle.placeholder("(tape 'listen' ou 'microphone-source' avant 'watch' pour voir l'accord/mode se mettre a jour)"))
     }
 
     // Flattened mode display: just the scale's notes in order, not a second keyboard —
@@ -455,7 +485,12 @@ func executeCommand(_ command: String, _ args: [String]) throws {
             ? "Source clavier activee : A S D F G H J K L ; jouent les notes blanches, W E T Y U O P les notes alterees. Echap pour acceder au menu (les raccourcis-lettre du menu sont desactives pendant que cette source est active)."
             : "Source clavier desactivee.")
     case "microphone-source":
-        print("Source micro : pas encore implementee (necessite FFT + AVAudioEngine.inputNode ; APIs d'entree audio differentes entre macOS et iOS/iPadOS). Reste au backlog pour l'instant.")
+        if session.isListeningToMicrophone {
+            session.stopMicrophoneListening()
+        } else {
+            try session.startMicrophoneListening()
+            pollLogWhileListening()
+        }
     case "samples":
         guard let folder = args.first else { print("usage: samples <dossier>"); break }
         try session.listSampleFiles(in: folder)

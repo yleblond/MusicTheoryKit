@@ -1,5 +1,6 @@
 import MusicTheoryKit
 import PieceModel
+@testable import AudioEngine
 import MIDIEngine
 @testable import AppCore
 import RecognitionEngine
@@ -492,6 +493,144 @@ func testMIDITruncatedTrailingMessageIsDropped() {
 
 func testMIDIEmptyBufferProducesNoEvents() {
     check(MIDIRawParser.parseNoteEvents([]), [], "midi empty buffer produces no events")
+}
+
+// MARK: - FFTPitchAnalyzerTests (mirrors Tests/AudioEngineTests/FFTPitchAnalyzerTests.swift)
+
+func sineWaveForFFTTests(frequencyHz: Double, sampleRate: Double, count: Int, amplitude: Float = 1.0) -> [Float] {
+    (0..<count).map { i in
+        amplitude * Float(sin(2.0 * Double.pi * frequencyHz * Double(i) / sampleRate))
+    }
+}
+
+/// Sums several sine waves at equal amplitude into one signal — a synthetic stand-in for a
+/// chord (several simultaneous notes) without needing real audio input.
+func mixedSineWavesForFFTTests(frequenciesHz: [Double], sampleRate: Double, count: Int, amplitude: Float = 1.0) -> [Float] {
+    var mix = [Float](repeating: 0, count: count)
+    for frequency in frequenciesHz {
+        let wave = sineWaveForFFTTests(frequencyHz: frequency, sampleRate: sampleRate, count: count, amplitude: amplitude)
+        for i in 0..<count { mix[i] += wave[i] }
+    }
+    return mix
+}
+
+func checkClose(_ actual: Double, _ expected: Double, accuracy: Double, _ label: String) {
+    checks += 1
+    if abs(actual - expected) > accuracy {
+        failures += 1
+        print("FAIL [\(label)]: expected \(expected) +/- \(accuracy), got \(actual)")
+    }
+}
+
+func testFFTDetectsA440SineWave() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    let samples = sineWaveForFFTTests(frequencyHz: 440, sampleRate: 44100, count: 4096)
+    guard let detected = analyzer.dominantFrequency(in: samples, sampleRate: 44100) else {
+        failures += 1; checks += 1
+        print("FAIL [FFT detects A440]: got nil")
+        return
+    }
+    checkClose(detected, 440, accuracy: 2.0, "FFT detects A440")
+}
+
+func testFFTDetectsMiddleCSineWave() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    let samples = sineWaveForFFTTests(frequencyHz: 261.63, sampleRate: 44100, count: 4096)
+    guard let detected = analyzer.dominantFrequency(in: samples, sampleRate: 44100) else {
+        failures += 1; checks += 1
+        print("FAIL [FFT detects middle C]: got nil")
+        return
+    }
+    checkClose(detected, 261.63, accuracy: 2.0, "FFT detects middle C")
+}
+
+func testFFTReturnsNilForSilence() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    checkNil(analyzer.dominantFrequency(in: [Float](repeating: 0, count: 4096), sampleRate: 44100), "FFT returns nil for silence")
+}
+
+func testFFTReturnsNilForLowAmplitudeNoise() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    let samples = (0..<4096).map { _ in Float.random(in: -0.0001...0.0001) }
+    checkNil(analyzer.dominantFrequency(in: samples, sampleRate: 44100), "FFT returns nil for low-amplitude noise")
+}
+
+func testFFTReturnsNilWhenSampleCountDoesNotMatchSize() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    checkNil(analyzer.dominantFrequency(in: [Float](repeating: 0, count: 100), sampleRate: 44100), "FFT returns nil for wrong sample count")
+}
+
+func testFFTRespectsMinAndMaxHzRange() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    let samples = sineWaveForFFTTests(frequencyHz: 100, sampleRate: 44100, count: 4096)
+    checkNil(analyzer.dominantFrequency(in: samples, sampleRate: 44100, minHz: 200, maxHz: 2000), "FFT respects min/max Hz range")
+}
+
+func testMidiPitchFromFrequencyMatchesKnownNotes() {
+    check(DetectedPitch.midiPitch(forFrequencyHz: 440.0), 69, "midiPitch(forFrequencyHz:) A4")
+    check(DetectedPitch.midiPitch(forFrequencyHz: 261.63), 60, "midiPitch(forFrequencyHz:) middle C")
+    check(DetectedPitch.midiPitch(forFrequencyHz: 220.0), 57, "midiPitch(forFrequencyHz:) A3")
+}
+
+func testRMSOfSilenceIsZero() {
+    check(FFTPitchAnalyzer.rms(of: [Float](repeating: 0, count: 4096)), 0, "rms of silence is zero")
+}
+
+func testRMSOfFullScaleSineIsAboutOneOverSqrtTwo() {
+    let samples = sineWaveForFFTTests(frequencyHz: 440, sampleRate: 44100, count: 4096)
+    checkClose(Double(FFTPitchAnalyzer.rms(of: samples)), 1.0 / 2.0.squareRoot(), accuracy: 0.01, "rms of full-scale sine")
+}
+
+func testRMSScalesWithAmplitude() {
+    // amplitude 0.001 sine -> rms ~= 0.001/sqrt(2) =~ 0.0007, comfortably below the 0.003
+    // detection floor (unlike e.g. amplitude 0.01, whose rms of ~0.007 clears it).
+    let quiet = sineWaveForFFTTests(frequencyHz: 440, sampleRate: 44100, count: 4096, amplitude: 0.001)
+    checks += 1
+    if FFTPitchAnalyzer.rms(of: quiet) >= FFTPitchAnalyzer.minimumRMSForDetection {
+        failures += 1
+        print("FAIL [rms scales with amplitude]: quiet sine's rms was not below the detection floor")
+    }
+}
+
+func testDetectsAllThreeNotesOfACMajorTriad() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    // C4, E4, G4 — each at a fraction of full amplitude so the mix doesn't clip.
+    let samples = mixedSineWavesForFFTTests(frequenciesHz: [261.63, 329.63, 392.00], sampleRate: 44100, count: 4096, amplitude: 0.3)
+    let detected = analyzer.dominantFrequencies(in: samples, sampleRate: 44100).sorted()
+    check(detected.count, 3, "C major triad detects 3 peaks")
+    if detected.count == 3 {
+        checkClose(detected[0], 261.63, accuracy: 3.0, "C major triad detects C4")
+        checkClose(detected[1], 329.63, accuracy: 3.0, "C major triad detects E4")
+        checkClose(detected[2], 392.00, accuracy: 3.0, "C major triad detects G4")
+    }
+}
+
+func testDominantFrequenciesReturnsEmptyForSilence() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    check(analyzer.dominantFrequencies(in: [Float](repeating: 0, count: 4096), sampleRate: 44100), [], "dominantFrequencies empty for silence")
+}
+
+func testDominantFrequenciesRespectsMaxPeaks() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    let samples = mixedSineWavesForFFTTests(frequenciesHz: [261.63, 329.63, 392.00, 440.00], sampleRate: 44100, count: 4096, amplitude: 0.25)
+    let detected = analyzer.dominantFrequencies(in: samples, sampleRate: 44100, maxPeaks: 2)
+    check(detected.count, 2, "dominantFrequencies respects maxPeaks")
+}
+
+func testDominantFrequenciesMergesPeaksCloserThanMinSemitoneSeparation() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    // 440Hz and 445Hz are well under a semitone apart (a semitone above 440Hz is ~466Hz).
+    let samples = mixedSineWavesForFFTTests(frequenciesHz: [440, 445], sampleRate: 44100, count: 4096, amplitude: 0.5)
+    let detected = analyzer.dominantFrequencies(in: samples, sampleRate: 44100, minSemitoneSeparation: 1.0)
+    check(detected.count, 1, "dominantFrequencies merges close peaks")
+}
+
+func testDominantFrequencyMatchesFirstOfDominantFrequencies() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    let samples = mixedSineWavesForFFTTests(frequenciesHz: [261.63, 392.00], sampleRate: 44100, count: 4096, amplitude: 0.4)
+    let single = analyzer.dominantFrequency(in: samples, sampleRate: 44100)
+    let multi = analyzer.dominantFrequencies(in: samples, sampleRate: 44100, maxPeaks: 1)
+    check(single, multi.first, "dominantFrequency matches first of dominantFrequencies")
 }
 
 // MARK: - ImprovSessionTests (mirrors Tests/AppCoreTests/ImprovSessionTests.swift)
@@ -1295,6 +1434,22 @@ testAnthropicProviderThrowsMissingAPIKeyWhenEnvVarIsUnset()
 testLLMClientDispatchesAnthropicProviderByName()
 testLLMClientThrowsUnsupportedProviderForUnknownName()
 testUnsupportedProviderDescriptionMentionsAnthropic()
+
+testFFTDetectsA440SineWave()
+testFFTDetectsMiddleCSineWave()
+testFFTReturnsNilForSilence()
+testFFTReturnsNilForLowAmplitudeNoise()
+testFFTReturnsNilWhenSampleCountDoesNotMatchSize()
+testFFTRespectsMinAndMaxHzRange()
+testMidiPitchFromFrequencyMatchesKnownNotes()
+testRMSOfSilenceIsZero()
+testRMSOfFullScaleSineIsAboutOneOverSqrtTwo()
+testRMSScalesWithAmplitude()
+testDetectsAllThreeNotesOfACMajorTriad()
+testDominantFrequenciesReturnsEmptyForSilence()
+testDominantFrequenciesRespectsMaxPeaks()
+testDominantFrequenciesMergesPeaksCloserThanMinSemitoneSeparation()
+testDominantFrequencyMatchesFirstOfDominantFrequencies()
 
 print("\(checks) checks, \(failures) failures")
 if failures > 0 {
