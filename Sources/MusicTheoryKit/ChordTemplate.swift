@@ -9,12 +9,19 @@ public struct ChordTemplate: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
-/// Starting vocabulary: exactly the chord qualities named in the "Chords" column
-/// of the scale library, so every scale is tied to at least one recognizable chord.
-/// "7alt" and "6#5" are intentionally omitted: their tensions vary and they are not
-/// a single fixed pitch-class set.
+/// Starting vocabulary: the chord qualities named in the "Chords" column of the scale
+/// library (all 7th chords, so every scale is tied to at least one recognizable chord),
+/// plus the four basic triads. The triads matter for recognition: without them, a bare
+/// major/minor/diminished/augmented triad has no exact match and gets force-fit into the
+/// nearest 7th chord (e.g. a plain C-E-G reported as "CMa7"). "7alt" and "6#5" are
+/// intentionally omitted from the 7th chords: their tensions vary and they are not a
+/// single fixed pitch-class set.
 public enum ChordVocabulary {
     public static let seed: [ChordTemplate] = [
+        ChordTemplate(id: "Ma", intervalsFromRoot: [0, 4, 7]),
+        ChordTemplate(id: "mi", intervalsFromRoot: [0, 3, 7]),
+        ChordTemplate(id: "dim", intervalsFromRoot: [0, 3, 6]),
+        ChordTemplate(id: "aug", intervalsFromRoot: [0, 4, 8]),
         ChordTemplate(id: "Ma7", intervalsFromRoot: [0, 4, 7, 11]),
         ChordTemplate(id: "mi7", intervalsFromRoot: [0, 3, 7, 10]),
         ChordTemplate(id: "mi7b5", intervalsFromRoot: [0, 3, 6, 10]),

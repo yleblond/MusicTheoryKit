@@ -4,7 +4,20 @@ import XCTest
 final class ChordTests: XCTestCase {
 
     func testVocabularySize() {
-        XCTAssertEqual(ChordVocabulary.seed.count, 9)
+        XCTAssertEqual(ChordVocabulary.seed.count, 13)
+    }
+
+    func testCMajorTriad() throws {
+        let template = try XCTUnwrap(ChordVocabulary.byID("Ma"))
+        let chord = Chord(root: PitchClass(0), template: template)
+        XCTAssertEqual(chord.pitchClassSet, Set([0, 4, 7].map(PitchClass.init)))
+        XCTAssertEqual(chord.displayName, "CMa")
+    }
+
+    func testAMinorTriad() throws {
+        let template = try XCTUnwrap(ChordVocabulary.byID("mi"))
+        let chord = Chord(root: PitchClass(9), template: template)
+        XCTAssertEqual(chord.pitchClassSet, Set([9, 0, 4].map(PitchClass.init)))
     }
 
     func testScaleChordSymbolsResolve() {

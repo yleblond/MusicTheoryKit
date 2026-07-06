@@ -38,6 +38,24 @@ func checkNotNil<T>(_ actual: T?, _ label: String) {
     }
 }
 
+// MARK: - MusicTheoryKit ChordVocabulary (mirrors Tests/MusicTheoryKitTests/ChordTests.swift's
+// vocabulary-size/triad checks — not the full 205-scale-library sweep, which was already
+// verified in an earlier session before this file existed)
+
+func testChordVocabularySizeIncludesTriads() {
+    check(ChordVocabulary.seed.count, 13, "chord vocabulary size (9 seventh chords + 4 triads)")
+}
+
+func testChordVocabularyCMajorTriad() {
+    let template = ChordVocabulary.byID("Ma")
+    checkNotNil(template, "chord vocabulary has Ma triad")
+    if let template {
+        let chord = Chord(root: PitchClass(0), template: template)
+        check(chord.pitchClassSet, Set([0, 4, 7].map(PitchClass.init)), "C major triad pitch classes")
+        check(chord.displayName, "CMa", "C major triad display name")
+    }
+}
+
 // MARK: - ModeReferenceTests
 
 func testResolveValidScaleIDMatchesDirectConstruction() {
@@ -480,6 +498,15 @@ func testLoadingAMissingFileThrows() {
 
 // MARK: - RecognitionEngineTests (mirrors Tests/RecognitionEngineTests/RecognitionEngineTests.swift)
 
+func testRecognizesBareMajorTriadAsATriadNotA7thChord() {
+    let engine = RecognitionEngine()
+    for pitch in [60, 64, 67] { engine.noteOn(pitch: pitch) } // C E G
+    let chord = engine.recognizeChord()
+    check(chord?.root, PitchClass(0), "recognition triad root")
+    check(chord?.chordTemplateID, "Ma", "recognition triad template")
+    check(chord?.confidence, 1.0, "recognition triad confidence")
+}
+
 func testRecognizesRootPositionSeventhChord() {
     let engine = RecognitionEngine()
     for pitch in [60, 64, 67, 71] { engine.noteOn(pitch: pitch) } // C E G B -> Cmaj7
@@ -500,8 +527,10 @@ func testRecognizesChordRegardlessOfOctaveOrOrder() {
 func testReleasingANoteUpdatesTheHeldChord() {
     let engine = RecognitionEngine()
     for pitch in [60, 64, 67, 71] { engine.noteOn(pitch: pitch) }
-    engine.noteOff(pitch: 71)
-    checkNil(engine.recognizeChord(minimumConfidence: 0.9), "recognition drops chord after note-off")
+    engine.noteOff(pitch: 71) // drop the 7th -> now a bare C major triad
+    let chord = engine.recognizeChord(minimumConfidence: 0.9)
+    check(chord?.chordTemplateID, "Ma", "recognition retains triad after note-off")
+    check(chord?.confidence, 1.0, "recognition triad confidence after note-off")
 }
 
 func testFewerThanTwoHeldNotesRecognizesNoChord() {
@@ -555,6 +584,9 @@ func testResetClearsHeldNotesAndHistory() {
 
 // MARK: - Run
 
+testChordVocabularySizeIncludesTriads()
+testChordVocabularyCMajorTriad()
+
 testResolveValidScaleIDMatchesDirectConstruction()
 testResolveUnknownScaleIDReturnsNil()
 testChordReferenceResolveValidTemplateID()
@@ -603,6 +635,7 @@ testPlayWithoutAPieceLoadedThrows()
 testSaveThenLoadRoundTripsThePieceThroughJSON()
 testLoadingAMissingFileThrows()
 
+testRecognizesBareMajorTriadAsATriadNotA7thChord()
 testRecognizesRootPositionSeventhChord()
 testRecognizesChordRegardlessOfOctaveOrOrder()
 testReleasingANoteUpdatesTheHeldChord()

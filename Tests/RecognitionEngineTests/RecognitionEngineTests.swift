@@ -6,12 +6,20 @@ final class RecognitionEngineTests: XCTestCase {
 
     // MARK: - Chords
 
-    func testRecognizesRootPositionTriad() {
+    func testRecognizesBareMajorTriadAsATriadNotA7thChord() {
+        // A plain C-E-G must resolve to the "Ma" triad, not get force-fit into "Ma7"
+        // (which it also partially overlaps) just because 7th chords used to be the only
+        // templates in the vocabulary.
         let engine = RecognitionEngine()
-        for pitch in [60, 64, 67] { engine.noteOn(pitch: pitch) } // C E G -> C major triad-ish (no 7th in vocabulary as a triad, but Ma7 needs the 7th)
-        // The vocabulary only has 7th chords, so a bare triad won't hit 1.0 for any of them;
-        // use a full seventh chord instead for an exact-match case.
-        engine.reset()
+        for pitch in [60, 64, 67] { engine.noteOn(pitch: pitch) } // C E G
+        let chord = engine.recognizeChord()
+        XCTAssertEqual(chord?.root, PitchClass(0))
+        XCTAssertEqual(chord?.chordTemplateID, "Ma")
+        XCTAssertEqual(chord?.confidence, 1.0)
+    }
+
+    func testRecognizesRootPositionSeventhChord() {
+        let engine = RecognitionEngine()
         for pitch in [60, 64, 67, 71] { engine.noteOn(pitch: pitch) } // C E G B -> Cmaj7
         let chord = engine.recognizeChord()
         XCTAssertEqual(chord?.root, PitchClass(0))
@@ -35,9 +43,10 @@ final class RecognitionEngineTests: XCTestCase {
     func testReleasingANoteUpdatesTheHeldChord() {
         let engine = RecognitionEngine()
         for pitch in [60, 64, 67, 71] { engine.noteOn(pitch: pitch) } // Cmaj7
-        engine.noteOff(pitch: 71) // drop the 7th -> just a bare C major triad, no exact 7th-chord match
+        engine.noteOff(pitch: 71) // drop the 7th -> now a bare C major triad
         let chord = engine.recognizeChord(minimumConfidence: 0.9)
-        XCTAssertNil(chord)
+        XCTAssertEqual(chord?.chordTemplateID, "Ma")
+        XCTAssertEqual(chord?.confidence, 1.0)
     }
 
     func testFewerThanTwoHeldNotesRecognizesNoChord() {

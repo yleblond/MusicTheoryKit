@@ -22,9 +22,17 @@ public final class ImprovSession: @unchecked Sendable {
     public private(set) var lastMIDIEvent: MIDINoteEvent?
     public private(set) var recognizedChord: RecognizedChord?
     public private(set) var recognizedModes: [RecognizedMode] = []
+    /// Every MIDI pitch (0...127) currently held down — for drawing a keyboard, not just
+    /// reacting to the single most recent event like `lastMIDIEvent` does.
+    public private(set) var heldPitches: Set<Int> = []
     /// Human-readable status/event lines, oldest first. A CLI prints new entries as they
     /// arrive; a future UI could bind this straight to a scrolling console view.
     public private(set) var log: [String] = []
+    /// The folder last listed with `listSampleFiles`, and the `.sf2`/`.dls`/`.aupreset`
+    /// files found in it — kept here (not just returned) so a future UI could show a
+    /// picker over `sampleFiles` without re-scanning the folder itself.
+    public private(set) var sampleFolder: String?
+    public private(set) var sampleFiles: [String] = []
 
     private let player = PiecePlayer()
     private var listener: MIDIInputListener?
@@ -32,9 +40,13 @@ public final class ImprovSession: @unchecked Sendable {
 
     public enum SessionError: Error, CustomStringConvertible {
         case noPieceLoaded
+        case noSampleFolderListed
+        case invalidSampleIndex
         public var description: String {
             switch self {
             case .noPieceLoaded: return "no piece loaded — try 'load-demo' or 'load <path>'"
+            case .noSampleFolderListed: return "no sample folder listed yet — try 'samples <folder>' first"
+            case .invalidSampleIndex: return "no sample at that index"
             }
         }
     }
@@ -86,6 +98,39 @@ public final class ImprovSession: @unchecked Sendable {
         MIDIInputListener.sourceNames()
     }
 
+    private static let supportedSampleExtensions: Set<String> = ["sf2", "dls", "aupreset"]
+
+    /// Scans `folderPath` for `.sf2`/`.dls`/`.aupreset` files and remembers both the folder
+    /// and the match list (in `sampleFiles`) so they can be picked by index afterwards.
+    public func listSampleFiles(in folderPath: String) throws {
+        let folderURL = URL(fileURLWithPath: folderPath)
+        let contents = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
+        sampleFolder = folderPath
+        sampleFiles = contents
+            .filter { Self.supportedSampleExtensions.contains($0.pathExtension.lowercased()) }
+            .map(\.lastPathComponent)
+            .sorted()
+        append(sampleFiles.isEmpty
+            ? "No .sf2/.dls/.aupreset files found in \(folderPath)."
+            : "Found \(sampleFiles.count) sample file(s) in \(folderPath).")
+    }
+
+    /// Loads a sample-based instrument by name from the last-listed folder (see
+    /// `listSampleFiles`), replacing the sampler's current sound (the default sine synth,
+    /// or whatever was loaded before).
+    public func loadSample(named name: String) throws {
+        guard let sampleFolder else { throw SessionError.noSampleFolderListed }
+        let url = URL(fileURLWithPath: sampleFolder).appendingPathComponent(name)
+        try player.loadSample(at: url)
+        append("Loaded instrument: \(name)")
+    }
+
+    /// Convenience over `loadSample(named:)` using the 0-based position in `sampleFiles`.
+    public func loadSample(atIndex index: Int) throws {
+        guard sampleFiles.indices.contains(index) else { throw SessionError.invalidSampleIndex }
+        try loadSample(named: sampleFiles[index])
+    }
+
     /// Starts listening to every visible MIDI source. When `listenOnly` is true, incoming
     /// notes are logged but not sounded — for a physical keyboard that already makes its
     /// own sound, where the app only needs to see what's played (future recognition).
@@ -100,6 +145,16 @@ public final class ImprovSession: @unchecked Sendable {
         append("Listening to MIDI (\(listenOnly ? "listen-only, no sound" : "sound through the app")).")
     }
 
+    /// Simulates a key press/release without real MIDI hardware — useful for testing and
+    /// demoing, and the same entry point a future on-screen/touch virtual keyboard would use.
+    public func pressKey(pitch: Int, velocity: Int = 100, channel: Int = 0) {
+        handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: pitch, velocity: velocity, channel: channel))
+    }
+
+    public func releaseKey(pitch: Int, channel: Int = 0) {
+        handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOff, pitch: pitch, velocity: 0, channel: channel))
+    }
+
     /// Everything that happens per incoming MIDI event: logging, feeding the recognizer,
     /// and (unless `listenOnly`) sounding the note. Extracted out of the `MIDIInputListener`
     /// closure so it's directly callable from tests without needing real CoreMIDI input.
@@ -108,8 +163,12 @@ public final class ImprovSession: @unchecked Sendable {
         append("MIDI \(event.kind == .noteOn ? "on " : "off")pitch=\(event.pitch) vel=\(event.velocity) ch=\(event.channel)")
 
         switch event.kind {
-        case .noteOn: recognizer.noteOn(pitch: event.pitch)
-        case .noteOff: recognizer.noteOff(pitch: event.pitch)
+        case .noteOn:
+            recognizer.noteOn(pitch: event.pitch)
+            heldPitches.insert(event.pitch)
+        case .noteOff:
+            recognizer.noteOff(pitch: event.pitch)
+            heldPitches.remove(event.pitch)
         }
         refreshRecognition()
 
@@ -127,6 +186,7 @@ public final class ImprovSession: @unchecked Sendable {
         recognizer.reset()
         recognizedChord = nil
         recognizedModes = []
+        heldPitches = []
         append("Stopped listening to MIDI.")
     }
 

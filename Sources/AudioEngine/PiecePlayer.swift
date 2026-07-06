@@ -1,9 +1,21 @@
 @preconcurrency import AVFoundation
 import PieceModel
 
+public enum SampleLoadError: Error, CustomStringConvertible {
+    case unsupportedExtension(String)
+
+    public var description: String {
+        switch self {
+        case .unsupportedExtension(let ext):
+            return "unsupported sample file extension \".\(ext)\" (expected .sf2, .dls or .aupreset)"
+        }
+    }
+}
+
 /// Non-realtime playback of a rendered `Piece`: schedules every note against an
-/// `AVAudioUnitSampler` (Apple's built-in sine synth when no sound bank is loaded).
-/// Not thread-safe beyond calling `start()` once before any `play(_:)`.
+/// `AVAudioUnitSampler` (Apple's built-in sine synth by default, or a loaded sample-based
+/// instrument via `loadSample`). Not thread-safe beyond calling `start()` once before any
+/// `play(_:)`.
 public final class PiecePlayer {
     private let engine = AVAudioEngine()
     private let sampler = AVAudioUnitSampler()
@@ -44,6 +56,25 @@ public final class PiecePlayer {
 
     public func stopNote(pitch: Int, channel: Int = 0) {
         sampler.stopNote(Self.clampedByte(pitch), onChannel: Self.clampedByte(channel))
+    }
+
+    /// Swaps the sampler's sound for a sample-based instrument loaded from disk: a
+    /// SoundFont/DLS bank (`.sf2`/`.dls`, program 0 = first instrument in the bank) or an
+    /// Apple `.aupreset`. Replaces whatever was previously loaded (or the default sine synth).
+    public func loadSample(at url: URL, program: UInt8 = 0) throws {
+        switch url.pathExtension.lowercased() {
+        case "sf2", "dls":
+            try sampler.loadSoundBankInstrument(
+                at: url,
+                program: program,
+                bankMSB: UInt8(kAUSampler_DefaultMelodicBankMSB),
+                bankLSB: UInt8(kAUSampler_DefaultBankLSB)
+            )
+        case "aupreset":
+            try sampler.loadInstrument(at: url)
+        default:
+            throw SampleLoadError.unsupportedExtension(url.pathExtension)
+        }
     }
 
     public static func totalDuration(of notes: [RenderedNote]) -> Double {
