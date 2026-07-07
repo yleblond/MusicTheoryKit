@@ -21,7 +21,7 @@ private let eToFSeparator = "\u{1B}[2m┊\u{1B}[0m"
 
 /// Draws an ASCII piano spanning `octaveCount` octaves from `startMIDI` (should land on a
 /// C), 1 character per semitone — kept deliberately narrow (~14 columns/octave) so the
-/// widest row in the whole `watch` frame still comfortably fits an ordinary terminal
+/// widest row in the whole `console` frame still comfortably fits an ordinary terminal
 /// width without wrapping; a previous 2-characters-per-semitone version (~26/octave, ~78
 /// total for 3 octaves) was wide enough to wrap in some terminals, which broke this
 /// renderer's line-by-line cursor positioning and looked like flicker at the end of each row.

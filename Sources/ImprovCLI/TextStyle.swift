@@ -1,6 +1,6 @@
 import Foundation
 
-/// ANSI styling for the `watch` screen's textual status block — bold/colored field labels
+/// ANSI styling for the `console` screen's textual status block — bold/colored field labels
 /// distinct from their (plain) values, bold headings for section titles, so the eye can
 /// scan the screen quickly instead of parsing a wall of same-colored text.
 enum TextStyle {

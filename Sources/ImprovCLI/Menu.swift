@@ -79,7 +79,7 @@ nonisolated(unsafe) var selectedItemIndex = 0
 /// whatever it printed stays readable before the dashboard takes back over.
 func runMenuAction(_ action: () throws -> Void) {
     // `readLine()` (used by the action itself, and below for the "press Enter" pause)
-    // needs normal blocking canonical input — both toggles from `runWatchScreen`'s raw/
+    // needs normal blocking canonical input — both toggles from `runConsoleScreen`'s raw/
     // non-blocking setup have to come off for the duration, not just canonical mode.
     setStdinNonBlocking(false)
     setRawMode(false)

@@ -1,7 +1,7 @@
 # Guide utilisateur — Music Improv Assistant
 
 Manuel d'utilisation de l'application en ligne de commande, dans son état à la fin de la
-session du 2026-07-06.
+session du 2026-07-07.
 
 ## Lancer l'application
 
@@ -16,10 +16,10 @@ Au démarrage, l'application charge automatiquement les dossiers de travail par 
 besoin de les indiquer à chaque lancement.
 
 Deux modes d'utilisation :
-- **Le mode ligne de commande (REPL)** : tape une commande, appuie sur Entrée, lis le
-  résultat. C'est le mode par défaut au démarrage.
-- **Le mode `watch`** : un tableau de bord fixe qui se met à jour en direct, avec un menu
-  déroulant façon DOS. On y entre avec la commande `watch`, on en sort avec Ctrl+C.
+- **Le mode `Command`** : tape une commande, appuie sur Entrée, lis le résultat. C'est le
+  mode par défaut au démarrage.
+- **Le mode `console`** : un tableau de bord fixe qui se met à jour en direct, avec un menu
+  déroulant façon DOS. On y entre avec la commande `console`, on en sort avec Ctrl+C.
 
 Tape `help` à tout moment pour la liste des commandes.
 
@@ -47,36 +47,63 @@ chacun avec une ligne mélodique).
 play
 ```
 
-Joue le morceau courant. En mode `watch` pendant la lecture, on voit apparaître :
+Joue le morceau courant. En mode `console` pendant la lecture, on voit apparaître :
 - **Le déroulé de la composition** — la liste des accords du morceau, celui en cours de
   lecture surligné entre crochets.
 - **Un second clavier**, « Clavier composé, en cours de jeu » — montre les notes que le
   morceau est en train de jouer, colorées de la même façon que le clavier d'écoute (voir
   §5), avec la ligne de marqueurs du mode de la section en cours.
 
-## 3. Sources d'entrée — le menu « Source »
+## 3. Sources d'entrée — les pistes (« tracks »)
 
-Trois façons de « jouer » des notes dans l'application, chacune avec ses propres limites :
+Chaque source d'entrée est une **piste** indépendante, avec sa propre écoute, son propre son
+(sauf le micro) et sa propre reconnaissance d'accord/mode — écouter deux pistes à la fois,
+c'est voir deux claviers séparés, chacun avec son propre accord détecté. Les pistes
+possibles :
 
-### 3.1 — Source MIDI (un vrai clavier/instrument MIDI)
+| Id à taper | Piste | Peut avoir du son ? |
+|---|---|---|
+| `midi` | Tout le MIDI visible, fusionné en un seul flux (mode MIDI par défaut) | Oui |
+| `midi:1`, `midi:2`, ... | Un port MIDI précis (uniquement en mode MIDI « individuel », voir §3.1) | Oui |
+| `clavier` | Le clavier de l'ordinateur, tapé comme un piano virtuel (voir §3.2) | Oui |
+| `micro` | Le microphone, détection de note(s) par FFT (voir §3.3) | **Non** (voir plus bas) |
+
+Commandes communes à toutes les pistes :
 
 | Commande | Effet |
 |---|---|
-| `sources` | Liste les sources MIDI visibles (numérotées ; `*` marque celle sélectionnée). |
-| `use-midi-source <n\|all>` | N'écoute qu'une seule source, ou revient à toutes (par défaut). |
-| `listen` | Écoute le MIDI, avec le son produit par l'application (synthétiseur intégré ou son chargé, voir §7). |
-| `listen --listen-only` | Écoute sans faire sonner l'appli — utile si le clavier fait déjà son propre son. |
-| `stop-listen` | Arrête l'écoute MIDI. |
+| `tracks` | Liste toutes les pistes et leur état (écoute, son, instrument). |
+| `track <id> on` | Démarre l'écoute de cette piste (recomence à reconnaître accord/mode). |
+| `track <id> off` | Arrête l'écoute de cette piste (efface son accord/mode en cours). |
+| `track <id> son on` | Fait sonner cette piste à travers l'application (impossible sur `micro`). |
+| `track <id> son off` | Coupe le son de cette piste (sans oublier l'instrument choisi). |
+| `track <id> instrument <n\|nom>` | Charge un instrument (voir §7) sur cette piste et active son son. |
 
-### 3.2 — Source clavier (le clavier de l'ordinateur comme piano virtuel)
+Écoute et son sont **indépendants** : on peut écouter une piste sans la faire sonner (par
+exemple un vrai clavier MIDI qui fait déjà son propre son), ou lui donner un instrument
+particulier différent des autres pistes actives — chaque piste avec le son activé sonne avec
+son propre timbre, simultanément aux autres.
+
+### 3.1 — MIDI : fusionné ou individuel
 
 ```
-keyboard-source
+midi-mode fusionne       # une seule piste 'midi', qui écoute toutes les sources visibles
+midi-mode individuel     # une piste par port MIDI visible ('midi:1', 'midi:2', ...)
 ```
 
-Bascule ce mode (une deuxième fois pour le désactiver). Utile en mode `watch` uniquement.
-Disposition des touches — identique à « Musical Typing » de GarageBand, pour rester
-familière :
+Changer de mode reconstruit la liste des pistes MIDI (et arrête celles qui écoutaient) —
+utile pour distinguer un vrai clavier MIDI d'un bus IAC virtuel non désiré, par exemple, en
+n'écoutant que le port qui nous intéresse (`track midi:2 on`).
+
+### 3.2 — Piste clavier (le clavier de l'ordinateur comme piano virtuel)
+
+```
+track clavier on
+```
+
+Active à la fois l'écoute de cette piste et, en mode `console`, l'interception des touches
+du clavier physique comme des notes. Disposition des touches — identique à « Musical
+Typing » de GarageBand, pour rester familière :
 
 ```
 Touches altérées :   W  E     T  Y  U     O  P
@@ -90,24 +117,25 @@ d'une touche — seulement qu'elle a été tapée. Chaque frappe déclenche donc
 qui s'éteint automatiquement après ~300 ms, plutôt qu'un vrai maintien tant qu'on garde le
 doigt appuyé. Ce n'est pas un bug à corriger : c'est une limite du terminal lui-même.
 
-**Pendant que cette source est active, les raccourcis-lettre du menu sont désactivés** (les
-lettres jouent des notes à la place). Pour revenir au menu : appuie sur **Échap**. La
-navigation aux flèches, Entrée et Échap fonctionne normalement une fois dans le menu.
+**Pendant que cette piste écoute, les raccourcis-lettre du menu sont désactivés en mode
+`console`** (les lettres jouent des notes à la place). Pour revenir au menu : appuie sur
+**Échap**. La navigation aux flèches, Entrée et Échap fonctionne normalement une fois dans
+le menu. `track clavier off` rend les raccourcis-lettre au menu.
 
-### 3.3 — Source micro (détection de note(s) par microphone)
+### 3.3 — Piste micro (détection de note(s) par microphone)
 
 ```
-microphone-source
+track micro on
 ```
 
-Bascule ce mode. Utilise le microphone par défaut et détecte la ou les notes jouées par
-transformée de Fourier (FFT) — **peut détecter plusieurs notes en même temps**, donc
-reconnaître un accord joué à la voix ou à l'instrument devant le micro.
+Utilise le microphone par défaut et détecte la ou les notes jouées par transformée de
+Fourier (FFT) — **peut détecter plusieurs notes en même temps**, donc reconnaître un accord
+joué à la voix ou à l'instrument devant le micro.
 
-**Champ « Micro » dans `status`/`watch`** — toujours affiché avec le niveau brut capté, même
+**Champ « Micro » dans `status`/`console`** — toujours affiché avec le niveau brut capté, même
 en silence :
-- `Micro: (coupée)` — la source n'est pas activée.
-- `Micro: (silence, niveau 0.0010)` — activée, rien de détecté en ce moment.
+- `Micro: (coupée)` — la piste n'écoute pas.
+- `Micro: (silence, niveau 0.0010)` — écoute, rien de détecté en ce moment.
 - `Micro: C4 E4 G4 (niveau 0.0376)` — un accord détecté (ici, do-mi-sol).
 
 **Si le niveau reste proche de zéro même en faisant du bruit** (dans `status`, un message
@@ -124,8 +152,9 @@ d'aide apparaît automatiquement) :
 spectraux, pas une vraie transcription d'accords. Elle fonctionne bien sur un accord clair
 (testé avec un vrai accord de Do majeur joué physiquement), mais peut se tromper sur des
 sons plus denses ou riches en harmoniques (peut confondre une harmonique avec une vraie
-note). Ne fait **jamais** sonner ce qu'elle détecte à travers l'application elle-même — pour
-éviter que le micro ne capte le haut-parleur en boucle.
+note). Cette piste ne peut **jamais** avoir de son (`track micro son on` échoue
+volontairement) : elle capte déjà un vrai son acoustique, et la faire aussi sonner à travers
+l'application risquerait un effet larsen (le micro capterait le haut-parleur en boucle).
 
 ## 4. Simuler des notes sans matériel
 
@@ -138,14 +167,17 @@ Utile pour tester sans clavier MIDI branché.
 
 ## 5. Reconnaissance d'accords et de modes
 
-Dès qu'une source d'écoute est active (MIDI, clavier ordinateur ou micro), l'application
-essaie en permanence de reconnaître :
-- **L'accord tenu** (`Chord` dans `status`/`watch`) — basé sur les notes réellement tenues
-  en même temps.
+Chaque piste en écoute (MIDI, clavier ordinateur, micro) a sa **propre** reconnaissance,
+indépendante des autres — écouter `midi` et `clavier` en même temps affiche deux accords
+détectés séparément, pas un seul mélangé. Pour chaque piste, l'application essaie en
+permanence de reconnaître :
+- **L'accord tenu** (`Chord`) — basé sur les notes réellement tenues en même temps sur
+  cette piste.
 - **Le ou les modes/gammes en cours** (`Modes`) — basé sur un historique pondéré des notes
-  récemment jouées (une gamme se joue en général mélodiquement, pas en accord plaqué).
+  récemment jouées sur cette piste (une gamme se joue en général mélodiquement, pas en
+  accord plaqué).
 
-Sur le clavier affiché en mode `watch` :
+Sur le clavier de chaque piste affiché en mode `console` :
 - **Magenta** : la fondamentale de l'accord reconnu.
 - **Jaune** : les autres notes de l'accord.
 - **Vert** : une note tenue mais hors de l'accord reconnu.
@@ -185,14 +217,14 @@ use-sample <numéro ou nom>
 
 Remplace le synthétiseur de base par un son chargé depuis un fichier SoundFont/DLS/aupreset.
 
-## 8. Le mode `watch` — tableau de bord et menu façon DOS
+## 8. Le mode `console` — tableau de bord et menu façon DOS
 
 ```
-watch
+console
 ```
 
 Occupe le terminal avec un écran figé qui se redessine en direct. Ctrl+C pour revenir au
-mode ligne de commande normal.
+mode Command normal.
 
 **Le menu** : une barre de menus en haut de l'écran, façon interface DOS graphique de
 l'époque.
@@ -207,9 +239,8 @@ Menus disponibles :
 |---|---|
 | **Fichier** | Charger la démo, choisir un dossier de morceaux, charger un morceau, sauvegarder, sauvegarder sous, quitter. |
 | **Lecture** | Jouer. |
-| **Source** | Source MIDI (lister), choisir une source MIDI, Source clavier, Source micro. |
-| **Écoute** | Écouter (avec son), Écouter (sans son), Arrêter l'écoute. |
-| **Instrument** | Choisir un dossier de sons, choisir un son. |
+| **Source** | Lister les pistes, mode MIDI fusionné/individuel, activer/arrêter une piste, activer/désactiver le son d'une piste, choisir un instrument pour une piste. |
+| **Instrument** | Choisir un dossier de sons, choisir le son de lecture du morceau. |
 | **IA** | Nouveau morceau, coller un texte, choisir un dossier de connexions LLM, choisir une connexion LLM, composer, voir le morceau. |
 
 Une action de menu bascule temporairement en mode d'écran normal (pour pouvoir répondre à
@@ -217,13 +248,11 @@ ses questions), puis revient au tableau de bord une fois terminée (« Entrée p
 
 **Ce que montre le tableau de bord**, du haut vers le bas :
 - Barre de menu.
-- Piece / Fichier / Playing / Source MIDI / Listening / Micro.
-- Accord détecté (`Chord`) / Modes détectés (`Modes`).
-- Dernier événement MIDI reçu.
-- Notes du mode détecté (à plat).
-- **Clavier joué** (C3–B5) — ce qui est actuellement tenu, toutes sources confondues.
+- Piece / Fichier / Playing / Mode MIDI / Dernier événement reçu.
+- *Pour chaque piste en écoute* : son nom, son état de son (ou le niveau du micro), l'accord
+  détecté (`Chord`), les modes détectés (`Modes`), et son propre clavier (C3–B5).
 - *Pendant la lecture d'un morceau uniquement* : le déroulé de la composition, puis un
-  second clavier montrant ce que le morceau est en train de jouer.
+  clavier montrant ce que le morceau est en train de jouer.
 
 ## Liste complète des commandes
 
@@ -236,16 +265,15 @@ load <chemin.json>      charge un morceau depuis un chemin explicite
 save                    resauvegarde le morceau courant
 save-as <nom>           sauvegarde sous un nouveau nom
 play                    joue le morceau courant
-sources                 liste les sources MIDI visibles (numérotées)
-use-midi-source <n|all> n'écoute qu'une seule source, ou toutes
-listen [--listen-only]  écoute le MIDI (avec ou sans son produit par l'appli)
-stop-listen             arrête l'écoute MIDI
-keyboard-source         bascule la source clavier (touches -> notes, dans 'watch')
-microphone-source       bascule la source micro (détection par FFT, plusieurs notes)
-press <hauteur>         simule l'appui d'une touche (0-127), sans matériel MIDI
-release <hauteur>       simule le relâchement d'une touche
+tracks                  liste les pistes d'entrée (MIDI/clavier/micro) et leur état
+midi-mode <fusionne|individuel>  MIDI en une piste fusionnée, ou une piste par port
+track <id> on|off       démarre/arrête l'écoute d'une piste (id: midi, midi:<n>, clavier, micro)
+track <id> son on|off   active/désactive le son d'une piste (impossible pour 'micro')
+track <id> instrument <n|nom>  charge un instrument sur cette piste (active son son)
+press <hauteur>         simule l'appui d'une touche (0-127) sur la piste 'clavier'
+release <hauteur>       simule le relâchement d'une touche sur la piste 'clavier'
 samples <dossier>       liste les fichiers .sf2/.dls/.aupreset du dossier
-use-sample <n|nom>      charge l'instrument
+use-sample <n|nom>      charge l'instrument de lecture du morceau
 new-piece <titre>       démarre un morceau vierge
 paste-text              colle un texte (poème...), terminé par une ligne vide
 llm-connections <dir>   liste les connexions LLM (.json) du dossier
@@ -253,7 +281,7 @@ use-llm <n|nom>         choisit une connexion LLM
 compose                 demande à l'IA de composer à partir du texte collé
 show-piece              affiche la structure du morceau courant
 status                  affiche l'état courant
-watch                   écran fixe qui se met à jour en direct (Ctrl+C pour revenir)
+console                 écran fixe qui se met à jour en direct (Ctrl+C pour revenir)
 quit                    quitte
 ```
 
@@ -262,8 +290,8 @@ quit                    quitte
 | Symptôme | Piste |
 |---|---|
 | Le micro ne détecte jamais rien | Vérifier la permission microphone (Réglages Système > Confidentialité et sécurité > Microphone) et le niveau affiché — voir §3.3. |
-| Les lettres tapées en `watch` ouvrent un menu au lieu de jouer une note | La « Source clavier » n'est pas activée — `keyboard-source` (ou menu Source). |
-| Impossible de sortir de « Source clavier » pour ouvrir un menu | Appuyer sur **Échap**. |
+| Les lettres tapées en `console` ouvrent un menu au lieu de jouer une note | La piste « clavier » n'écoute pas — `track clavier on` (ou menu Source). |
+| Impossible de sortir de la piste « clavier » pour ouvrir un menu | Appuyer sur **Échap**. |
 | Une note reste affichée/jouée sans s'arrêter après `play` | Devrait être corrigé (filet de sécurité en fin de lecture) — si le problème réapparaît, le signaler. |
 | Le clavier ASCII scintille ou se déforme | Devrait être corrigé (largeur de ligne bornée) — si ça persiste, vérifier la largeur du terminal (≥ 80 colonnes recommandé). |
 | `compose` échoue avec une erreur réseau | Vérifier que le serveur (Ollama local) tourne, ou que la variable d'environnement de clé API est bien définie pour la connexion choisie. |

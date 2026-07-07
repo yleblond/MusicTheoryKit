@@ -173,53 +173,63 @@ final class ImprovSessionTests: XCTestCase {
         }
     }
 
-    func testHandlingIncomingMIDIEventsDetectsChordWhileListenOnly() throws {
+    func testHandlingIncomingMIDIEventsDetectsChordPerTrack() throws {
         let session = ImprovSession()
-        // `listenOnly: true` so this never touches the (unstarted) audio engine.
-        try session.startListening(listenOnly: true)
+        // Sound stays off on this track, so this never touches the (unstarted) audio engine.
+        try session.startTrack(.midiMerged)
         for pitch in [60, 64, 67, 71] { // C E G B -> Cmaj7
-            session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: pitch, velocity: 100, channel: 0))
+            session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: pitch, velocity: 100, channel: 0), track: .midiMerged)
         }
-        XCTAssertEqual(session.recognizedChord?.root, PitchClass(0))
-        XCTAssertEqual(session.recognizedChord?.chordTemplateID, "Ma7")
-        session.stopListening()
-        XCTAssertNil(session.recognizedChord)
+        let track = session.tracks.first { $0.id == .midiMerged }
+        XCTAssertEqual(track?.recognizedChord?.root, PitchClass(0))
+        XCTAssertEqual(track?.recognizedChord?.chordTemplateID, "Ma7")
+        session.stopTrack(.midiMerged)
+        XCTAssertNil(session.tracks.first { $0.id == .midiMerged }?.recognizedChord)
     }
 
-    func testUseMIDISourceInvalidIndexThrows() {
+    func testStartTrackOnAnUnlistedMIDIPortThrows() {
         let session = ImprovSession()
-        XCTAssertThrowsError(try session.useMIDISource(atIndex: 999)) { error in
-            XCTAssertEqual(error as? ImprovSession.SessionError, .invalidMIDISourceIndex)
+        // Default fusion mode is `.merged`, so `.midiSource(0)` isn't one of `tracks` yet.
+        XCTAssertThrowsError(try session.startTrack(.midiSource(0))) { error in
+            guard case .unknownTrack = error as? ImprovSession.SessionError else {
+                XCTFail("expected .unknownTrack, got \(error)")
+                return
+            }
         }
     }
 
-    func testDefaultMIDISourceSelectionIsNilMeaningAllSources() {
+    func testDefaultMIDIFusionModeIsMergedWithASingleMIDITrack() {
         let session = ImprovSession()
-        XCTAssertNil(session.selectedMIDISourceIndex)
+        XCTAssertEqual(session.midiFusionMode, .merged)
+        XCTAssertTrue(session.tracks.contains { $0.id == .midiMerged })
+        XCTAssertTrue(session.tracks.contains { $0.id == .computerKeyboard })
+        XCTAssertTrue(session.tracks.contains { $0.id == .microphone })
     }
 
-    func testUseMIDISourceSelectsItAndUseAllMIDISourcesResetsIt() throws {
+    func testSetMIDIFusionModeSwitchesTrackList() {
         let session = ImprovSession()
-        let sources = session.availableMIDISources()
-        // No real MIDI source is guaranteed to be visible in every environment this runs
-        // in (CI, a fresh machine) — the selection *logic* under test doesn't need a real
-        // source, only a valid index into whatever list `availableMIDISources()` returns.
-        guard !sources.isEmpty else { return }
-
-        try session.useMIDISource(atIndex: sources.count - 1)
-        XCTAssertEqual(session.selectedMIDISourceIndex, sources.count - 1)
-
-        session.useAllMIDISources()
-        XCTAssertNil(session.selectedMIDISourceIndex)
+        session.setMIDIFusionMode(.individual)
+        XCTAssertEqual(session.midiFusionMode, .individual)
+        XCTAssertFalse(session.tracks.contains { $0.id == .midiMerged })
+        XCTAssertTrue(session.tracks.contains { $0.id == .computerKeyboard })
+        XCTAssertTrue(session.tracks.contains { $0.id == .microphone })
     }
 
-    func testStartListeningWithoutListenOnlySoundsTheNote() throws {
+    func testMicrophoneTrackCannotHaveSound() {
         let session = ImprovSession()
-        try session.start() // needed before player.startNote is exercised below
-        try session.startListening(listenOnly: false)
+        XCTAssertThrowsError(try session.setSoundEnabled(true, for: .microphone)) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .trackCannotHaveSound)
+        }
+    }
+
+    func testEnablingSoundOnATrackSoundsIncomingNotes() throws {
+        let session = ImprovSession()
+        try session.start() // needed before the track's own sampler is exercised below
+        try session.startTrack(.computerKeyboard)
+        try session.setSoundEnabled(true, for: .computerKeyboard)
         // Just verifying this doesn't throw/crash when routed to the (now-started) sampler.
-        session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: 60, velocity: 100, channel: 0))
-        session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOff, pitch: 60, velocity: 0, channel: 0))
+        session.pressKey(pitch: 60)
+        session.releaseKey(pitch: 60)
     }
 
     // MARK: - Composition (new piece, source text, LLM connections)

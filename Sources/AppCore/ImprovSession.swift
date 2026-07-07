@@ -18,33 +18,17 @@ import LLMEngine
 public final class ImprovSession: @unchecked Sendable {
     public private(set) var piece: Piece?
     public private(set) var isPlaying = false
-    public private(set) var isListening = false
-    public private(set) var listenOnly = false
+    /// The most recent MIDI-shaped event across every track — purely diagnostic (see the
+    /// "Dernier evt MIDI" status field); per-track recognition state lives in `tracks`.
     public private(set) var lastMIDIEvent: MIDINoteEvent?
-    public private(set) var recognizedChord: RecognizedChord?
-    public private(set) var recognizedModes: [RecognizedMode] = []
-    /// Every MIDI pitch (0...127) currently held down — for drawing a keyboard, not just
-    /// reacting to the single most recent event like `lastMIDIEvent` does.
-    public private(set) var heldPitches: Set<Int> = []
-    /// Which entry of `availableMIDISources()` `startListening` should connect to — `nil`
-    /// (the default) means "connect every visible source", same as the original behavior
-    /// before source selection existed. Set via `useMIDISource(atIndex:)`.
-    public private(set) var selectedMIDISourceIndex: Int?
-    /// Whether `startMicrophoneListening()` is currently active — separate from
-    /// `isListening` (which is MIDI-specific) since the two can, in principle, run at once.
-    public private(set) var isListeningToMicrophone = false
-    /// The most recent pitches reported by the microphone's FFT analysis — empty for
-    /// silence/no clear pitch, one element for a single note, more than one when several
-    /// simultaneous pitches were found (see `FFTPitchAnalyzer.dominantFrequencies`'s doc
-    /// comment for how reliable that is). Kept so a UI can show what the microphone is
-    /// currently hearing alongside `heldPitches`.
-    public private(set) var lastDetectedPitches: [DetectedPitch] = []
-    /// The microphone's current raw input level (RMS), reported even when no pitch was
-    /// detected — compare against `FFTPitchAnalyzer.minimumRMSForDetection` to tell "the
-    /// microphone isn't receiving any signal at all" (permission/device problem — this
-    /// stays at/near 0) apart from "receiving audio, but it's not resolving to a clear
-    /// pitch" (this is clearly above the floor).
-    public private(set) var microphoneInputLevel: Float = 0
+    /// Whether MIDI is currently heard as one merged stream or as one track per visible
+    /// port — see `setMIDIFusionMode`. Changing it rebuilds `tracks`.
+    public private(set) var midiFusionMode: MIDIFusionMode = .merged
+    /// Every live-input track — MIDI (merged or one per port, per `midiFusionMode`), the
+    /// computer keyboard, and the microphone — each with its own independent listening/
+    /// sound/recognition state. Rebuilt by `refreshTracks()` (also called automatically
+    /// whenever `midiFusionMode` changes), which preserves each surviving track's state.
+    public private(set) var tracks: [TrackInfo] = []
     /// The current piece's chord progression, flattened to absolute seconds — computed
     /// once when `play()` starts, so a UI can show "where we are" without recomputing it
     /// every frame. Empty when nothing has ever been played.
@@ -53,7 +37,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// `nil` before/after playback (or if the piece has no chords at all).
     public private(set) var playbackCurrentChordIndex: Int?
     /// Every pitch currently sounding because of `play()` — the piece-playback counterpart
-    /// to `heldPitches` (which only reflects live MIDI input), so a UI can draw a second,
+    /// to each track's `heldPitches` (which only reflects live input), so a UI can draw a
     /// separate keyboard for "what the composition is playing right now".
     public private(set) var playbackHeldPitches: Set<Int> = []
     /// Human-readable status/event lines, oldest first. A CLI prints new entries as they
@@ -61,7 +45,9 @@ public final class ImprovSession: @unchecked Sendable {
     public private(set) var log: [String] = []
     /// The folder last listed with `listSampleFiles`, and the `.sf2`/`.dls`/`.aupreset`
     /// files found in it — kept here (not just returned) so a future UI could show a
-    /// picker over `sampleFiles` without re-scanning the folder itself.
+    /// picker over `sampleFiles` without re-scanning the folder itself. This instrument
+    /// list is shared by every track (each picks by name from the same folder) and by the
+    /// piece-playback sampler (`use-sample`).
     public private(set) var sampleFolder: String?
     public private(set) var sampleFiles: [String] = []
     /// The folder last listed with `listPieceFiles`, and the `.json` piece files found in
@@ -80,22 +66,27 @@ public final class ImprovSession: @unchecked Sendable {
     public private(set) var currentLLMConnection: LLMConnection?
 
     private let player = PiecePlayer()
-    private var listener: MIDIInputListener?
+    private var midiListeners: [TrackID: MIDIInputListener] = [:]
     private var microphoneListener: MicrophonePitchListener?
-    /// The MIDI pitches `handleDetectedPitches` last turned into note-ons, so it knows which
-    /// ones are new (need a note-on) and which have dropped out (need a note-off) on the
-    /// next detection round, instead of resending the same held notes every ~93ms.
-    private var lastDetectedMIDIPitches: Set<Int> = []
-    private let recognizer = RecognitionEngine()
-    /// Serializes `handleIncomingMIDIEvent` regardless of which thread calls it. It used to
-    /// run wherever the caller happened to be — fine while the only callers were the single
-    /// CoreMIDI callback stream and one-at-a-time REPL `press`/`release` commands, both
-    /// effectively serial in practice. `keyboard-source`'s auto-release timers broke that
-    /// assumption: typing several notes in quick succession schedules several independent
+    /// One independent chord/mode recognizer per track — created the first time a track
+    /// starts listening, kept (not discarded) across a stop so `reset()` on the next start
+    /// is the only thing that clears its history.
+    private var recognizers: [TrackID: RecognitionEngine] = [:]
+    /// One independent sampler per track with sound enabled — see `setSoundEnabled`. Never
+    /// present for `.microphone` (enforced there, not here).
+    private var samplers: [TrackID: SamplerUnit] = [:]
+    /// The microphone's last reported pitches, so `handleDetectedPitches` knows which are
+    /// new (need a note-on) and which dropped out (need a note-off) on the next detection
+    /// round, instead of resending the same held notes every ~93ms.
+    private var lastDetectedMIDIPitches: [TrackID: Set<Int>] = [:]
+    /// Serializes every track's recognition-state mutation regardless of which thread calls
+    /// in. It used to run wherever the caller happened to be — fine while callers were
+    /// effectively serial in practice. The computer-keyboard track's auto-release timers
+    /// broke that assumption: typing several notes in quick succession schedules several independent
     /// `DispatchQueue.global()` releases, which can then fire concurrently with each other
-    /// and with a fresh `pressKey` — genuine concurrent mutation of `recognizer`/`heldPitches`
-    /// from multiple threads, and crashed with a bad pointer dereference in
-    /// `RecognitionEngine.noteOff` in the field, not just in testing this time.
+    /// and with a fresh `pressKey` — genuine concurrent mutation from multiple threads, and
+    /// crashed with a bad pointer dereference in `RecognitionEngine.noteOff` in the field,
+    /// not just in testing this time.
     private let liveInputQueue = DispatchQueue(label: "ImprovSession.liveInput")
     /// Bumped on every `play()` call; each playback's scheduled callbacks capture the value
     /// current at the time and check it before mutating state, so a stale callback from an
@@ -108,7 +99,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// which `.global()`'s concurrent worker threads would then mutate `playbackHeldPitches`
     /// (a `Set`) from in parallel with no synchronization — a genuine data race that crashed
     /// with memory corruption in testing, not just a benign "worst case interleaved log line"
-    /// like the single-threaded MIDI-callback writes to `heldPitches` elsewhere in this class.
+    /// like the single-threaded live-input writes elsewhere in this class.
     private let playbackStateQueue = DispatchQueue(label: "ImprovSession.playbackState")
 
     public enum SessionError: Error, CustomStringConvertible {
@@ -123,7 +114,8 @@ public final class ImprovSession: @unchecked Sendable {
         case noSourceText
         case noLLMConnectionSelected
         case llmComposeFailed([String])
-        case invalidMIDISourceIndex
+        case unknownTrack(String)
+        case trackCannotHaveSound
         public var description: String {
             switch self {
             case .noPieceLoaded: return "no piece loaded — try 'load-demo' or 'load <path>'"
@@ -137,12 +129,15 @@ public final class ImprovSession: @unchecked Sendable {
             case .noSourceText: return "no source text set — try 'paste-text' first"
             case .noLLMConnectionSelected: return "no LLM connection selected — try 'use-llm <n|name>' first"
             case .llmComposeFailed(let warnings): return "composition failed: \(warnings.joined(separator: "; "))"
-            case .invalidMIDISourceIndex: return "no MIDI source at that index — try 'sources' first"
+            case .unknownTrack(let text): return "no such track '\(text)' — try 'tracks' first"
+            case .trackCannotHaveSound: return "this track can't produce sound (the microphone is never sounded through the app, to avoid feedback)"
             }
         }
     }
 
-    public init() {}
+    public init() {
+        refreshTracks()
+    }
 
     public func start() throws {
         try player.start()
@@ -345,21 +340,171 @@ public final class ImprovSession: @unchecked Sendable {
         MIDIInputListener.sourceNames()
     }
 
-    /// Restricts `startListening` to a single MIDI source (0-based, matching
-    /// `availableMIDISources()`'s order) instead of connecting to every one visible —
-    /// useful once there's more than one (a physical keyboard alongside an unrelated
-    /// virtual IAC bus, say) and only one of them should actually feed the app.
-    public func useMIDISource(atIndex index: Int) throws {
-        let sources = availableMIDISources()
-        guard sources.indices.contains(index) else { throw SessionError.invalidMIDISourceIndex }
-        selectedMIDISourceIndex = index
-        append("Source MIDI selectionnee : \(sources[index])")
+    // MARK: - Tracks
+
+    /// Switches between hearing MIDI as one merged stream and hearing it as one
+    /// independent track per visible port, then rebuilds `tracks` to match. Any MIDI
+    /// track(s) currently listening are stopped first (a fusion-mode change genuinely
+    /// changes what "the MIDI track" means, so there's no sensible way to carry a live
+    /// listener across it) — the computer-keyboard and microphone tracks are untouched.
+    public func setMIDIFusionMode(_ mode: MIDIFusionMode) {
+        guard mode != midiFusionMode else { return }
+        for track in tracks where isMIDITrack(track.id) && track.isListening {
+            stopTrack(track.id)
+        }
+        midiFusionMode = mode
+        refreshTracks()
+        append("Mode MIDI : \(mode == .merged ? "fusionne" : "individuel").")
     }
 
-    /// Reverts to the original "connect every visible source" behavior.
-    public func useAllMIDISources() {
-        selectedMIDISourceIndex = nil
-        append("Source MIDI : toutes les sources visibles seront utilisees.")
+    /// Rebuilds `tracks` from `midiFusionMode` and the currently-visible MIDI sources,
+    /// preserving every surviving track's listening/sound/recognition state by identity
+    /// (`TrackID`) — called at `init` and after `setMIDIFusionMode`, and exposed as the
+    /// `tracks` command so a newly plugged-in MIDI device can be picked up on demand (this
+    /// app doesn't watch for CoreMIDI hot-plug notifications).
+    public func refreshTracks() {
+        var updated: [TrackInfo] = []
+        switch midiFusionMode {
+        case .merged:
+            updated.append(preservedOrNewTrack(.midiMerged, label: "MIDI (fusionne)"))
+        case .individual:
+            for (index, name) in availableMIDISources().enumerated() {
+                updated.append(preservedOrNewTrack(.midiSource(index), label: "MIDI : \(name)"))
+            }
+        }
+        updated.append(preservedOrNewTrack(.computerKeyboard, label: "Clavier ordinateur"))
+        updated.append(preservedOrNewTrack(.microphone, label: "Microphone", canHaveSound: false))
+        tracks = updated
+    }
+
+    private func preservedOrNewTrack(_ id: TrackID, label: String, canHaveSound: Bool = true) -> TrackInfo {
+        if var existing = tracks.first(where: { $0.id == id }) {
+            existing.label = label
+            return existing
+        }
+        return TrackInfo(id: id, label: label, canHaveSound: canHaveSound)
+    }
+
+    private func isMIDITrack(_ id: TrackID) -> Bool {
+        switch id {
+        case .midiMerged, .midiSource: return true
+        case .computerKeyboard, .microphone: return false
+        }
+    }
+
+    private func trackIndex(_ id: TrackID) throws -> Int {
+        guard let index = tracks.firstIndex(where: { $0.id == id }) else {
+            throw SessionError.unknownTrack(String(describing: id))
+        }
+        return index
+    }
+
+    /// Starts listening on one track: connects a `MIDIInputListener` for a MIDI track,
+    /// starts `MicrophonePitchListener` for the microphone, or (for the computer keyboard)
+    /// simply marks it listening — `pressKey`/`releaseKey` already drive it directly, there
+    /// being no separate hardware connection step for typed keys.
+    public func startTrack(_ id: TrackID) throws {
+        let index = try trackIndex(id)
+        guard !tracks[index].isListening else { return }
+        switch id {
+        case .midiMerged, .midiSource:
+            let newListener = try MIDIInputListener { [weak self] event in
+                self?.handleIncomingMIDIEvent(event, track: id)
+            }
+            if case .midiSource(let sourceIndex) = id {
+                newListener.connectSource(atIndex: sourceIndex)
+            } else {
+                newListener.connectAllSources()
+            }
+            midiListeners[id] = newListener
+        case .computerKeyboard:
+            break
+        case .microphone:
+            let newListener = MicrophonePitchListener { [weak self] detected, level in
+                self?.handleDetectedPitches(detected, level: level, track: id)
+            }
+            try newListener.start()
+            microphoneListener = newListener
+        }
+        if recognizers[id] == nil { recognizers[id] = RecognitionEngine() }
+        tracks[index].isListening = true
+        append("Piste '\(tracks[index].label)' : ecoute demarree.")
+    }
+
+    /// Stops listening on one track and clears its recognition state (held notes,
+    /// recognized chord/mode) — but not its sound/instrument choice, which survives a
+    /// stop/restart of the same track.
+    public func stopTrack(_ id: TrackID) {
+        guard let index = tracks.firstIndex(where: { $0.id == id }), tracks[index].isListening else { return }
+        switch id {
+        case .midiMerged, .midiSource:
+            midiListeners[id] = nil
+        case .computerKeyboard:
+            break
+        case .microphone:
+            microphoneListener?.stop()
+            microphoneListener = nil
+        }
+        liveInputQueue.sync {
+            recognizers[id]?.reset()
+            tracks[index].heldPitches = []
+            tracks[index].recognizedChord = nil
+            tracks[index].recognizedModes = []
+            tracks[index].lastDetectedPitches = []
+            tracks[index].microphoneInputLevel = 0
+        }
+        lastDetectedMIDIPitches[id] = nil
+        tracks[index].isListening = false
+        append("Piste '\(tracks[index].label)' : ecoute arretee.")
+    }
+
+    /// Turns a track's own sampler on or off — never allowed for `.microphone` (see
+    /// `TrackInfo.canHaveSound`'s doc comment). Turning sound back on after it was
+    /// disabled reuses whatever instrument was previously loaded on this track, if any.
+    public func setSoundEnabled(_ enabled: Bool, for id: TrackID) throws {
+        let index = try trackIndex(id)
+        guard tracks[index].canHaveSound else { throw SessionError.trackCannotHaveSound }
+        if enabled {
+            if let existing = samplers[id] {
+                try existing.start()
+            } else {
+                let unit = SamplerUnit()
+                try unit.start()
+                samplers[id] = unit
+            }
+        } else {
+            samplers[id]?.stop()
+        }
+        tracks[index].soundEnabled = enabled
+        append("Piste '\(tracks[index].label)' : son \(enabled ? "active" : "desactive").")
+    }
+
+    /// Loads a sample-based instrument by name from `sampleFolder` (see `listSampleFiles`)
+    /// onto one track's own sampler, enabling its sound if it wasn't already — each track
+    /// can carry a different instrument, sounding at the same time as any other track's.
+    public func setInstrument(named name: String, for id: TrackID) throws {
+        let index = try trackIndex(id)
+        guard tracks[index].canHaveSound else { throw SessionError.trackCannotHaveSound }
+        guard let sampleFolder else { throw SessionError.noSampleFolderListed }
+        let url = URL(fileURLWithPath: sampleFolder).appendingPathComponent(name)
+        let unit: SamplerUnit
+        if let existing = samplers[id] {
+            unit = existing
+        } else {
+            unit = SamplerUnit()
+            try unit.start()
+            samplers[id] = unit
+        }
+        try unit.loadSample(at: url)
+        tracks[index].soundEnabled = true
+        tracks[index].instrumentName = name
+        append("Piste '\(tracks[index].label)' : instrument '\(name)' charge, son active.")
+    }
+
+    /// Convenience over `setInstrument(named:for:)` using the 0-based position in `sampleFiles`.
+    public func setInstrument(atIndex sampleIndex: Int, for id: TrackID) throws {
+        guard sampleFiles.indices.contains(sampleIndex) else { throw SessionError.invalidSampleIndex }
+        try setInstrument(named: sampleFiles[sampleIndex], for: id)
     }
 
     private static let supportedSampleExtensions: Set<String> = ["sf2", "dls", "aupreset"]
@@ -380,8 +525,9 @@ public final class ImprovSession: @unchecked Sendable {
     }
 
     /// Loads a sample-based instrument by name from the last-listed folder (see
-    /// `listSampleFiles`), replacing the sampler's current sound (the default sine synth,
-    /// or whatever was loaded before).
+    /// `listSampleFiles`), replacing the piece-playback sampler's current sound (the
+    /// default sine synth, or whatever was loaded before) — used by `play()`, entirely
+    /// separate from any live-input track's own instrument (see `setInstrument(named:for:)`).
     public func loadSample(named name: String) throws {
         guard let sampleFolder else { throw SessionError.noSampleFolderListed }
         let url = URL(fileURLWithPath: sampleFolder).appendingPathComponent(name)
@@ -395,161 +541,103 @@ public final class ImprovSession: @unchecked Sendable {
         try loadSample(named: sampleFiles[index])
     }
 
-    /// Starts listening to every visible MIDI source. When `listenOnly` is true, incoming
-    /// notes are logged but not sounded — for a physical keyboard that already makes its
-    /// own sound, where the app only needs to see what's played (future recognition).
-    public func startListening(listenOnly: Bool) throws {
-        self.listenOnly = listenOnly
-        let newListener = try MIDIInputListener { [weak self] event in
-            self?.handleIncomingMIDIEvent(event)
-        }
-        if let selectedMIDISourceIndex {
-            newListener.connectSource(atIndex: selectedMIDISourceIndex)
-        } else {
-            newListener.connectAllSources()
-        }
-        listener = newListener
-        isListening = true
-        append("Listening to MIDI (\(listenOnly ? "listen-only, no sound" : "sound through the app")).")
-    }
-
     /// Simulates a key press/release without real MIDI hardware — useful for testing and
-    /// demoing, and the same entry point a future on-screen/touch virtual keyboard would use.
-    public func pressKey(pitch: Int, velocity: Int = 100, channel: Int = 0) {
-        handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: pitch, velocity: velocity, channel: channel))
+    /// demoing, and the same entry point the computer-keyboard track's typed-piano feature
+    /// and a future on-screen/touch virtual keyboard both use. Defaults to `.computerKeyboard`
+    /// since that's what a simulated key press most naturally represents; pass a different
+    /// track to simulate other hardware without it being physically present.
+    public func pressKey(pitch: Int, velocity: Int = 100, channel: Int = 0, track: TrackID = .computerKeyboard) {
+        handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: pitch, velocity: velocity, channel: channel), track: track)
     }
 
-    public func releaseKey(pitch: Int, channel: Int = 0) {
-        handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOff, pitch: pitch, velocity: 0, channel: channel))
+    public func releaseKey(pitch: Int, channel: Int = 0, track: TrackID = .computerKeyboard) {
+        handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOff, pitch: pitch, velocity: 0, channel: channel), track: track)
     }
 
-    /// Everything a note on/off does to recognition state: logging, `heldPitches`, feeding
-    /// the recognizer. Shared by real MIDI input and microphone pitch detection — both are
-    /// "a note started/stopped", just from different sources — but does **not** touch the
-    /// player; callers decide separately whether/how to sound it (MIDI can; microphone
-    /// deliberately never does, see `handleDetectedPitch`). Must run inside
-    /// `liveInputQueue.sync` — this touches `recognizer`/`heldPitches` without its own
-    /// synchronization, relying on the caller for that.
-    private func updateRecognitionState(pitch: Int, isNoteOn: Bool, velocity: Int, channel: Int, source: String) {
+    /// Everything a note on/off does to one track's recognition state: logging,
+    /// `heldPitches`, feeding that track's own recognizer, and — unless this is the
+    /// microphone (which never sounds through the app, to avoid feedback) or this track's
+    /// sound is off — its own sampler. Must run inside `liveInputQueue.sync` — this touches
+    /// `recognizers`/`tracks` without its own synchronization, relying on the caller for that.
+    private func updateRecognitionState(pitch: Int, isNoteOn: Bool, velocity: Int, channel: Int, track: TrackID) {
+        guard let index = tracks.firstIndex(where: { $0.id == track }) else { return }
         lastMIDIEvent = MIDINoteEvent(kind: isNoteOn ? .noteOn : .noteOff, pitch: pitch, velocity: isNoteOn ? velocity : 0, channel: channel)
-        append("\(source) \(isNoteOn ? "on " : "off")pitch=\(pitch) vel=\(isNoteOn ? velocity : 0) ch=\(channel)")
+        append("\(tracks[index].label) \(isNoteOn ? "on " : "off")pitch=\(pitch) vel=\(isNoteOn ? velocity : 0) ch=\(channel)")
+
+        let recognizer = recognizers[track] ?? RecognitionEngine()
+        recognizers[track] = recognizer
         if isNoteOn {
             recognizer.noteOn(pitch: pitch)
-            heldPitches.insert(pitch)
+            tracks[index].heldPitches.insert(pitch)
         } else {
             recognizer.noteOff(pitch: pitch)
-            heldPitches.remove(pitch)
+            tracks[index].heldPitches.remove(pitch)
         }
-        refreshRecognition()
+        refreshRecognition(for: track, recognizer: recognizer)
+
+        guard tracks[index].soundEnabled, let sampler = samplers[track] else { return }
+        if isNoteOn {
+            sampler.startNote(pitch: pitch, velocity: velocity, channel: channel)
+        } else {
+            sampler.stopNote(pitch: pitch, channel: channel)
+        }
     }
 
-    /// Everything that happens per incoming MIDI event: logging, feeding the recognizer,
-    /// and (unless `listenOnly`) sounding the note. Extracted out of the `MIDIInputListener`
-    /// closure so it's directly callable from tests without needing real CoreMIDI input.
-    /// Runs on `liveInputQueue` (see its doc comment) so concurrent callers are serialized
-    /// regardless of which thread each one happens to call in on; `.sync`, not `.async`, so
-    /// existing callers that check state right after `pressKey`/`releaseKey` keep seeing it
-    /// updated by the time the call returns.
-    func handleIncomingMIDIEvent(_ event: MIDINoteEvent) {
+    /// Everything that happens per incoming MIDI event for one track: logging, feeding
+    /// that track's recognizer, and sounding it through that track's own sampler if its
+    /// sound is on. Extracted out of the `MIDIInputListener` closure so it's directly
+    /// callable from tests without needing real CoreMIDI input. Runs on `liveInputQueue`
+    /// (see its doc comment) so concurrent callers are serialized regardless of which
+    /// thread each one happens to call in on; `.sync`, not `.async`, so existing callers
+    /// that check state right after `pressKey`/`releaseKey` keep seeing it updated by the
+    /// time the call returns.
+    func handleIncomingMIDIEvent(_ event: MIDINoteEvent, track: TrackID) {
         liveInputQueue.sync {
-            updateRecognitionState(pitch: event.pitch, isNoteOn: event.kind == .noteOn, velocity: event.velocity, channel: event.channel, source: "MIDI")
-
-            guard !listenOnly else { return }
-            switch event.kind {
-            case .noteOn: player.startNote(pitch: event.pitch, velocity: event.velocity, channel: event.channel)
-            case .noteOff: player.stopNote(pitch: event.pitch, channel: event.channel)
-            }
+            updateRecognitionState(pitch: event.pitch, isNoteOn: event.kind == .noteOn, velocity: event.velocity, channel: event.channel, track: track)
         }
     }
 
-    public func stopListening() {
-        guard isListening else { return }
-        listener = nil
-        isListening = false
-        // Same queue as `handleIncomingMIDIEvent`: this touches the same `recognizer`/
-        // `heldPitches` state, so it needs the same protection against a still-pending
-        // `keyboard-source` release timer firing concurrently with this reset.
+    /// Turns a stream of "here are the pitches right now, or empty for silence" reports
+    /// into discrete note-on/note-off transitions: a note-off for every previously-held
+    /// pitch that dropped out, a note-on for every new one that appeared — the same shape
+    /// as how MIDI note-on/note-off events already drive `heldPitches`/the recognizer, so
+    /// several simultaneously-detected pitches naturally feed the same chord recognition
+    /// real MIDI chords already use. Runs on whichever thread `MicrophonePitchListener`
+    /// calls back on.
+    private func handleDetectedPitches(_ detected: [DetectedPitch], level: Float, track: TrackID) {
         liveInputQueue.sync {
-            recognizer.reset()
-            recognizedChord = nil
-            recognizedModes = []
-            heldPitches = []
-            append("Stopped listening to MIDI.")
-        }
-    }
-
-    /// Starts pitch detection from the default microphone (see
-    /// `MicrophonePitchListener`/`FFTPitchAnalyzer` for how, and their documented
-    /// limitations — heuristic multi-peak detection, not real chord transcription; can
-    /// occasionally lock onto a harmonic instead of a true fundamental). Deliberately never
-    /// sounds detected pitches through `player` — the microphone is already picking up a
-    /// real acoustic sound, and also sounding it through the app's own output would risk
-    /// audible feedback (the mic would then pick up the speaker too).
-    public func startMicrophoneListening() throws {
-        guard !isListeningToMicrophone else { return }
-        let newListener = MicrophonePitchListener { [weak self] detected, level in
-            self?.handleDetectedPitches(detected, level: level)
-        }
-        try newListener.start()
-        microphoneListener = newListener
-        isListeningToMicrophone = true
-        append("Listening to the microphone (FFT pitch detection, up to several simultaneous notes).")
-    }
-
-    public func stopMicrophoneListening() {
-        guard isListeningToMicrophone else { return }
-        microphoneListener?.stop()
-        microphoneListener = nil
-        isListeningToMicrophone = false
-        liveInputQueue.sync {
-            // Only release whatever notes the microphone itself contributed — not a full
-            // `recognizer.reset()` the way `stopListening()` does, since MIDI input could
-            // still be active at the same time and its held notes aren't this call's to clear.
-            for pitch in lastDetectedMIDIPitches {
-                updateRecognitionState(pitch: pitch, isNoteOn: false, velocity: 0, channel: 0, source: "Micro")
-            }
-            lastDetectedMIDIPitches = []
-            lastDetectedPitches = []
-            microphoneInputLevel = 0
-            append("Stopped listening to the microphone.")
-        }
-    }
-
-    /// Turns a stream of "here are the pitches right now, or empty for silence" reports into
-    /// discrete note-on/note-off transitions: a note-off for every previously-held pitch
-    /// that dropped out, a note-on for every new one that appeared — the same shape as how
-    /// MIDI note-on/note-off events already drive `heldPitches`/`recognizer`, so several
-    /// simultaneously-detected pitches naturally feed the same chord recognition real MIDI
-    /// chords already use. Runs on whichever thread `MicrophonePitchListener` calls back on.
-    private func handleDetectedPitches(_ detected: [DetectedPitch], level: Float) {
-        liveInputQueue.sync {
-            microphoneInputLevel = level
-            lastDetectedPitches = detected
+            guard let index = tracks.firstIndex(where: { $0.id == track }) else { return }
+            tracks[index].microphoneInputLevel = level
+            tracks[index].lastDetectedPitches = detected
             let newPitches = Set(detected.map(\.midiPitch))
-            for droppedPitch in lastDetectedMIDIPitches.subtracting(newPitches) {
-                updateRecognitionState(pitch: droppedPitch, isNoteOn: false, velocity: 0, channel: 0, source: "Micro")
+            let oldPitches = lastDetectedMIDIPitches[track] ?? []
+            for droppedPitch in oldPitches.subtracting(newPitches) {
+                updateRecognitionState(pitch: droppedPitch, isNoteOn: false, velocity: 0, channel: 0, track: track)
             }
-            for newPitch in newPitches.subtracting(lastDetectedMIDIPitches) {
-                updateRecognitionState(pitch: newPitch, isNoteOn: true, velocity: 100, channel: 0, source: "Micro")
+            for newPitch in newPitches.subtracting(oldPitches) {
+                updateRecognitionState(pitch: newPitch, isNoteOn: true, velocity: 100, channel: 0, track: track)
             }
-            lastDetectedMIDIPitches = newPitches
+            lastDetectedMIDIPitches[track] = newPitches
         }
     }
 
-    /// Re-runs chord/mode recognition and logs a line only when the result actually
-    /// changed, so holding a chord down doesn't spam the log on every repeated note.
-    private func refreshRecognition() {
+    /// Re-runs one track's chord/mode recognition and logs a line only when the result
+    /// actually changed, so holding a chord down doesn't spam the log on every repeated note.
+    private func refreshRecognition(for track: TrackID, recognizer: RecognitionEngine) {
+        guard let index = tracks.firstIndex(where: { $0.id == track }) else { return }
+        let label = tracks[index].label
+
         let chord = recognizer.recognizeChord()
-        if chord != recognizedChord {
-            recognizedChord = chord
-            append(chord.map { "Chord: \(Self.describe($0))" } ?? "Chord: (none)")
+        if chord != tracks[index].recognizedChord {
+            tracks[index].recognizedChord = chord
+            append("\(label) - Chord: \(chord.map(Self.describe) ?? "(none)")")
         }
 
         let modes = recognizer.recognizeModes()
-        if modes != recognizedModes {
-            recognizedModes = modes
+        if modes != tracks[index].recognizedModes {
+            tracks[index].recognizedModes = modes
             if !modes.isEmpty {
-                append("Mode candidates: " + modes.map(Self.describe).joined(separator: ", "))
+                append("\(label) - Mode candidates: " + modes.map(Self.describe).joined(separator: ", "))
             }
         }
     }

@@ -692,43 +692,51 @@ func testPlayTracksPlaybackStateSynchronouslyThenClearsItWhenFinished() {
     }
 }
 
-func testUseMIDISourceInvalidIndexThrows() {
+func testStartTrackOnAnUnlistedMIDIPortThrows() {
     let session = ImprovSession()
     checks += 1
     do {
-        try session.useMIDISource(atIndex: 999)
+        // Default fusion mode is `.merged`, so `.midiSource(0)` isn't one of `tracks` yet.
+        try session.startTrack(.midiSource(0))
         failures += 1
-        print("FAIL [use-midi-source invalid index throws]: did not throw")
-    } catch ImprovSession.SessionError.invalidMIDISourceIndex {
+        print("FAIL [start-track on unlisted MIDI port throws]: did not throw")
+    } catch ImprovSession.SessionError.unknownTrack {
         // expected
     } catch {
         failures += 1
-        print("FAIL [use-midi-source invalid index throws]: wrong error \(error)")
+        print("FAIL [start-track on unlisted MIDI port throws]: wrong error \(error)")
     }
 }
 
-func testDefaultMIDISourceSelectionIsNilMeaningAllSources() {
+func testDefaultMIDIFusionModeIsMergedWithASingleMIDITrack() {
     let session = ImprovSession()
-    checkNil(session.selectedMIDISourceIndex, "default MIDI source selection is nil")
+    check(session.midiFusionMode, MIDIFusionMode.merged, "default MIDI fusion mode is merged")
+    check(session.tracks.contains { $0.id == .midiMerged }, true, "merged mode lists a single midiMerged track")
+    check(session.tracks.contains { $0.id == .computerKeyboard }, true, "tracks always include the computer keyboard")
+    check(session.tracks.contains { $0.id == .microphone }, true, "tracks always include the microphone")
 }
 
-func testUseMIDISourceSelectsItAndUseAllMIDISourcesResetsIt() {
+func testSetMIDIFusionModeSwitchesTrackList() {
+    let session = ImprovSession()
+    session.setMIDIFusionMode(.individual)
+    check(session.midiFusionMode, MIDIFusionMode.individual, "setMIDIFusionMode updates midiFusionMode")
+    check(session.tracks.contains { $0.id == .midiMerged }, false, "individual mode drops the midiMerged track")
+    check(session.tracks.contains { $0.id == .computerKeyboard }, true, "individual mode still lists the computer keyboard")
+    check(session.tracks.contains { $0.id == .microphone }, true, "individual mode still lists the microphone")
+}
+
+func testMicrophoneTrackCannotHaveSound() {
+    let session = ImprovSession()
+    checks += 1
     do {
-        let session = ImprovSession()
-        let sources = session.availableMIDISources()
-        // No real MIDI source is guaranteed to be visible in every environment this runs
-        // in (CI, a fresh machine) — the selection *logic* under test doesn't need a real
-        // source, only a valid index into whatever list `availableMIDISources()` returns.
-        guard !sources.isEmpty else { return }
-
-        try session.useMIDISource(atIndex: sources.count - 1)
-        check(session.selectedMIDISourceIndex, sources.count - 1, "useMIDISource selects the index")
-
-        session.useAllMIDISources()
-        checkNil(session.selectedMIDISourceIndex, "useAllMIDISources resets the selection")
+        try session.setSoundEnabled(true, for: .microphone)
+        failures += 1
+        print("FAIL [microphone track cannot have sound]: did not throw")
+    } catch ImprovSession.SessionError.trackCannotHaveSound {
+        // expected
     } catch {
         failures += 1
-        print("FAIL [use-midi-source selects and resets]: threw \(error)")
+        print("FAIL [microphone track cannot have sound]: wrong error \(error)")
     }
 }
 
@@ -1137,9 +1145,10 @@ testMIDIEmptyBufferProducesNoEvents()
 testLoadDemoPieceSetsPieceAndLogsIt()
 testPlayWithoutAPieceLoadedThrows()
 testPlayTracksPlaybackStateSynchronouslyThenClearsItWhenFinished()
-testUseMIDISourceInvalidIndexThrows()
-testDefaultMIDISourceSelectionIsNilMeaningAllSources()
-testUseMIDISourceSelectsItAndUseAllMIDISourcesResetsIt()
+testStartTrackOnAnUnlistedMIDIPortThrows()
+testDefaultMIDIFusionModeIsMergedWithASingleMIDITrack()
+testSetMIDIFusionModeSwitchesTrackList()
+testMicrophoneTrackCannotHaveSound()
 testSaveThenLoadRoundTripsThePieceThroughJSON()
 testLoadingAMissingFileThrows()
 testListPieceFilesFindsJSONFilesAndIgnoresOthers()
@@ -1158,29 +1167,32 @@ testDecayMakesOldNotesStopCounting()
 testNoRecentActivityRecognizesNoModes()
 testResetClearsHeldNotesAndHistory()
 
-func testHandlingIncomingMIDIEventsDetectsChordWhileListenOnly() {
+func testHandlingIncomingMIDIEventsDetectsChordPerTrack() {
     checks += 1
     do {
         let session = ImprovSession()
-        try session.startListening(listenOnly: true)
+        // Sound stays off on this track, so this never touches the (unstarted) audio engine.
+        try session.startTrack(.midiMerged)
         for pitch in [60, 64, 67, 71] {
-            session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: pitch, velocity: 100, channel: 0))
+            session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: pitch, velocity: 100, channel: 0), track: .midiMerged)
         }
-        if session.recognizedChord?.root != PitchClass(0) || session.recognizedChord?.chordTemplateID != "Ma7" {
+        let recognizedChord = session.tracks.first { $0.id == .midiMerged }?.recognizedChord
+        if recognizedChord?.root != PitchClass(0) || recognizedChord?.chordTemplateID != "Ma7" {
             failures += 1
-            print("FAIL [session handles MIDI events, detects chord]: \(String(describing: session.recognizedChord))")
+            print("FAIL [session handles MIDI events, detects chord]: \(String(describing: recognizedChord))")
         }
-        session.stopListening()
-        if session.recognizedChord != nil {
+        session.stopTrack(.midiMerged)
+        let chordAfterStop = session.tracks.first { $0.id == .midiMerged }?.recognizedChord
+        if chordAfterStop != nil {
             failures += 1
-            print("FAIL [session clears chord on stopListening]: \(String(describing: session.recognizedChord))")
+            print("FAIL [session clears chord on stopTrack]: \(String(describing: chordAfterStop))")
         }
     } catch {
         failures += 1
         print("FAIL [session handles MIDI events, detects chord]: threw \(error)")
     }
 }
-testHandlingIncomingMIDIEventsDetectsChordWhileListenOnly()
+testHandlingIncomingMIDIEventsDetectsChordPerTrack()
 
 func testNewPieceStartsBlank() {
     let session = ImprovSession()

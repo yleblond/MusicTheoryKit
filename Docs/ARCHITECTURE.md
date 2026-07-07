@@ -1,7 +1,7 @@
 # Documentation technique — Music Improv Assistant
 
 Documentation du code généré dans ce package Swift. Reflète l'état du code à la fin de la
-session du 2026-07-06. Pour l'historique détaillé des décisions/itérations, voir la mémoire
+session du 2026-07-07. Pour l'historique détaillé des décisions/itérations, voir la mémoire
 `project_improv_app_roadmap.md`.
 
 ## Vue d'ensemble
@@ -39,7 +39,7 @@ AudioEngine     (lecture + micro/FFT)             MIDIEngine (CoreMIDI, sans dé
                           (ImprovSession — logique applicative)
                                            │
                                       ImprovCLI
-                           (REPL + écran "watch" + menus DOS)
+                           (REPL + écran "console" + menus DOS)
 ```
 
 `SanityChecks` (exécutable séparé) dépend de tout, pour pouvoir exécuter tous les cas de
@@ -119,6 +119,12 @@ Schéma `Codable` d'un morceau, indépendant de tout moteur audio.
   `AVAudioEngine.start()` réussirait silencieusement en ne recevant jamais que du silence.
   **macOS uniquement** : iOS/iPadOS demanderait en plus une configuration `AVAudioSession`
   (catégorie, permission) non implémentée ici.
+- **`SamplerUnit`** : la même paire `AVAudioEngine`/`AVAudioUnitSampler` que `PiecePlayer`
+  (mêmes `startNote`/`stopNote`/`loadSample`), mais sans notion de morceau pré-composé —
+  juste un instrument jouable en temps réel. `AppCore` en crée une instance par piste
+  d'entrée dont le son est activé (voir plus bas), ce qui permet à plusieurs pistes de
+  sonner en même temps avec des timbres réellement différents (chaque instance ouvre sa
+  propre connexion à la sortie audio par défaut).
 
 ## RecognitionEngine — reconnaissance d'accords et de modes
 
@@ -167,17 +173,36 @@ l'appeler et lire son état ; une future interface SwiftUI pourrait s'y brancher
 - **Lecture** : `play()` — calcule `renderedNotes()`/`harmonicTimeline()`, lance la lecture
   audio, et programme la mise à jour de l'état de présentation (`playbackHeldPitches`,
   `playbackCurrentChordIndex`) séparément du son.
-- **Entrée MIDI réelle** : `startListening(listenOnly:)`/`stopListening()`,
-  `useMIDISource(atIndex:)`/`useAllMIDISources()`.
-- **Entrée clavier/manuel** : `pressKey`/`releaseKey` — le point d'entrée partagé par les
-  commandes `press`/`release`, la « Source clavier » du CLI, et (plus tard) un clavier
-  tactile.
-- **Entrée microphone** : `startMicrophoneListening()`/`stopMicrophoneListening()`,
-  `handleDetectedPitches(_:level:)` — transforme un flux « ces hauteurs sonnent
-  actuellement » en transitions note-on/note-off discrètes (une extinction par hauteur
-  disparue, un allumage par hauteur apparue), exactement comme le ferait un vrai clavier
-  MIDI à plusieurs notes — c'est ce qui permet à la reconnaissance d'accords déjà existante
-  de fonctionner sans aucune modification pour le micro.
+- **Pistes d'entrée (`tracks`)** : chaque source d'entrée active — MIDI fusionné
+  (`.midiMerged`), un port MIDI précis (`.midiSource(index)`, en mode individuel), le
+  clavier de l'ordinateur (`.computerKeyboard`) ou le microphone (`.microphone`) — est une
+  `TrackInfo` indépendante dans `session.tracks: [TrackInfo]` (type défini dans
+  `AppCore/Track.swift`), avec son propre `heldPitches`/`recognizedChord`/`recognizedModes`,
+  son propre état de son (`soundEnabled`/`instrumentName`), et pour le micro son propre
+  `lastDetectedPitches`/`microphoneInputLevel`. `midiFusionMode` (`.merged`/`.individual`)
+  décide si le MIDI apparaît comme une seule piste ou une par port visible ;
+  `setMIDIFusionMode`/`refreshTracks()` reconstruisent la liste en préservant l'état de
+  chaque piste survivante par identité (`TrackID`).
+  - `startTrack(_:)`/`stopTrack(_:)` : démarre/arrête l'écoute d'une piste — connecte un
+    `MIDIInputListener` dédié pour une piste MIDI, démarre `MicrophonePitchListener` pour le
+    micro, ou se contente de marquer la piste « en écoute » pour le clavier (`pressKey`/
+    `releaseKey` pilotent déjà directement cette piste, sans étape de connexion matérielle).
+  - `setSoundEnabled(_:for:)`/`setInstrument(named:for:)` : active/désactive le son d'une
+    piste (jamais permis pour `.microphone`, voir §3 du guide utilisateur) et charge un
+    instrument sur son propre `SamplerUnit` — chaque piste sonnante a la sienne, donc
+    plusieurs pistes peuvent sonner en même temps avec des timbres différents.
+  - `pressKey`/`releaseKey` : le point d'entrée partagé par les commandes `press`/`release`,
+    la piste clavier du CLI, et (plus tard) un clavier tactile — paramètre `track:` par
+    défaut à `.computerKeyboard`.
+  - `handleIncomingMIDIEvent(_:track:)` : logique par événement MIDI (log, recognizer de la
+    piste, son via son `SamplerUnit` si activé) — extraite pour être appelable directement
+    depuis les tests sans CoreMIDI réel.
+  - `handleDetectedPitches(_:level:track:)` : transforme un flux « ces hauteurs sonnent
+    actuellement » (le micro) en transitions note-on/note-off discrètes (une extinction par
+    hauteur disparue, un allumage par hauteur apparue) sur la piste microphone, exactement
+    comme le ferait un vrai clavier MIDI à plusieurs notes — c'est ce qui permet à la
+    reconnaissance d'accords déjà existante de fonctionner sans aucune modification pour le
+    micro.
 - **Instruments** : `listSampleFiles`/`loadSample`.
 - **Composition IA** : `newPiece`, `setSourceText`, `listLLMConnections`/`useLLMConnection`,
   `composeFromText(generate:)` — le paramètre `generate` est injectable, ce qui permet de
@@ -187,15 +212,18 @@ l'appeler et lire son état ; une future interface SwiftUI pourrait s'y brancher
 
 `ImprovSession` peut être appelée depuis plusieurs threads différents en même temps
 (callback CoreMIDI, minuteries d'extinction du clavier ordinateur, callback du micro, boucle
-`watch`). Trois vrais bugs de concurrence (corruption mémoire, plantages) ont été trouvés et
+`console`). Trois vrais bugs de concurrence (corruption mémoire, plantages) ont été trouvés et
 corrigés au cours de cette session, toujours selon le même schéma :
 
 > **Règle** : toute mutation d'état partagé programmée sur une queue *concurrente*
 > (`DispatchQueue.global()`) doit en réalité s'exécuter sur une queue *série* dédiée.
 
 Deux queues série existent à cet effet :
-- `liveInputQueue` — sérialise `handleIncomingMIDIEvent`/`stopListening`/
-  `handleDetectedPitches` (tout ce qui touche `recognizer`/`heldPitches`).
+- `liveInputQueue` — sérialise `handleIncomingMIDIEvent`/`stopTrack`/`handleDetectedPitches`
+  (tout ce qui touche l'état d'une piste : son `recognizer`, son `heldPitches`, etc.), quelle
+  que soit la piste concernée — une seule queue partagée par toutes les pistes, pas une par
+  piste, donc deux pistes qui reçoivent un événement au même instant restent sérialisées
+  entre elles aussi.
 - `playbackStateQueue` — sérialise les mises à jour d'état pendant `play()`
   (`playbackHeldPitches`/`playbackCurrentChordIndex`/`isPlaying`).
 
@@ -207,7 +235,7 @@ détail des trois incidents.
 ## ImprovCLI — l'interface en ligne de commande
 
 - **`main.swift`** : boucle REPL classique + `executeCommand(_:_:)` (un unique
-  aiguillage de commandes, partagé par le REPL et les menus de `watch`) + l'écran `watch`
+  aiguillage de commandes, partagé par le REPL et les menus de `console`) + l'écran `console`
   (tableau de bord figé, redessiné en place).
 - **`Menu.swift`** : mode brut du terminal (`termios`), lecture de touche par touche,
   système de menus déroulants façon DOS (mnémoniques soulignés, navigation aux flèches,
@@ -225,13 +253,20 @@ détail des trois incidents.
   au retour à la ligne automatique du terminal — cause racine du scintillement observé.
 - **Ligne de marqueurs de mode toujours dessinée** (même vide) pour que la position du
   clavier ne bouge jamais selon qu'un mode est détecté ou non.
-- **« Source clavier »** : tape les touches du clavier physique comme un piano virtuel
-  (disposition identique à « Musical Typing » de GarageBand). Limite assumée : un terminal
-  ne reçoit jamais d'événement de relâchement de touche, donc chaque frappe déclenche une
-  note « pincée » avec extinction automatique après 300 ms plutôt qu'un vrai maintien.
-- **Boucle de repli anti-conflit** : quand « Source clavier » est active, les lettres ne
+- **Piste clavier** : `track clavier on` tape les touches du clavier physique comme un
+  piano virtuel (disposition identique à « Musical Typing » de GarageBand) — la variable
+  `computerKeyboardSourceActive` du CLI est mise à jour en même temps que l'état d'écoute de
+  cette piste par `executeCommand("track", ...)`, pas par une commande séparée. Limite
+  assumée : un terminal ne reçoit jamais d'événement de relâchement de touche, donc chaque
+  frappe déclenche une note « pincée » avec extinction automatique après 300 ms plutôt qu'un
+  vrai maintien.
+- **Boucle de repli anti-conflit** : quand la piste clavier écoute, les lettres ne
   déclenchent plus les raccourcis-menu (qui utilisent aussi des lettres) ; Échap redevient
   l'unique porte d'entrée vers le menu.
+- **Un clavier par piste en écoute** : `renderConsoleFrame()` boucle sur `session.tracks`
+  filtrées par `isListening` et dessine un bloc (nom, son/micro, accord, modes, clavier)
+  par piste active, au lieu d'un unique clavier partagé — `renderTrackKeyboard(_:)` isole le
+  rendu d'un clavier à partir de l'état d'une seule `TrackInfo`.
 
 ## SanityChecks — le filet de sécurité sans Xcode
 
@@ -239,7 +274,7 @@ Exécutable qui rejoue à la main chaque cas de test des vrais fichiers `XCTest`
 (`check`/`checkNil`), pour compenser l'absence d'Xcode. **Toujours mettre à jour ce fichier
 en même temps que tout nouveau test** — c'est le seul moyen de vérifier que le code
 fonctionne dans cet environnement. Se lance avec `swift run SanityChecks` depuis
-`MusicTheoryKit/`. Compteur de vérifications à la fin de cette session : **181 checks, 0 échec**,
+`MusicTheoryKit/`. Compteur de vérifications à la fin de cette session : **187 checks, 0 échec**,
 stable sur plusieurs exécutions répétées.
 
 ## Vérification/tests
@@ -257,7 +292,7 @@ swift run ImprovCLI         # lance l'application
   transcription d'accords. Fonctionne bien sur un accord clair ; peut se tromper sur des
   textures denses ou des timbres riches en harmoniques.
 - **Micro : macOS uniquement.** Portage iOS/iPadOS à faire (configuration `AVAudioSession`).
-- **« Source clavier » sans vrai maintien** : limite du terminal, pas du code.
+- **Piste clavier sans vrai maintien** : limite du terminal, pas du code.
 - **Pas de dépôt git** sur ce projet à ce jour.
 - **Aucune interface graphique** : tout passe par le CLI ; la couche `AppCore` est conçue
   pour qu'une interface SwiftUI puisse s'y brancher sans réécriture, mais cette étape n'a
