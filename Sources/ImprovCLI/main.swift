@@ -127,10 +127,10 @@ func pieceDetailLines() -> [String] {
     if piece.sections.isEmpty {
         lines.append(TextStyle.placeholder("(pas encore de section)"))
     }
-    for section in piece.sections {
+    for (sectionIndex, section) in piece.sections.enumerated() {
         let modeName = ScaleLibrary.byID(section.mode.scaleID)?.popularName ?? section.mode.scaleID
         lines.append("")
-        lines.append(TextStyle.heading("Section \(section.name)") + " (\(section.lengthInMeasures) mesures, \(PitchClass(section.mode.tonic).name()) \(modeName))")
+        lines.append(TextStyle.heading("Section \(sectionIndex + 1): \(section.name)") + " (\(section.lengthInMeasures) mesures, \(PitchClass(section.mode.tonic).name()) \(modeName))")
         let chordInstrumentText = section.chordInstrument.map { "'\($0)'" } ?? "par defaut"
         lines.append("  accords (instrument \(chordInstrumentText)):")
         for chordEvent in section.chordProgression.sorted(by: { $0.measure < $1.measure }) {
@@ -316,6 +316,25 @@ func printTracks() {
         }
         print(line)
     }
+}
+
+/// A numbered version of `printTracks`'s per-track lines, for menu actions that need the
+/// user to *pick* a track rather than just see its state — same "numero ou nom" convention as
+/// `sampleFiles`/`pieceFiles`/`llmConnections` pickers elsewhere, via `resolvedTrackIDText`.
+func printNumberedTracks() {
+    for (index, track) in session.tracks.enumerated() {
+        print("  \(index + 1). [\(trackIDText(track.id))] \(track.label)\(ownerSuffix(track))")
+    }
+}
+
+/// Resolves a "<n|id>" argument against `session.tracks` — a number picks by 1-based
+/// position (mirrors `resolvedSampleName`'s convention), anything else is passed through
+/// literally so a typed raw id ("midi:2", "remote:...") still works untouched.
+func resolvedTrackIDText(_ text: String) -> String {
+    if let index = Int(text), session.tracks.indices.contains(index - 1) {
+        return trackIDText(session.tracks[index - 1].id)
+    }
+    return text
 }
 
 func printStatus() {
@@ -1014,6 +1033,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             guard let folder = promptLine("Dossier de prompts (sous-dossiers Texte/Soundtrack crees si absents): "), !folder.isEmpty else { return }
             try executeCommand("prompts", [folder])
         },
+        MenuItem.separator,
         MenuItem(label: "Choisir une connexion LLM...") {
             guard !session.llmConnections.isEmpty else { print("Choisis d'abord un dossier de connexions LLM."); return }
             for (index, name) in session.llmConnections.enumerated() { print("  \(index + 1). \(name)") }
@@ -1035,33 +1055,34 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
     MenuCategory(mnemonic: "I", title: "Instruments", items: [
         MenuItem(label: "Lister les instruments") { try executeCommand("tracks", []) },
         MenuItem(label: "Activer un instrument...") {
-            try executeCommand("tracks", [])
-            guard let choice = promptLine("Activer quel instrument (ex: midi, midi:1, clavier, micro): "), !choice.isEmpty else { return }
-            try executeCommand("track", [choice, "on"])
+            printNumberedTracks()
+            guard let choice = promptLine("Activer quel instrument (numero ou id): "), !choice.isEmpty else { return }
+            try executeCommand("track", [resolvedTrackIDText(choice), "on"])
         },
         MenuItem(label: "Arreter un instrument...") {
-            try executeCommand("tracks", [])
-            guard let choice = promptLine("Arreter quel instrument: "), !choice.isEmpty else { return }
-            try executeCommand("track", [choice, "off"])
+            printNumberedTracks()
+            guard let choice = promptLine("Arreter quel instrument (numero ou id): "), !choice.isEmpty else { return }
+            try executeCommand("track", [resolvedTrackIDText(choice), "off"])
         },
         MenuItem.separator,
         MenuItem(label: "Activer le son d'un instrument...") {
-            try executeCommand("tracks", [])
-            guard let choice = promptLine("Activer le son de quel instrument: "), !choice.isEmpty else { return }
-            try executeCommand("track", [choice, "son", "on"])
+            printNumberedTracks()
+            guard let choice = promptLine("Activer le son de quel instrument (numero ou id): "), !choice.isEmpty else { return }
+            try executeCommand("track", [resolvedTrackIDText(choice), "son", "on"])
         },
         MenuItem(label: "Desactiver le son d'un instrument...") {
-            try executeCommand("tracks", [])
-            guard let choice = promptLine("Desactiver le son de quel instrument: "), !choice.isEmpty else { return }
-            try executeCommand("track", [choice, "son", "off"])
+            printNumberedTracks()
+            guard let choice = promptLine("Desactiver le son de quel instrument (numero ou id): "), !choice.isEmpty else { return }
+            try executeCommand("track", [resolvedTrackIDText(choice), "son", "off"])
         },
+        MenuItem.separator,
         MenuItem(label: "Choisir un son pour un instrument...") {
+            printNumberedTracks()
+            guard let trackChoice = promptLine("Pour quel instrument (numero ou id): "), !trackChoice.isEmpty else { return }
             guard !session.sampleFiles.isEmpty else { print("Choisis d'abord un dossier de sons (menu MusicLab)."); return }
-            try executeCommand("tracks", [])
             for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let trackChoice = promptLine("Pour quel instrument: "), !trackChoice.isEmpty else { return }
             guard let sampleChoice = promptLine("Quel son (numero ou nom): "), !sampleChoice.isEmpty else { return }
-            try executeCommand("track", [trackChoice, "instrument", sampleChoice])
+            try executeCommand("track", [resolvedTrackIDText(trackChoice), "instrument", sampleChoice])
         },
     ]),
     MenuCategory(mnemonic: "M", title: "Morceaux", items: [
