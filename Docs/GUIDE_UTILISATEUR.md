@@ -223,23 +223,30 @@ relancer **Composition > Composer à partir de la description**.
 IA, à composer à la main plus tard) — l'assistant "Décrire le morceau..." ne l'utilise pas,
 il compose directement.
 
+**Le prompt envoyé à l'IA n'est jamais chargé/remplacé en un bloc** — il est toujours
+recomposé à partir de trois éléments gérés séparément : la **phrase de cadrage**, les
+**données** (la description ci-dessus, ou l'enregistrement pour une soundtrack, voir §10), et
+les **indications de style**. Chacun se sauvegarde/recharge indépendamment ; seul le résultat
+final (le prompt complet) se consulte et s'exporte, jamais ne se recharge comme un tout — voir
+les trois sous-sections suivantes.
+
 ### Sauvegarder et recharger une description
 
 Une fois tapés, le titre/la description/les indications de style peuvent être sauvegardés
 comme un tout, pour les réutiliser plus tard sans tout retaper :
 
 ```
-compositions <dossier>         # pointe le dossier de descriptions (par defaut Composition/)
 save-description-as <nom>      # sauvegarde titre+description+indications actuels sous ce nom
 save-description               # resauvegarde sous le meme nom (une fois deja sauvegarde une fois)
 use-description <numero|nom>   # recharge une description sauvegardee (remplace titre/description/indications en cours)
 ```
 
 Menu **Composition > Charger une description.../Sauvegarder la description sous.../Sauvegarder
-la description** fait la même chose. Une description sauvegardée est un simple fichier `.json`
-(titre + texte + indications) — à ne pas confondre avec un prompt sauvegardé (§ suivant, qui
-contient en plus tout le schéma envoyé à l'IA) ni avec un morceau composé (`.json` aussi, mais
-dans le dossier `Pieces/`, structuré en mesures/accords).
+la description** fait la même chose. Sauvegardée dans le sous-dossier `composition
+Descriptive` du dossier de composition IA (voir plus bas) — un simple fichier `.json` (titre +
+texte + indications), à ne pas confondre avec un morceau composé (`.json` aussi, mais dans le
+dossier `Pieces/`, structuré en mesures/accords). Pas d'équivalent pour la soundtrack — c'est
+un enregistrement déjà sauvegardé en tant que tel (§10), pas un texte à décrire.
 
 Trois connexions d'exemple sont fournies dans `LLMConnections/` :
 - `ollama-local.json` — un serveur Ollama local, pas de clé.
@@ -252,56 +259,21 @@ d'environnement à définir avant de lancer l'application. La réponse du modèl
 validée avant d'être utilisée (gamme/accord invalide, note hors plage → rejetés avec un
 avertissement plutôt qu'acceptés tels quels).
 
-### Voir, sauvegarder et charger le prompt de composition
+### Modifier la phrase de cadrage
 
-Deux prompts distincts existent : un pour composer à partir d'un texte collé (`compose`), un
-pour composer à partir d'une soundtrack enregistrée (`compose-piece-from-soundtrack`, voir
-§10). Les deux sont visibles et modifiables :
-
-```
-show-text-prompt              # affiche le prompt exact qu'utiliserait 'compose' maintenant
-show-soundtrack-prompt        # idem pour 'compose-piece-from-soundtrack'
-
-prompts <dossier>              # pointe le dossier de prompts (sous-dossiers Texte/ et Soundtrack/, crees si absents ; par defaut Prompts/)
-save-text-prompt <nom>         # sauvegarde le prompt actuel (texte) sous ce nom
-save-soundtrack-prompt <nom>   # idem pour le prompt (soundtrack)
-use-text-prompt <numero|nom>   # charge un prompt sauvegarde — 'compose' l'utilisera tel quel, plutot que d'en reconstruire un
-use-soundtrack-prompt <numero|nom>
-reset-text-prompt              # revient au prompt reconstruit automatiquement (le comportement par defaut)
-reset-soundtrack-prompt
-```
-
-Un prompt chargé (`use-text-prompt`/`use-soundtrack-prompt`) est utilisé **verbatim** —
-`sourceText`/la soundtrack enregistrée ne sont alors plus lus du tout pour cette composition,
-tant qu'un `reset-...-prompt` n'a pas été fait. Utile pour ajuster soi-même la formulation
-envoyée à l'IA (ton, contraintes supplémentaires...) sans toucher au code.
-
-**Ce que contient le prompt par défaut** (celui que `show-text-prompt`/`show-soundtrack-prompt`
-affichent tant qu'aucun override n'est chargé) : une phrase de consigne, puis **le schéma JSON
-exact attendu en réponse** (titre/tempo/tonalité/accords/mélodie, avec la liste réelle des
-gammes/accords disponibles) — c'est ce schéma qui permet de valider la réponse de l'IA plutôt
-que de lui faire confiance ; enfin le texte collé (ou les événements de la soundtrack).
-
-**Attention en personnalisant le prompt complet** : un prompt chargé via `use-text-prompt`/
-`use-soundtrack-prompt` part **exactement comme sauvegardé** — le schéma JSON ci-dessus n'est
-**pas** rajouté automatiquement. Si on l'enlève en éditant, l'IA n'a plus de format précis à
-respecter et la réponse a beaucoup plus de chances d'échouer à la validation.
-
-### Modifier juste la phrase de consigne, sans risquer le schéma
-
-Pour changer le ton/la tâche demandée à l'IA sans jamais risquer de perdre le schéma JSON, la
-**phrase de consigne** (le tout premier paragraphe du prompt, avant le schéma) se gère à part,
-indépendamment du prompt complet :
+La **phrase de cadrage** (le tout premier paragraphe du prompt, avant le schéma JSON) se gère
+à part — l'éditer ne touche jamais au schéma ni aux données, donc pas de risque de casser la
+validation de la réponse :
 
 ```
-show-text-framing              # affiche la phrase de consigne active (texte)
+show-text-framing              # affiche la phrase de cadrage active (texte)
 show-soundtrack-framing        # idem pour la soundtrack
 
 set-text-framing                # colle une nouvelle phrase (terminer par une ligne vide)
 set-soundtrack-framing
 
-save-text-framing <nom>         # sauvegarde la phrase active, dans Prompts/Cadrage Composition Descriptive/
-save-soundtrack-framing <nom>   # dans Prompts/Cadrage Composition Soundtrack/
+save-text-framing <nom>         # sauvegarde la phrase active, dans Cadrage Composition Descriptive/
+save-soundtrack-framing <nom>   # dans Cadrage Composition Soundtrack/
 use-text-framing <numero|nom>   # recharge une phrase sauvegardee
 use-soundtrack-framing <numero|nom>
 reset-text-framing              # revient a la phrase par defaut
@@ -309,12 +281,59 @@ reset-soundtrack-framing
 ```
 
 Menu **Composition**/**Enregistrement > Voir/Modifier/Sauvegarder/Charger la phrase de
-cadrage.../Revenir à la phrase de cadrage par défaut** fait la même chose. Contrairement au
-prompt complet, cette phrase est toujours réinjectée dans le schéma JSON et le texte/la
-soundtrack au moment de composer — l'éditer ne peut donc jamais faire disparaître le schéma.
-C'est la façon recommandée de personnaliser le ton/la consigne envoyée à l'IA ; réserver
-`save-text-prompt`/`use-text-prompt` (le prompt complet) aux cas où on veut vraiment tout
-remplacer, schéma inclus.
+cadrage.../Revenir à la phrase de cadrage par défaut** fait la même chose.
+
+### Indications de style pour la soundtrack
+
+Composer à partir d'une soundtrack n'avait jusqu'ici pas de notion d'indications de style
+(contrairement au texte, qui les bundle dans sa description) — ajoutées comme leur propre
+élément sauvegardable/rechargeable, puisqu'une soundtrack n'a pas de "description" où les
+loger :
+
+```
+show-soundtrack-instructions            # affiche les indications actives
+set-soundtrack-instructions [texte]     # les change (vide efface)
+save-soundtrack-instructions <nom>      # sauvegarde, dans Indications Soundtracks/
+use-soundtrack-instructions <numero|nom>
+reset-soundtrack-instructions           # efface (aucune)
+```
+
+Menu **Enregistrement > Voir/Modifier/Sauvegarder/Charger les indications de style.../Revenir
+aux indications de style par défaut** fait la même chose.
+
+### Voir et exporter le prompt complet
+
+Le prompt complet — cadrage + schéma JSON + données + indications, tel qu'il serait réellement
+envoyé — se consulte à tout moment, et s'**exporte** pour référence/débogage (jamais rechargé :
+voir plus haut pourquoi) :
+
+```
+show-text-prompt               # affiche le prompt exact qu'utiliserait 'compose' maintenant
+show-soundtrack-prompt         # idem pour 'compose-piece-from-soundtrack'
+
+export-text-prompt <nom>       # ecrit le prompt courant dans Export/, sans effet sur la composition
+export-soundtrack-prompt <nom>
+```
+
+Menu **Composition**/**Enregistrement > Voir le prompt de composition.../Exporter le prompt de
+composition...** fait la même chose. **Ce que contient le prompt** : la phrase de cadrage,
+puis le schéma JSON exact attendu en réponse (titre/tempo/tonalité/accords/mélodie, avec la
+liste réelle des gammes/accords disponibles — c'est ce schéma qui permet de valider la réponse
+de l'IA plutôt que de lui faire confiance), puis les données (texte collé ou événements de la
+soundtrack) et les indications.
+
+### Le dossier de composition IA
+
+Tous ces éléments (phrases de cadrage, descriptions, indications soundtrack, exports) vivent
+sous un même dossier racine :
+
+```
+prompts <dossier>   # pointe le dossier de composition IA (par defaut "Composition IA/"), cree ses sous-dossiers si absents
+```
+
+Menu **MusicLab > Choisir dossier de composition IA...** fait la même chose. Sous-dossiers
+créés automatiquement : `Cadrage Composition Descriptive/`, `Cadrage Composition Soundtrack/`,
+`composition Descriptive/` (descriptions), `Indications Soundtracks/`, `Export/`.
 
 ## 7. Choisir un instrument
 
@@ -395,11 +414,11 @@ Menus disponibles :
 
 | Menu | Contenu |
 |---|---|
-| **MusicLab** | Menu principal (premier de la barre, s'ouvre par défaut), en 6 groupes : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/connexions LLM/prompts/**compositions**) ; (3) choisir une connexion LLM, isolée dans son propre groupe ; (4) mode MIDI fusionné/individuel ; (5) démarrer/arrêter la console web (voir §11) ; (6) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
+| **MusicLab** | Menu principal (premier de la barre, s'ouvre par défaut), en 6 groupes : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/connexions LLM/**composition IA**) ; (3) choisir une connexion LLM, isolée dans son propre groupe ; (4) mode MIDI fusionné/individuel ; (5) démarrer/arrêter la console web (voir §11) ; (6) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
 | **Instruments** | Lister les instruments, activer/arrêter un instrument, *séparateur*, activer/désactiver le son d'un instrument, *séparateur*, choisir un son pour un instrument. Les quatre actions qui demandent de choisir un instrument présentent la liste numérotée (voir §3) — répondre par le numéro évite d'avoir à retaper `midi:1`/`clavier`/etc. |
 | **Morceaux** | Quatre groupes, séparés par des traits : (1) écouter/voir le morceau ; (2) choisir le son par défaut de lecture, ou le son d'une piste/des accords d'une section (voir §7 — la structure affichée numérote les sections et les pistes, pour savoir directement quel numéro saisir) ; (3) charger la démo, charger un morceau, sauvegarder le morceau, sauvegarder le morceau sous ; (4) **Assistant IA** — pour l'instant un intitulé de sous-section réservé, sans action, en attente d'une future fonction de modification par dialogue (« plus vite », « moins vite »…) applicable à n'importe quel morceau. |
-| **Enregistrement** | Démarrer/arrêter un enregistrement, voir l'enregistrement, jouer l'enregistrement, *séparateur*, charger/sauvegarder l'enregistrement, *séparateur*, composer un morceau à partir de l'enregistrement en le nommant (voir §10), *séparateur*, voir/sauvegarder/charger/réinitialiser le prompt de composition, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage (voir §6). |
-| **Composition** | Décrire le morceau (assistant titre → description → indications → composition, voir §6), composer à partir de la description, voir la description, *séparateur*, charger une description/sauvegarder la description (sous...), *séparateur*, voir/sauvegarder/charger/réinitialiser le prompt de composition, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage. |
+| **Enregistrement** | Démarrer/arrêter un enregistrement, voir l'enregistrement, jouer l'enregistrement, *séparateur*, charger/sauvegarder l'enregistrement, *séparateur*, composer un morceau à partir de l'enregistrement en le nommant (voir §10), *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser les indications de style, *séparateur*, voir/exporter le prompt de composition (voir §6). |
+| **Composition** | Décrire le morceau (assistant titre → description → indications → composition, voir §6), composer à partir de la description, voir la description, *séparateur*, charger une description/sauvegarder la description (sous...), *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/exporter le prompt de composition. |
 | **Jam Session** | Démarrer/arrêter une jam session, rejoindre une jam session, trouver une jam session (découverte), quitter la jam session — session collaborative (voir §9). Les trois premiers items demandent le pseudo à afficher aux autres avant de continuer. |
 
 Les *séparateurs* sont de simples traits horizontaux dans le menu déroulant, pour grouper des
@@ -573,8 +592,12 @@ dans le dossier de morceaux (`<titre>-candidat-N.json` s'il y en a plusieurs) �
 ensuite avec `pieces`/`use-piece`/`show-piece` comme n'importe quel autre morceau. Le dernier
 candidat généré devient aussi le morceau courant. Le titre (dernier argument, plusieurs mots
 acceptés) remplace celui que l'IA aurait choisi — pour tous les candidats du même appel, s'il
-y en a plusieurs, seul le suffixe `-candidat-N` les distingue alors. Voir §6 pour visualiser/
-sauvegarder/charger le prompt utilisé (`show-soundtrack-prompt`, etc.).
+y en a plusieurs, seul le suffixe `-candidat-N` les distingue alors.
+
+Comme pour le texte, des **indications de style** facultatives peuvent orienter la
+composition (`set-soundtrack-instructions <texte>`, ou menu **Enregistrement > Modifier les
+indications de style...**) — voir §6 pour les détails (sauvegarde/rechargement, phrase de
+cadrage, export du prompt complet).
 
 **Pas encore possible** (prévu plus tard) : enregistrer une nouvelle soundtrack *pendant*
 qu'un `Piece` joue, et l'intégrer directement dans ce morceau.
@@ -666,27 +689,25 @@ title [texte]           titre du morceau a composer (vide efface)
 paste-text              colle la description du morceau (poème...), terminée par une ligne vide
 indications [texte]     indications de style additionnelles (vide efface)
 show-description        affiche le titre, la description et les indications en cours
-compositions <dossier>  liste les descriptions (.json) du dossier (par defaut Composition/)
 use-description <n|nom> charge une description sauvegardee (remplace titre/description/indications)
 save-description-as <nom>  sauvegarde titre+description+indications sous ce nom
 save-description        resauvegarde sous le meme nom
 llm-connections <dir>   liste les connexions LLM (.json) du dossier
 use-llm <n|nom>         choisit une connexion LLM
 compose [titre]         demande à l'IA de composer à partir de la description, nomme <titre> s'il est donné
-prompts <dossier>       pointe le dossier de prompts (sous-dossiers Texte/Soundtrack/Cadrage..., crees si absents)
-show-text-prompt        affiche le prompt de composition a partir du texte colle
-show-soundtrack-prompt  affiche le prompt de composition a partir de la soundtrack
-save-text-prompt <nom>  sauvegarde le prompt (texte) affiche par show-text-prompt
-save-soundtrack-prompt <nom>  idem pour le prompt (soundtrack)
-use-text-prompt <n|nom>       charge un prompt (texte) sauvegarde, utilise par le prochain 'compose'
-use-soundtrack-prompt <n|nom>  idem pour 'compose-piece-from-soundtrack'
-reset-text-prompt       revient au prompt (texte) par defaut
-reset-soundtrack-prompt revient au prompt (soundtrack) par defaut
+prompts <dossier>       pointe le dossier de composition IA (sous-dossiers crees si absents)
 show-text-framing / show-soundtrack-framing  affiche la phrase de cadrage active
 set-text-framing / set-soundtrack-framing     colle une nouvelle phrase de cadrage
 save-text-framing <nom> / save-soundtrack-framing <nom>  sauvegarde la phrase de cadrage active
 use-text-framing <n|nom> / use-soundtrack-framing <n|nom>  charge une phrase de cadrage sauvegardee
 reset-text-framing / reset-soundtrack-framing  revient a la phrase de cadrage par defaut
+show-soundtrack-instructions      affiche les indications de style actives (soundtrack)
+set-soundtrack-instructions [texte]  indications de style pour la soundtrack (vide efface)
+save-soundtrack-instructions <nom>   sauvegarde les indications de style actives
+use-soundtrack-instructions <n|nom>  charge des indications de style sauvegardees
+reset-soundtrack-instructions        efface les indications de style (aucune)
+show-text-prompt / show-soundtrack-prompt  affiche le prompt complet qui serait envoye maintenant
+export-text-prompt <nom> / export-soundtrack-prompt <nom>  exporte le prompt complet (jamais recharge)
 show-piece              affiche la structure du morceau courant
 status                  affiche l'état courant
 run                     écran fixe: activité musicale en direct (q pour revenir)

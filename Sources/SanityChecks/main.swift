@@ -1419,7 +1419,7 @@ func testCurrentSoundTrackCompositionPromptWithoutARecordingOrOverrideThrows() {
 }
 testCurrentSoundTrackCompositionPromptWithoutARecordingOrOverrideThrows()
 
-func testSetPromptsFolderCreatesAllFourSubfoldersAndListsFiles() {
+func testSetPromptsFolderCreatesAllFiveSubfoldersAndListsFiles() {
     do {
         let session = ImprovSession()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -1427,25 +1427,26 @@ func testSetPromptsFolderCreatesAllFourSubfoldersAndListsFiles() {
         try session.setPromptsFolder(root.path)
 
         var isDirectory: ObjCBool = false
-        for subfolder in ["Texte", "Soundtrack", "Cadrage Composition Descriptive", "Cadrage Composition Soundtrack"] {
+        for subfolder in ["Cadrage Composition Descriptive", "Cadrage Composition Soundtrack", "composition Descriptive", "Indications Soundtracks", "Export"] {
             checks += 1
             if !FileManager.default.fileExists(atPath: root.appendingPathComponent(subfolder).path, isDirectory: &isDirectory) || !isDirectory.boolValue {
                 failures += 1
                 print("FAIL [setPromptsFolder creates \(subfolder) subfolder]")
             }
         }
-        check(session.textPromptFiles, [], "setPromptsFolder starts with no text prompt files")
-        check(session.soundTrackPromptFiles, [], "setPromptsFolder starts with no soundtrack prompt files")
         check(session.textFramingFiles, [], "setPromptsFolder starts with no text framing files")
         check(session.soundTrackFramingFiles, [], "setPromptsFolder starts with no soundtrack framing files")
+        check(session.soundTrackInstructionsFiles, [], "setPromptsFolder starts with no soundtrack instructions files")
+        check(session.compositionFolder, root.appendingPathComponent("composition Descriptive").path, "setPromptsFolder derives compositionFolder")
+        check(session.compositionFiles, [], "setPromptsFolder starts with no composition description files")
     } catch {
         failures += 1
         print("FAIL [setPromptsFolder creates subfolders and lists files]: threw \(error)")
     }
 }
-testSetPromptsFolderCreatesAllFourSubfoldersAndListsFiles()
+testSetPromptsFolderCreatesAllFiveSubfoldersAndListsFiles()
 
-func testSaveAndUseTextCompositionPromptRoundTrips() {
+func testExportTextCompositionPromptWritesCurrentPromptToExportSubfolder() {
     do {
         let session = ImprovSession()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -1453,64 +1454,67 @@ func testSaveAndUseTextCompositionPromptRoundTrips() {
         try session.setPromptsFolder(root.path)
         session.setSourceText("a poem about the sea")
 
-        try session.saveTextCompositionPrompt(as: "my-prompt")
-        check(session.textPromptFiles, ["my-prompt.txt"], "saveTextCompositionPrompt adds the file to textPromptFiles")
-
-        session.setSourceText("a totally different poem")
-        checkNil(session.activeTextCompositionPrompt, "no override active before useTextCompositionPrompt")
-        try session.useTextCompositionPrompt(atIndex: 0)
+        try session.exportTextCompositionPrompt(as: "my-export")
+        let exported = try String(contentsOf: root.appendingPathComponent("Export/my-export.txt"), encoding: .utf8)
+        check(exported, try session.currentTextCompositionPrompt(), "exported file matches currentTextCompositionPrompt()")
         checks += 1
-        if !(session.activeTextCompositionPrompt?.contains("a poem about the sea") ?? false) {
+        if !exported.contains("a poem about the sea") {
             failures += 1
-            print("FAIL [useTextCompositionPrompt loads the saved prompt]: \(session.activeTextCompositionPrompt ?? "nil")")
-        }
-        checks += 1
-        if !(try session.currentTextCompositionPrompt()).contains("a poem about the sea") {
-            failures += 1
-            print("FAIL [currentTextCompositionPrompt prefers the active override over sourceText]")
-        }
-
-        session.resetTextCompositionPrompt()
-        checkNil(session.activeTextCompositionPrompt, "resetTextCompositionPrompt clears the override")
-        checks += 1
-        if !(try session.currentTextCompositionPrompt()).contains("a totally different poem") {
-            failures += 1
-            print("FAIL [currentTextCompositionPrompt rebuilds from sourceText after reset]")
+            print("FAIL [exportTextCompositionPrompt]: exported text missing source text")
         }
     } catch {
         failures += 1
-        print("FAIL [save and use text composition prompt round trips]: threw \(error)")
+        print("FAIL [exportTextCompositionPrompt writes to Export subfolder]: threw \(error)")
     }
 }
-testSaveAndUseTextCompositionPromptRoundTrips()
+testExportTextCompositionPromptWritesCurrentPromptToExportSubfolder()
 
-func testSaveAndUseSoundTrackCompositionPromptRoundTrips() {
+func testExportSoundTrackCompositionPromptWritesCurrentPromptToExportSubfolder() {
     do {
         let session = ImprovSession()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         try session.setPromptsFolder(root.path)
-        try session.startRecording(title: "ForPrompt")
+        try session.startRecording(title: "ForExport")
         session.pressKey(pitch: 60)
         session.releaseKey(pitch: 60)
         _ = try session.stopRecording()
 
-        try session.saveSoundTrackCompositionPrompt(as: "my-soundtrack-prompt")
-        check(session.soundTrackPromptFiles, ["my-soundtrack-prompt.txt"], "saveSoundTrackCompositionPrompt adds the file to soundTrackPromptFiles")
-
-        try session.useSoundTrackCompositionPrompt(named: "my-soundtrack-prompt.txt")
-        checkNotNil(session.activeSoundTrackCompositionPrompt, "useSoundTrackCompositionPrompt sets the active override")
-
-        session.resetSoundTrackCompositionPrompt()
-        checkNil(session.activeSoundTrackCompositionPrompt, "resetSoundTrackCompositionPrompt clears the override")
+        try session.exportSoundTrackCompositionPrompt(as: "my-soundtrack-export")
+        let exported = try String(contentsOf: root.appendingPathComponent("Export/my-soundtrack-export.txt"), encoding: .utf8)
+        check(exported, try session.currentSoundTrackCompositionPrompt(), "exported file matches currentSoundTrackCompositionPrompt()")
     } catch {
         failures += 1
-        print("FAIL [save and use soundtrack composition prompt round trips]: threw \(error)")
+        print("FAIL [exportSoundTrackCompositionPrompt writes to Export subfolder]: threw \(error)")
     }
 }
-testSaveAndUseSoundTrackCompositionPromptRoundTrips()
+testExportSoundTrackCompositionPromptWritesCurrentPromptToExportSubfolder()
 
-func testUseTextCompositionPromptWithInvalidIndexThrows() {
+func testSaveAndUseSoundTrackCompositionInstructionsRoundTrips() {
+    do {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        checkNil(session.currentSoundTrackCompositionInstructions(), "no instructions set initially")
+
+        session.setSoundTrackCompositionInstructions("romantique, mode mineur")
+        try session.saveSoundTrackCompositionInstructions(as: "my-instructions")
+        check(session.soundTrackInstructionsFiles, ["my-instructions.txt"], "saveSoundTrackCompositionInstructions adds the file")
+
+        session.resetSoundTrackCompositionInstructions()
+        checkNil(session.currentSoundTrackCompositionInstructions(), "reset clears instructions")
+
+        try session.useSoundTrackCompositionInstructions(atIndex: 0)
+        check(session.activeSoundTrackCompositionInstructions, "romantique, mode mineur", "useSoundTrackCompositionInstructions reloads the saved value")
+    } catch {
+        failures += 1
+        print("FAIL [save and use soundtrack composition instructions round trips]: threw \(error)")
+    }
+}
+testSaveAndUseSoundTrackCompositionInstructionsRoundTrips()
+
+func testSaveSoundTrackCompositionInstructionsWithoutAnySetThrows() {
     do {
         let session = ImprovSession()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -1518,21 +1522,66 @@ func testUseTextCompositionPromptWithInvalidIndexThrows() {
         try session.setPromptsFolder(root.path)
         checks += 1
         do {
-            try session.useTextCompositionPrompt(atIndex: 0)
+            try session.saveSoundTrackCompositionInstructions(as: "nothing-to-save")
             failures += 1
-            print("FAIL [useTextCompositionPrompt invalid index throws]: did not throw")
+            print("FAIL [saveSoundTrackCompositionInstructions without any set throws]: did not throw")
+        } catch ImprovSession.SessionError.noSoundTrackCompositionInstructions {
+            // expected
+        } catch {
+            failures += 1
+            print("FAIL [saveSoundTrackCompositionInstructions without any set throws]: wrong error \(error)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [save soundtrack composition instructions without any set]: threw \(error)")
+    }
+}
+testSaveSoundTrackCompositionInstructionsWithoutAnySetThrows()
+
+func testUseSoundTrackCompositionInstructionsWithInvalidIndexThrows() {
+    do {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        checks += 1
+        do {
+            try session.useSoundTrackCompositionInstructions(atIndex: 0)
+            failures += 1
+            print("FAIL [useSoundTrackCompositionInstructions invalid index throws]: did not throw")
         } catch let error as ImprovSession.SessionError {
-            if error != .invalidTextPromptIndex {
+            if error != .invalidSoundTrackInstructionsIndex {
                 failures += 1
-                print("FAIL [useTextCompositionPrompt invalid index throws]: wrong error \(error)")
+                print("FAIL [useSoundTrackCompositionInstructions invalid index throws]: wrong error \(error)")
             }
         }
     } catch {
         failures += 1
-        print("FAIL [use text composition prompt with invalid index]: threw \(error)")
+        print("FAIL [use soundtrack composition instructions with invalid index]: threw \(error)")
     }
 }
-testUseTextCompositionPromptWithInvalidIndexThrows()
+testUseSoundTrackCompositionInstructionsWithInvalidIndexThrows()
+
+func testCurrentSoundTrackCompositionPromptIncludesActiveInstructions() {
+    do {
+        let session = ImprovSession()
+        try session.startRecording(title: "ForInstructions")
+        session.pressKey(pitch: 60)
+        session.releaseKey(pitch: 60)
+        _ = try session.stopRecording()
+        session.setSoundTrackCompositionInstructions("romantique, mode mineur")
+        let prompt = try session.currentSoundTrackCompositionPrompt()
+        checks += 1
+        if !prompt.contains("romantique, mode mineur") {
+            failures += 1
+            print("FAIL [currentSoundTrackCompositionPrompt includes active instructions]")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [currentSoundTrackCompositionPrompt includes active instructions]: threw \(error)")
+    }
+}
+testCurrentSoundTrackCompositionPromptIncludesActiveInstructions()
 
 // Mirrors ImprovSessionTests.swift's framing-sentence tests.
 func testCurrentFramingSentenceDefaultsToTheBuiltInConstants() {
@@ -1762,44 +1811,6 @@ func testSaveCompositionDescriptionReSavesToTheSameFile() {
     }
 }
 testSaveCompositionDescriptionReSavesToTheSameFile()
-
-func testComposeFromTextUsesTheActiveOverridePromptVerbatim() {
-    do {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
-            .write(to: folder.appendingPathComponent("fake.json"))
-
-        let session = ImprovSession()
-        try session.listLLMConnections(in: folder.path)
-        try session.useLLMConnection(atIndex: 0)
-        try session.setPromptsFolder(folder.path)
-        session.setSourceText("ignored once a prompt override is active")
-        try session.saveTextCompositionPrompt(as: "custom")
-        session.setSourceText("also ignored")
-        try session.useTextCompositionPrompt(named: "custom.txt")
-
-        let fakeResponse = """
-        { "title": "Override", "tempoBPM": 90, "tonic": "D", "scaleID": "dorian",
-          "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
-            "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
-        """
-        try session.composeFromText { prompt, _ in
-            checks += 1
-            if !prompt.contains("ignored once a prompt override is active") || prompt.contains("also ignored") {
-                failures += 1
-                print("FAIL [composeFromText uses the active override prompt verbatim]: \(prompt)")
-            }
-            return fakeResponse
-        }
-        check(session.piece?.title, "Override", "composeFromText with an active override still composes correctly")
-    } catch {
-        failures += 1
-        print("FAIL [compose from text uses active override prompt]: threw \(error)")
-    }
-}
-testComposeFromTextUsesTheActiveOverridePromptVerbatim()
 
 func testSaveThenLoadRoundTripsThePieceThroughJSON() {
     let session = ImprovSession()

@@ -133,9 +133,12 @@ public enum LLMPieceComposer {
     /// framing of the request: "infer a tempo/key/chords that explain this real performance"
     /// instead of "invent one to match this poem's mood." Note names use the same C4=MIDI 60
     /// convention as `ImprovCLI`'s own `noteNameWithOctave`.
-    public static func buildPrompt(fromSoundTrack soundTrack: SoundTrack, framingSentence: String = defaultSoundTrackFramingSentence) -> String {
+    public static func buildPrompt(fromSoundTrack soundTrack: SoundTrack, framingSentence: String = defaultSoundTrackFramingSentence, additionalInstructions: String? = nil) -> String {
         let scaleIDs = ScaleLibrary.all.map(\.id).joined(separator: ", ")
         let chordIDs = ChordVocabulary.seed.map(\.id).joined(separator: ", ")
+        let instructionsBlock = additionalInstructions.map {
+            "\n\nAdditional style guidance from the user (follow it as long as it doesn't conflict with the schema above):\n\($0)"
+        } ?? ""
         let eventLines = soundTrack.events.map { event -> String in
             let pitchClass = ((event.pitch % 12) + 12) % 12
             let octave = event.pitch / 12 - 1
@@ -168,7 +171,7 @@ public enum LLMPieceComposer {
         "melody" is optional — omit it for a section with no separate melodic line.
 
         Recording (\(String(format: "%.1f", soundTrack.durationSeconds))s total, \(soundTrack.events.count) events):
-        \(eventLines)
+        \(eventLines)\(instructionsBlock)
         """
     }
 

@@ -30,9 +30,7 @@ try? session.listSampleFiles(in: projectRoot.appendingPathComponent("SoundFonts"
 try? session.listLLMConnections(in: projectRoot.appendingPathComponent("LLMConnections").path)
 try? FileManager.default.createDirectory(at: projectRoot.appendingPathComponent("SoundTracks"), withIntermediateDirectories: true)
 try? session.listSoundTrackFiles(in: projectRoot.appendingPathComponent("SoundTracks").path)
-try? session.setPromptsFolder(projectRoot.appendingPathComponent("Prompts").path) // creates Texte/Soundtrack/Cadrage... if absent
-try? FileManager.default.createDirectory(at: projectRoot.appendingPathComponent("Composition"), withIntermediateDirectories: true)
-try? session.listCompositionFiles(in: projectRoot.appendingPathComponent("Composition").path)
+try? session.setPromptsFolder(projectRoot.appendingPathComponent("Composition IA").path) // creates its fixed subfolders if absent
 
 func printHelp() {
     print("""
@@ -95,23 +93,22 @@ func printHelp() {
       llm-connections <dir>      liste les connexions LLM (.json) du dossier
       use-llm <n ou nom>         choisit une connexion LLM
       compose [titre]            demande a l'IA de composer a partir de la description, nomme <titre> s'il est donne
-      prompts <dossier>          pointe le dossier de prompts (sous-dossiers Texte/ et Soundtrack/, crees si absents)
-      show-text-prompt           affiche le prompt de composition a partir du texte colle
-      show-soundtrack-prompt     affiche le prompt de composition a partir de la soundtrack
-      save-text-prompt <nom>     sauvegarde le prompt (texte) affiche par show-text-prompt
-      save-soundtrack-prompt <nom>  idem pour le prompt (soundtrack)
-      use-text-prompt <n ou nom>     charge un prompt (texte) sauvegarde, utilise par le prochain 'compose'
-      use-soundtrack-prompt <n ou nom>  idem pour 'compose-piece-from-soundtrack'
-      reset-text-prompt / reset-soundtrack-prompt  revient au prompt par defaut (reconstruit a chaque fois)
+      prompts <dossier>          pointe le dossier de composition IA (sous-dossiers crees si absents), liste chacun
+      use-description <n|nom>   charge une description (remplace titre/texte/indications en cours)
+      save-description-as <nom> sauvegarde la description en cours sous un nouveau nom
+      save-description          resauvegarde la description en cours
       show-text-framing / show-soundtrack-framing  affiche la phrase de cadrage active (avant le schema JSON)
       set-text-framing / set-soundtrack-framing     colle une nouvelle phrase de cadrage, termine par une ligne vide
       save-text-framing <nom> / save-soundtrack-framing <nom>  sauvegarde la phrase de cadrage active
       use-text-framing <n|nom> / use-soundtrack-framing <n|nom>  charge une phrase de cadrage sauvegardee
       reset-text-framing / reset-soundtrack-framing  revient a la phrase de cadrage par defaut
-      compositions <dossier>     liste les descriptions (.json) du dossier (titre+texte+indications)
-      use-description <n|nom>   charge une description (remplace titre/texte/indications en cours)
-      save-description-as <nom> sauvegarde la description en cours sous un nouveau nom
-      save-description          resauvegarde la description en cours
+      show-soundtrack-instructions      affiche les indications de style actives (soundtrack)
+      set-soundtrack-instructions [texte]  indications de style pour la soundtrack (vide efface)
+      save-soundtrack-instructions <nom>   sauvegarde les indications de style actives
+      use-soundtrack-instructions <n|nom>  charge des indications de style sauvegardees
+      reset-soundtrack-instructions        efface les indications de style (aucune)
+      show-text-prompt / show-soundtrack-prompt  affiche le prompt complet qui serait envoye maintenant
+      export-text-prompt <nom> / export-soundtrack-prompt <nom>  exporte le prompt complet (jamais recharge)
 
     Session collaborative (reseau)
       pseudo [nom]               affiche/change le pseudo affiche aux autres participants (defaut "player")
@@ -868,11 +865,6 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         session.setCompositionTitle(args.isEmpty ? nil : args.joined(separator: " "))
     case "show-description":
         printCompositionDescription()
-    case "compositions":
-        guard let folder = args.first else { print("usage: compositions <dossier>"); break }
-        try session.listCompositionFiles(in: folder)
-        drainLog() // flush "Found N composition description file(s)..." before the numbered list
-        for (index, name) in session.compositionFiles.enumerated() { print("  \(index + 1). \(name)") }
     case "use-description":
         guard let arg = args.first else { print("usage: use-description <numero ou nom de fichier>"); break }
         if let index = Int(arg) {
@@ -904,39 +896,41 @@ func executeCommand(_ command: String, _ args: [String]) throws {
     case "prompts":
         guard let folder = args.first else { print("usage: prompts <dossier>"); break }
         try session.setPromptsFolder(folder)
-        drainLog() // flush "Dossier de prompts: ..." before the numbered lists
-        print("Texte:")
-        for (index, name) in session.textPromptFiles.enumerated() { print("  \(index + 1). \(name)") }
-        print("Soundtrack:")
-        for (index, name) in session.soundTrackPromptFiles.enumerated() { print("  \(index + 1). \(name)") }
+        drainLog() // flush "Dossier de composition IA: ..." before the numbered lists
+        print("Descriptions:")
+        for (index, name) in session.compositionFiles.enumerated() { print("  \(index + 1). \(name)") }
+        print("Indications soundtrack:")
+        for (index, name) in session.soundTrackInstructionsFiles.enumerated() { print("  \(index + 1). \(name)") }
+        print("Cadrage (texte):")
+        for (index, name) in session.textFramingFiles.enumerated() { print("  \(index + 1). \(name)") }
+        print("Cadrage (soundtrack):")
+        for (index, name) in session.soundTrackFramingFiles.enumerated() { print("  \(index + 1). \(name)") }
     case "show-text-prompt":
         print(try session.currentTextCompositionPrompt())
     case "show-soundtrack-prompt":
         print(try session.currentSoundTrackCompositionPrompt())
-    case "save-text-prompt":
-        guard let name = args.first else { print("usage: save-text-prompt <nom>"); break }
-        try session.saveTextCompositionPrompt(as: name)
-    case "save-soundtrack-prompt":
-        guard let name = args.first else { print("usage: save-soundtrack-prompt <nom>"); break }
-        try session.saveSoundTrackCompositionPrompt(as: name)
-    case "use-text-prompt":
-        guard let arg = args.first else { print("usage: use-text-prompt <numero ou nom de fichier>"); break }
+    case "export-text-prompt":
+        guard let name = args.first else { print("usage: export-text-prompt <nom>"); break }
+        try session.exportTextCompositionPrompt(as: name)
+    case "export-soundtrack-prompt":
+        guard let name = args.first else { print("usage: export-soundtrack-prompt <nom>"); break }
+        try session.exportSoundTrackCompositionPrompt(as: name)
+    case "show-soundtrack-instructions":
+        print(session.currentSoundTrackCompositionInstructions() ?? TextStyle.placeholder("(aucune)"))
+    case "set-soundtrack-instructions":
+        session.setSoundTrackCompositionInstructions(args.isEmpty ? nil : args.joined(separator: " "))
+    case "save-soundtrack-instructions":
+        guard let name = args.first else { print("usage: save-soundtrack-instructions <nom>"); break }
+        try session.saveSoundTrackCompositionInstructions(as: name)
+    case "use-soundtrack-instructions":
+        guard let arg = args.first else { print("usage: use-soundtrack-instructions <numero ou nom de fichier>"); break }
         if let index = Int(arg) {
-            try session.useTextCompositionPrompt(atIndex: index - 1)
+            try session.useSoundTrackCompositionInstructions(atIndex: index - 1)
         } else {
-            try session.useTextCompositionPrompt(named: arg)
+            try session.useSoundTrackCompositionInstructions(named: arg)
         }
-    case "use-soundtrack-prompt":
-        guard let arg = args.first else { print("usage: use-soundtrack-prompt <numero ou nom de fichier>"); break }
-        if let index = Int(arg) {
-            try session.useSoundTrackCompositionPrompt(atIndex: index - 1)
-        } else {
-            try session.useSoundTrackCompositionPrompt(named: arg)
-        }
-    case "reset-text-prompt":
-        session.resetTextCompositionPrompt()
-    case "reset-soundtrack-prompt":
-        session.resetSoundTrackCompositionPrompt()
+    case "reset-soundtrack-instructions":
+        session.resetSoundTrackCompositionInstructions()
     case "show-text-framing":
         print(session.currentTextFramingSentence())
     case "show-soundtrack-framing":
@@ -1095,13 +1089,9 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             guard let folder = promptLine("Dossier de connexions LLM: "), !folder.isEmpty else { return }
             try executeCommand("llm-connections", [folder])
         },
-        MenuItem(label: "Choisir dossier de prompts...") {
-            guard let folder = promptLine("Dossier de prompts (sous-dossiers Texte/Soundtrack crees si absents): "), !folder.isEmpty else { return }
+        MenuItem(label: "Choisir dossier de composition IA...") {
+            guard let folder = promptLine("Dossier de composition IA (sous-dossiers crees si absents): "), !folder.isEmpty else { return }
             try executeCommand("prompts", [folder])
-        },
-        MenuItem(label: "Choisir dossier de compositions...") {
-            guard let folder = promptLine("Dossier de descriptions de composition: "), !folder.isEmpty else { return }
-            try executeCommand("compositions", [folder])
         },
         MenuItem.separator,
         MenuItem(label: "Choisir une connexion LLM...") {
@@ -1228,19 +1218,6 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             try executeCommand("compose-piece-from-soundtrack", cmdArgs)
         },
         MenuItem.separator,
-        MenuItem(label: "Voir le prompt de composition...") { try executeCommand("show-soundtrack-prompt", []) },
-        MenuItem(label: "Sauvegarder le prompt de composition...") {
-            guard let name = promptLine("Nom de sauvegarde du prompt: "), !name.isEmpty else { return }
-            try executeCommand("save-soundtrack-prompt", [name])
-        },
-        MenuItem(label: "Charger un prompt de composition...") {
-            guard !session.soundTrackPromptFiles.isEmpty else { print("Choisis d'abord un dossier de prompts (menu MusicLab)."); return }
-            for (index, name) in session.soundTrackPromptFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let choice = promptLine("Charger quel prompt (numero ou nom): "), !choice.isEmpty else { return }
-            try executeCommand("use-soundtrack-prompt", [choice])
-        },
-        MenuItem(label: "Revenir au prompt de composition par defaut") { try executeCommand("reset-soundtrack-prompt", []) },
-        MenuItem.separator,
         MenuItem(label: "Voir la phrase de cadrage...") { try executeCommand("show-soundtrack-framing", []) },
         MenuItem(label: "Modifier la phrase de cadrage...") { try executeCommand("set-soundtrack-framing", []) },
         MenuItem(label: "Sauvegarder la phrase de cadrage...") {
@@ -1248,12 +1225,35 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             try executeCommand("save-soundtrack-framing", [name])
         },
         MenuItem(label: "Charger une phrase de cadrage...") {
-            guard !session.soundTrackFramingFiles.isEmpty else { print("Choisis d'abord un dossier de prompts (menu MusicLab)."); return }
+            guard !session.soundTrackFramingFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu MusicLab)."); return }
             for (index, name) in session.soundTrackFramingFiles.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Charger quelle phrase de cadrage (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-soundtrack-framing", [choice])
         },
         MenuItem(label: "Revenir a la phrase de cadrage par defaut") { try executeCommand("reset-soundtrack-framing", []) },
+        MenuItem.separator,
+        MenuItem(label: "Voir les indications de style...") { try executeCommand("show-soundtrack-instructions", []) },
+        MenuItem(label: "Modifier les indications de style...") {
+            let text = promptLine("Indications de style, optionnel (ex: romantique, mode mineur — vide pour aucune): ") ?? ""
+            try executeCommand("set-soundtrack-instructions", text.isEmpty ? [] : [text])
+        },
+        MenuItem(label: "Sauvegarder les indications de style...") {
+            guard let name = promptLine("Nom de sauvegarde des indications: "), !name.isEmpty else { return }
+            try executeCommand("save-soundtrack-instructions", [name])
+        },
+        MenuItem(label: "Charger des indications de style...") {
+            guard !session.soundTrackInstructionsFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu MusicLab)."); return }
+            for (index, name) in session.soundTrackInstructionsFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard let choice = promptLine("Charger quelles indications (numero ou nom): "), !choice.isEmpty else { return }
+            try executeCommand("use-soundtrack-instructions", [choice])
+        },
+        MenuItem(label: "Revenir aux indications de style par defaut (aucune)") { try executeCommand("reset-soundtrack-instructions", []) },
+        MenuItem.separator,
+        MenuItem(label: "Voir le prompt de composition...") { try executeCommand("show-soundtrack-prompt", []) },
+        MenuItem(label: "Exporter le prompt de composition...") {
+            guard let name = promptLine("Nom d'export du prompt: "), !name.isEmpty else { return }
+            try executeCommand("export-soundtrack-prompt", [name])
+        },
     ]),
     MenuCategory(mnemonic: "C", title: "Composition", items: [
         MenuItem(label: "Decrire le morceau...") {
@@ -1271,7 +1271,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         MenuItem(label: "Voir la description") { try executeCommand("show-description", []) },
         MenuItem.separator,
         MenuItem(label: "Charger une description...") {
-            guard !session.compositionFiles.isEmpty else { print("Choisis d'abord un dossier de compositions (menu MusicLab)."); return }
+            guard !session.compositionFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu MusicLab)."); return }
             for (index, name) in session.compositionFiles.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Charger quelle description (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-description", [choice])
@@ -1282,19 +1282,6 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         },
         MenuItem(label: "Sauvegarder la description") { try executeCommand("save-description", []) },
         MenuItem.separator,
-        MenuItem(label: "Voir le prompt de composition...") { try executeCommand("show-text-prompt", []) },
-        MenuItem(label: "Sauvegarder le prompt de composition...") {
-            guard let name = promptLine("Nom de sauvegarde du prompt: "), !name.isEmpty else { return }
-            try executeCommand("save-text-prompt", [name])
-        },
-        MenuItem(label: "Charger un prompt de composition...") {
-            guard !session.textPromptFiles.isEmpty else { print("Choisis d'abord un dossier de prompts (menu MusicLab)."); return }
-            for (index, name) in session.textPromptFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let choice = promptLine("Charger quel prompt (numero ou nom): "), !choice.isEmpty else { return }
-            try executeCommand("use-text-prompt", [choice])
-        },
-        MenuItem(label: "Revenir au prompt de composition par defaut") { try executeCommand("reset-text-prompt", []) },
-        MenuItem.separator,
         MenuItem(label: "Voir la phrase de cadrage...") { try executeCommand("show-text-framing", []) },
         MenuItem(label: "Modifier la phrase de cadrage...") { try executeCommand("set-text-framing", []) },
         MenuItem(label: "Sauvegarder la phrase de cadrage...") {
@@ -1302,12 +1289,18 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             try executeCommand("save-text-framing", [name])
         },
         MenuItem(label: "Charger une phrase de cadrage...") {
-            guard !session.textFramingFiles.isEmpty else { print("Choisis d'abord un dossier de prompts (menu MusicLab)."); return }
+            guard !session.textFramingFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu MusicLab)."); return }
             for (index, name) in session.textFramingFiles.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Charger quelle phrase de cadrage (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-text-framing", [choice])
         },
         MenuItem(label: "Revenir a la phrase de cadrage par defaut") { try executeCommand("reset-text-framing", []) },
+        MenuItem.separator,
+        MenuItem(label: "Voir le prompt de composition...") { try executeCommand("show-text-prompt", []) },
+        MenuItem(label: "Exporter le prompt de composition...") {
+            guard let name = promptLine("Nom d'export du prompt: "), !name.isEmpty else { return }
+            try executeCommand("export-text-prompt", [name])
+        },
     ]),
     MenuCategory(mnemonic: "J", title: "Jam Session", items: [
         MenuItem(label: "Demarrer une jam session...") {

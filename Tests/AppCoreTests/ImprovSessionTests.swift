@@ -666,7 +666,7 @@ final class ImprovSessionTests: XCTestCase {
         }
     }
 
-    func testSetPromptsFolderCreatesAllFourSubfoldersAndListsFiles() throws {
+    func testSetPromptsFolderCreatesAllFiveSubfoldersAndListsFiles() throws {
         let session = ImprovSession()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -674,66 +674,94 @@ final class ImprovSessionTests: XCTestCase {
         try session.setPromptsFolder(root.path)
 
         var isDirectory: ObjCBool = false
-        for subfolder in ["Texte", "Soundtrack", "Cadrage Composition Descriptive", "Cadrage Composition Soundtrack"] {
+        for subfolder in ["Cadrage Composition Descriptive", "Cadrage Composition Soundtrack", "composition Descriptive", "Indications Soundtracks", "Export"] {
             XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(subfolder).path, isDirectory: &isDirectory))
             XCTAssertTrue(isDirectory.boolValue)
         }
-        XCTAssertEqual(session.textPromptFiles, [])
-        XCTAssertEqual(session.soundTrackPromptFiles, [])
         XCTAssertEqual(session.textFramingFiles, [])
         XCTAssertEqual(session.soundTrackFramingFiles, [])
+        XCTAssertEqual(session.soundTrackInstructionsFiles, [])
+        // compositionFolder/compositionFiles are now derived from setPromptsFolder — no
+        // separate listCompositionFiles(in:) call needed.
+        XCTAssertEqual(session.compositionFolder, root.appendingPathComponent("composition Descriptive").path)
+        XCTAssertEqual(session.compositionFiles, [])
     }
 
-    func testSaveAndUseTextCompositionPromptRoundTrips() throws {
+    func testExportTextCompositionPromptWritesCurrentPromptToExportSubfolder() throws {
         let session = ImprovSession()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         try session.setPromptsFolder(root.path)
         session.setSourceText("a poem about the sea")
 
-        try session.saveTextCompositionPrompt(as: "my-prompt")
-        XCTAssertEqual(session.textPromptFiles, ["my-prompt.txt"])
-
-        session.setSourceText("a totally different poem")
-        XCTAssertNil(session.activeTextCompositionPrompt)
-        try session.useTextCompositionPrompt(atIndex: 0)
-        XCTAssertTrue(session.activeTextCompositionPrompt?.contains("a poem about the sea") ?? false)
-        // The active override, not the (now different) sourceText, is what gets used.
-        XCTAssertTrue((try session.currentTextCompositionPrompt()).contains("a poem about the sea"))
-
-        session.resetTextCompositionPrompt()
-        XCTAssertNil(session.activeTextCompositionPrompt)
-        XCTAssertTrue((try session.currentTextCompositionPrompt()).contains("a totally different poem"))
+        try session.exportTextCompositionPrompt(as: "my-export")
+        let exported = try String(contentsOf: root.appendingPathComponent("Export/my-export.txt"), encoding: .utf8)
+        XCTAssertEqual(exported, try session.currentTextCompositionPrompt())
+        XCTAssertTrue(exported.contains("a poem about the sea"))
     }
 
-    func testSaveAndUseSoundTrackCompositionPromptRoundTrips() throws {
+    func testExportSoundTrackCompositionPromptWritesCurrentPromptToExportSubfolder() throws {
         let session = ImprovSession()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         try session.setPromptsFolder(root.path)
-        try session.startRecording(title: "ForPrompt")
+        try session.startRecording(title: "ForExport")
         session.pressKey(pitch: 60)
         session.releaseKey(pitch: 60)
         _ = try session.stopRecording()
 
-        try session.saveSoundTrackCompositionPrompt(as: "my-soundtrack-prompt")
-        XCTAssertEqual(session.soundTrackPromptFiles, ["my-soundtrack-prompt.txt"])
-
-        try session.useSoundTrackCompositionPrompt(named: "my-soundtrack-prompt.txt")
-        XCTAssertNotNil(session.activeSoundTrackCompositionPrompt)
-
-        session.resetSoundTrackCompositionPrompt()
-        XCTAssertNil(session.activeSoundTrackCompositionPrompt)
+        try session.exportSoundTrackCompositionPrompt(as: "my-soundtrack-export")
+        let exported = try String(contentsOf: root.appendingPathComponent("Export/my-soundtrack-export.txt"), encoding: .utf8)
+        XCTAssertEqual(exported, try session.currentSoundTrackCompositionPrompt())
     }
 
-    func testUseTextCompositionPromptWithInvalidIndexThrows() throws {
+    func testSaveAndUseSoundTrackCompositionInstructionsRoundTrips() throws {
         let session = ImprovSession()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         try session.setPromptsFolder(root.path)
-        XCTAssertThrowsError(try session.useTextCompositionPrompt(atIndex: 0)) { error in
-            XCTAssertEqual(error as? ImprovSession.SessionError, .invalidTextPromptIndex)
+        XCTAssertNil(session.currentSoundTrackCompositionInstructions())
+
+        session.setSoundTrackCompositionInstructions("romantique, mode mineur")
+        try session.saveSoundTrackCompositionInstructions(as: "my-instructions")
+        XCTAssertEqual(session.soundTrackInstructionsFiles, ["my-instructions.txt"])
+
+        session.resetSoundTrackCompositionInstructions()
+        XCTAssertNil(session.currentSoundTrackCompositionInstructions())
+
+        try session.useSoundTrackCompositionInstructions(atIndex: 0)
+        XCTAssertEqual(session.activeSoundTrackCompositionInstructions, "romantique, mode mineur")
+    }
+
+    func testSaveSoundTrackCompositionInstructionsWithoutAnySetThrows() throws {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        XCTAssertThrowsError(try session.saveSoundTrackCompositionInstructions(as: "nothing-to-save")) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .noSoundTrackCompositionInstructions)
         }
+    }
+
+    func testUseSoundTrackCompositionInstructionsWithInvalidIndexThrows() throws {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        XCTAssertThrowsError(try session.useSoundTrackCompositionInstructions(atIndex: 0)) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .invalidSoundTrackInstructionsIndex)
+        }
+    }
+
+    func testCurrentSoundTrackCompositionPromptIncludesActiveInstructions() throws {
+        let session = ImprovSession()
+        try session.startRecording(title: "ForInstructions")
+        session.pressKey(pitch: 60)
+        session.releaseKey(pitch: 60)
+        _ = try session.stopRecording()
+        session.setSoundTrackCompositionInstructions("romantique, mode mineur")
+        let prompt = try session.currentSoundTrackCompositionPrompt()
+        XCTAssertTrue(prompt.contains("romantique, mode mineur"))
     }
 
     // MARK: - Framing sentence (the part of the prompt before the JSON schema)
@@ -874,35 +902,6 @@ final class ImprovSessionTests: XCTestCase {
         let reloaded = ImprovSession()
         try reloaded.loadCompositionDescription(fromJSONFile: folder.appendingPathComponent("iterate.json").path)
         XCTAssertEqual(reloaded.sourceText, "second version")
-    }
-
-    func testComposeFromTextUsesTheActiveOverridePromptVerbatim() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
-            .write(to: folder.appendingPathComponent("fake.json"))
-
-        let session = ImprovSession()
-        try session.listLLMConnections(in: folder.path)
-        try session.useLLMConnection(atIndex: 0)
-        try session.setPromptsFolder(folder.path)
-        session.setSourceText("ignored once a prompt override is active")
-        try session.saveTextCompositionPrompt(as: "custom")
-        session.setSourceText("also ignored")
-        try session.useTextCompositionPrompt(named: "custom.txt")
-
-        let fakeResponse = """
-        { "title": "Override", "tempoBPM": 90, "tonic": "D", "scaleID": "dorian",
-          "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
-            "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
-        """
-        try session.composeFromText { prompt, _ in
-            XCTAssertTrue(prompt.contains("ignored once a prompt override is active"))
-            XCTAssertFalse(prompt.contains("also ignored"))
-            return fakeResponse
-        }
-        XCTAssertEqual(session.piece?.title, "Override")
     }
 
     // Port 18391 is arbitrary, chosen only to avoid colliding with the collaborative-session

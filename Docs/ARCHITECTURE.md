@@ -223,46 +223,48 @@ leur origine — MIDI réel, clavier ordinateur, ou micro, voir `AppCore`) :
     de la validation) — reformule juste la demande : au lieu de « invente un morceau qui colle
     à l'ambiance de ce texte », c'est « déduis un tempo/tonalité/accords qui expliquent
     raisonnablement cette performance réelle », avec le flux d'événements
-    (`t=0.45s ON C4 (piste: clavier)`...) inséré tel quel dans le prompt. Voir §AppCore pour
-    qui appelle ça et ce qui se passe ensuite.
-  - **Le prompt par défaut, dans les deux cas, a trois parties** (voir le corps de
+    (`t=0.45s ON C4 (piste: clavier)`...) inséré tel quel dans le prompt, et le même paramètre
+    `additionalInstructions:` que la variante texte (ajouté après coup — la soundtrack n'avait
+    au départ aucune notion d'indications de style). Voir §AppCore pour qui appelle ça et ce
+    qui se passe ensuite.
+  - **Le prompt, dans les deux cas, a trois parties, toujours recomposées séparément — jamais
+    chargé/remplacé comme un seul bloc** (voir le corps de
     `buildPrompt(sourceText:framingSentence:additionalInstructions:)`/
-    `buildPrompt(fromSoundTrack:framingSentence:)` pour le texte exact) :
+    `buildPrompt(fromSoundTrack:framingSentence:additionalInstructions:)` pour le texte exact) :
     1. **La phrase de cadrage** — `defaultTextFramingSentence`/`defaultSoundTrackFramingSentence`,
-       deux constantes publiques nommées (extraites du texte auparavant en dur dans
-       `buildPrompt`, sans changement de formulation) : *« You are a music composition
-       assistant... propose a short musical piece whose mode and chord progression express
-       its mood »* pour le texte, *« You are a music transcription assistant... Infer a
-       plausible tempo (BPM) and reconstruct this performance as a measure-based piece »*
-       pour la soundtrack. `buildPrompt` prend un paramètre `framingSentence:` (défaut = la
-       constante correspondante) — c'est ce qui permet à `ImprovSession` de le remplacer sans
-       toucher au reste du template (voir plus bas).
+       deux constantes publiques nommées : *« You are a music composition assistant...
+       propose a short musical piece whose mode and chord progression express its mood »*
+       pour le texte, *« You are a music transcription assistant... Infer a plausible tempo
+       (BPM) and reconstruct this performance as a measure-based piece »* pour la soundtrack.
+       `buildPrompt` prend un paramètre `framingSentence:` (défaut = la constante
+       correspondante) — c'est ce qui permet à `ImprovSession` de le remplacer sans toucher
+       au reste du template (voir §AppCore).
     2. **Le schéma JSON cible — identique, textuellement partagé, dans les deux cas** :
        `title`, `tempoBPM`, `tonic`, `scaleID` (restreint à `ScaleLibrary.all.map(\.id)`),
        `sections[]` avec `chords[]` (`root`/`templateID`, restreint à
        `ChordVocabulary.seed.map(\.id)`) et `melody[]` optionnel — c'est ce bloc que
        `parseAndValidate` s'attend à pouvoir décoder et valider ; un ID hors de cette liste
        littéralement énumérée dans le prompt n'a de toute façon aucune chance de survivre à
-       la validation.
-    3. Les données propres au cas : le `sourceText` collé (entre `"""`), plus un bloc
-       *« Additional style guidance... »* si `additionalCompositionInstructions` est défini
-       (texte) ; ou la liste brute des événements on/off horodatés (soundtrack).
-  - **Un prompt actif (`use[Text|SoundTrack]CompositionPrompt`) est envoyé à 100% verbatim —
-    le schéma JSON du point 2 n'est jamais rajouté derrière.**
-    `currentTextCompositionPrompt()`/`currentSoundTrackCompositionPrompt()` (§AppCore)
-    retournent l'override directement dès qu'il est actif, sans repasser par `buildPrompt` —
-    donc un prompt personnalisé qui a perdu le bloc de schéma n'obtient tout simplement plus
-    de réponse structurée que `parseAndValidate` puisse accepter (pas une erreur en soi,
-    `parseAndValidate` tourne toujours derrière, avec ou sans schéma dans ce qui a été
-    envoyé).
-  - **Personnaliser juste la phrase de cadrage (point 1), sans ce risque** :
-    `ImprovSession.currentTextFramingSentence()`/`currentSoundTrackFramingSentence()` (voir
-    §AppCore) passent leur résultat au paramètre `framingSentence:` de `buildPrompt` —
-    éditer/sauvegarder/recharger seulement cette phrase ne peut jamais faire disparaître le
-    schéma (point 2) ni les données (point 3), puisqu'elle est toujours réinjectée dans le
-    reste du template inchangé. C'est la voie recommandée pour ajuster le ton/la consigne
-    envoyée à l'IA ; `save-text-prompt`/`use-text-prompt` (le prompt complet, verbatim) reste
-    réservé aux cas où on veut vraiment tout remplacer, schéma inclus.
+       la validation. **Jamais exposé à un remplacement complet** (voir point suivant) —
+       c'est précisément ce que ça protège.
+    3. Les données + indications : le `sourceText` collé (entre `"""`), plus un bloc
+       *« Additional style guidance... »* si des indications de style sont définies ; ou la
+       liste brute des événements on/off horodatés (soundtrack) avec le même bloc de
+       guidance si des indications soundtrack sont définies (§AppCore,
+       `activeSoundTrackCompositionInstructions`).
+  - **Le prompt complet n'est jamais rechargé/remplacé comme un tout** — seulement consulté
+    (`show-text-prompt`/`show-soundtrack-prompt`) et **exporté** en lecture seule
+    (`exportTextCompositionPrompt(as:)`/`exportSoundTrackCompositionPrompt(as:)`, §AppCore) ;
+    éditer un fichier exporté n'a plus aucun effet sur la composition, précisément pour éviter
+    le risque qu'un ancien mécanisme de rechargement du prompt entier posait — perdre le
+    schéma (point 2) en éditant à la main. Pour personnaliser, deux leviers indépendants,
+    chacun protégeant les autres parties :
+    - **La phrase de cadrage** (point 1) — `ImprovSession.currentTextFramingSentence()`/
+      `currentSoundTrackFramingSentence()` passent leur résultat au paramètre
+      `framingSentence:` ; l'éditer ne peut jamais faire disparaître le schéma ni les données.
+    - **Les indications de style** (point 3) — `additionalCompositionInstructions` (texte,
+      déjà existant) et `activeSoundTrackCompositionInstructions` (soundtrack, nouveau — la
+      soundtrack n'avait jusqu'ici aucun moyen d'en fournir).
 
 ## NetEngine — transport réseau de la session collaborative
 
@@ -409,44 +411,68 @@ l'appeler et lire son état ; une future interface SwiftUI pourrait s'y brancher
 - **Composition IA** : `newPiece`, `setSourceText`, `listLLMConnections`/`useLLMConnection`,
   `composeFromText(generate:)` — le paramètre `generate` est injectable, ce qui permet de
   tester tout le pipeline (prompt → validation → assignation) sans réseau réel.
-  - **Prompts de composition — prévisualisables, sauvegardables, remplaçables** :
-    `currentTextCompositionPrompt()`/`currentSoundTrackCompositionPrompt()` renvoient
-    exactement le texte que `composeFromText()`/`composeSoundTrackToPieces()` enverraient
-    *maintenant* — `activeTextCompositionPrompt`/`activeSoundTrackCompositionPrompt` (chargés
-    via `useTextCompositionPrompt`/`useSoundTrackCompositionPrompt`) si un a été chargé,
-    sinon reconstruit à la volée depuis `sourceText`/`currentSoundTrack` via
-    `LLMPieceComposer.buildPrompt(...)`. `composeFromText`/`composeSoundTrackToPieces` ont
-    été récrites pour passer par ces deux méthodes plutôt que d'appeler `buildPrompt`
-    directement — un seul point de résolution, pas de double logique à garder synchronisée.
-  - `setPromptsFolder(_:)` crée (si absents) et pointe **quatre** sous-dossiers fixes sous une
+  - **Le prompt de composition est toujours recomposé à partir de trois éléments gérés
+    séparément — jamais chargé/remplacé comme un tout** (voir §LLMEngine pour le principe) :
+    `currentTextCompositionPrompt()`/`currentSoundTrackCompositionPrompt()` appellent
+    systématiquement `LLMPieceComposer.buildPrompt(...)` avec la phrase de cadrage active
+    (`current[Text|SoundTrack]FramingSentence()`) et les indications actives
+    (`additionalCompositionInstructions` / `activeSoundTrackCompositionInstructions`) —
+    aucun court-circuit par un « prompt complet chargé » (mécanisme retiré, voir plus bas).
+    `composeFromText`/`composeSoundTrackToPieces` passent par ces deux méthodes plutôt que
+    d'appeler `buildPrompt` directement — un seul point de résolution.
+  - `setPromptsFolder(_:)` crée (si absents) et pointe **cinq** sous-dossiers fixes sous une
     racine unique (auto-écoutée au démarrage comme `Pieces`/`SoundFonts`/`SoundTracks`, voir
-    plus bas) : `Texte`/`Soundtrack` (prompts complets, comme avant) et
-    `Cadrage Composition Descriptive`/`Cadrage Composition Soundtrack` (phrases de cadrage
-    seules — voir ci-dessous). `save[Text|SoundTrack]CompositionPrompt(as:)` y écrit le prompt
-    complet courant, `use[Text|SoundTrack]CompositionPrompt(named:/atIndex:)` le recharge
-    comme override, `reset[Text|SoundTrack]CompositionPrompt()` l'efface (retour au
-    comportement par défaut, reconstruit à chaque appel).
-  - **Phrase de cadrage — override plus étroit, sans risque pour le schéma** (voir
-    §LLMEngine pour le principe) : `activeTextFramingSentence`/`activeSoundTrackFramingSentence`
-    (`nil` = valeur par défaut, même convention que `additionalCompositionInstructions`).
-    `current[Text|SoundTrack]FramingSentence() -> String` ne lève jamais (contrairement à
-    `currentTextCompositionPrompt()` — il y a toujours une valeur, l'override ou la
-    constante par défaut de `LLMPieceComposer`). `set[Text|SoundTrack]FramingSentence(_:)`
-    fixe un nouvel override en mémoire (vide efface, retour au défaut) ;
-    `save[Text|SoundTrack]FramingSentence(as:)`/`use[Text|SoundTrack]FramingSentence(named:/atIndex:)`/
-    `reset[Text|SoundTrack]FramingSentence()` sont les miroirs exacts des méthodes déjà
-    existantes pour le prompt complet, juste sur les deux sous-dossiers `Cadrage...` plutôt
-    que `Texte`/`Soundtrack`. `currentTextCompositionPrompt()`/`currentSoundTrackCompositionPrompt()`
-    passent `current[Text|SoundTrack]FramingSentence()` au paramètre `framingSentence:` de
-    `buildPrompt` quand aucun prompt complet n'est actif — les deux mécanismes sont
-    indépendants (l'override du prompt complet, quand actif, ignore la phrase de cadrage,
-    puisqu'il court-circuite `buildPrompt` entièrement).
-  - **Descriptions de composition — sauvegarder/recharger titre+texte+indications** :
-    nouvelle struct `CompositionDescription` (`title: String?`, `sourceText: String`,
+    plus bas — le dossier racine s'appelle `Composition IA` par défaut, choisi par
+    l'utilisateur, aucun renommage des identifiants Swift internes) :
+    - `Cadrage Composition Descriptive`/`Cadrage Composition Soundtrack` — phrases de
+      cadrage (voir ci-dessous).
+    - `composition Descriptive` — descriptions complètes (titre+texte+indications, texte
+      uniquement) ; peuplé en appelant `listCompositionFiles(in:)` (méthode déjà existante,
+      inchangée) sur ce sous-dossier — `compositionFolder` n'est plus réglable
+      indépendamment, toujours dérivé de `promptsFolder`.
+    - `Indications Soundtracks` — indications de style sauvegardées (soundtrack, voir
+      plus bas).
+    - `Export` — prompts complets exportés (texte et soundtrack mélangés), jamais relus par
+      l'application.
+  - **Phrase de cadrage — override étroit, sans risque pour le schéma** :
+    `activeTextFramingSentence`/`activeSoundTrackFramingSentence` (`nil` = valeur par défaut,
+    même convention que `additionalCompositionInstructions`).
+    `current[Text|SoundTrack]FramingSentence() -> String` ne lève jamais — il y a toujours une
+    valeur, l'override ou la constante par défaut de `LLMPieceComposer`.
+    `set[Text|SoundTrack]FramingSentence(_:)` fixe un nouvel override en mémoire (vide efface,
+    retour au défaut) ; `save[Text|SoundTrack]FramingSentence(as:)`/
+    `use[Text|SoundTrack]FramingSentence(named:/atIndex:)`/`reset[Text|SoundTrack]FramingSentence()`
+    persistent/rechargent/effacent, sur les sous-dossiers `Cadrage...`.
+  - **Indications de style pour la soundtrack — nouveau, mêmes conventions que la phrase de
+    cadrage** : `activeSoundTrackCompositionInstructions: String?` (`nil` = aucune — pas de
+    valeur par défaut à substituer, contrairement à la phrase de cadrage),
+    `soundTrackInstructionsFiles: [String]`. `currentSoundTrackCompositionInstructions()`/
+    `setSoundTrackCompositionInstructions(_:)` (vide efface) ;
+    `saveSoundTrackCompositionInstructions(as:)` lève `noSoundTrackCompositionInstructions`
+    si rien n'est actif (rien de sensé à sauvegarder, contrairement à la phrase de cadrage qui
+    a toujours une valeur par défaut) ; `use/resetSoundTrackCompositionInstructions` complètent
+    le quatuor. Ajouté parce que la composition depuis une soundtrack n'avait jusqu'ici aucune
+    notion d'indications de style (contrairement au texte, qui les bundle dans sa description
+    — voir plus bas) ; une soundtrack n'a pas d'équivalent "description" où les loger, donc
+    son propre emplacement dédié.
+  - **Prompt complet — consultable et exportable, jamais rechargeable** :
+    `exportTextCompositionPrompt(as:)`/`exportSoundTrackCompositionPrompt(as:)` écrivent
+    `currentTextCompositionPrompt()`/`currentSoundTrackCompositionPrompt()` dans `Export/` —
+    aucun effet sur une composition future, contrairement à l'ancien mécanisme
+    `save/use/resetTextCompositionPrompt` (retiré entièrement, avec `activeTextCompositionPrompt`/
+    `activeSoundTrackCompositionPrompt`/`textPromptFiles`/`soundTrackPromptFiles`) : ce
+    mécanisme permettait de recharger un prompt complet comme override, avec le risque réel
+    d'y perdre le schéma JSON en l'éditant à la main — remplacé par les deux leviers plus
+    étroits ci-dessus (phrase de cadrage, indications), qui ne peuvent structurellement pas
+    casser le schéma puisqu'ils ne le touchent jamais.
+  - **Descriptions de composition — sauvegarder/recharger titre+texte+indications (texte
+    uniquement)** : struct `CompositionDescription` (`title: String?`, `sourceText: String`,
     `additionalInstructions: String?`, fichier dédié `AppCore/CompositionDescription.swift`)
-    et un nouveau dossier racine indépendant, `compositionFolder`/`compositionFiles`/
-    `currentCompositionFilePath` — mêmes conventions que `pieceFolder`/`pieceFiles`/
-    `currentPieceFilePath` (voir plus bas), appliquées à cette struct plutôt qu'à un `Piece`.
+    et `compositionFolder`/`compositionFiles`/`currentCompositionFilePath` — mêmes
+    conventions que `pieceFolder`/`pieceFiles`/`currentPieceFilePath` (voir plus bas),
+    appliquées à cette struct plutôt qu'à un `Piece`, mais dérivées de `setPromptsFolder`
+    plutôt que réglables indépendamment (voir plus haut — remplace l'ancien dossier racine
+    séparé `Composition/` d'une itération précédente).
     `listCompositionFiles(in:)`/`loadCompositionDescription(fromJSONFile:/named:/atIndex:)`/
     `saveCompositionDescription(toJSONFile:/as:/())` sont les miroirs exacts de
     `listPieceFiles`/`loadPiece(...)`/`savePiece(...)`, à une différence près :
@@ -639,11 +665,11 @@ Barre de menu façon interface DOS graphique, six catégories (`menuCategories`,
 
 | Menu (mnémonique) | Contenu |
 |---|---|
-| **MusicLab (L)** | Menu principal, ouvert par défaut. 6 groupes séparés par des traits : infos/aide ; choisir chacun des dossiers (morceaux/sons/soundtracks/connexions LLM/prompts/**compositions**) ; choisir une connexion LLM (isolée dans son propre groupe) ; mode MIDI fusionné/individuel ; démarrer/arrêter la console web (§WebConsole) ; quitter. Point d'entrée unique pour toute la configuration de session — aucun autre menu ne propose de choisir un dossier ou une connexion. |
+| **MusicLab (L)** | Menu principal, ouvert par défaut. 6 groupes séparés par des traits : infos/aide ; choisir chacun des dossiers (morceaux/sons/soundtracks/connexions LLM/**composition IA**) ; choisir une connexion LLM (isolée dans son propre groupe) ; mode MIDI fusionné/individuel ; démarrer/arrêter la console web (§WebConsole) ; quitter. Point d'entrée unique pour toute la configuration de session — aucun autre menu ne propose de choisir un dossier ou une connexion. |
 | **Instruments (I)** | Lister/activer/arrêter les pistes d'entrée, *séparateur*, activer/désactiver leur son, *séparateur*, choisir un son. Les quatre actions qui demandent une piste (`Activer/Arreter un instrument...`, `Activer/Desactiver le son...`) et la sélection d'instrument dans "Choisir un son..." présentent `session.tracks` numérotée (`printNumberedTracks()`) — le choix accepte un numéro ou l'id littéral (`resolvedTrackIDText(_:)`, même convention que `resolvedSampleName`). |
 | **Morceaux (M)** | 4 groupes : écouter/voir le morceau ; choisir le son de lecture, d'une piste, ou des accords d'une section (`pieceDetailLines()` numérote visuellement chaque section — `"Section 1: A"` — et chaque piste — `"piste 1 '...'"` — pour que l'utilisateur sache directement quel numéro saisir) ; charger la démo/un morceau, sauvegarder ; `MenuItem.header("Assistant IA")` — sous-section réservée, sans item pour l'instant, en attente d'une future fonction de modification par dialogue applicable à n'importe quel morceau. |
-| **Enregistrement (E)** | Démarrer/arrêter/voir/jouer un enregistrement, *séparateur*, charger/sauvegarder, *séparateur*, composer un morceau à partir de l'enregistrement, *séparateur*, voir/sauvegarder/charger/réinitialiser le prompt de composition, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage. |
-| **Composition (C)** | Décrire le morceau (assistant titre → description → indications → composition), composer à partir de la description, voir la description, *séparateur*, charger/sauvegarder(-sous) une description, *séparateur*, voir/sauvegarder/charger/réinitialiser le prompt de composition, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage. |
+| **Enregistrement (E)** | Démarrer/arrêter/voir/jouer un enregistrement, *séparateur*, charger/sauvegarder, *séparateur*, composer un morceau à partir de l'enregistrement, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser les indications de style, *séparateur*, voir/exporter le prompt de composition. Ordre — cadrage puis indications avant le prompt — délibéré (voir §LLMEngine/§AppCore). |
+| **Composition (C)** | Décrire le morceau (assistant titre → description → indications → composition), composer à partir de la description, voir la description, *séparateur*, charger/sauvegarder(-sous) une description, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/exporter le prompt de composition. |
 | **Jam Session (J)** | Démarrer/arrêter une jam session, rejoindre, trouver (découverte), quitter — session collaborative. Les trois premiers items appellent `promptForPseudo()` avant de continuer. |
 
 Convention des mnémoniques : pas toujours la première lettre du titre (`MusicLab`→`L`,
@@ -674,10 +700,13 @@ Autres commandes CLI : réseau (`server`/`stop-server`/`client`/`discover`/`disc
 Jam Session), pseudo (`pseudo [nom]` — affiche/change `localClientName`, voir §AppCore pour
 `ownerName`), console web (`web-console [port]`/`web-console stop`, menu MusicLab — voir
 §WebConsole), composition (`title`/`indications`/`show-description`/`compose [titre]`),
-descriptions (`compositions`/`use-description`/`save-description`/`save-description-as`),
-prompts (`prompts`/`show-*-prompt`/`save-*-prompt`/`use-*-prompt`/`reset-*-prompt`), phrases de
-cadrage (`show-*-framing`/`set-*-framing`/`save-*-framing`/`use-*-framing`/`reset-*-framing`) —
-liste complète et à jour dans `Docs/GUIDE_UTILISATEUR.md`.
+descriptions (`use-description`/`save-description`/`save-description-as` — dossier fixe, dérivé
+de `prompts <dossier>`), phrases de cadrage
+(`show-*-framing`/`set-*-framing`/`save-*-framing`/`use-*-framing`/`reset-*-framing`),
+indications soundtrack
+(`show/set/save/use/reset-soundtrack-instructions`), prompt complet
+(`show-*-prompt`/`export-*-prompt` — consultable et exportable, jamais rechargeable) — liste
+complète et à jour dans `Docs/GUIDE_UTILISATEUR.md`.
 
 ### Points de conception notables
 
