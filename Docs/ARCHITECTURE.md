@@ -21,7 +21,7 @@ existent :
   et s'exécute avec `swift run SanityChecks`. C'est le seul moyen de vérifier la logique dans
   cet environnement — toujours le maintenir à jour en même temps que les vrais tests.
 
-Il n'y a pas de dépôt git sur ce projet.
+Le projet est versionné avec git (dépôt dans `MusicTheoryKit/`, avec un remote `origin`).
 
 ## Carte des modules (targets SwiftPM)
 
@@ -755,7 +755,6 @@ swift run ImprovCLI         # lance l'application
   textures denses ou des timbres riches en harmoniques.
 - **Micro : macOS uniquement.** Portage iOS/iPadOS à faire (configuration `AVAudioSession`).
 - **Piste clavier sans vrai maintien** : limite du terminal, pas du code.
-- **Pas de dépôt git** sur ce projet à ce jour.
 - **Aucune interface graphique** : tout passe par le CLI ; la couche `AppCore` est conçue
   pour qu'une interface SwiftUI puisse s'y brancher sans réécriture, mais cette étape n'a
   pas encore été commencée (bloquée par l'absence d'Xcode sur cette machine).
