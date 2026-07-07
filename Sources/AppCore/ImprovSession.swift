@@ -179,6 +179,11 @@ public final class ImprovSession: @unchecked Sendable {
     /// to, learned from that connection's `hello` message — needed because `onDisconnect`
     /// only ever reports the connection's own transient id, not the participant identity.
     private var connectionIDToClientID: [String: String] = [:]
+    /// Server-side only: each connected participant's chosen display name (`hello`'s
+    /// `clientName`) — kept separately from `connectionIDToClientID` because it needs to
+    /// survive lookup *by* `clientID` (in `broadcastSyncSoon()`, resolving the owner of every
+    /// track, local or remote), not just by connection.
+    private var clientIDToClientName: [String: String] = [:]
     /// When set, `startRecording` is underway — the moment it started (a monotonic
     /// `DispatchTime`, not a wall-clock `Date`, since only elapsed time matters) and the
     /// title/track filter given at the time. All touched from `updateRecognitionState`'s
@@ -995,6 +1000,7 @@ public final class ImprovSession: @unchecked Sendable {
         liveInputQueue.sync {
             removeAllRemoteTracks()
             connectionIDToClientID.removeAll()
+            clientIDToClientName.removeAll()
         }
         networkRole = .standalone
         append("Serveur arrete.")
@@ -1105,7 +1111,8 @@ public final class ImprovSession: @unchecked Sendable {
         let chordLabel = track.recognizedChord.map(describe) ?? (track.remoteChordDisplay)
         let modesLabel = !track.recognizedModes.isEmpty ? track.recognizedModes.map(describe).joined(separator: ", ") : track.remoteModesDisplay
         return WebConsoleTrackState(
-            id: webConsoleTrackIDText(track.id), label: track.label, heldPitches: Array(track.heldPitches),
+            id: webConsoleTrackIDText(track.id), label: track.label, owner: track.ownerName,
+            heldPitches: Array(track.heldPitches),
             chordRoot: track.recognizedChord?.root.value, chordTones: chordTones, modeTones: modeTones,
             chordLabel: chordLabel, modesLabel: modesLabel,
             microphoneLevel: track.id == .microphone ? track.microphoneInputLevel : nil
@@ -1204,10 +1211,11 @@ public final class ImprovSession: @unchecked Sendable {
             case .hello:
                 guard let clientID = message.clientID else { return }
                 connectionIDToClientID[connectionID] = clientID
+                clientIDToClientName[clientID] = message.clientName
                 append("Client connecte: \(message.clientName ?? clientID).")
             case .trackAnnounce:
                 guard let clientID = message.clientID, let trackID = message.trackID else { return }
-                addOrUpdateRemoteTrack(clientID: clientID, trackID: trackID, label: message.label ?? trackID, canHaveSound: message.canHaveSound ?? true)
+                addOrUpdateRemoteTrack(clientID: clientID, trackID: trackID, label: message.label ?? trackID, canHaveSound: message.canHaveSound ?? true, ownerName: clientIDToClientName[clientID])
             case .trackUnannounce:
                 guard let clientID = message.clientID, let trackID = message.trackID else { return }
                 removeRemoteTrack(clientID: clientID, trackID: trackID)
@@ -1216,7 +1224,7 @@ public final class ImprovSession: @unchecked Sendable {
                       let isNoteOn = message.isNoteOn, let pitch = message.pitch else { return }
                 let remoteID = TrackID.remote(clientID: clientID, trackID: trackID)
                 if !tracks.contains(where: { $0.id == remoteID }) {
-                    addOrUpdateRemoteTrack(clientID: clientID, trackID: trackID, label: trackID, canHaveSound: true)
+                    addOrUpdateRemoteTrack(clientID: clientID, trackID: trackID, label: trackID, canHaveSound: true, ownerName: clientIDToClientName[clientID])
                 }
                 updateRecognitionState(pitch: pitch, isNoteOn: isNoteOn, velocity: message.velocity ?? 100, channel: message.channel ?? 0, track: remoteID)
             case .helloAck, .sync:
@@ -1229,6 +1237,7 @@ public final class ImprovSession: @unchecked Sendable {
     private func handleClientDisconnected(_ connectionID: String) {
         liveInputQueue.sync {
             guard let clientID = connectionIDToClientID.removeValue(forKey: connectionID) else { return }
+            clientIDToClientName.removeValue(forKey: clientID)
             removeAllRemoteTracks(forClientID: clientID)
             append("Client deconnecte: \(clientID).")
         }
@@ -1238,13 +1247,14 @@ public final class ImprovSession: @unchecked Sendable {
     /// Adds a new remote-track entry, or updates its label/listening flag if it already
     /// exists (idempotent — a client may re-announce the same track). Must run inside
     /// `liveInputQueue.sync`, same contract as `updateRecognitionState`.
-    private func addOrUpdateRemoteTrack(clientID: String, trackID: String, label: String, canHaveSound: Bool) {
+    private func addOrUpdateRemoteTrack(clientID: String, trackID: String, label: String, canHaveSound: Bool, ownerName: String?) {
         let id = TrackID.remote(clientID: clientID, trackID: trackID)
         if let index = tracks.firstIndex(where: { $0.id == id }) {
             tracks[index].label = label
             tracks[index].isListening = true
+            tracks[index].ownerName = ownerName
         } else {
-            tracks.append(TrackInfo(id: id, label: label, isListening: true, canHaveSound: canHaveSound))
+            tracks.append(TrackInfo(id: id, label: label, isListening: true, canHaveSound: canHaveSound, ownerName: ownerName))
         }
     }
 
@@ -1303,8 +1313,11 @@ public final class ImprovSession: @unchecked Sendable {
         let snapshot: [RemoteTrackSnapshot] = liveInputQueue.sync {
             tracks.compactMap { track -> RemoteTrackSnapshot? in
                 guard let (clientID, wireTrackID) = ownerAndWireID(of: track.id) else { return nil }
+                // A `.remote` track already carries its owner's name (set once, in
+                // `addOrUpdateRemoteTrack`); a local track's owner is this server itself.
+                let ownerName: String? = { if case .remote = track.id { return track.ownerName }; return localClientName }()
                 return RemoteTrackSnapshot(
-                    clientID: clientID, trackID: wireTrackID, label: track.label,
+                    clientID: clientID, trackID: wireTrackID, label: track.label, clientName: ownerName,
                     isListening: track.isListening, canHaveSound: track.canHaveSound,
                     heldPitches: Array(track.heldPitches),
                     chordName: track.recognizedChord.map(Self.describe),
@@ -1342,6 +1355,7 @@ public final class ImprovSession: @unchecked Sendable {
                 info.heldPitches = Set(entry.heldPitches)
                 info.remoteChordDisplay = entry.chordName
                 info.remoteModesDisplay = entry.modesText
+                info.ownerName = entry.clientName
                 tracks.append(info)
             }
         }

@@ -103,6 +103,7 @@ func printHelp() {
       reset-text-prompt / reset-soundtrack-prompt  revient au prompt par defaut (reconstruit a chaque fois)
 
     Session collaborative (reseau)
+      pseudo [nom]               affiche/change le pseudo affiche aux autres participants (defaut "player")
       server [port]              demarre un serveur collaboratif (defaut port 7777)
       stop-server                arrete le serveur
       client [host] [port]       rejoint un serveur (defaut localhost:7777)
@@ -225,6 +226,13 @@ func trackIDText(_ id: TrackID) -> String {
     }
 }
 
+/// " — Bob" for a `.remote` track whose owner sent a pseudo, "" otherwise (including every
+/// local track — no need to label your own tracks with your own name). Shared by every place
+/// that shows a track heading, so "qui joue quoi" reads the same everywhere.
+func ownerSuffix(_ track: TrackInfo) -> String {
+    track.ownerName.map { " — \($0)" } ?? ""
+}
+
 /// A MIDI pitch number as a note name + octave (e.g. 60 -> "C4"), matching `Keyboard.swift`'s
 /// octave numbering (octave 4 starts at C4 = pitch 60).
 func noteNameWithOctave(_ pitch: Int) -> String {
@@ -301,7 +309,7 @@ func printTracks() {
     print(TextStyle.field("Reseau", networkRoleText()))
     print(TextStyle.field("Mode MIDI", session.midiFusionMode == .merged ? "fusionne" : "individuel"))
     for track in session.tracks {
-        var line = "  [\(trackIDText(track.id))] \(track.label) — ecoute: \(TextStyle.flag(track.isListening))"
+        var line = "  [\(trackIDText(track.id))] \(track.label)\(ownerSuffix(track)) — ecoute: \(TextStyle.flag(track.isListening))"
         if track.canHaveSound {
             line += ", son: \(TextStyle.flag(track.soundEnabled))"
             if let instrument = track.instrumentName { line += " (\(instrument))" }
@@ -322,7 +330,7 @@ func printStatus() {
     printTracks()
     print()
     for track in session.tracks where track.isListening {
-        print(TextStyle.heading("[\(trackIDText(track.id))] \(track.label)"))
+        print(TextStyle.heading("[\(trackIDText(track.id))] \(track.label)\(ownerSuffix(track))"))
         if track.id == .microphone {
             print(TextStyle.field("Micro", microphoneStatusText(track)))
             if track.microphoneInputLevel < 0.0005 {
@@ -531,7 +539,7 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
         }
         for track in listeningTracks {
             line()
-            line(TextStyle.heading("[\(trackIDText(track.id))] \(track.label)"))
+            line(TextStyle.heading("[\(trackIDText(track.id))] \(track.label)\(ownerSuffix(track))"))
             if track.id == .microphone {
                 line(TextStyle.field("Micro", microphoneStatusText(track)))
             } else if track.canHaveSound {
@@ -759,6 +767,13 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         default:
             print("usage: track <id> on|off | track <id> son on|off | track <id> instrument <n|nom>")
         }
+    case "pseudo":
+        if args.isEmpty {
+            print(TextStyle.field("Pseudo", session.localClientName))
+        } else {
+            session.localClientName = args.joined(separator: " ")
+            print(TextStyle.field("Pseudo", session.localClientName))
+        }
     case "server":
         let port = args.first.flatMap(Int.init) ?? 7777
         try session.startServer(port: port)
@@ -958,6 +973,17 @@ func executeCommand(_ command: String, _ args: [String]) throws {
     }
 }
 
+/// Prompts for a display pseudo before hosting/joining/discovering a Jam Session (shared by
+/// the three menu items that do) — leaving it blank keeps whatever `localClientName` already
+/// is (the default "player" the first time, or a name set earlier this session/via `pseudo`).
+/// Without this, every participant shows up as "player" to everyone else, which is exactly
+/// the ambiguity this was added to fix — see the `ownerName` field threaded through
+/// `TrackInfo`/`RemoteTrackSnapshot`.
+func promptForPseudo() {
+    let text = promptLine("Ton pseudo (defaut '\(session.localClientName)'): ") ?? ""
+    if !text.isEmpty { session.localClientName = text }
+}
+
 /// The `console` screen's dropdown menus — each item just calls `executeCommand`, prompting
 /// first for a folder/name/choice where needed. Defined after `executeCommand` (which they
 /// all call) but before it's used in `runConsoleScreen`.
@@ -1154,16 +1180,21 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
     ]),
     MenuCategory(mnemonic: "J", title: "Jam Session", items: [
         MenuItem(label: "Demarrer une jam session...") {
+            promptForPseudo()
             let portText = promptLine("Port (defaut 7777): ") ?? ""
             try executeCommand("server", [portText.isEmpty ? "7777" : portText])
         },
         MenuItem(label: "Arreter la jam session") { try executeCommand("stop-server", []) },
         MenuItem(label: "Rejoindre une jam session...") {
+            promptForPseudo()
             let host = promptLine("Serveur (defaut localhost): ") ?? ""
             let portText = promptLine("Port (defaut 7777): ") ?? ""
             try executeCommand("client", [host.isEmpty ? "localhost" : host, portText.isEmpty ? "7777" : portText])
         },
-        MenuItem(label: "Trouver une jam session...") { try executeCommand("discover", []) },
+        MenuItem(label: "Trouver une jam session...") {
+            promptForPseudo()
+            try executeCommand("discover", [])
+        },
         MenuItem(label: "Quitter la jam session") { try executeCommand("disconnect", []) },
     ]),
 ]

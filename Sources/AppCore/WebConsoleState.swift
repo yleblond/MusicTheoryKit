@@ -18,6 +18,10 @@ struct WebConsoleState: Codable {
 struct WebConsoleTrackState: Codable {
     var id: String
     var label: String
+    /// The owning participant's pseudo for a `.remote` track (`TrackInfo.ownerName`), `nil`
+    /// for every local track — same "no need to label your own tracks with your own name"
+    /// convention as the terminal's `ownerSuffix(_:)`.
+    var owner: String?
     var heldPitches: [Int]
     var chordRoot: Int?
     var chordTones: [Int]

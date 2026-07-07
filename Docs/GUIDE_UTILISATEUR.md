@@ -342,7 +342,7 @@ Menus disponibles :
 | **Morceaux** | Quatre groupes, séparés par des traits : (1) écouter/voir le morceau ; (2) choisir le son par défaut de lecture, ou le son d'une piste/des accords d'une section (voir §7) ; (3) charger la démo, charger un morceau, sauvegarder le morceau, sauvegarder le morceau sous ; (4) **Assistant IA** — pour l'instant un intitulé de sous-section réservé, sans action, en attente d'une future fonction de modification par dialogue (« plus vite », « moins vite »…) applicable à n'importe quel morceau. |
 | **Enregistrement** | Démarrer/arrêter un enregistrement, voir l'enregistrement, jouer l'enregistrement, *séparateur*, charger/sauvegarder l'enregistrement, *séparateur*, composer un morceau à partir de l'enregistrement en le nommant (voir §10), *séparateur*, voir/sauvegarder/charger le prompt de composition. |
 | **Composition** | Décrire le morceau (assistant titre → description → indications → composition, voir §6), composer à partir de la description, voir la description, *séparateur*, voir/sauvegarder/charger le prompt de composition. |
-| **Jam Session** | Démarrer/arrêter une jam session, rejoindre une jam session, trouver une jam session (découverte), quitter la jam session — session collaborative (voir §9). |
+| **Jam Session** | Démarrer/arrêter une jam session, rejoindre une jam session, trouver une jam session (découverte), quitter la jam session — session collaborative (voir §9). Les trois premiers items demandent le pseudo à afficher aux autres avant de continuer. |
 
 Les *séparateurs* sont de simples traits horizontaux dans le menu déroulant, pour grouper des
 items apparentés — jamais sélectionnables (les flèches ↑ ↓ passent par-dessus). Une
@@ -372,6 +372,19 @@ ses questions), puis revient au tableau de bord une fois terminée (« Entrée p
 Plusieurs personnes peuvent partager la même écoute/reconnaissance d'accords, un peu comme un
 serveur de jeu en LAN : l'une héberge (« serveur »), les autres se connectent (« clients »),
 et chacun voit les pistes de tout le monde apparaître dans sa propre liste de pistes.
+
+### Choisir son pseudo
+
+```
+pseudo               # affiche le pseudo actuel (par defaut "player")
+pseudo Marie Curie    # le change (plusieurs mots acceptes, pas besoin de guillemets)
+```
+
+Ce pseudo est envoyé aux autres participants dès qu'on héberge ou qu'on rejoint une session —
+c'est ce qui permet à chacun de voir **qui** joue une piste distante, plutôt qu'un simple
+identifiant UUID illisible. Menu **Jam Session > Demarrer une jam session.../Rejoindre une jam
+session.../Trouver une jam session...** demandent systématiquement le pseudo en premier (vide =
+garder celui déjà en place) — inutile de taper `pseudo` séparément si on passe par le menu.
 
 ### Héberger
 
@@ -431,7 +444,9 @@ Menu **Jam Session > Decouvrir des serveurs...** fait exactement la même chose.
 - **Les pistes de tout le monde apparaissent chez tout le monde** — `tracks`/`status`/`run`
   listent, en plus des pistes locales habituelles (`midi`, `clavier`, `micro`), une
   entrée par piste distante, sous la forme `remote:<identifiant>@<piste>` (copie-colle cet
-  identifiant depuis la liste plutôt que de le retaper — c'est un UUID).
+  identifiant depuis la liste plutôt que de le retaper — c'est un UUID). À côté, suivi d'un
+  tiret, le **pseudo** de son propriétaire (« — Marie Curie ») — voir « Choisir son pseudo »
+  ci-dessus ; sans pseudo choisi par ce participant, rien ne s'affiche après le nom de piste.
 - **La reconnaissance d'accord/mode d'une piste distante est calculée par le serveur**, pas
   recalculée chez chaque client — c'est lui qui « fait autorité ». Une piste distante ne peut
   donc pas être démarrée/arrêtée depuis ailleurs que sa propre machine (`track <id> on/off`
@@ -576,6 +591,7 @@ save-soundtrack         resauvegarde la soundtrack courante
 save-soundtrack-as <nom>  sauvegarde sous un nouveau nom
 show-soundtrack         affiche les infos de la soundtrack courante
 compose-piece-from-soundtrack [n] [titre]  demande a l'IA d'en deduire n Piece Model (defaut 1), nomme <titre> s'il est donne
+pseudo [nom]            affiche/change le pseudo affiche aux autres participants (defaut "player")
 server [port]           demarre un serveur collaboratif (defaut port 7777)
 stop-server             arrete le serveur
 client [host] [port]    rejoint un serveur (defaut localhost:7777)

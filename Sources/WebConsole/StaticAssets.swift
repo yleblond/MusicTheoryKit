@@ -11,7 +11,7 @@
 /// {
 ///   "lastEvent": "on pitch=60 vel=100" | null,
 ///   "tracks": [{
-///     "id": "clavier", "label": "Piste clavier",
+///     "id": "clavier", "label": "Piste clavier", "owner": "Bob" | null,
 ///     "heldPitches": [60, 64, 67],
 ///     "chordRoot": 0 | null, "chordTones": [0, 4, 7], "modeTones": [0, 2, 4, 5, 7, 9, 11],
 ///     "chordLabel": "Cmaj" | null, "modesLabel": "C ionian" | null,
@@ -80,7 +80,8 @@ function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones) {
 }
 
 function renderTrack(track) {
-  let html = `<h2>[${track.id}] ${track.label}</h2>`;
+  const owner = track.owner ? ` — ${track.owner}` : '';
+  let html = `<h2>[${track.id}] ${track.label}${owner}</h2>`;
   if (track.microphoneLevel !== null && track.microphoneLevel !== undefined) {
     html += `<div class="field">Micro: <b>${track.microphoneLevel.toFixed(4)}</b></div>`;
   }

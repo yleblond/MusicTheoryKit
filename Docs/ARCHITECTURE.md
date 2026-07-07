@@ -455,6 +455,19 @@ l'appeler et lire son état ; une future interface SwiftUI pourrait s'y brancher
     serveur formate une fois (`Self.describe`), chaque client réaffiche tel quel. Le CLI
     (`chordDisplayText`/`modesDisplayText`) préfère toujours la valeur structurée quand elle
     existe, et ne retombe sur la chaîne affichée que si elle est absente.
+  - **Pseudo (`localClientName`/`pseudo <nom>`) et `TrackInfo.ownerName`** : avant ce champ,
+    une piste distante n'affichait que `remote:<uuid>@<piste>` — illisible pour savoir qui
+    joue quoi. `clientIDToClientName: [String: String]` (serveur uniquement, alimenté par le
+    `clientName` du `hello` de chaque client) permet à `addOrUpdateRemoteTrack` de renseigner
+    `TrackInfo.ownerName` dès l'arrivée d'un `trackAnnounce`/`noteEvent` — donc déjà visible
+    localement sur le serveur, pas seulement une fois diffusé. `broadcastSyncSoon()` résout le
+    nom du propriétaire de **chaque** piste diffusée (`track.ownerName` pour une piste
+    `.remote`, `localClientName` pour une piste locale au serveur lui-même) dans
+    `RemoteTrackSnapshot.clientName` ; `mergeRemoteSnapshot` le recopie tel quel dans
+    `ownerName` côté client — même principe « le serveur résout une fois, chaque client
+    réaffiche » que `remoteChordDisplay` juste au-dessus. `ownerName` reste `nil` pour toute
+    piste locale (jamais besoin de s'étiqueter soi-même). Nettoyé dans `stopServer()`/
+    `handleClientDisconnected` en même temps que `connectionIDToClientID`.
 - **Console web (`startWebConsole`/`stopWebConsole`)** : un miroir en lecture seule de l'écran
   `run`, servi dans un navigateur via `WebConsole` (§WebConsole) — indépendant de
   `networkRole`/de la session collaborative ci-dessus (les deux peuvent tourner en même
@@ -559,7 +572,7 @@ Barre de menu façon interface DOS graphique, six catégories (`menuCategories`,
 | **Morceaux (M)** | 4 groupes : écouter/voir le morceau ; choisir le son de lecture, d'une piste, ou des accords d'une section ; charger la démo/un morceau, sauvegarder ; `MenuItem.header("Assistant IA")` — sous-section réservée, sans item pour l'instant, en attente d'une future fonction de modification par dialogue applicable à n'importe quel morceau. |
 | **Enregistrement (E)** | Démarrer/arrêter/voir/jouer un enregistrement, *séparateur*, charger/sauvegarder, *séparateur*, composer un morceau à partir de l'enregistrement, *séparateur*, voir/sauvegarder/charger/réinitialiser le prompt de composition. |
 | **Composition (C)** | Décrire le morceau (assistant titre → description → indications → composition), composer à partir de la description, voir la description, *séparateur*, voir/sauvegarder/charger/réinitialiser le prompt de composition. |
-| **Jam Session (J)** | Démarrer/arrêter une jam session, rejoindre, trouver (découverte), quitter — session collaborative. |
+| **Jam Session (J)** | Démarrer/arrêter une jam session, rejoindre, trouver (découverte), quitter — session collaborative. Les trois premiers items appellent `promptForPseudo()` avant de continuer. |
 
 Convention des mnémoniques : pas toujours la première lettre du titre (`MusicLab`→`L`,
 `Composition`→`C`...) — choisies pour éviter toute collision entre menus (voir le commentaire
@@ -586,7 +599,8 @@ entièrement) plutôt qu'en changeant le nombre de `print`/le mode de bufferisat
 retrouver (reproduire le crash avant de théoriser, ne pas empiler des correctifs non vérifiés).
 
 Autres commandes CLI : réseau (`server`/`stop-server`/`client`/`discover`/`disconnect`, menu
-Jam Session), console web (`web-console [port]`/`web-console stop`, menu MusicLab — voir
+Jam Session), pseudo (`pseudo [nom]` — affiche/change `localClientName`, voir §AppCore pour
+`ownerName`), console web (`web-console [port]`/`web-console stop`, menu MusicLab — voir
 §WebConsole), composition (`title`/`indications`/`show-description`/`compose [titre]`),
 prompts (`prompts`/`show-*-prompt`/`save-*-prompt`/`use-*-prompt`/`reset-*-prompt`) — liste
 complète et à jour dans `Docs/GUIDE_UTILISATEUR.md`.
@@ -619,7 +633,7 @@ Exécutable qui rejoue à la main chaque cas de test des vrais fichiers `XCTest`
 (`check`/`checkNil`), pour compenser l'absence d'Xcode. **Toujours mettre à jour ce fichier
 en même temps que tout nouveau test** — c'est le seul moyen de vérifier que le code
 fonctionne dans cet environnement. Se lance avec `swift run SanityChecks` depuis
-`MusicTheoryKit/`. Compteur de vérifications à jour : **282 checks, 0 échec**, stable sur
+`MusicTheoryKit/`. Compteur de vérifications à jour : **284 checks, 0 échec**, stable sur
 plusieurs exécutions répétées.
 
 ## Vérification/tests

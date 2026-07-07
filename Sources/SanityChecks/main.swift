@@ -978,8 +978,10 @@ func testCollaborativeServerClientSyncsTracksAndRecognition() {
     do {
         let server = ImprovSession()
         try server.start()
+        server.localClientName = "Alice"
         let client = ImprovSession()
         try client.start()
+        client.localClientName = "Bob"
         let port = 17891
 
         try server.startServer(port: port)
@@ -997,6 +999,7 @@ func testCollaborativeServerClientSyncsTracksAndRecognition() {
         let clientTrackOnServer = TrackID.remote(clientID: client.localClientID, trackID: "clavier")
         if let mirrored = server.tracks.first(where: { $0.id == clientTrackOnServer }) {
             check(mirrored.recognizedChord?.chordTemplateID, "Ma", "server recognizes the client's forwarded C major triad")
+            check(mirrored.ownerName, "Bob", "server labels the client's track with the client's pseudo")
         } else {
             failures += 1
             print("FAIL [server/client sync]: server never saw the client's 'clavier' track")
@@ -1006,6 +1009,7 @@ func testCollaborativeServerClientSyncsTracksAndRecognition() {
         if let mirrored = client.tracks.first(where: { $0.id == serverTrackOnClient }) {
             let hasChordText = mirrored.remoteChordDisplay?.contains("Ma") ?? false
             check(hasChordText, true, "client mirrors the server's own track with a display-string chord")
+            check(mirrored.ownerName, "Alice", "client labels the server's own track with the server's pseudo")
         } else {
             failures += 1
             print("FAIL [server/client sync]: client never saw the server's own 'clavier' track")

@@ -76,13 +76,19 @@ public struct TrackInfo: Identifiable, Sendable {
     public var remoteChordDisplay: String?
     /// Same idea as `remoteChordDisplay`, for the mode-candidates line.
     public var remoteModesDisplay: String?
+    /// Only ever populated for `.remote` tracks: the owning participant's chosen display
+    /// name (`ImprovSession.localClientName`, as broadcast in `RemoteTrackSnapshot.clientName`)
+    /// — `nil` for every local track (no need to label your own tracks with your own name).
+    /// Lets a UI show "whose track is this" instead of just the opaque `remote:<uuid>@...` id
+    /// — see `printTracks`/`renderConsoleFrame`/the web console's `owner` field.
+    public var ownerName: String?
 
     public init(
         id: TrackID, label: String, isListening: Bool = false, canHaveSound: Bool,
         soundEnabled: Bool = false, instrumentName: String? = nil, heldPitches: Set<Int> = [],
         recognizedChord: RecognizedChord? = nil, recognizedModes: [RecognizedMode] = [],
         lastDetectedPitches: [DetectedPitch] = [], microphoneInputLevel: Float = 0,
-        remoteChordDisplay: String? = nil, remoteModesDisplay: String? = nil
+        remoteChordDisplay: String? = nil, remoteModesDisplay: String? = nil, ownerName: String? = nil
     ) {
         self.id = id
         self.label = label
@@ -97,5 +103,6 @@ public struct TrackInfo: Identifiable, Sendable {
         self.microphoneInputLevel = microphoneInputLevel
         self.remoteChordDisplay = remoteChordDisplay
         self.remoteModesDisplay = remoteModesDisplay
+        self.ownerName = ownerName
     }
 }

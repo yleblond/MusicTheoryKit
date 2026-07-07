@@ -122,6 +122,24 @@ Encore un seul concept, trois habillages :
 - **Champ `Reseau`** (affiché par `status`/`config`/`tracks`) — un libellé d'état technique,
   distinct du nom du menu, montrant l'état de connexion actuel (hôte, port, rôle).
 
+## Pseudo — `localClientName` / commande `pseudo` / champ réseau `clientName` / `TrackInfo.ownerName`
+
+Un seul concept (le nom qu'un participant choisit d'afficher aux autres), quatre habillages
+selon la couche :
+
+- **`ImprovSession.localClientName`** — la propriété qui stocke le pseudo de *ce*
+  participant (`"player"` par défaut). C'est aussi ce qui sert de nom de service Bonjour
+  quand on héberge (`startServer`) — pas de champ séparé pour ça.
+- **Commande `pseudo [nom]`** — l'habillage CLI pour lire/changer `localClientName`.
+- **`clientName`** (champ de `NetMessage`/`RemoteTrackSnapshot`, module `NetEngine`) — le nom
+  du fil : comment le pseudo voyage sur le réseau (envoyé une fois dans le `hello`, puis
+  redistribué dans chaque `sync`).
+- **`TrackInfo.ownerName`** — le pseudo *déjà résolu*, tel qu'affiché sur une piste `.remote`
+  précise (« — Marie Curie » à côté du nom de la piste) — `nil` pour toute piste locale, la
+  distinction entre « mon propre pseudo » et « le pseudo affiché sur une piste de quelqu'un
+  d'autre » étant justement le point de ce champ. Voir §AppCore de `ARCHITECTURE.md` pour le
+  détail de sa résolution côté serveur/côté client.
+
 ## `SanityChecks` vs `XCTest`
 
 Cette machine n'a que les Command Line Tools (pas Xcode complet), donc `swift test` échoue

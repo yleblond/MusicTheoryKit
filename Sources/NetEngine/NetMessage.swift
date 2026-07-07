@@ -63,6 +63,12 @@ public struct RemoteTrackSnapshot: Codable, Sendable, Equatable {
     public var clientID: String
     public var trackID: String
     public var label: String
+    /// The owning participant's display name (`ImprovSession.localClientName`, as sent in
+    /// their `hello`) — `nil` only if they never set one (shouldn't happen once every
+    /// server/client entry point prompts for a pseudo, but the wire format doesn't assume
+    /// it). Lets a client tell "whose track is this" apart at a glance instead of only the
+    /// opaque `clientID` UUID — see `TrackInfo.ownerName`.
+    public var clientName: String?
     public var isListening: Bool
     public var canHaveSound: Bool
     public var heldPitches: [Int]
@@ -70,12 +76,14 @@ public struct RemoteTrackSnapshot: Codable, Sendable, Equatable {
     public var modesText: String?
 
     public init(
-        clientID: String, trackID: String, label: String, isListening: Bool, canHaveSound: Bool,
-        heldPitches: [Int], chordName: String? = nil, modesText: String? = nil
+        clientID: String, trackID: String, label: String, clientName: String? = nil,
+        isListening: Bool, canHaveSound: Bool, heldPitches: [Int], chordName: String? = nil,
+        modesText: String? = nil
     ) {
         self.clientID = clientID
         self.trackID = trackID
         self.label = label
+        self.clientName = clientName
         self.isListening = isListening
         self.canHaveSound = canHaveSound
         self.heldPitches = heldPitches
