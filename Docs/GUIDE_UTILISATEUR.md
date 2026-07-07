@@ -15,11 +15,14 @@ Au démarrage, l'application charge automatiquement les dossiers de travail par 
 (`Pieces/`, `SoundFonts/`, `LLMConnections/`, situés à côté de `MusicTheoryKit/`) — pas
 besoin de les indiquer à chaque lancement.
 
-Deux modes d'utilisation :
+Trois modes d'utilisation (voir §8) :
 - **Le mode `Command`** : tape une commande, appuie sur Entrée, lis le résultat. C'est le
   mode par défaut au démarrage.
-- **Le mode `console`** : un tableau de bord fixe qui se met à jour en direct, avec un menu
-  déroulant façon DOS. On y entre avec la commande `console`, on en sort avec Ctrl+C.
+- **Le mode `run`** : un tableau de bord fixe, focalisé sur l'activité musicale en direct
+  (claviers, accords), avec un menu déroulant façon DOS. On y entre avec la commande `run`,
+  on en sort avec la touche **q**.
+- **Le mode `config`** : même principe, focalisé sur la configuration active et le détail du
+  morceau chargé. Commande `config`, touche **q** pour sortir.
 
 Tape `help` à tout moment pour la liste des commandes.
 
@@ -47,7 +50,7 @@ chacun avec une ligne mélodique).
 play
 ```
 
-Joue le morceau courant. En mode `console` pendant la lecture, on voit apparaître :
+Joue le morceau courant. En mode `run` pendant la lecture, on voit apparaître :
 - **Le déroulé de la composition** — la liste des accords du morceau, celui en cours de
   lecture surligné entre crochets.
 - **Un second clavier**, « Clavier composé, en cours de jeu » — montre les notes que le
@@ -103,7 +106,7 @@ n'écoutant que le port qui nous intéresse (`track midi:2 on`).
 track clavier on
 ```
 
-Active à la fois l'écoute de cette piste et, en mode `console`, l'interception des touches
+Active à la fois l'écoute de cette piste et, en mode `run`, l'interception des touches
 du clavier physique comme des notes. Disposition des touches — identique à « Musical
 Typing » de GarageBand, pour rester familière :
 
@@ -120,7 +123,7 @@ qui s'éteint automatiquement après ~300 ms, plutôt qu'un vrai maintien tant q
 doigt appuyé. Ce n'est pas un bug à corriger : c'est une limite du terminal lui-même.
 
 **Pendant que cette piste écoute, les raccourcis-lettre du menu sont désactivés en mode
-`console`** (les lettres jouent des notes à la place). Pour revenir au menu : appuie sur
+`run`** (les lettres jouent des notes à la place). Pour revenir au menu : appuie sur
 **Échap**. La navigation aux flèches, Entrée et Échap fonctionne normalement une fois dans
 le menu. `track clavier off` rend les raccourcis-lettre au menu.
 
@@ -134,7 +137,7 @@ Utilise le microphone par défaut et détecte la ou les notes jouées par transf
 Fourier (FFT) — **peut détecter plusieurs notes en même temps**, donc reconnaître un accord
 joué à la voix ou à l'instrument devant le micro.
 
-**Champ « Micro » dans `status`/`console`** — toujours affiché avec le niveau brut capté, même
+**Champ « Micro » dans `status`/`run`** — toujours affiché avec le niveau brut capté, même
 en silence :
 - `Micro: (coupée)` — la piste n'écoute pas.
 - `Micro: (silence, niveau 0.0010)` — écoute, rien de détecté en ce moment.
@@ -179,7 +182,7 @@ permanence de reconnaître :
   récemment jouées sur cette piste (une gamme se joue en général mélodiquement, pas en
   accord plaqué).
 
-Sur le clavier de chaque piste affiché en mode `console` :
+Sur le clavier de chaque piste affiché en mode `run` :
 - **Magenta** : la fondamentale de l'accord reconnu.
 - **Jaune** : les autres notes de l'accord.
 - **Vert** : une note tenue mais hors de l'accord reconnu.
@@ -294,21 +297,41 @@ fait exactement la même chose que les deux commandes ci-dessus.
   d'instrument propre par défaut — ils sonnent exactement comme avant, avec le son choisi
   par `use-sample`.
 
-## 8. Le mode `console` — tableau de bord et menu façon DOS
+## 8. Les écrans `run`/`config` — tableaux de bord et menu façon DOS
+
+Trois modes d'affichage coexistent :
+- **Command** — le mode par défaut, celui de toutes les commandes de ce guide (le prompt `>`).
+- **`run`** — écran figé, redessiné en direct, focalisé sur **l'activité musicale en cours** :
+  claviers des pistes en écoute, accord/mode détectés, clavier de lecture d'un morceau/d'un
+  enregistrement.
+- **`config`** — écran figé, redessiné en direct, focalisé sur **l'état de la session et le
+  morceau actif** : dossiers/connexions configurés, drapeaux (lecture/enregistrement...), et
+  la structure complète du morceau chargé (sections, accords, instruments).
 
 ```
-console
+run       # activite musicale en direct
+config    # configuration + detail du morceau actif
 ```
 
-Occupe le terminal avec un écran figé qui se redessine en direct. Ctrl+C pour revenir au
-mode Command normal.
+Les deux occupent le terminal jusqu'à la touche **q** (retour au mode Command) — Ctrl+C
+fonctionne toujours aussi, en secours, mais **q** est plus doux et suffit dans l'immense
+majorité des cas. Séparer les deux évite un tableau de bord unique qui grossit sans fin à
+mesure que l'application gagne des fonctionnalités — chaque écran reste court et rapide à
+lire pour ce qu'on est en train de faire (jouer, vs. vérifier la configuration).
+
+**Passer de l'un à l'autre sans repasser par Command** : appuie sur **Tab** à tout moment
+dans `run`/`config` — bascule directement vers l'autre écran, y compris si un menu est
+ouvert (le menu déroulé reste affiché, seul le contenu en dessous change).
 
 **Le menu** : une barre de menus en haut de l'écran, façon interface DOS graphique de
 l'époque.
 - **Ouvrir un menu** : taper la lettre soulignée du menu, ou naviguer aux flèches ← →.
 - **Se déplacer dans un menu ouvert** : flèches ↑ ↓, flèches ← → pour changer de menu.
 - **Valider** : Entrée.
-- **Fermer/revenir** : Échap.
+- **Fermer le menu déroulé** : Échap.
+- **Changer d'écran (`run` ↔ `config`)** : Tab, sans passer par Échap ni par Command.
+- **Quitter l'écran, retour à Command** : **q** (fonctionne même si un menu est ouvert). Ctrl+C
+  marche aussi, gardé en secours, mais pas nécessaire pour un usage normal.
 
 Menus disponibles :
 
@@ -329,13 +352,20 @@ un titre au lieu d'un simple trait — utile quand un menu n'a pas de vrais sous
 Une action de menu bascule temporairement en mode d'écran normal (pour pouvoir répondre à
 ses questions), puis revient au tableau de bord une fois terminée (« Entrée pour revenir »).
 
-**Ce que montre le tableau de bord**, du haut vers le bas :
-- Barre de menu.
-- Piece / Fichier / Playing / Recording / Soundtrack / Reseau / Mode MIDI / Dernier événement reçu.
+**Ce que montre `run`**, du haut vers le bas :
+- Barre de menu (avec l'astuce clavier en dessous, tant qu'aucun menu n'est ouvert).
+- Dernier événement MIDI reçu.
 - *Pour chaque piste en écoute* : son nom, son état de son (ou le niveau du micro), l'accord
   détecté (`Chord`), les modes détectés (`Modes`), et son propre clavier (C3–B5).
-- *Pendant la lecture d'un morceau uniquement* : le déroulé de la composition, puis un
-  clavier montrant ce que le morceau est en train de jouer.
+- *Pendant la lecture d'un morceau ou d'un enregistrement* : le déroulé de la composition
+  (morceau) puis un clavier montrant ce qui est en train de jouer.
+
+**Ce que montre `config`**, du haut vers le bas :
+- Barre de menu (même comportement).
+- Piece / Fichier / Playing / Recording / Soundtrack / Reseau / Mode MIDI.
+- Détail complet du morceau actif : titre, tempo, tonalité, puis chaque section (accords par
+  mesure et instrument, pistes mélodiques et leur instrument) — le même contenu que
+  `show-piece`, tenu à jour en direct.
 
 ## 9. Session collaborative — serveur et clients
 
@@ -398,8 +428,8 @@ Menu **Jam Session > Decouvrir des serveurs...** fait exactement la même chose.
 
 ### Ce qui est partagé, et ce qui reste local
 
-- **Les pistes de tout le monde apparaissent chez tout le monde** — `tracks`/`status`/
-  `console` listent, en plus des pistes locales habituelles (`midi`, `clavier`, `micro`), une
+- **Les pistes de tout le monde apparaissent chez tout le monde** — `tracks`/`status`/`run`
+  listent, en plus des pistes locales habituelles (`midi`, `clavier`, `micro`), une
   entrée par piste distante, sous la forme `remote:<identifiant>@<piste>` (copie-colle cet
   identifiant depuis la liste plutôt que de le retaper — c'est un UUID).
 - **La reconnaissance d'accord/mode d'une piste distante est calculée par le serveur**, pas
@@ -443,7 +473,7 @@ save-soundtrack-as <nom>
 show-soundtrack                     # titre, duree, nombre d'evenements, pistes capturees
 ```
 
-En mode `console`, tant que la lecture est en cours, un troisième clavier apparaît
+En mode `run`, tant que la lecture est en cours, un troisième clavier apparaît
 (« Clavier soundtrack, en cours de jeu ») — sans coloration accord/mode (une Soundtrack est
 un enregistrement brut, pas un morceau analysé), juste les notes tenues.
 
@@ -538,7 +568,8 @@ reset-text-prompt       revient au prompt (texte) par defaut
 reset-soundtrack-prompt revient au prompt (soundtrack) par defaut
 show-piece              affiche la structure du morceau courant
 status                  affiche l'état courant
-console                 écran fixe qui se met à jour en direct (Ctrl+C pour revenir)
+run                     écran fixe: activité musicale en direct (q pour revenir)
+config                  écran fixe: configuration active et détail du morceau (q pour revenir)
 quit                    quitte
 ```
 
@@ -547,7 +578,7 @@ quit                    quitte
 | Symptôme | Piste |
 |---|---|
 | Le micro ne détecte jamais rien | Vérifier la permission microphone (Réglages Système > Confidentialité et sécurité > Microphone) et le niveau affiché — voir §3.3. |
-| Les lettres tapées en `console` ouvrent un menu au lieu de jouer une note | La piste « clavier » n'écoute pas — `track clavier on` (ou menu Source). |
+| Les lettres tapées en `run` ouvrent un menu au lieu de jouer une note | La piste « clavier » n'écoute pas — `track clavier on` (ou menu Instruments). |
 | Impossible de sortir de la piste « clavier » pour ouvrir un menu | Appuyer sur **Échap**. |
 | Une note reste affichée/jouée sans s'arrêter après `play` | Devrait être corrigé (filet de sécurité en fin de lecture) — si le problème réapparaît, le signaler. |
 | Le clavier ASCII scintille ou se déforme | Devrait être corrigé (largeur de ligne bornée) — si ça persiste, vérifier la largeur du terminal (≥ 80 colonnes recommandé). |

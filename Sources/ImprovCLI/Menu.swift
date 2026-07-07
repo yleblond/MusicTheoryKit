@@ -20,28 +20,43 @@ func setRawMode(_ raw: Bool) {
     tcsetattr(STDIN_FILENO, TCSANOW, &settings)
 }
 
-func setStdinNonBlocking(_ nonBlocking: Bool) {
-    let flags = fcntl(STDIN_FILENO, F_GETFL, 0)
-    _ = fcntl(STDIN_FILENO, F_SETFL, nonBlocking ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK))
-}
-
 enum Key: Equatable {
     case char(Character)
     case up, down, left, right
-    case enter, escape
+    case enter, escape, tab
 }
 
-/// Non-blocking single-key read: arrow keys arrive as a 3-byte escape sequence
-/// (`ESC [ A/B/C/D`), so seeing a bare ESC byte peeks ahead briefly for the rest of the
-/// sequence before deciding it's a standalone Escape press.
+/// Checks whether `STDIN_FILENO` has a byte ready, without blocking — via `poll(2)`, not
+/// `O_NONBLOCK` on the fd. Setting `O_NONBLOCK` on stdin used to be how `readKey()` avoided
+/// blocking, but under the standard way an interactive shell attaches to a terminal
+/// (`login_tty(3)`-style: the pty slave is opened once and `dup2`'d onto fd 0/1/2), stdin,
+/// stdout and stderr all share the *same* underlying open file description — so making
+/// stdin non-blocking made stdout non-blocking too. A write that then hit a momentarily-full
+/// pty buffer either silently dropped data (plain `print`, the likely cause of "the keyboard
+/// sometimes draws incompletely") or threw an uncaught exception and crashed the process
+/// (`FileHandle.write`, confirmed by reproducing it directly — `NSFileHandleOperationException
+/// ... Resource temporarily unavailable`, i.e. EAGAIN on the write). `poll` lets stdin be
+/// checked without touching the fd's blocking mode at all, so stdout is never affected.
+private func stdinHasByteAvailable() -> Bool {
+    var pfd = pollfd(fd: STDIN_FILENO, events: Int16(POLLIN), revents: 0)
+    guard poll(&pfd, 1, 0) > 0 else { return false }
+    return Int32(pfd.revents) & POLLIN != 0
+}
+
+/// Single-key read, without blocking if nothing is waiting: arrow keys arrive as a 3-byte
+/// escape sequence (`ESC [ A/B/C/D`), so seeing a bare ESC byte peeks ahead briefly for the
+/// rest of the sequence before deciding it's a standalone Escape press.
 func readKey() -> Key? {
+    guard stdinHasByteAvailable() else { return nil }
     var first: UInt8 = 0
     guard read(STDIN_FILENO, &first, 1) == 1 else { return nil }
 
     if first == 27 { // ESC
         usleep(2000) // give a follow-up escape sequence a moment to arrive
+        guard stdinHasByteAvailable() else { return .escape }
         var second: UInt8 = 0
         guard read(STDIN_FILENO, &second, 1) == 1, second == UInt8(ascii: "[") else { return .escape }
+        guard stdinHasByteAvailable() else { return .escape }
         var third: UInt8 = 0
         guard read(STDIN_FILENO, &third, 1) == 1 else { return .escape }
         switch third {
@@ -53,6 +68,7 @@ func readKey() -> Key? {
         }
     }
     if first == 13 || first == 10 { return .enter }
+    if first == 9 { return .tab }
     return Unicode.Scalar(UInt32(first)).map { .char(Character($0)) }
 }
 
@@ -103,10 +119,8 @@ nonisolated(unsafe) var selectedItemIndex = 0
 /// live dashboard's redraw-in-place conventions. A "press Enter" pause at the end means
 /// whatever it printed stays readable before the dashboard takes back over.
 func runMenuAction(_ action: () throws -> Void) {
-    // `readLine()` (used by the action itself, and below for the "press Enter" pause)
-    // needs normal blocking canonical input — both toggles from `runConsoleScreen`'s raw/
-    // non-blocking setup have to come off for the duration, not just canonical mode.
-    setStdinNonBlocking(false)
+    // `readLine()` (used by the action itself, and below for the "press Enter" pause) needs
+    // normal canonical-mode input — raw mode has to come off for the duration.
     setRawMode(false)
     print("\u{1B}[2J\u{1B}[H", terminator: "")
     do {
@@ -118,7 +132,6 @@ func runMenuAction(_ action: () throws -> Void) {
     print("\n(Entree pour revenir a l'ecran)", terminator: "")
     _ = readLine()
     setRawMode(true)
-    setStdinNonBlocking(true)
     print("\u{1B}[2J", terminator: "")
 }
 
@@ -159,6 +172,8 @@ func handleMenuKey(_ key: Key, categories: [MenuCategory]) {
                 openMenuIndex = match
                 selectedItemIndex = 0
             }
+        case .tab:
+            break // handled one level up, in `runConsoleScreen` — screen switching isn't a menu concern
         }
     } else {
         switch key {

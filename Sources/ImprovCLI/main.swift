@@ -41,7 +41,8 @@ func printHelp() {
     General
       help                       affiche cette aide
       status                     affiche l'etat courant (piece, pistes actives, accord/mode)
-      console                    ecran fixe qui se met a jour en direct (Ctrl+C pour revenir)
+      run                        ecran fixe: activite musicale en direct (claviers, accords) — Ctrl+C pour revenir
+      config                     ecran fixe: configuration active et detail du morceau — Ctrl+C pour revenir
       quit                       quitte
 
     Morceaux (Piece Model — mesures/accords)
@@ -108,33 +109,41 @@ func printHelp() {
     """)
 }
 
-func printPieceDetail() {
+/// Every line describing the current piece's structure and instruments — shared by
+/// `show-piece` (plain `print`) and the `config` screen (redrawn-in-place `line`), so the
+/// two never drift apart.
+func pieceDetailLines() -> [String] {
     guard let piece = session.piece else {
-        print(TextStyle.placeholder("(aucun morceau charge)"))
-        return
+        return [TextStyle.placeholder("(aucun morceau charge)")]
     }
+    var lines: [String] = []
     let keyName = ScaleLibrary.byID(piece.key.scaleID)?.popularName ?? piece.key.scaleID
-    print(TextStyle.heading(piece.title) + (piece.composer.map { " — \($0)" } ?? ""))
-    print(TextStyle.field("Tempo", "\(Int(piece.tempoBPM)) BPM"))
-    print(TextStyle.field("Tonalite", "\(PitchClass(piece.key.tonic).name()) \(keyName)"))
+    lines.append(TextStyle.heading(piece.title) + (piece.composer.map { " — \($0)" } ?? ""))
+    lines.append(TextStyle.field("Tempo", "\(Int(piece.tempoBPM)) BPM"))
+    lines.append(TextStyle.field("Tonalite", "\(PitchClass(piece.key.tonic).name()) \(keyName)"))
     if piece.sections.isEmpty {
-        print(TextStyle.placeholder("(pas encore de section)"))
+        lines.append(TextStyle.placeholder("(pas encore de section)"))
     }
     for section in piece.sections {
         let modeName = ScaleLibrary.byID(section.mode.scaleID)?.popularName ?? section.mode.scaleID
-        print()
-        print(TextStyle.heading("Section \(section.name)") + " (\(section.lengthInMeasures) mesures, \(PitchClass(section.mode.tonic).name()) \(modeName))")
+        lines.append("")
+        lines.append(TextStyle.heading("Section \(section.name)") + " (\(section.lengthInMeasures) mesures, \(PitchClass(section.mode.tonic).name()) \(modeName))")
         let chordInstrumentText = section.chordInstrument.map { "'\($0)'" } ?? "par defaut"
-        print("  accords (instrument \(chordInstrumentText)):")
+        lines.append("  accords (instrument \(chordInstrumentText)):")
         for chordEvent in section.chordProgression.sorted(by: { $0.measure < $1.measure }) {
             let name = "\(PitchClass(chordEvent.chord.root).name())\(chordEvent.chord.chordTemplateID)"
-            print("    mesure \(chordEvent.measure): \(name)")
+            lines.append("    mesure \(chordEvent.measure): \(name)")
         }
         for (trackIndex, track) in section.tracks.enumerated() where !track.melodyEvents.isEmpty {
             let instrumentText = track.instrument.isEmpty ? "par defaut" : "'\(track.instrument)'"
-            print("  piste \(trackIndex + 1) '\(track.name)' (instrument \(instrumentText)): \(track.melodyEvents.count) notes")
+            lines.append("  piste \(trackIndex + 1) '\(track.name)' (instrument \(instrumentText)): \(track.melodyEvents.count) notes")
         }
     }
+    return lines
+}
+
+func printPieceDetail() {
+    for row in pieceDetailLines() { print(row) }
 }
 
 func printSoundTrackDetail() {
@@ -435,7 +444,7 @@ func renderTrackKeyboard(_ track: TrackInfo) -> [String] {
         startMIDI: 48,
         octaveCount: 3,
         blackZoneRows: 2,
-        whiteZoneRows: 2,
+        whiteZoneRows: 1,
         modeMarker: { semitone in modeScaleSet?.contains(PitchClass(semitone)) ?? false },
         colorFor: { pitch in
             guard heldPitches.contains(pitch) else { return nil }
@@ -453,124 +462,153 @@ func renderTrackKeyboard(_ track: TrackInfo) -> [String] {
 /// lines below in case this frame is shorter than the last.
 ///
 /// The whole frame is built into one string and written with a single `print` at the end
-/// (see the matching comment by the final `print`) rather than one `print` per line — a
-/// real fix, not cosmetic: a taller frame (e.g. the `Enregistrement` dropdown, now 15+
-/// lines with its prompt sub-section) means more separate flushes per redraw at 10/s, and
-/// a terminal can visibly paint those one at a time, which is exactly the jumpiness this
-/// was reported as ("sautillement... quand le menu est deploye") — worse the taller the
-/// open dropdown, matching the symptom.
-func renderConsoleFrame() {
+/// instead of one `print` per line — fewer separate writes per redraw (10/s) means less
+/// chance of a terminal visibly painting a frame in more than one pass. Safe to do with a
+/// plain buffered `print` (not a raw `write`) now that stdin/stdout can no longer end up
+/// sharing a non-blocking file descriptor — see `readKey`'s doc comment in `Menu.swift` for
+/// the real, deeper bug that turned out to be behind both the original flicker report and a
+/// later crash.
+/// The three screens `console`-style redraw-in-place mode can show — one shared menu
+/// bar/dropdown/redraw mechanism (`runConsoleScreen`/`renderConsoleFrame`), different body
+/// content per mode, so each screen stays focused and short rather than one ever-growing
+/// dashboard. `.command` isn't rendered by this function at all — it's the plain REPL
+/// prompt, the state you're in whenever `console`-mode isn't active.
+enum ConsoleScreenMode {
+    /// Live musical activity only: the last MIDI event, every listening track's own
+    /// keyboard/chord/mode, and a playback keyboard while a `Piece` or `SoundTrack` plays —
+    /// nothing about setup/config, so this screen stays minimal while actually playing.
+    case run
+    /// Session setup/state and the active piece's full structure — nothing that updates
+    /// note-by-note, so this screen stays calm to read even while `run` is busy elsewhere.
+    case config
+}
+
+func renderConsoleFrame(mode: ConsoleScreenMode) {
     var output = "\u{1B}[H"
     func line(_ text: String = "") {
         output += "\u{1B}[K" + text + "\n"
     }
-    line(renderMenuBar(menuCategories) + "   " + TextStyle.placeholder("(lettre: ouvre un menu, fleches, Entree, Echap — Ctrl+C: quitte l'ecran)"))
+    line(renderMenuBar(menuCategories))
     if let openIndex = openMenuIndex {
         for row in renderDropdown(menuCategories[openIndex]) { line(row) }
+    } else {
+        // Only shown while no menu is open — once a dropdown is on screen the controls are
+        // self-evident, and the hint would just be one more thing to visually parse next to it.
+        line(TextStyle.placeholder("(lettre: ouvre un menu, fleches, Entree, Echap, Tab: change d'ecran, q: quitte l'ecran)"))
     }
     line()
-    line(TextStyle.field("Piece", session.piece.map { $0.title } ?? TextStyle.placeholder("(aucun)")))
-    line(TextStyle.field("Fichier", session.currentPieceFilePath ?? TextStyle.placeholder("(jamais sauvegarde)")))
-    line(TextStyle.field("Playing", TextStyle.flag(session.isPlaying)))
-    line(TextStyle.field("Recording", TextStyle.flag(session.isRecording)))
-    line(TextStyle.field("Soundtrack", session.currentSoundTrack.map { $0.title } ?? TextStyle.placeholder("(aucune)")))
-    line(TextStyle.field("Reseau", networkRoleText()))
-    line(TextStyle.field("Mode MIDI", session.midiFusionMode == .merged ? "fusionne" : "individuel"))
-    let lastEventText = session.lastMIDIEvent.map { "\($0.kind == .noteOn ? "on " : "off")pitch=\($0.pitch) vel=\($0.velocity)" } ?? "-"
-    line(TextStyle.field("Dernier evt", lastEventText))
 
-    let listeningTracks = session.tracks.filter { $0.isListening }
-    if listeningTracks.isEmpty {
+    switch mode {
+    case .config:
+        line(TextStyle.field("Piece", session.piece.map { $0.title } ?? TextStyle.placeholder("(aucun)")))
+        line(TextStyle.field("Fichier", session.currentPieceFilePath ?? TextStyle.placeholder("(jamais sauvegarde)")))
+        line(TextStyle.field("Playing", TextStyle.flag(session.isPlaying)))
+        line(TextStyle.field("Recording", TextStyle.flag(session.isRecording)))
+        line(TextStyle.field("Soundtrack", session.currentSoundTrack.map { $0.title } ?? TextStyle.placeholder("(aucune)")))
+        line(TextStyle.field("Reseau", networkRoleText()))
+        line(TextStyle.field("Mode MIDI", session.midiFusionMode == .merged ? "fusionne" : "individuel"))
         line()
-        line(TextStyle.placeholder("(aucune piste en ecoute — menu Instruments pour en activer une)"))
-    }
-    for track in listeningTracks {
-        line()
-        line(TextStyle.heading("[\(trackIDText(track.id))] \(track.label)"))
-        if track.id == .microphone {
-            line(TextStyle.field("Micro", microphoneStatusText(track)))
-        } else if track.canHaveSound {
-            let soundText = TextStyle.flag(track.soundEnabled) + (track.instrumentName.map { " (\($0))" } ?? "")
-            line(TextStyle.field("Son", soundText))
+        line(TextStyle.heading("Detail du morceau actif:"))
+        for row in pieceDetailLines() { line(row) }
+
+    case .run:
+        let lastEventText = session.lastMIDIEvent.map { "\($0.kind == .noteOn ? "on " : "off")pitch=\($0.pitch) vel=\($0.velocity)" } ?? "-"
+        line(TextStyle.field("Dernier evt", lastEventText))
+
+        let listeningTracks = session.tracks.filter { $0.isListening }
+        if listeningTracks.isEmpty {
+            line()
+            line(TextStyle.placeholder("(aucune piste en ecoute — menu Instruments pour en activer une)"))
         }
-        line(TextStyle.field("Chord", chordDisplayText(track)))
-        line(TextStyle.field("Modes", modesDisplayText(track)))
-        for row in renderTrackKeyboard(track) { line(row) }
-    }
+        for track in listeningTracks {
+            line()
+            line(TextStyle.heading("[\(trackIDText(track.id))] \(track.label)"))
+            if track.id == .microphone {
+                line(TextStyle.field("Micro", microphoneStatusText(track)))
+            } else if track.canHaveSound {
+                let soundText = TextStyle.flag(track.soundEnabled) + (track.instrumentName.map { " (\($0))" } ?? "")
+                line(TextStyle.field("Son", soundText))
+            }
+            line(TextStyle.field("Chord", chordDisplayText(track)))
+            line(TextStyle.field("Modes", modesDisplayText(track)))
+            for row in renderTrackKeyboard(track) { line(row) }
+        }
 
-    // Playback position + a keyboard for "what the composition is playing right now" —
-    // only shown while actually playing, mirroring how each track's own fields/keyboard
-    // above only appear while that track is listening.
-    if session.isPlaying {
-        let timeline = session.playbackTimeline
-        let currentIndex = session.playbackCurrentChordIndex
-        let currentSegment = currentIndex.flatMap { timeline.indices.contains($0) ? timeline[$0] : nil }
+        // Playback position + a keyboard for "what the composition is playing right now" —
+        // only shown while actually playing, mirroring how each track's own fields/keyboard
+        // above only appear while that track is listening.
+        if session.isPlaying {
+            let timeline = session.playbackTimeline
+            let currentIndex = session.playbackCurrentChordIndex
+            let currentSegment = currentIndex.flatMap { timeline.indices.contains($0) ? timeline[$0] : nil }
 
-        line()
-        line(TextStyle.heading("Deroule de la composition:"))
-        if timeline.isEmpty {
-            line(TextStyle.placeholder("(pas d'accord dans ce morceau)"))
-        } else {
-            let items = timeline.enumerated().map { index, event -> (display: String, plainWidth: Int) in
-                let name = "\(PitchClass(event.chord.root).name())\(event.chord.chordTemplateID)"
-                if index == currentIndex {
-                    return ("\(KeyboardColor.chordRoot)[\(name)]\(KeyboardColor.reset)", name.count + 2)
+            line()
+            line(TextStyle.heading("Deroule de la composition:"))
+            if timeline.isEmpty {
+                line(TextStyle.placeholder("(pas d'accord dans ce morceau)"))
+            } else {
+                let items = timeline.enumerated().map { index, event -> (display: String, plainWidth: Int) in
+                    let name = "\(PitchClass(event.chord.root).name())\(event.chord.chordTemplateID)"
+                    if index == currentIndex {
+                        return ("\(KeyboardColor.chordRoot)[\(name)]\(KeyboardColor.reset)", name.count + 2)
+                    }
+                    return (name, name.count)
                 }
-                return (name, name.count)
+                for wrapped in wrapItems(items) { line(wrapped) }
             }
-            for wrapped in wrapItems(items) { line(wrapped) }
-        }
 
-        let playbackChordPitchClasses: Set<Int>? = currentSegment.map { segment in
-            guard let template = ChordVocabulary.byID(segment.chord.chordTemplateID) else { return [] }
-            return Set(template.intervalsFromRoot.map { (segment.chord.root + $0) % 12 })
-        }
-        let playbackModeSet: Set<PitchClass>? = currentSegment.flatMap { segment in
-            ScaleLibrary.byID(segment.mode.scaleID).map { scale in Mode(tonic: PitchClass(segment.mode.tonic), scale: scale).pitchClassSet }
-        }
-        let playbackHeld = session.playbackHeldPitches
-
-        line()
-        line(TextStyle.heading("Clavier compose, en cours de jeu (C3-B5):"))
-        for row in renderKeyboard(
-            startMIDI: 48,
-            octaveCount: 3,
-            blackZoneRows: 2,
-            whiteZoneRows: 2,
-            modeMarker: { semitone in playbackModeSet?.contains(PitchClass(semitone)) ?? false },
-            colorFor: { pitch in
-                guard playbackHeld.contains(pitch) else { return nil }
-                guard let currentSegment, let playbackChordPitchClasses else { return KeyboardColor.heldNoChord }
-                let pitchClass = ((pitch % 12) + 12) % 12
-                if pitchClass == currentSegment.chord.root { return KeyboardColor.chordRoot }
-                return playbackChordPitchClasses.contains(pitchClass) ? KeyboardColor.chordTone : KeyboardColor.heldOutsideChord
+            let playbackChordPitchClasses: Set<Int>? = currentSegment.map { segment in
+                guard let template = ChordVocabulary.byID(segment.chord.chordTemplateID) else { return [] }
+                return Set(template.intervalsFromRoot.map { (segment.chord.root + $0) % 12 })
             }
-        ) { line(row) }
-    }
+            let playbackModeSet: Set<PitchClass>? = currentSegment.flatMap { segment in
+                ScaleLibrary.byID(segment.mode.scaleID).map { scale in Mode(tonic: PitchClass(segment.mode.tonic), scale: scale).pitchClassSet }
+            }
+            let playbackHeld = session.playbackHeldPitches
 
-    // Soundtrack playback (temporal, purely evenementiel mode) — a third, independent
-    // keyboard, only shown while playing back a recording. No chord/mode analysis here:
-    // a SoundTrack is raw events, not a theory-modeled Piece, so held notes are shown
-    // plain (no root/tone coloring) rather than inventing an analysis that wasn't asked for.
-    if session.isPlayingSoundTrack {
-        let soundTrackHeld = session.soundTrackHeldPitches
-        line()
-        line(TextStyle.heading("Clavier soundtrack, en cours de jeu (C3-B5):"))
-        for row in renderKeyboard(
-            startMIDI: 48, octaveCount: 3, blackZoneRows: 2, whiteZoneRows: 2,
-            colorFor: { pitch in soundTrackHeld.contains(pitch) ? KeyboardColor.heldNoChord : nil }
-        ) { line(row) }
+            line()
+            line(TextStyle.heading("Clavier compose, en cours de jeu (C3-B5):"))
+            for row in renderKeyboard(
+                startMIDI: 48,
+                octaveCount: 3,
+                blackZoneRows: 2,
+                whiteZoneRows: 1,
+                modeMarker: { semitone in playbackModeSet?.contains(PitchClass(semitone)) ?? false },
+                colorFor: { pitch in
+                    guard playbackHeld.contains(pitch) else { return nil }
+                    guard let currentSegment, let playbackChordPitchClasses else { return KeyboardColor.heldNoChord }
+                    let pitchClass = ((pitch % 12) + 12) % 12
+                    if pitchClass == currentSegment.chord.root { return KeyboardColor.chordRoot }
+                    return playbackChordPitchClasses.contains(pitchClass) ? KeyboardColor.chordTone : KeyboardColor.heldOutsideChord
+                }
+            ) { line(row) }
+        }
+
+        // Soundtrack playback (temporal, purely evenementiel mode) — a third, independent
+        // keyboard, only shown while playing back a recording. No chord/mode analysis here:
+        // a SoundTrack is raw events, not a theory-modeled Piece, so held notes are shown
+        // plain (no root/tone coloring) rather than inventing an analysis that wasn't asked for.
+        if session.isPlayingSoundTrack {
+            let soundTrackHeld = session.soundTrackHeldPitches
+            line()
+            line(TextStyle.heading("Clavier soundtrack, en cours de jeu (C3-B5):"))
+            for row in renderKeyboard(
+                startMIDI: 48, octaveCount: 3, blackZoneRows: 2, whiteZoneRows: 1,
+                colorFor: { pitch in soundTrackHeld.contains(pitch) ? KeyboardColor.heldNoChord : nil }
+            ) { line(row) }
+        }
     }
 
     output += "\u{1B}[J" // erase any leftover lines below from a previous, taller frame
-    print(output, terminator: "") // one single write for the whole frame — see the doc comment above
+    print(output, terminator: "") // one write for the whole frame instead of one per line
 }
 
 /// Takes over the terminal with a fixed, redrawn-in-place status screen until the user
 /// hits Ctrl+C — a `DispatchSourceSignal` catches SIGINT asynchronously (safe to act on,
 /// unlike a raw C signal handler) so the redraw loop can exit cleanly instead of the
 /// whole process dying.
-func runConsoleScreen() {
+func runConsoleScreen(mode initialMode: ConsoleScreenMode) {
+    var mode = initialMode
     consoleShouldStop = false
     isInConsoleMode = true
     openMenuIndex = nil
@@ -583,10 +621,22 @@ func runConsoleScreen() {
     print("\u{1B}[?25l", terminator: "") // hide cursor
     print("\u{1B}[2J", terminator: "")   // clear once up front
     setRawMode(true)
-    setStdinNonBlocking(true)
     while !consoleShouldStop {
         if let key = readKey() {
             switch key {
+            case .tab:
+                // Jump directly between the two screens without going back through Command
+                // — deliberately doesn't touch `openMenuIndex`: an open dropdown is the same
+                // shared menu system in both modes, so there's no reason to close it just
+                // because the content area underneath switched.
+                mode = (mode == .run) ? .config : .run
+            case .char("q") where !computerKeyboardSourceActive:
+                // A calmer way out than Ctrl+C — same effect as the SIGINT handler below
+                // (just sets the same flag), kept as a fallback rather than replaced: it's
+                // the only way out while "Source clavier" has every letter intercepted for
+                // note-playing (this case's own guard steps aside for that, same as every
+                // other letter — falls through to the note lookup right below).
+                consoleShouldStop = true
             case .char(let c) where computerKeyboardSourceActive:
                 // "piste clavier" intercepts every character key itself — including
                 // while a menu is open, where a letter would otherwise switch categories
@@ -599,10 +649,9 @@ func runConsoleScreen() {
                 handleMenuKey(key, categories: menuCategories)
             }
         }
-        renderConsoleFrame()
+        renderConsoleFrame(mode: mode)
         Thread.sleep(forTimeInterval: 0.1)
     }
-    setStdinNonBlocking(false)
     setRawMode(false)
     isInConsoleMode = false
     sigSource.cancel()
@@ -876,16 +925,14 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         for path in paths { print("  -> \(path)") }
     case "status":
         printStatus()
-    case "console":
-        runConsoleScreen()
+    case "run":
+        runConsoleScreen(mode: .run)
+    case "config":
+        runConsoleScreen(mode: .config)
     case "quit", "exit":
         stopAllTracks()
         drainLog()
-        // Harmless no-ops if we were never in raw/non-blocking mode. Important either
-        // way: `exec`-inherited stdin can share its underlying open-file-description with
-        // the parent shell, so leaving O_NONBLOCK set could leak into the shell afterward.
-        setStdinNonBlocking(false)
-        setRawMode(false)
+        setRawMode(false) // harmless no-op if we were never in raw mode
         print("\u{1B}[?25h", terminator: "") // ditto for the cursor
         exit(0)
     default:

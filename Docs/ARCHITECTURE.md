@@ -47,7 +47,7 @@ AudioEngine (lecture Piece + SoundTrack, micro/FFT)   MIDIEngine (CoreMIDI)   Ne
                                                    (ImprovSession — logique applicative)
                                                                         │
                                                                    ImprovCLI
-                                                  (REPL + écran "console" + menus DOS)
+                                            (REPL + écrans "run"/"config" + menus DOS)
 ```
 
 `SanityChecks` (exécutable séparé) dépend de tout, pour pouvoir exécuter tous les cas de
@@ -409,7 +409,7 @@ l'appeler et lire son état ; une future interface SwiftUI pourrait s'y brancher
 
 `ImprovSession` peut être appelée depuis plusieurs threads différents en même temps
 (callback CoreMIDI, minuteries d'extinction du clavier ordinateur, callback du micro, boucle
-`console`). Trois vrais bugs de concurrence (corruption mémoire, plantages) ont été trouvés et
+de redessin des écrans `run`/`config`). Trois vrais bugs de concurrence (corruption mémoire, plantages) ont été trouvés et
 corrigés au cours de cette session, toujours selon le même schéma :
 
 > **Règle** : toute mutation d'état partagé programmée sur une queue *concurrente*
@@ -431,12 +431,26 @@ détail des trois incidents.
 
 ## ImprovCLI — l'interface en ligne de commande
 
-- **`main.swift`** : boucle REPL classique + `executeCommand(_:_:)` (un unique
-  aiguillage de commandes, partagé par le REPL et les menus de `console`) + l'écran `console`
-  (tableau de bord figé, redessiné en place).
+- **`main.swift`** : boucle REPL classique + `executeCommand(_:_:)` (un unique aiguillage de
+  commandes, partagé par le REPL et les menus des écrans figés) + `renderConsoleFrame(mode:)`/
+  `runConsoleScreen(mode:)` (`ConsoleScreenMode.run`/`.config` — un seul mécanisme de
+  redessin-en-place partagé, deux contenus distincts, voir plus bas). `runConsoleScreen`
+  garde `mode` comme `var` local (pas juste le paramètre reçu une fois) : la touche `Tab`
+  (`Key.tab`, nouveau cas) bascule `.run`↔`.config` directement dans la boucle, sans jamais
+  repasser par Command — interceptée avant tout le reste dans le `switch` sur la touche lue,
+  sans toucher `openMenuIndex` (un menu ouvert reste ouvert pendant la bascule, puisque c'est
+  le même système de menus dans les deux écrans). **`q`** (`case .char("q") where
+  !computerKeyboardSourceActive`) quitte l'écran — met `consoleShouldStop = true`, exactement
+  ce que fait déjà le gestionnaire SIGINT de Ctrl+C, donc le même chemin de sortie propre ;
+  demandé comme alternative "moins violente" à Ctrl+C. Ctrl+C reste fonctionnel en secours
+  (notamment le seul moyen de sortir pendant que "Source clavier" intercepte toutes les
+  lettres pour jouer des notes — le `where !computerKeyboardSourceActive` sur le cas `q`
+  s'efface alors, comme n'importe quelle autre lettre, vers la recherche de note juste après).
 - **`Menu.swift`** : mode brut du terminal (`termios`), lecture de touche par touche,
   système de menus déroulants façon DOS (mnémoniques soulignés, navigation aux flèches,
-  Échap pour ouvrir/fermer sans passer par une lettre).
+  Échap pour ouvrir/fermer sans passer par une lettre). `Key.tab` (octet 9) ajouté à
+  l'énumération — `handleMenuKey` l'ignore explicitement (`case .tab: break`) puisque le
+  changement d'écran n'est pas une notion de menu, gérée un niveau plus haut dans `main.swift`.
 - **`Keyboard.swift`** : rendu ASCII d'un clavier de piano (1 caractère/demi-ton, largeur
   volontairement étroite pour ne jamais approcher 80 colonnes — une largeur trop proche de
   la limite du terminal a été la cause réelle d'un bug de scintillement).
@@ -445,8 +459,8 @@ détail des trois incidents.
 
 Commandes réseau : `server [port]`/`stop-server` (héberge), `client [host] [port]`/`discover`/
 `disconnect` (rejoint, par adresse connue ou par découverte Bonjour) — menu **Jam Session**
-(mnémonique `J`, renommé depuis « Reseau ») dans `console`. Champ `Reseau` (celui de
-`status`/`console`/`tracks` — un libellé d'état, distinct du nom du menu) inchangé.
+(mnémonique `J`, renommé depuis « Reseau »). Champ `Reseau` (celui de `status`/`config`/
+`tracks` — un libellé d'état, distinct du nom du menu) inchangé.
 
 **Menu principal `MusicLab`** (mnémonique `L` — pas la première lettre, pour ne pas entrer
 en collision avec `Morceaux`, même astuce que `Composition`/`C` évite `Morceaux`/`M` et
@@ -620,21 +634,81 @@ prompt de composition...". Note pour la prochaine fois qu'un header nommé est p
 grouper des items dans ce menu : ce n'est pas la préférence par défaut de l'utilisateur — un
 simple séparateur suffit si le regroupement est déjà clair par le contexte des libellés.
 
-**Vrai correctif de scintillement (`renderConsoleFrame`) — un seul `print` par frame au lieu
-d'un par ligne.** Signalé : "sautillement de l'écran quand le menu est déployé", d'autant
+**Correctif de scintillement, round 1 (`renderConsoleFrame`) — un seul `print` par frame au
+lieu d'un par ligne.** Signalé : "sautillement de l'écran quand le menu est déployé", d'autant
 plus visible que les dropdowns se sont allongés au fil des demandes précédentes (15+ lignes
 pour `Enregistrement`). Avant : chaque ligne de la frame (~26 avec un menu ouvert) déclenchait
-son propre `print(...)`, donc sa propre écriture terminal — un dropdown plus haut, c'est
-mécaniquement plus d'écritures séparées par frame (10 fois par seconde), donc plus de risque
-qu'un terminal peigne la frame en plusieurs passes visibles. Après : `renderConsoleFrame()`
-accumule toute la frame (curseur-home, chaque ligne, `\x1B[J` final) dans une seule `String`,
-puis fait un seul `print` à la fin. Vérifié par capture pty brute (pas seulement le texte
-rendu) : avant toute autre chose, il fallait confirmer que le correctif change vraiment le
-nombre d'écritures — capturé 0,8s de frames avec `Enregistrement` ouvert, résultat 8 lectures
-de 1024 octets chacune pour 8 occurrences de `ESC[H` (le code de retour-curseur qui ouvre
-chaque frame) : une frame, une écriture, un `read()` côté pty — la preuve indirecte la plus
-concrète qu'on puisse obtenir sans un vrai terminal graphique que le nombre d'écritures par
-frame est bien passé de ~26 à 1.
+son propre `print(...)`. Après : `renderConsoleFrame()` accumule toute la frame (curseur-home,
+chaque ligne, `\x1B[J` final) dans une seule `String`, puis fait un seul `print` à la fin.
+**La vérification pty initiale de ce round (comptage des lectures pty à 1024 octets = 1
+occurrence de `ESC[H` par lecture) s'est révélée non concluante** : creusé plus tard (round 2
+ci-dessous, avec un clavier affiché — une frame plus grosse) — le pty plafonne chaque `read()`
+côté lecteur à 1024 octets *quel que soit* le nombre d'écritures côté application ; ça ne
+prouve donc rien sur le nombre réel de `write()` — juste une coïncidence de taille pour la
+frame plus courte testée alors. Leçon : le chunking observé côté lecteur pty n'est pas une
+preuve fiable du nombre d'écritures côté écrivain ; ne pas réutiliser cette méthode.
+
+**Correctif de scintillement, round 2 (abandonné) — `setvbuf` en cours de route, mauvaise
+piste.** Tentative : rebufferiser stdout en entrant dans `console` (`setvbuf(stdout, nil,
+_IOFBF, 1 << 16)`) + `fflush` explicite par frame + retour à `_IONBF` en sortie, en pariant
+que "parfois le clavier ne se dessine pas complètement" venait du `_IONBF` global. **Ça a
+rendu les choses nettement pires** ("j'ai l'impression que l'écran se redessine en permanence
+... ralentit très fort") : `setvbuf` n'est bien défini par la norme C que s'il est appelé
+*avant* toute E/S sur le flux — au moment où `console` démarre, stdout a déjà servi à tout
+l'affichage du REPL, donc le rappeler en cours de route est un comportement non défini.
+Abandonné entièrement, `stdout` reste `_IONBF` du début à la fin, une seule fois, au tout
+début de `main.swift` — plus aucun autre appel à `setvbuf` nulle part dans le programme.
+
+**Correctif de scintillement, round 3 — la vraie cause : `O_NONBLOCK` sur stdin partagé avec
+stdout via le pty.** En cherchant à vérifier le round 2, remplacé temporairement le `print`
+de `renderConsoleFrame` par une écriture bas niveau (`FileHandle.standardOutput.write`) pour
+observer le comportement réel — et ça a **crashé de façon reproductible** :
+`NSFileHandleOperationException: ... Resource temporarily unavailable` (EAGAIN sur l'écriture).
+EAGAIN sur une écriture ne peut se produire que sur un descripteur **non bloquant** — or rien
+dans ce fichier ne rend stdout non bloquant... sauf indirectement : `setStdinNonBlocking`
+(`Menu.swift`, appelé à l'entrée/sortie de `console` et dans `runMenuAction`) met `O_NONBLOCK`
+sur `STDIN_FILENO` pour que `readKey()` puisse lire sans bloquer. Sous la manière standard
+dont un shell interactif s'attache à un terminal (`login_tty(3)` : le pty esclave est ouvert
+**une seule fois** puis `dup2`-é sur les descripteurs 0, 1 et 2), les trois partagent la
+**même** description de fichier ouvert sous-jacente — `O_NONBLOCK` est une propriété de cette
+description partagée, pas du descripteur en tant que tel : rendre stdin non bloquant rendait
+donc **stdout et stderr non bloquants aussi**, silencieusement. Une écriture qui tombait sur
+un tampon pty momentanément plein renvoyait EAGAIN : `print`/stdio l'ignorait en silence (la
+cause probable et réelle du "clavier parfois incomplet" dès l'origine, bien avant ce round de
+correctifs), et `FileHandle.write` la transformait en exception fatale (la cause du crash/du
+ralentissement sévère signalé). **Ni le nombre de `print` par frame (round 1) ni le mode de
+bufferisation (round 2) n'étaient la vraie cause.**
+- **Corrigé à la racine** : `setStdinNonBlocking` supprimé entièrement (fonction + ses 4 sites
+  d'appel dans `Menu.swift`/`main.swift`). `readKey()` (`Menu.swift`) n'a plus besoin que
+  `STDIN_FILENO` soit non bloquant : une fonction privée `stdinHasByteAvailable()` interroge
+  `poll(2)` avec un délai nul avant chaque lecture (la première comme les deux lectures de
+  continuation de la séquence d'échappement des flèches) — un moyen de "lire sans bloquer"
+  qui n'a besoin de toucher aucun drapeau de descripteur, donc qui ne peut plus jamais
+  déteindre sur stdout. `renderConsoleFrame()` est revenu à un simple `print` bufferisé
+  (sûr maintenant que stdout ne peut plus être non bloquant).
+- **Vérifié par la reproduction directe du crash, puis sa disparition** — pas seulement par
+  relecture de code : capturé le crash exact ci-dessus via un lancement direct du binaire
+  sous pty (contournant `swift run`, pour écarter tout bruit de recompilation), puis, après le
+  correctif, 3 exécutions consécutives de 3 s chacune avec un clavier affiché : ~9,5 images/s
+  stables (proche du taux de rafraîchissement visé de 10 Hz), 0 crash, réactivité immédiate
+  (0 ms) après Échap — contre un crash systématique et reproductible avant.
+
+**Astuce clavier de la barre de menu déplacée sur sa propre ligne, masquée quand un menu est
+ouvert** (`renderConsoleFrame`) : `"(lettre: ouvre un menu, fleches, Entree, Echap...)"` était
+concaténée à la fin de la ligne de `renderMenuBar` ; elle passe maintenant sur la ligne
+suivante, et seulement quand `openMenuIndex == nil` — une fois un menu déroulé, cette ligne
+est simplement omise (le contenu du dropdown prend sa place), plutôt que remplacée par une
+ligne vide.
+
+**Clavier ASCII : 3 lignes de touches, pas 4** (`Keyboard.swift`/`main.swift`). Les trois
+appels à `renderKeyboard` (piste en écoute, lecture d'un `Piece`, lecture d'une soundtrack)
+étaient passés à `blackZoneRows: 2, whiteZoneRows: 2` (4 lignes de touches : les blanches
+occupent `blackZoneRows + whiteZoneRows` puisqu'elles sont aussi dessinées dans la zone
+noire ; les noires occupent seulement `blackZoneRows`). Corrigés en `whiteZoneRows: 1` —
+touches blanches sur 3 lignes au total, noires sur 2, comme demandé et comme sur un clavier
+réel. Vérifié via pty : la ligne de touches "blanc seul" (`░ ░ ░┊░ ░ ░ ░|...`) apparaît
+exactement une fois sous les deux lignes partagées noir+blanc, plus la ligne de marqueurs de
+mode et la ligne d'étiquettes — 5 lignes au total pour le bloc clavier, comme attendu.
 
 **`printHelp()` regroupée par catégorie** (Général / Morceaux / Pistes d'entrée / Instruments /
 Soundtrack / IA / Session collaborative) plutôt qu'une seule liste plate — demande explicite

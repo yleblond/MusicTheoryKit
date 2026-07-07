@@ -30,7 +30,10 @@ private let eToFSeparator = "\u{1B}[2m┊\u{1B}[0m"
 /// `whiteZoneRows` is the lower band where only white keys reach (black keys are shorter,
 /// same as on a real keyboard) — white key cells are drawn through *every* row of both
 /// bands so a highlighted white key reads as one solid column, not just a sliver at the
-/// bottom. Use `blackZoneRows: 2, whiteZoneRows: 2` for a taller, more keyboard-like look.
+/// bottom. This app's own keyboards use `blackZoneRows: 2, whiteZoneRows: 1` — 3 rows total,
+/// black keys spanning the top 2, white keys spanning all 3 (a real keyboard's proportions,
+/// deliberately not a taller `2/2` — the extra white-only row it would add reads as wasted
+/// height without making anything easier to see).
 ///
 /// `colorFor` maps an absolute MIDI pitch to an ANSI color prefix, or nil to leave it
 /// unhighlighted. `modeMarker` marks which pitch classes (0...11, repeating every octave)
