@@ -7,6 +7,7 @@ import RecognitionEngine
 @testable import LLMEngine
 @testable import NetEngine
 @testable import SoundTrackModel
+@testable import WebConsole
 import Foundation
 
 // Mirrors the same helper in Tests/AppCoreTests/ImprovSessionTests.swift — compares by
@@ -1021,6 +1022,167 @@ func testCollaborativeServerClientSyncsTracksAndRecognition() {
     }
 }
 testCollaborativeServerClientSyncsTracksAndRecognition()
+
+// Mirrors Tests/AppCoreTests/ImprovSessionTests.swift's web-console guard-clause tests.
+func testStartWebConsoleSetsPortAndStopClearsIt() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        checkNil(session.webConsolePort, "webConsolePort starts nil")
+        try session.startWebConsole(port: 18391)
+        check(session.webConsolePort, 18391, "webConsolePort set after start")
+        session.stopWebConsole()
+        checkNil(session.webConsolePort, "webConsolePort cleared after stop")
+    } catch {
+        failures += 1
+        print("FAIL [web console start/stop]: threw \(error)")
+    }
+}
+testStartWebConsoleSetsPortAndStopClearsIt()
+
+func testStartWebConsoleTwiceThrows() {
+    let session = ImprovSession()
+    checks += 1
+    do {
+        try session.startWebConsole(port: 18392)
+        defer { session.stopWebConsole() }
+        do {
+            try session.startWebConsole(port: 18393)
+            failures += 1
+            print("FAIL [web console double start]: did not throw")
+        } catch ImprovSession.SessionError.webConsoleAlreadyActive {
+            // expected
+        } catch {
+            failures += 1
+            print("FAIL [web console double start]: wrong error \(error)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [web console double start]: setup threw \(error)")
+    }
+}
+testStartWebConsoleTwiceThrows()
+
+func testStartWebConsoleInvalidPortThrows() {
+    let session = ImprovSession()
+    checks += 1
+    do {
+        try session.startWebConsole(port: 999_999)
+        failures += 1
+        print("FAIL [web console invalid port]: did not throw")
+    } catch {
+        // expected
+    }
+    checkNil(session.webConsolePort, "webConsolePort stays nil after a failed start")
+}
+testStartWebConsoleInvalidPortThrows()
+
+// A real HTTP round trip over real loopback TCP against the actual `HTTPServer` — not a
+// mock — exercising the exact bug this feature hit during manual verification: an
+// `HTTPConnection` created as a local in `newConnectionHandler` with only weak-self
+// callbacks was deallocated before it could ever answer, and `HTTPServer.stop()`'s
+// `[weak self]` queue.async raced the caller's immediate `= nil` and never actually
+// cancelled the listener. Port 18394 is arbitrary, same caveat as the collaborative test's
+// own fixed port.
+// Mirrors Tests/WebConsoleTests/HTTPWireFormatTests.swift.
+func testParseRequestLineExtractsMethodAndPath() {
+    let request = HTTPWireFormat.parseRequestLine("GET /state HTTP/1.1\r\nHost: localhost\r\n")
+    check(request?.method, "GET", "parseRequestLine extracts the method")
+    check(request?.path, "/state", "parseRequestLine extracts the path")
+}
+testParseRequestLineExtractsMethodAndPath()
+
+func testParseRequestLineRejectsMalformedLine() {
+    // Deliberately lenient (no method whitelist, no HTTP-version check — see its doc
+    // comment): the only real guard is "at least a method and a path", so only a line with
+    // fewer than two space-separated tokens counts as malformed here.
+    checkNil(HTTPWireFormat.parseRequestLine("GET"), "parseRequestLine rejects a line with no path")
+    checkNil(HTTPWireFormat.parseRequestLine(""), "parseRequestLine rejects an empty line")
+}
+testParseRequestLineRejectsMalformedLine()
+
+func testResponseHeadIncludesContentLengthAndCloseConnection() {
+    let response = HTTPResponse.text("hello", contentType: "text/plain")
+    let head = HTTPWireFormat.responseHead(for: response)
+    check(head.hasPrefix("HTTP/1.1 200 OK\r\n"), true, "responseHead starts with the status line")
+    check(head.contains("Content-Type: text/plain\r\n"), true, "responseHead includes Content-Type")
+    check(head.contains("Content-Length: 5\r\n"), true, "responseHead includes Content-Length")
+    check(head.contains("Connection: close\r\n"), true, "responseHead includes Connection: close")
+    check(head.hasSuffix("\r\n\r\n"), true, "responseHead ends with the blank line terminating headers")
+}
+testResponseHeadIncludesContentLengthAndCloseConnection()
+
+func testNotFoundResponseIs404() {
+    check(HTTPResponse.notFound().status, 404, "HTTPResponse.notFound() is a 404")
+}
+testNotFoundResponseIs404()
+
+func syncGET(_ url: String, timeout: TimeInterval = 2) -> (status: Int, contentType: String?, body: String)? {
+    let semaphore = DispatchSemaphore(value: 0)
+    nonisolated(unsafe) var result: (Int, String?, String)?
+    URLSession.shared.dataTask(with: URL(string: url)!) { data, response, _ in
+        if let http = response as? HTTPURLResponse, let data {
+            result = (http.statusCode, http.value(forHTTPHeaderField: "Content-Type"), String(data: data, encoding: .utf8) ?? "")
+        }
+        semaphore.signal()
+    }.resume()
+    _ = semaphore.wait(timeout: .now() + timeout)
+    return result
+}
+
+func testWebConsoleServesPageScriptAndState() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.start()
+        try session.startWebConsole(port: 18394)
+        try session.startTrack(.computerKeyboard)
+        session.pressKey(pitch: 60)
+        session.pressKey(pitch: 64)
+        session.pressKey(pitch: 67)
+        Thread.sleep(forTimeInterval: 0.3) // let the 150ms refresh timer tick at least once
+
+        if let page = syncGET("http://127.0.0.1:18394/") {
+            check(page.status, 200, "GET / returns 200")
+            check(page.contentType?.contains("text/html") ?? false, true, "GET / is HTML")
+        } else {
+            failures += 1
+            print("FAIL [web console GET /]: no response")
+        }
+
+        if let script = syncGET("http://127.0.0.1:18394/app.js") {
+            check(script.status, 200, "GET /app.js returns 200")
+            check(script.contentType ?? "", "application/javascript", "GET /app.js content type")
+        } else {
+            failures += 1
+            print("FAIL [web console GET /app.js]: no response")
+        }
+
+        if let state = syncGET("http://127.0.0.1:18394/state") {
+            check(state.status, 200, "GET /state returns 200")
+            check(state.body.contains("\"chordRoot\":0"), true, "GET /state reflects the C major triad just played")
+            check(state.body.contains("\"id\":\"clavier\""), true, "GET /state includes the listening track")
+        } else {
+            failures += 1
+            print("FAIL [web console GET /state]: no response")
+        }
+
+        if let notFound = syncGET("http://127.0.0.1:18394/nope") {
+            check(notFound.status, 404, "GET /nope returns 404")
+        } else {
+            failures += 1
+            print("FAIL [web console GET /nope]: no response")
+        }
+
+        session.stopWebConsole()
+        Thread.sleep(forTimeInterval: 0.2)
+        check(syncGET("http://127.0.0.1:18394/state", timeout: 1) == nil, true, "stopWebConsole actually releases the port")
+    } catch {
+        failures += 1
+        print("FAIL [web console HTTP round trip]: threw \(error)")
+    }
+}
+testWebConsoleServesPageScriptAndState()
 
 func testRecordingCapturesFilteredTrackEvents() {
     checks += 1

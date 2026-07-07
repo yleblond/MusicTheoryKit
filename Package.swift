@@ -17,6 +17,7 @@ let package = Package(
         .library(name: "RecognitionEngine", targets: ["RecognitionEngine"]),
         .library(name: "LLMEngine", targets: ["LLMEngine"]),
         .library(name: "NetEngine", targets: ["NetEngine"]),
+        .library(name: "WebConsole", targets: ["WebConsole"]),
     ],
     targets: [
         .target(name: "MusicTheoryKit"),
@@ -40,11 +41,16 @@ let package = Package(
         // length-prefixed TCP framing over Network.framework — no third-party dependency.
         .target(name: "NetEngine"),
         .testTarget(name: "NetEngineTests", dependencies: ["NetEngine"]),
+        // Hand-rolled HTTP/1.1 server on Network.framework, serving the browser-based "Console
+        // Web" — same "no third-party dependency" style as NetEngine, but HTTP instead of the
+        // length-prefixed JSON framing. Deliberately knows nothing about ImprovSession/AppCore.
+        .target(name: "WebConsole"),
+        .testTarget(name: "WebConsoleTests", dependencies: ["WebConsole"]),
         // Presentation-agnostic app state/behavior: a CLI drives it today, a future
         // SwiftUI front-end can bind to the same `ImprovSession` instance later.
-        .target(name: "AppCore", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "AudioEngine", "MIDIEngine", "RecognitionEngine", "LLMEngine", "NetEngine"]),
+        .target(name: "AppCore", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "AudioEngine", "MIDIEngine", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole"]),
         .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit", "LLMEngine", "NetEngine", "SoundTrackModel"]),
         .executableTarget(name: "ImprovCLI", dependencies: ["AppCore"]),
-        .executableTarget(name: "SanityChecks", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "AudioEngine", "MIDIEngine", "AppCore", "RecognitionEngine", "LLMEngine", "NetEngine"]),
+        .executableTarget(name: "SanityChecks", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "AudioEngine", "MIDIEngine", "AppCore", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole"]),
     ]
 )

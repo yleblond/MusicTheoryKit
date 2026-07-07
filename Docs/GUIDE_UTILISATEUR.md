@@ -337,7 +337,7 @@ Menus disponibles :
 
 | Menu | Contenu |
 |---|---|
-| **MusicLab** | Menu principal (premier de la barre, s'ouvre par défaut), en 4 groupes : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/connexions LLM/prompts), choisir une connexion LLM ; (3) mode MIDI fusionné/individuel ; (4) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
+| **MusicLab** | Menu principal (premier de la barre, s'ouvre par défaut), en 5 groupes : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/connexions LLM/prompts), choisir une connexion LLM ; (3) mode MIDI fusionné/individuel ; (4) démarrer/arrêter la console web (voir §11) ; (5) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
 | **Instruments** | Lister les instruments, activer/arrêter un instrument, *séparateur*, activer/désactiver le son d'un instrument, choisir un son pour un instrument. |
 | **Morceaux** | Quatre groupes, séparés par des traits : (1) écouter/voir le morceau ; (2) choisir le son par défaut de lecture, ou le son d'une piste/des accords d'une section (voir §7) ; (3) charger la démo, charger un morceau, sauvegarder le morceau, sauvegarder le morceau sous ; (4) **Assistant IA** — pour l'instant un intitulé de sous-section réservé, sans action, en attente d'une future fonction de modification par dialogue (« plus vite », « moins vite »…) applicable à n'importe quel morceau. |
 | **Enregistrement** | Démarrer/arrêter un enregistrement, voir l'enregistrement, jouer l'enregistrement, *séparateur*, charger/sauvegarder l'enregistrement, *séparateur*, composer un morceau à partir de l'enregistrement en le nommant (voir §10), *séparateur*, voir/sauvegarder/charger le prompt de composition. |
@@ -506,6 +506,44 @@ sauvegarder/charger le prompt utilisé (`show-soundtrack-prompt`, etc.).
 **Pas encore possible** (prévu plus tard) : enregistrer une nouvelle soundtrack *pendant*
 qu'un `Piece` joue, et l'intégrer directement dans ce morceau.
 
+## 11. Console Web — suivre l'activité depuis un navigateur
+
+Un second écran, en lecture seule, dans un navigateur — utile pour afficher l'activité
+musicale (claviers, accords, modes) sur un autre écran/appareil que celui où tourne
+l'application, sans repasser par le terminal. Ce n'est **pas** un quatrième mode d'affichage
+au sens du §8 (Command/`run`/`config`) : c'est un petit serveur HTTP, indépendant, qui tourne
+*en plus* de ce que fait déjà le terminal.
+
+```
+web-console 8080       # demarre la console web sur ce port (defaut 8080)
+web-console stop       # arrete la console web
+```
+
+Menu **MusicLab > Demarrer la console web.../Arreter la console web** fait la même chose (le
+port est demandé, vide = 8080). Une fois démarrée, ouvre `http://localhost:<port>` dans un
+navigateur (sur la même machine, ou une autre machine du même réseau local via l'adresse IP
+de celle qui héberge) — la page se rafraîchit d'elle-même environ 4 fois par seconde, tant
+qu'elle reste ouverte, sans rien à faire de plus.
+
+**Ce qui s'affiche** : le dernier événement MIDI reçu, un clavier par piste en écoute (mêmes
+couleurs que le terminal — magenta la fondamentale, jaune les autres notes de l'accord, vert
+une note tenue hors accord, une ligne cyan pour le mode détecté — voir §5), et, pendant la
+lecture, le clavier du morceau ou de l'enregistrement en cours. Un simple miroir de ce que
+montre l'écran `run` (§8) — la console web n'a aucun contrôle, ni menu, ni clavier virtuel :
+tout se pilote toujours depuis le terminal.
+
+**Fonctionnement interne** (pour comprendre ce qu'on voit) : l'état affiché est recalculé côté
+application environ toutes les 150ms et mis en cache — chaque `GET /state` du navigateur
+renvoie juste ce dernier instantané, sans jamais recalculer quoi que ce soit à la demande.
+Ça veut dire que **plusieurs navigateurs/onglets peuvent se connecter en même temps** (mono ou
+multi-client, au choix), chacun à son propre rythme, sans surcharger l'application.
+
+**Limites assumées pour cette première version** : pas de HTTPS ni d'authentification (même
+mise en garde que pour **Jam Session**, §9 — à réserver à un réseau de confiance) ; pas de
+connexion permanente (WebSocket/SSE), juste un sondage régulier côté navigateur — si la page
+affiche « connexion perdue », vérifie que l'application tourne toujours et que
+`web-console stop` n'a pas été appelé.
+
 ## Liste complète des commandes
 
 `help` les affiche déjà regroupées par catégorie (Général / Morceaux / Pistes d'entrée /
@@ -570,6 +608,8 @@ show-piece              affiche la structure du morceau courant
 status                  affiche l'état courant
 run                     écran fixe: activité musicale en direct (q pour revenir)
 config                  écran fixe: configuration active et détail du morceau (q pour revenir)
+web-console [port]      demarre la console web (miroir de 'run' dans un navigateur, defaut port 8080)
+web-console stop        arrete la console web
 quit                    quitte
 ```
 
@@ -586,3 +626,5 @@ quit                    quitte
 | `client` échoue ou reste sans piste distante visible | Vérifier host/port, que `server` tourne bien de l'autre côté, et qu'aucun pare-feu ne bloque le port — voir §9. |
 | `discover` ne trouve jamais rien | Même réseau local requis (pas de VPN/sous-réseau différent) ; vérifier la permission « Réseau local » ; sinon se connecter par adresse connue (`client <IP> <port>`) — voir §9. |
 | `track remote:...` refuse `on`/`off` | Normal : une piste distante est démarrée/arrêtée sur sa propre machine, pas depuis ailleurs — voir §9. |
+| La console web affiche « connexion perdue » | Vérifier que l'application tourne toujours et que `web-console stop` n'a pas été appelé — voir §11. |
+| `web-console <port>` echoue | Le port est peut-être déjà utilisé par une autre application — réessayer avec un autre port. |

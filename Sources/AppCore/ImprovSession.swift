@@ -8,6 +8,7 @@ import MIDIEngine
 import RecognitionEngine
 import LLMEngine
 import NetEngine
+import WebConsole
 
 /// The whole app's state and behavior, independent of any presentation layer. A CLI
 /// front-end drives this today by calling its methods and reading its published state;
@@ -162,6 +163,18 @@ public final class ImprovSession: @unchecked Sendable {
     private var netServer: NetworkServer?
     private var netClient: NetworkClient?
     private var syncTimer: DispatchSourceTimer?
+    private var webConsoleServer: HTTPServer?
+    private var webConsoleRefreshTimer: DispatchSourceTimer?
+    /// Guards `webConsoleStateCache` only — a dedicated queue rather than reusing
+    /// `liveInputQueue`/`playbackStateQueue`, since this value is written by
+    /// `refreshWebConsoleStateSoon()` (its own timer thread) and read by `HTTPServer`'s
+    /// internal queue (a request can arrive at any moment) — two threads unrelated to either
+    /// of those two, so it needs its own synchronization rather than borrowing theirs.
+    private let webConsoleStateQueue = DispatchQueue(label: "ImprovSession.webConsoleState")
+    private var webConsoleStateCache = Data("{}".utf8)
+    /// `nil` when inactive — the port the web console is currently listening on, for display
+    /// (`status`/`config`) and to guard against starting it twice.
+    public private(set) var webConsolePort: Int?
     /// Server-side only: which participant (`clientID`) each live TCP connection belongs
     /// to, learned from that connection's `hello` message — needed because `onDisconnect`
     /// only ever reports the connection's own transient id, not the participant identity.
@@ -207,6 +220,7 @@ public final class ImprovSession: @unchecked Sendable {
         case noPromptsFolderListed
         case invalidTextPromptIndex
         case invalidSoundTrackPromptIndex
+        case webConsoleAlreadyActive
         public var description: String {
             switch self {
             case .noPieceLoaded: return "no piece loaded — try 'load-demo' or 'load <path>'"
@@ -235,6 +249,7 @@ public final class ImprovSession: @unchecked Sendable {
             case .noPromptsFolderListed: return "no prompts folder listed yet — try 'prompts <folder>' first"
             case .invalidTextPromptIndex: return "no text prompt at that index"
             case .invalidSoundTrackPromptIndex: return "no soundtrack prompt at that index"
+            case .webConsoleAlreadyActive: return "web console already running — stop it first"
             }
         }
     }
@@ -983,6 +998,140 @@ public final class ImprovSession: @unchecked Sendable {
         }
         networkRole = .standalone
         append("Serveur arrete.")
+    }
+
+    // MARK: - Web console (read-only browser view of `run`)
+
+    /// Starts a small hand-rolled HTTP server (see `WebConsole`) that serves a browser page
+    /// mirroring the `run` screen — a static page + script on first load, then just answering
+    /// `GET /state` with whatever `refreshWebConsoleStateSoon()` last computed. Independent of
+    /// `networkRole`/`startServer`: this is a read-only *display* for one machine's own
+    /// activity, not another way to join/host a collaborative session, so both can run at
+    /// the same time without conflict.
+    public func startWebConsole(port: Int) throws {
+        guard webConsolePort == nil else { throw SessionError.webConsoleAlreadyActive }
+        guard let uPort = UInt16(exactly: port) else { throw HTTPServerError.invalidPort }
+        let server = HTTPServer(onRequest: { [weak self] request in
+            self?.handleWebConsoleRequest(request) ?? .notFound()
+        })
+        try server.start(port: uPort)
+        webConsoleServer = server
+        webConsolePort = port
+        refreshWebConsoleStateSoon() // don't leave the cache empty until the first tick
+        startWebConsoleRefreshTimer()
+        append("Console web demarree sur http://localhost:\(port)")
+    }
+
+    public func stopWebConsole() {
+        guard webConsolePort != nil else { return }
+        webConsoleRefreshTimer?.cancel()
+        webConsoleRefreshTimer = nil
+        webConsoleServer?.stop()
+        webConsoleServer = nil
+        webConsolePort = nil
+        append("Console web arretee.")
+    }
+
+    private func handleWebConsoleRequest(_ request: HTTPRequest) -> HTTPResponse {
+        switch request.path {
+        case "/": return .text(webConsoleIndexHTML, contentType: "text/html; charset=utf-8")
+        case "/app.js": return .text(webConsoleAppJS, contentType: "application/javascript")
+        case "/state": return HTTPResponse(contentType: "application/json", body: webConsoleStateQueue.sync { webConsoleStateCache })
+        default: return .notFound()
+        }
+    }
+
+    private func startWebConsoleRefreshTimer() {
+        let timer = DispatchSource.makeTimerSource(queue: .global())
+        timer.schedule(deadline: .now() + .milliseconds(150), repeating: .milliseconds(150))
+        timer.setEventHandler { [weak self] in self?.refreshWebConsoleStateSoon() }
+        timer.resume()
+        webConsoleRefreshTimer = timer
+    }
+
+    /// Recomputes the whole `WebConsoleState` snapshot and caches its JSON encoding — the
+    /// same "compute periodically, serve the cached result" split the user asked for, so a
+    /// `GET /state` never recomputes anything itself, and any number of browser tabs polling
+    /// at whatever rate they like all just read the same cached bytes. Reads `tracks` via
+    /// `liveInputQueue.sync` (same discipline `broadcastSyncSoon()` already uses for the same
+    /// reason: it's mutated from MIDI/microphone/keyboard-release callbacks) and the playback
+    /// fields via `playbackStateQueue.sync` (mutated from `play()`'s scheduled callbacks).
+    private func refreshWebConsoleStateSoon() {
+        let state = buildWebConsoleState()
+        guard let data = try? JSONEncoder().encode(state) else { return }
+        webConsoleStateQueue.sync { webConsoleStateCache = data }
+    }
+
+    private func buildWebConsoleState() -> WebConsoleState {
+        let lastEvent = lastMIDIEvent.map { "\($0.kind == .noteOn ? "on " : "off")pitch=\($0.pitch) vel=\($0.velocity)" }
+
+        let trackStates: [WebConsoleTrackState] = liveInputQueue.sync {
+            tracks.filter { $0.isListening }.map(Self.webConsoleTrackState)
+        }
+
+        let playback: WebConsolePlaybackState? = playbackStateQueue.sync {
+            guard isPlaying else { return nil }
+            let currentIndex = playbackCurrentChordIndex
+            let currentSegment = currentIndex.flatMap { playbackTimeline.indices.contains($0) ? playbackTimeline[$0] : nil }
+            let timelineSegments = playbackTimeline.enumerated().map { index, event in
+                WebConsoleTimelineSegment(
+                    label: "\(PitchClass(event.chord.root).name())\(event.chord.chordTemplateID)",
+                    isCurrent: index == currentIndex
+                )
+            }
+            let (chordTones, modeTones) = Self.pitchClassSets(forChordRoot: currentSegment?.chord.root, chordTemplateID: currentSegment?.chord.chordTemplateID, modeTonic: currentSegment?.mode.tonic, scaleID: currentSegment?.mode.scaleID)
+            return WebConsolePlaybackState(
+                timeline: timelineSegments, heldPitches: Array(playbackHeldPitches),
+                chordRoot: currentSegment?.chord.root, chordTones: chordTones, modeTones: modeTones
+            )
+        }
+
+        let soundTrackPlayback: WebConsoleSoundTrackPlaybackState? = playbackStateQueue.sync {
+            isPlayingSoundTrack ? WebConsoleSoundTrackPlaybackState(heldPitches: Array(soundTrackHeldPitches)) : nil
+        }
+
+        return WebConsoleState(lastEvent: lastEvent, tracks: trackStates, playback: playback, soundTrackPlayback: soundTrackPlayback)
+    }
+
+    /// One listening track's state, transposed from `TrackInfo`'s structured recognition into
+    /// the flat pitch-class sets/labels the browser needs — same computation
+    /// `renderTrackKeyboard`/`chordDisplayText`/`modesDisplayText` do in `ImprovCLI/main.swift`
+    /// for the terminal's own keyboard, just producing data instead of ANSI text.
+    private static func webConsoleTrackState(_ track: TrackInfo) -> WebConsoleTrackState {
+        let (chordTones, modeTones) = pitchClassSets(
+            forChordRoot: track.recognizedChord?.root.value, chordTemplateID: track.recognizedChord?.chordTemplateID,
+            modeTonic: track.recognizedModes.first?.tonic.value, scaleID: track.recognizedModes.first?.scaleID
+        )
+        let chordLabel = track.recognizedChord.map(describe) ?? (track.remoteChordDisplay)
+        let modesLabel = !track.recognizedModes.isEmpty ? track.recognizedModes.map(describe).joined(separator: ", ") : track.remoteModesDisplay
+        return WebConsoleTrackState(
+            id: webConsoleTrackIDText(track.id), label: track.label, heldPitches: Array(track.heldPitches),
+            chordRoot: track.recognizedChord?.root.value, chordTones: chordTones, modeTones: modeTones,
+            chordLabel: chordLabel, modesLabel: modesLabel,
+            microphoneLevel: track.id == .microphone ? track.microphoneInputLevel : nil
+        )
+    }
+
+    private static func webConsoleTrackIDText(_ id: TrackID) -> String {
+        if case .remote(let clientID, let trackID) = id { return "remote:\(clientID)@\(trackID)" }
+        return id.wireIDText ?? "?"
+    }
+
+    /// Shared by `buildWebConsoleState()`'s two call sites (a live track, and the piece
+    /// currently playing) — the pitch classes (0...11) of a recognized chord's template and
+    /// of the top recognized mode's scale, or empty sets when there's nothing to show. All
+    /// four inputs are `nil` together or not at all in both call sites, so a single combined
+    /// helper avoids duplicating the two independent `ChordVocabulary`/`ScaleLibrary` lookups.
+    private static func pitchClassSets(forChordRoot chordRoot: Int?, chordTemplateID: String?, modeTonic: Int?, scaleID: String?) -> (chordTones: [Int], modeTones: [Int]) {
+        var chordTones: [Int] = []
+        if let chordRoot, let chordTemplateID, let template = ChordVocabulary.byID(chordTemplateID) {
+            chordTones = template.intervalsFromRoot.map { (chordRoot + $0) % 12 }
+        }
+        var modeTones: [Int] = []
+        if let modeTonic, let scaleID, let scale = ScaleLibrary.byID(scaleID) {
+            modeTones = Mode(tonic: PitchClass(modeTonic), scale: scale).pitchClassSet.map(\.value)
+        }
+        return (chordTones, modeTones)
     }
 
     /// Connects to a collaborative session at a known host/port. Every local track already

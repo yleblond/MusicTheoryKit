@@ -43,6 +43,8 @@ func printHelp() {
       status                     affiche l'etat courant (piece, pistes actives, accord/mode)
       run                        ecran fixe: activite musicale en direct (claviers, accords) — Ctrl+C pour revenir
       config                     ecran fixe: configuration active et detail du morceau — Ctrl+C pour revenir
+      web-console [port]         demarre la console web (miroir de 'run' dans un navigateur, defaut port 8080)
+      web-console stop           arrete la console web
       quit                       quitte
 
     Morceaux (Piece Model — mesures/accords)
@@ -288,6 +290,11 @@ func networkRoleText() -> String {
     }
 }
 
+/// "(inactive)" / "http://localhost:<port>" — shared by `status`/`config`.
+func webConsoleStatusText() -> String {
+    session.webConsolePort.map { "http://localhost:\($0)" } ?? TextStyle.placeholder("(inactive)")
+}
+
 /// One line per track — shared by the `tracks` command and the Source/Reseau menus'
 /// prompts, so picking a track id to act on always shows the same up-to-date list first.
 func printTracks() {
@@ -310,6 +317,7 @@ func printStatus() {
     print(TextStyle.field("Recording", TextStyle.flag(session.isRecording)))
     print(TextStyle.field("Soundtrack", session.currentSoundTrack.map { $0.title } ?? TextStyle.placeholder("(aucune)")))
     print(TextStyle.field("Playing (soundtrack)", TextStyle.flag(session.isPlayingSoundTrack)))
+    print(TextStyle.field("Console Web", webConsoleStatusText()))
     print()
     printTracks()
     print()
@@ -506,6 +514,7 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
         line(TextStyle.field("Recording", TextStyle.flag(session.isRecording)))
         line(TextStyle.field("Soundtrack", session.currentSoundTrack.map { $0.title } ?? TextStyle.placeholder("(aucune)")))
         line(TextStyle.field("Reseau", networkRoleText()))
+        line(TextStyle.field("Console Web", webConsoleStatusText()))
         line(TextStyle.field("Mode MIDI", session.midiFusionMode == .merged ? "fusionne" : "individuel"))
         line()
         line(TextStyle.heading("Detail du morceau actif:"))
@@ -671,6 +680,7 @@ func stopAllTracks() {
     computerKeyboardSourceActive = false
     session.stopServer()
     session.disconnectFromServer()
+    session.stopWebConsole()
 }
 
 /// Every command the REPL and the `console` menu both dispatch through — kept as one
@@ -773,6 +783,14 @@ func executeCommand(_ command: String, _ args: [String]) throws {
             break
         }
         try session.connectToServer(discovered: found[index - 1])
+    case "web-console":
+        switch args.first {
+        case "stop":
+            session.stopWebConsole()
+        default:
+            let port = args.first.flatMap(Int.init) ?? 8080
+            try session.startWebConsole(port: port)
+        }
     case "press":
         guard let pitch = args.first.flatMap(Int.init) else { print("usage: press <pitch 0-127>"); break }
         session.pressKey(pitch: pitch)
@@ -979,6 +997,12 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         MenuItem.separator,
         MenuItem(label: "Mode MIDI: fusionne") { try executeCommand("midi-mode", ["fusionne"]) },
         MenuItem(label: "Mode MIDI: individuel") { try executeCommand("midi-mode", ["individuel"]) },
+        MenuItem.separator,
+        MenuItem(label: "Demarrer la console web...") {
+            let portText = promptLine("Port (defaut 8080): ") ?? ""
+            try executeCommand("web-console", [portText.isEmpty ? "8080" : portText])
+        },
+        MenuItem(label: "Arreter la console web") { try executeCommand("web-console", ["stop"]) },
         MenuItem.separator,
         MenuItem(label: "Quitter") { try executeCommand("quit", []) },
     ]),

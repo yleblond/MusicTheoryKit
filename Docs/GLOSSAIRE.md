@@ -65,6 +65,18 @@ est devenu trop chargé pour rester lisible. Toute référence à `console` dans
 documentation ancienne désigne ce qui s'appelle maintenant `run` (pour l'activité musicale) ou
 `config` (pour l'état de session).
 
+## `console` (retiré) vs **Console Web** — deux choses sans rapport, malgré le nom
+
+Facile à confondre à cause du nom, mais ce sont deux concepts complètement différents :
+
+- **`console`** (voir juste au-dessus) — un ancien écran *terminal*, retiré, remplacé par
+  `run`/`config`.
+- **Console Web** (`web-console`, menu **MusicLab**) — un **nouveau** serveur HTTP fait main
+  (module `WebConsole`), qui sert une page dans un **navigateur** — un miroir en lecture seule
+  de l'écran `run`, pas un mode d'affichage du terminal. Les deux n'ont aucun lien de code ou
+  d'historique ; le nom se recoupe par coïncidence (« console » au sens large de « tableau de
+  bord »).
+
 ## `MenuItem.separator` vs `MenuItem.header(_:)`
 
 Deux façons de structurer un menu déroulant plat (ce système de menus n'a pas de sous-menus

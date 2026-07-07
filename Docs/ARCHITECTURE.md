@@ -35,15 +35,14 @@ PieceModel      SoundTrackModel      RecognitionEngine  (reconnaissance)
       ↑                ↑                   ↑
       └────────────────┴──────────┬────────┘
                                   │
-AudioEngine (lecture Piece + SoundTrack, micro/FFT)   MIDIEngine (CoreMIDI)   NetEngine (TCP)
-                    ↑                                        ↑                    ↑
-                    └────────────────────┴─────────────┬──────┘                    │
-                                                         │                          │
-                                            LLMEngine (composition IA,              │
-                                             Piece <- texte OU SoundTrack)           │
-                                                         │                          │
-                                                         └──────────────┬───────────┘
-                                                                        │
+AudioEngine (lecture Piece + SoundTrack, micro/FFT)   MIDIEngine (CoreMIDI)   NetEngine (TCP)   WebConsole (HTTP)
+                    ↑                                        ↑                    ↑                  ↑
+                    └────────────────────┴─────────────┬──────┴──────────────────────────────────────┘
+                                                         │
+                                            LLMEngine (composition IA,
+                                             Piece <- texte OU SoundTrack)
+                                                         │
+                                                         ▼
                                                                     AppCore
                                                    (ImprovSession — logique applicative)
                                                                         │
@@ -268,6 +267,57 @@ volontairement simple puisque les échanges eux-mêmes sont simples (notes, anno
   propriété mutable n'est touchée que depuis la queue série dédiée à cette instance — même
   raisonnement que celui déjà appliqué à `ImprovSession` (voir plus bas).
 
+## WebConsole — serveur HTTP fait main pour la console web
+
+Un second transport réseau, indépendant de `NetEngine` : là où `NetEngine` fait du TCP+JSON
+fait main pour la session collaborative, `WebConsole` fait du HTTP/1.1 fait main (toujours
+`Network.framework`, toujours aucune dépendance tierce) pour servir une page/un script à un
+navigateur — voir §AppCore pour qui le pilote et §ImprovCLI pour la commande/le menu.
+`WebConsole` ne connaît rien à `ImprovSession`/`AppCore` : il reçoit juste un closure
+`onRequest` et ne sait rien de ce qu'il sert.
+
+- **`HTTPServer`** : `start(port:)`/`stop()` sur un `NWListener`, un `HTTPConnection` par
+  connexion acceptée.
+- **`HTTPConnection`** : lit exactement une requête (GET uniquement, pas de corps, pas de
+  keep-alive), appelle `onRequest`, écrit la réponse, ferme. Le parsing/formatage HTTP
+  lui-même (ligne de requête, en-têtes de réponse) est extrait dans `HTTPWireFormat` — pur,
+  sans `NWConnection`, donc testable sans socket réel (voir `Tests/WebConsoleTests/` et son
+  miroir `SanityChecks`).
+- **`HTTPRequest`/`HTTPResponse`** : structs triviales (méthode+chemin ; statut+type+corps).
+- **`webConsoleIndexHTML`/`webConsoleAppJS`** (`StaticAssets.swift`) : les deux assets servis,
+  embarqués comme constantes Swift plutôt que lus depuis le disque (pas de
+  `Bundle.module`/ressources SwiftPM à gérer pour deux fichiers aussi courts). Le contrat JSON
+  attendu par `app.js` en réponse à `GET /state` est documenté dans le commentaire de
+  `webConsoleIndexHTML` — maintenu à la main en synchronisation avec `AppCore.WebConsoleState`
+  (aucune vérification par le compilateur entre les deux, `WebConsole` n'important pas `AppCore`).
+
+**Piège réel trouvé pendant la vérification manuelle, pas en théorie** — deux bugs de durée de
+vie distincts, tous deux liés à la même cause : un objet `Network.framework`
+(`NWListener`/`NWConnection`) se maintient en vie **lui-même**, en interne, une fois démarré,
+indépendamment de toute référence Swift qu'on garde dessus ; à l'inverse, laisser une closure
+de callback ne capturer `self` que faiblement (`[weak self]`) peut faire disparaître **notre**
+wrapper avant que ce callback n'ait eu la moindre chance de s'exécuter :
+1. Chaque `HTTPConnection` était d'abord créée comme variable locale dans le closure
+   `newConnectionHandler`, avec seulement des callbacks `[weak self]` — sans référence forte
+   externe, elle disparaissait aussitôt le closure terminé, avant même de pouvoir lire la
+   moindre requête. Symptôme observé : `curl`/`URLSession` se connectaient bien (poignée de
+   main TCP réussie) mais n'obtenaient jamais de réponse (timeout, 0 octet reçu). Corrigé en
+   donnant à `HTTPServer` un dictionnaire `activeConnections` qui retient chaque connexion
+   jusqu'à son propre `onClose` — même principe que `NetworkServer.connections`.
+2. `HTTPServer.stop()` faisait `queue.async { [weak self] in self?.listener?.cancel() ... }`,
+   alors que l'appelant (`ImprovSession.stopWebConsole()`) fait `webConsoleServer?.stop();
+   webConsoleServer = nil` juste après — la seule référence forte à `HTTPServer` disparaissait
+   avant que le `cancel()` mis en file d'attente n'ait pu s'exécuter, donc `self` valait déjà
+   `nil` une fois le closure exécuté : le `NWListener` sous-jacent, lui, restait actif
+   indéfiniment (confirmé au `lsof` : le port restait en `LISTEN` bien après l'arrêt). Corrigé
+   en capturant `self` **fortement** dans ce `queue.async` — intentionnel : ça garde
+   l'instance en vie juste assez longtemps pour que son propre nettoyage s'exécute, avant de
+   se libérer naturellement une fois terminé.
+- Vérifié par la reproduction directe (requêtes HTTP réelles en boucle via un script, `lsof`
+  pour confirmer qu'un port reste bien libéré après `stop`) plutôt que par relecture de code
+  seule — même discipline que la leçon `feedback-debug-verify-dont-theorize` déjà retenue pour
+  le bug de scintillement du terminal.
+
 ## AppCore — `ImprovSession`, le cœur applicatif
 
 Une seule classe, `@Observable`, `@unchecked Sendable`, qui détient tout l'état de
@@ -405,6 +455,20 @@ l'appeler et lire son état ; une future interface SwiftUI pourrait s'y brancher
     serveur formate une fois (`Self.describe`), chaque client réaffiche tel quel. Le CLI
     (`chordDisplayText`/`modesDisplayText`) préfère toujours la valeur structurée quand elle
     existe, et ne retombe sur la chaîne affichée que si elle est absente.
+- **Console web (`startWebConsole`/`stopWebConsole`)** : un miroir en lecture seule de l'écran
+  `run`, servi dans un navigateur via `WebConsole` (§WebConsole) — indépendant de
+  `networkRole`/de la session collaborative ci-dessus (les deux peuvent tourner en même
+  temps). `startWebConsole(port:)` démarre un `HTTPServer` puis une minuterie 150ms
+  (`startWebConsoleRefreshTimer`, même cadence que `startSyncBroadcastTimer`) qui recalcule
+  `buildWebConsoleState()` et encode le résultat en JSON dans `webConsoleStateCache` — chaque
+  `GET /state` ne fait que relire ce cache (`webConsoleStateQueue.sync`), jamais recalculer à
+  la demande, pour que le coût reste constant quel que soit le nombre de clients/la fréquence
+  de sondage de chacun. `buildWebConsoleState()` transpose la même donnée que
+  `renderConsoleFrame(mode: .run)` (`ImprovCLI/main.swift`) — pistes en écoute, lecture d'un
+  `Piece`/d'une `SoundTrack` — en valeurs déjà résolues (classes de hauteur 0…11 pour
+  l'accord/le mode, libellés déjà formatés via `Self.describe`) plutôt qu'en `RecognizedChord`/
+  `RecognizedMode` bruts, pour que `app.js` n'ait plus qu'à peindre, jamais à ré-interpréter de
+  la théorie musicale côté navigateur.
 
 ### Modèle de concurrence — la leçon la plus importante du projet
 
@@ -490,7 +554,7 @@ Barre de menu façon interface DOS graphique, six catégories (`menuCategories`,
 
 | Menu (mnémonique) | Contenu |
 |---|---|
-| **MusicLab (L)** | Menu principal, ouvert par défaut. 4 groupes séparés par des traits : infos/aide ; choisir chacun des dossiers (morceaux/sons/soundtracks/connexions LLM/prompts) et une connexion LLM ; mode MIDI fusionné/individuel ; quitter. Point d'entrée unique pour toute la configuration de session — aucun autre menu ne propose de choisir un dossier ou une connexion. |
+| **MusicLab (L)** | Menu principal, ouvert par défaut. 5 groupes séparés par des traits : infos/aide ; choisir chacun des dossiers (morceaux/sons/soundtracks/connexions LLM/prompts) et une connexion LLM ; mode MIDI fusionné/individuel ; démarrer/arrêter la console web (§WebConsole) ; quitter. Point d'entrée unique pour toute la configuration de session — aucun autre menu ne propose de choisir un dossier ou une connexion. |
 | **Instruments (I)** | Lister/activer/arrêter les pistes d'entrée, *séparateur*, activer/désactiver leur son, choisir un son. |
 | **Morceaux (M)** | 4 groupes : écouter/voir le morceau ; choisir le son de lecture, d'une piste, ou des accords d'une section ; charger la démo/un morceau, sauvegarder ; `MenuItem.header("Assistant IA")` — sous-section réservée, sans item pour l'instant, en attente d'une future fonction de modification par dialogue applicable à n'importe quel morceau. |
 | **Enregistrement (E)** | Démarrer/arrêter/voir/jouer un enregistrement, *séparateur*, charger/sauvegarder, *séparateur*, composer un morceau à partir de l'enregistrement, *séparateur*, voir/sauvegarder/charger/réinitialiser le prompt de composition. |
@@ -522,7 +586,8 @@ entièrement) plutôt qu'en changeant le nombre de `print`/le mode de bufferisat
 retrouver (reproduire le crash avant de théoriser, ne pas empiler des correctifs non vérifiés).
 
 Autres commandes CLI : réseau (`server`/`stop-server`/`client`/`discover`/`disconnect`, menu
-Jam Session), composition (`title`/`indications`/`show-description`/`compose [titre]`),
+Jam Session), console web (`web-console [port]`/`web-console stop`, menu MusicLab — voir
+§WebConsole), composition (`title`/`indications`/`show-description`/`compose [titre]`),
 prompts (`prompts`/`show-*-prompt`/`save-*-prompt`/`use-*-prompt`/`reset-*-prompt`) — liste
 complète et à jour dans `Docs/GUIDE_UTILISATEUR.md`.
 
@@ -554,7 +619,7 @@ Exécutable qui rejoue à la main chaque cas de test des vrais fichiers `XCTest`
 (`check`/`checkNil`), pour compenser l'absence d'Xcode. **Toujours mettre à jour ce fichier
 en même temps que tout nouveau test** — c'est le seul moyen de vérifier que le code
 fonctionne dans cet environnement. Se lance avec `swift run SanityChecks` depuis
-`MusicTheoryKit/`. Compteur de vérifications à jour : **255 checks, 0 échec**, stable sur
+`MusicTheoryKit/`. Compteur de vérifications à jour : **282 checks, 0 échec**, stable sur
 plusieurs exécutions répétées.
 
 ## Vérification/tests
@@ -580,6 +645,10 @@ swift run ImprovCLI         # lance l'application
 - **Session collaborative sans authentification ni chiffrement** : TCP en clair, tout client
   qui atteint le port est accepté (design délibéré pour cette première version — voir §AppCore).
   Ne pas exposer ce port au-delà d'un réseau de confiance (LAN/VPN).
+- **Console web sans authentification ni chiffrement** : même mise en garde que ci-dessus,
+  pour la même raison (HTTP en clair, aucun contrôle d'accès) — voir §WebConsole/§AppCore.
+  Lecture seule cela dit (aucune action possible depuis le navigateur), donc un risque plus
+  limité que la session collaborative.
 - **`localClientID` ne survit pas à un relance** (UUID en mémoire, non persisté — voir §AppCore
   pour la vraie raison, un bug de collision trouvé en testant).
 - **Découverte Bonjour dépendante du réseau local et de la permission macOS** :

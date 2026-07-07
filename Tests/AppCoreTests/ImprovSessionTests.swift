@@ -762,6 +762,39 @@ final class ImprovSessionTests: XCTestCase {
         }
         XCTAssertEqual(session.piece?.title, "Override")
     }
+
+    // Port 18391 is arbitrary, chosen only to avoid colliding with the collaborative-session
+    // test's own fixed port — same "rerun failing with 'address already in use' means the OS
+    // hasn't released it yet, not a logic bug" caveat applies here too.
+    func testStartWebConsoleSetsPortAndStopClearsIt() throws {
+        let session = ImprovSession()
+        XCTAssertNil(session.webConsolePort)
+        try session.startWebConsole(port: 18391)
+        XCTAssertEqual(session.webConsolePort, 18391)
+        session.stopWebConsole()
+        XCTAssertNil(session.webConsolePort)
+    }
+
+    func testStartWebConsoleTwiceThrows() throws {
+        let session = ImprovSession()
+        try session.startWebConsole(port: 18392)
+        defer { session.stopWebConsole() }
+        XCTAssertThrowsError(try session.startWebConsole(port: 18393)) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .webConsoleAlreadyActive)
+        }
+    }
+
+    func testStartWebConsoleInvalidPortThrows() {
+        let session = ImprovSession()
+        XCTAssertThrowsError(try session.startWebConsole(port: 999_999))
+        XCTAssertNil(session.webConsolePort)
+    }
+
+    func testStopWebConsoleWithoutStartingIsANoOp() {
+        let session = ImprovSession()
+        session.stopWebConsole() // must not crash/throw
+        XCTAssertNil(session.webConsolePort)
+    }
 }
 
 extension ImprovSession.SessionError: Equatable {
