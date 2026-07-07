@@ -10,6 +10,12 @@ public struct Section: Codable, Identifiable, Equatable, Sendable {
     public var modeTransition: ModeTransition?
     public var chordProgression: [ChordEvent]
     public var tracks: [Track]
+    /// Sample file name (matched against a sample folder, e.g. "mcb.sf2") for this
+    /// section's chord progression specifically — separate from any track's own
+    /// `instrument`, since chords have no track of their own. `nil` (the default, and what
+    /// every pre-existing piece file decodes to, since the key is simply absent) means "use
+    /// the piece-playback default sound," exactly like today.
+    public var chordInstrument: String?
 
     public init(
         id: String = UUID().uuidString,
@@ -18,7 +24,8 @@ public struct Section: Codable, Identifiable, Equatable, Sendable {
         mode: ModeReference,
         modeTransition: ModeTransition? = nil,
         chordProgression: [ChordEvent] = [],
-        tracks: [Track] = []
+        tracks: [Track] = [],
+        chordInstrument: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -27,5 +34,6 @@ public struct Section: Codable, Identifiable, Equatable, Sendable {
         self.modeTransition = modeTransition
         self.chordProgression = chordProgression
         self.tracks = tracks
+        self.chordInstrument = chordInstrument
     }
 }

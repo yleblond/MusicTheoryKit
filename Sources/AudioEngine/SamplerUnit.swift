@@ -5,7 +5,13 @@ import AVFoundation
 /// that). Each live-input track that wants sound gets its own instance, so several tracks
 /// can sound with genuinely different timbres at the same time — each engine opens its own
 /// independent connection to the default output device.
-public final class SamplerUnit {
+///
+/// `@unchecked Sendable`: `startNote`/`stopNote` are called from several independent
+/// `DispatchQueue.global().asyncAfter` callbacks (per-note playback scheduling in
+/// `PiecePlayer`/`ImprovSession`), same as `AVAudioUnitSampler`'s own note on/off calls are
+/// already relied on to be safe from any thread — this type adds no additional mutable
+/// state of its own beyond what `AVAudioUnitSampler`/`AVAudioEngine` already guarantee.
+public final class SamplerUnit: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let sampler = AVAudioUnitSampler()
 

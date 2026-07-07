@@ -5,6 +5,8 @@ import MIDIEngine
 @testable import AppCore
 import RecognitionEngine
 @testable import LLMEngine
+@testable import NetEngine
+@testable import SoundTrackModel
 import Foundation
 
 // Mirrors the same helper in Tests/AppCoreTests/ImprovSessionTests.swift — compares by
@@ -270,6 +272,22 @@ func testScheduledNotesMergesAndSortsMelodyEventsAndFragmentPlacements() {
     check(notes.map(\.pitch), [60, 64, 72], "scheduled notes merge sorted pitches")
 }
 
+func testScheduledNotesCarryTheTracksInstrumentName() {
+    let track = Track(name: "lead", instrument: "mcb.sf2", melodyEvents: [MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 60)])
+    let section = makeSection(tracks: [track])
+    let piece = makePiece(sections: [section])
+    let notes = track.scheduledNotes(in: piece, section: section)
+    check(notes.map(\.instrumentName), ["mcb.sf2"], "scheduled notes carry the track's instrument name")
+}
+
+func testScheduledNotesTreatAnEmptyInstrumentAsDefault() {
+    let track = Track(name: "lead", instrument: "", melodyEvents: [MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 60)])
+    let section = makeSection(tracks: [track])
+    let piece = makePiece(sections: [section])
+    let notes = track.scheduledNotes(in: piece, section: section)
+    check(notes.map(\.instrumentName), [nil], "scheduled notes treat an empty instrument as default (nil)")
+}
+
 // MARK: - Chord rendering / Piece.renderedNotes (mirrors RenderingTests.swift additions)
 
 func makeSectionWithChord(_ event: ChordEvent) -> Section {
@@ -306,6 +324,41 @@ func testChordScheduledNotesArpeggioUpSpreadsNotesAcrossDuration() {
 func testChordScheduledNotesUnknownTemplateProducesNoNotes() {
     let section = makeSectionWithChord(ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 0, chordTemplateID: "not-a-chord")))
     check(section.chordScheduledNotes(beatsPerMeasure: 4), [], "chord unknown template produces no notes")
+}
+
+func testChordScheduledNotesCarryTheSectionsChordInstrument() {
+    var section = makeSectionWithChord(ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 0, chordTemplateID: "Ma7")))
+    section.chordInstrument = "strings.sf2"
+    let notes = section.chordScheduledNotes(beatsPerMeasure: 4)
+    check(notes.map(\.instrumentName), Array(repeating: "strings.sf2", count: notes.count), "chord scheduled notes carry the section's chord instrument")
+}
+
+func testChordScheduledNotesDefaultChordInstrumentIsNil() {
+    let section = makeSectionWithChord(ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 0, chordTemplateID: "Ma7")))
+    let notes = section.chordScheduledNotes(beatsPerMeasure: 4)
+    checks += 1
+    if !notes.allSatisfy({ $0.instrumentName == nil }) {
+        failures += 1
+        print("FAIL [chord scheduled notes default chord instrument is nil]: \(notes)")
+    }
+}
+
+func testPieceRenderedNotesCarryDistinctInstrumentNamesForChordsAndTracks() {
+    let track = Track(name: "lead", instrument: "mcb.sf2", melodyEvents: [MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 72)])
+    var section = Section(
+        name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"),
+        chordProgression: [ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 0, chordTemplateID: "Ma7"))],
+        tracks: [track]
+    )
+    section.chordInstrument = "strings.sf2"
+    let piece = Piece(title: "t", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [section])
+    let notes = piece.renderedNotes()
+    checks += 1
+    if !notes.contains(where: { $0.pitch == 72 && $0.instrumentName == "mcb.sf2" }) {
+        failures += 1
+        print("FAIL [piece rendered notes: melody carries its track instrument]: \(notes)")
+    }
+    check(notes.filter { $0.pitch != 72 }.map(\.instrumentName), Array(repeating: "strings.sf2", count: 4), "piece rendered notes: chord tones carry the section's chord instrument")
 }
 
 func testPieceRenderedNotesCombinesChordsAndTracksInSeconds() {
@@ -692,6 +745,166 @@ func testPlayTracksPlaybackStateSynchronouslyThenClearsItWhenFinished() {
     }
 }
 
+func loadTemporaryPiece(_ piece: Piece, into session: ImprovSession) throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+    try JSONEncoder().encode(piece).write(to: url)
+    try session.loadPiece(fromJSONFile: url.path)
+}
+
+func testSetPieceTrackInstrumentUpdatesTrackAndLogs() {
+    do {
+        let session = ImprovSession()
+        let track = Track(name: "lead", instrument: "")
+        let section = Section(name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"), tracks: [track])
+        try loadTemporaryPiece(Piece(title: "t", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [section]), into: session)
+
+        try session.setPieceTrackInstrument(sectionIndex: 0, trackIndex: 0, instrumentName: "mcb.sf2")
+
+        check(session.piece?.sections[0].tracks[0].instrument, "mcb.sf2", "setPieceTrackInstrument updates the track's instrument")
+        checks += 1
+        if !session.log.contains(where: { $0.contains("mcb.sf2") }) {
+            failures += 1
+            print("FAIL [setPieceTrackInstrument logs it]: \(session.log)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [setPieceTrackInstrument updates track and logs]: threw \(error)")
+    }
+}
+
+func testSetPieceTrackInstrumentNilRevertsToEmptyString() {
+    do {
+        let session = ImprovSession()
+        let track = Track(name: "lead", instrument: "mcb.sf2")
+        let section = Section(name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"), tracks: [track])
+        try loadTemporaryPiece(Piece(title: "t", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [section]), into: session)
+
+        try session.setPieceTrackInstrument(sectionIndex: 0, trackIndex: 0, instrumentName: nil)
+
+        check(session.piece?.sections[0].tracks[0].instrument, "", "setPieceTrackInstrument(nil) reverts to empty string")
+    } catch {
+        failures += 1
+        print("FAIL [setPieceTrackInstrument nil reverts]: threw \(error)")
+    }
+}
+
+func testSetPieceTrackInstrumentWithInvalidSectionIndexThrows() {
+    let session = ImprovSession()
+    session.loadDemoPiece()
+    checks += 1
+    do {
+        try session.setPieceTrackInstrument(sectionIndex: 99, trackIndex: 0, instrumentName: "mcb.sf2")
+        failures += 1
+        print("FAIL [setPieceTrackInstrument invalid section throws]: did not throw")
+    } catch let error as ImprovSession.SessionError {
+        if error != .invalidPieceSectionIndex {
+            failures += 1
+            print("FAIL [setPieceTrackInstrument invalid section throws]: wrong error \(error)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [setPieceTrackInstrument invalid section throws]: unexpected error \(error)")
+    }
+}
+
+func testSetPieceTrackInstrumentWithInvalidTrackIndexThrows() {
+    let session = ImprovSession()
+    session.loadDemoPiece()
+    checks += 1
+    do {
+        try session.setPieceTrackInstrument(sectionIndex: 0, trackIndex: 99, instrumentName: "mcb.sf2")
+        failures += 1
+        print("FAIL [setPieceTrackInstrument invalid track throws]: did not throw")
+    } catch let error as ImprovSession.SessionError {
+        if error != .invalidPieceTrackIndex {
+            failures += 1
+            print("FAIL [setPieceTrackInstrument invalid track throws]: wrong error \(error)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [setPieceTrackInstrument invalid track throws]: unexpected error \(error)")
+    }
+}
+
+func testSetPieceChordInstrumentUpdatesSectionAndLogs() {
+    do {
+        let session = ImprovSession()
+        session.loadDemoPiece()
+        try session.setPieceChordInstrument(sectionIndex: 0, instrumentName: "strings.sf2")
+        check(session.piece?.sections[0].chordInstrument, "strings.sf2", "setPieceChordInstrument updates the section's chord instrument")
+        checks += 1
+        if !session.log.contains(where: { $0.contains("strings.sf2") }) {
+            failures += 1
+            print("FAIL [setPieceChordInstrument logs it]: \(session.log)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [setPieceChordInstrument updates section and logs]: threw \(error)")
+    }
+}
+
+func testSetPieceChordInstrumentWithInvalidSectionIndexThrows() {
+    let session = ImprovSession()
+    session.loadDemoPiece()
+    checks += 1
+    do {
+        try session.setPieceChordInstrument(sectionIndex: 99, instrumentName: "strings.sf2")
+        failures += 1
+        print("FAIL [setPieceChordInstrument invalid section throws]: did not throw")
+    } catch let error as ImprovSession.SessionError {
+        if error != .invalidPieceSectionIndex {
+            failures += 1
+            print("FAIL [setPieceChordInstrument invalid section throws]: wrong error \(error)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [setPieceChordInstrument invalid section throws]: unexpected error \(error)")
+    }
+}
+
+func testPlayWarnsWhenATracksInstrumentFileIsNotFound() {
+    do {
+        let session = ImprovSession()
+        try session.start()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try session.listSampleFiles(in: folder.path)
+
+        let track = Track(name: "lead", instrument: "does-not-exist.sf2", melodyEvents: [MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 60)])
+        let section = Section(name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"), tracks: [track])
+        try loadTemporaryPiece(Piece(title: "fast", tempoBPM: 6000, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [section]), into: session)
+
+        try session.play()
+
+        checks += 1
+        if !session.log.contains(where: { $0.contains("does-not-exist.sf2") && $0.contains("introuvable") }) {
+            failures += 1
+            print("FAIL [play warns on missing track instrument]: \(session.log)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [play warns when instrument file is not found]: threw \(error)")
+    }
+}
+
+func testPlayWithoutAnyTrackInstrumentLogsNoInstrumentWarning() {
+    do {
+        let session = ImprovSession()
+        try session.start()
+        session.loadDemoPiece()
+        try session.play()
+        Thread.sleep(forTimeInterval: 0.1)
+        checks += 1
+        if session.log.contains(where: { $0.hasPrefix("Instrument:") }) {
+            failures += 1
+            print("FAIL [play without instruments logs no warning]: \(session.log)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [play without any track instrument]: threw \(error)")
+    }
+}
+
 func testStartTrackOnAnUnlistedMIDIPortThrows() {
     let session = ImprovSession()
     checks += 1
@@ -739,6 +952,460 @@ func testMicrophoneTrackCannotHaveSound() {
         print("FAIL [microphone track cannot have sound]: wrong error \(error)")
     }
 }
+
+func testNetMessageRoundTripsThroughJSON() {
+    checks += 1
+    do {
+        let original = NetMessage(kind: .noteEvent, clientID: "abc", trackID: "clavier", isNoteOn: true, pitch: 60, velocity: 100, channel: 0)
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(NetMessage.self, from: data)
+        check(decoded, original, "NetMessage round-trips through JSON")
+    } catch {
+        failures += 1
+        print("FAIL [NetMessage round trip]: threw \(error)")
+    }
+}
+testNetMessageRoundTripsThroughJSON()
+
+// A real client/server pair over real loopback TCP, both `ImprovSession` instances living
+// in this one process — not a mock, and not a pty-driven external test: exercises the
+// actual `NetworkServer`/`NetworkClient`/`FramedConnection` wire path end to end. Port
+// 17891 is arbitrary; a rerun failing specifically with "address already in use" points at
+// the OS not having released it yet from a previous run, not a logic bug.
+func testCollaborativeServerClientSyncsTracksAndRecognition() {
+    checks += 1
+    do {
+        let server = ImprovSession()
+        try server.start()
+        let client = ImprovSession()
+        try client.start()
+        let port = 17891
+
+        try server.startServer(port: port)
+        try client.connectToServer(host: "127.0.0.1", port: port)
+        Thread.sleep(forTimeInterval: 0.3) // TCP handshake + hello
+
+        try server.startTrack(.computerKeyboard)
+        for pitch in [62, 66, 69] { server.pressKey(pitch: pitch) } // D F# A -> D major
+
+        try client.startTrack(.computerKeyboard)
+        for pitch in [60, 64, 67] { client.pressKey(pitch: pitch) } // C E G -> C major
+
+        Thread.sleep(forTimeInterval: 0.6) // noteEvent -> server recognizes -> next sync tick -> client merges
+
+        let clientTrackOnServer = TrackID.remote(clientID: client.localClientID, trackID: "clavier")
+        if let mirrored = server.tracks.first(where: { $0.id == clientTrackOnServer }) {
+            check(mirrored.recognizedChord?.chordTemplateID, "Ma", "server recognizes the client's forwarded C major triad")
+        } else {
+            failures += 1
+            print("FAIL [server/client sync]: server never saw the client's 'clavier' track")
+        }
+
+        let serverTrackOnClient = TrackID.remote(clientID: server.localClientID, trackID: "clavier")
+        if let mirrored = client.tracks.first(where: { $0.id == serverTrackOnClient }) {
+            let hasChordText = mirrored.remoteChordDisplay?.contains("Ma") ?? false
+            check(hasChordText, true, "client mirrors the server's own track with a display-string chord")
+        } else {
+            failures += 1
+            print("FAIL [server/client sync]: client never saw the server's own 'clavier' track")
+        }
+
+        server.stopServer()
+        client.disconnectFromServer()
+        Thread.sleep(forTimeInterval: 0.1)
+        check(server.tracks.contains { if case .remote = $0.id { return true }; return false }, false, "stopServer clears every remote track")
+        check(client.tracks.contains { if case .remote = $0.id { return true }; return false }, false, "disconnectFromServer clears every remote track")
+    } catch {
+        failures += 1
+        print("FAIL [server/client sync]: threw \(error)")
+    }
+}
+testCollaborativeServerClientSyncsTracksAndRecognition()
+
+func testRecordingCapturesFilteredTrackEvents() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.startTrack(.computerKeyboard)
+        try session.startTrack(.microphone)
+        try session.startRecording(title: "Test", tracks: [.computerKeyboard])
+        session.pressKey(pitch: 60, track: .computerKeyboard) // should be captured
+        session.pressKey(pitch: 64, track: .microphone) // filtered out, should not be captured
+        Thread.sleep(forTimeInterval: 0.05)
+        let soundTrack = try session.stopRecording()
+        check(soundTrack.events.count, 1, "recording captures only the filtered track's events")
+        check(soundTrack.events.first?.trackID, "clavier", "captured event carries the correct wire track id")
+        check(soundTrack.events.first?.pitch, 60, "captured event carries the correct pitch")
+    } catch {
+        failures += 1
+        print("FAIL [recording captures filtered track events]: threw \(error)")
+    }
+}
+testRecordingCapturesFilteredTrackEvents()
+
+func testStartRecordingTwiceThrows() {
+    let session = ImprovSession()
+    checks += 1
+    do {
+        try session.startRecording(title: "A")
+        do {
+            try session.startRecording(title: "B")
+            failures += 1
+            print("FAIL [start recording twice throws]: did not throw")
+        } catch ImprovSession.SessionError.alreadyRecording {
+            // expected
+        }
+    } catch {
+        failures += 1
+        print("FAIL [start recording twice throws]: threw \(error)")
+    }
+}
+testStartRecordingTwiceThrows()
+
+func testStopRecordingWithoutStartingThrows() {
+    let session = ImprovSession()
+    checks += 1
+    do {
+        _ = try session.stopRecording()
+        failures += 1
+        print("FAIL [stop recording without starting throws]: did not throw")
+    } catch ImprovSession.SessionError.notRecording {
+        // expected
+    } catch {
+        failures += 1
+        print("FAIL [stop recording without starting throws]: wrong error \(error)")
+    }
+}
+testStopRecordingWithoutStartingThrows()
+
+func testSoundTrackSaveThenLoadRoundTrips() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.startRecording(title: "RoundTrip")
+        session.pressKey(pitch: 60)
+        session.releaseKey(pitch: 60)
+        _ = try session.stopRecording()
+
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.saveSoundTrack(toJSONFile: tempFile.path)
+
+        let reloaded = ImprovSession()
+        try reloaded.loadSoundTrack(fromJSONFile: tempFile.path)
+        check(reloaded.currentSoundTrack?.events.count, session.currentSoundTrack?.events.count, "soundtrack round trips through JSON")
+    } catch {
+        failures += 1
+        print("FAIL [soundtrack save/load round trip]: threw \(error)")
+    }
+}
+testSoundTrackSaveThenLoadRoundTrips()
+
+func testPlaySoundTrackTracksPlaybackStateThenClearsItWhenFinished() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.start()
+        try session.startRecording(title: "Play")
+        session.pressKey(pitch: 60)
+        Thread.sleep(forTimeInterval: 0.05)
+        session.releaseKey(pitch: 60)
+        _ = try session.stopRecording()
+
+        try session.playSoundTrack()
+        check(session.isPlayingSoundTrack, true, "playSoundTrack sets isPlayingSoundTrack")
+
+        Thread.sleep(forTimeInterval: (session.currentSoundTrack?.durationSeconds ?? 0) + 0.4)
+        check(session.isPlayingSoundTrack, false, "soundtrack playback finished clears isPlayingSoundTrack")
+        check(session.soundTrackHeldPitches, [], "soundtrack playback finished clears soundTrackHeldPitches")
+    } catch {
+        failures += 1
+        print("FAIL [play soundtrack tracks playback state]: threw \(error)")
+    }
+}
+testPlaySoundTrackTracksPlaybackStateThenClearsItWhenFinished()
+
+func testPlaySoundTrackWithoutARecordingThrows() {
+    let session = ImprovSession()
+    checks += 1
+    do {
+        try session.playSoundTrack()
+        failures += 1
+        print("FAIL [play soundtrack without a recording throws]: did not throw")
+    } catch ImprovSession.SessionError.noSoundTrackRecorded {
+        // expected
+    } catch {
+        failures += 1
+        print("FAIL [play soundtrack without a recording throws]: wrong error \(error)")
+    }
+}
+testPlaySoundTrackWithoutARecordingThrows()
+
+func testComposeSoundTrackToPiecesWithAFakeGeneratorProducesValidatedPieces() {
+    checks += 1
+    do {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
+            .write(to: folder.appendingPathComponent("fake.json"))
+
+        let session = ImprovSession()
+        try session.listLLMConnections(in: folder.path)
+        try session.useLLMConnection(atIndex: 0)
+        try session.listPieceFiles(in: folder.path) // establishes pieceFolder for saving candidates
+
+        try session.startRecording(title: "ForCompose")
+        session.pressKey(pitch: 62)
+        session.releaseKey(pitch: 62)
+        _ = try session.stopRecording()
+
+        let fakeResponse = """
+        { "title": "From Recording", "tempoBPM": 90, "tonic": "D", "scaleID": "dorian",
+          "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
+            "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
+        """
+        let paths = try session.composeSoundTrackToPieces(candidateCount: 1) { prompt, connection in
+            if !prompt.contains("ON") { failures += 1; print("FAIL [compose soundtrack to pieces]: prompt doesn't mention the recorded events") }
+            return fakeResponse
+        }
+        check(paths.count, 1, "composeSoundTrackToPieces saved exactly one candidate")
+        check(session.piece?.title, "From Recording", "composeSoundTrackToPieces sets the current piece to the last candidate")
+        check(FileManager.default.fileExists(atPath: paths[0]), true, "the candidate piece file was actually written")
+    } catch {
+        failures += 1
+        print("FAIL [compose soundtrack to pieces]: threw \(error)")
+    }
+}
+testComposeSoundTrackToPiecesWithAFakeGeneratorProducesValidatedPieces()
+
+func testComposeSoundTrackToPiecesWithATitleOverridesTheLLMsOwnTitle() {
+    do {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
+            .write(to: folder.appendingPathComponent("fake.json"))
+
+        let session = ImprovSession()
+        try session.listLLMConnections(in: folder.path)
+        try session.useLLMConnection(atIndex: 0)
+        try session.listPieceFiles(in: folder.path)
+        try session.startRecording(title: "ForCompose")
+        session.pressKey(pitch: 62)
+        session.releaseKey(pitch: 62)
+        _ = try session.stopRecording()
+
+        let fakeResponse = """
+        { "title": "LLM Chosen Title", "tempoBPM": 90, "tonic": "D", "scaleID": "dorian",
+          "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
+            "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
+        """
+        let paths = try session.composeSoundTrackToPieces(candidateCount: 1, title: "My Own Title") { _, _ in fakeResponse }
+        check(session.piece?.title, "My Own Title", "composeSoundTrackToPieces title override wins over the LLM's own title")
+        checks += 1
+        if !(paths.first?.hasSuffix("My Own Title.json") ?? false) {
+            failures += 1
+            print("FAIL [compose soundtrack title override filename]: \(paths)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [compose soundtrack to pieces with title override]: threw \(error)")
+    }
+}
+testComposeSoundTrackToPiecesWithATitleOverridesTheLLMsOwnTitle()
+
+func testCurrentTextCompositionPromptWithoutSourceTextOrOverrideThrows() {
+    let session = ImprovSession()
+    checks += 1
+    do {
+        _ = try session.currentTextCompositionPrompt()
+        failures += 1
+        print("FAIL [currentTextCompositionPrompt without source text throws]: did not throw")
+    } catch let error as ImprovSession.SessionError {
+        if error != .noSourceText {
+            failures += 1
+            print("FAIL [currentTextCompositionPrompt without source text throws]: wrong error \(error)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [currentTextCompositionPrompt without source text throws]: unexpected error \(error)")
+    }
+}
+testCurrentTextCompositionPromptWithoutSourceTextOrOverrideThrows()
+
+func testCurrentSoundTrackCompositionPromptWithoutARecordingOrOverrideThrows() {
+    let session = ImprovSession()
+    checks += 1
+    do {
+        _ = try session.currentSoundTrackCompositionPrompt()
+        failures += 1
+        print("FAIL [currentSoundTrackCompositionPrompt without recording throws]: did not throw")
+    } catch let error as ImprovSession.SessionError {
+        if error != .noSoundTrackRecorded {
+            failures += 1
+            print("FAIL [currentSoundTrackCompositionPrompt without recording throws]: wrong error \(error)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [currentSoundTrackCompositionPrompt without recording throws]: unexpected error \(error)")
+    }
+}
+testCurrentSoundTrackCompositionPromptWithoutARecordingOrOverrideThrows()
+
+func testSetPromptsFolderCreatesBothSubfoldersAndListsFiles() {
+    do {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+
+        var isDirectory: ObjCBool = false
+        checks += 1
+        if !FileManager.default.fileExists(atPath: root.appendingPathComponent("Texte").path, isDirectory: &isDirectory) || !isDirectory.boolValue {
+            failures += 1
+            print("FAIL [setPromptsFolder creates Texte subfolder]")
+        }
+        checks += 1
+        if !FileManager.default.fileExists(atPath: root.appendingPathComponent("Soundtrack").path, isDirectory: &isDirectory) || !isDirectory.boolValue {
+            failures += 1
+            print("FAIL [setPromptsFolder creates Soundtrack subfolder]")
+        }
+        check(session.textPromptFiles, [], "setPromptsFolder starts with no text prompt files")
+        check(session.soundTrackPromptFiles, [], "setPromptsFolder starts with no soundtrack prompt files")
+    } catch {
+        failures += 1
+        print("FAIL [setPromptsFolder creates subfolders and lists files]: threw \(error)")
+    }
+}
+testSetPromptsFolderCreatesBothSubfoldersAndListsFiles()
+
+func testSaveAndUseTextCompositionPromptRoundTrips() {
+    do {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        session.setSourceText("a poem about the sea")
+
+        try session.saveTextCompositionPrompt(as: "my-prompt")
+        check(session.textPromptFiles, ["my-prompt.txt"], "saveTextCompositionPrompt adds the file to textPromptFiles")
+
+        session.setSourceText("a totally different poem")
+        checkNil(session.activeTextCompositionPrompt, "no override active before useTextCompositionPrompt")
+        try session.useTextCompositionPrompt(atIndex: 0)
+        checks += 1
+        if !(session.activeTextCompositionPrompt?.contains("a poem about the sea") ?? false) {
+            failures += 1
+            print("FAIL [useTextCompositionPrompt loads the saved prompt]: \(session.activeTextCompositionPrompt ?? "nil")")
+        }
+        checks += 1
+        if !(try session.currentTextCompositionPrompt()).contains("a poem about the sea") {
+            failures += 1
+            print("FAIL [currentTextCompositionPrompt prefers the active override over sourceText]")
+        }
+
+        session.resetTextCompositionPrompt()
+        checkNil(session.activeTextCompositionPrompt, "resetTextCompositionPrompt clears the override")
+        checks += 1
+        if !(try session.currentTextCompositionPrompt()).contains("a totally different poem") {
+            failures += 1
+            print("FAIL [currentTextCompositionPrompt rebuilds from sourceText after reset]")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [save and use text composition prompt round trips]: threw \(error)")
+    }
+}
+testSaveAndUseTextCompositionPromptRoundTrips()
+
+func testSaveAndUseSoundTrackCompositionPromptRoundTrips() {
+    do {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        try session.startRecording(title: "ForPrompt")
+        session.pressKey(pitch: 60)
+        session.releaseKey(pitch: 60)
+        _ = try session.stopRecording()
+
+        try session.saveSoundTrackCompositionPrompt(as: "my-soundtrack-prompt")
+        check(session.soundTrackPromptFiles, ["my-soundtrack-prompt.txt"], "saveSoundTrackCompositionPrompt adds the file to soundTrackPromptFiles")
+
+        try session.useSoundTrackCompositionPrompt(named: "my-soundtrack-prompt.txt")
+        checkNotNil(session.activeSoundTrackCompositionPrompt, "useSoundTrackCompositionPrompt sets the active override")
+
+        session.resetSoundTrackCompositionPrompt()
+        checkNil(session.activeSoundTrackCompositionPrompt, "resetSoundTrackCompositionPrompt clears the override")
+    } catch {
+        failures += 1
+        print("FAIL [save and use soundtrack composition prompt round trips]: threw \(error)")
+    }
+}
+testSaveAndUseSoundTrackCompositionPromptRoundTrips()
+
+func testUseTextCompositionPromptWithInvalidIndexThrows() {
+    do {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        checks += 1
+        do {
+            try session.useTextCompositionPrompt(atIndex: 0)
+            failures += 1
+            print("FAIL [useTextCompositionPrompt invalid index throws]: did not throw")
+        } catch let error as ImprovSession.SessionError {
+            if error != .invalidTextPromptIndex {
+                failures += 1
+                print("FAIL [useTextCompositionPrompt invalid index throws]: wrong error \(error)")
+            }
+        }
+    } catch {
+        failures += 1
+        print("FAIL [use text composition prompt with invalid index]: threw \(error)")
+    }
+}
+testUseTextCompositionPromptWithInvalidIndexThrows()
+
+func testComposeFromTextUsesTheActiveOverridePromptVerbatim() {
+    do {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
+            .write(to: folder.appendingPathComponent("fake.json"))
+
+        let session = ImprovSession()
+        try session.listLLMConnections(in: folder.path)
+        try session.useLLMConnection(atIndex: 0)
+        try session.setPromptsFolder(folder.path)
+        session.setSourceText("ignored once a prompt override is active")
+        try session.saveTextCompositionPrompt(as: "custom")
+        session.setSourceText("also ignored")
+        try session.useTextCompositionPrompt(named: "custom.txt")
+
+        let fakeResponse = """
+        { "title": "Override", "tempoBPM": 90, "tonic": "D", "scaleID": "dorian",
+          "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
+            "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
+        """
+        try session.composeFromText { prompt, _ in
+            checks += 1
+            if !prompt.contains("ignored once a prompt override is active") || prompt.contains("also ignored") {
+                failures += 1
+                print("FAIL [composeFromText uses the active override prompt verbatim]: \(prompt)")
+            }
+            return fakeResponse
+        }
+        check(session.piece?.title, "Override", "composeFromText with an active override still composes correctly")
+    } catch {
+        failures += 1
+        print("FAIL [compose from text uses active override prompt]: threw \(error)")
+    }
+}
+testComposeFromTextUsesTheActiveOverridePromptVerbatim()
 
 func testSaveThenLoadRoundTripsThePieceThroughJSON() {
     let session = ImprovSession()
@@ -1115,13 +1782,18 @@ testScheduledNotesFromMelodyEventsAreConvertedAndSorted()
 testScheduledNotesFromFragmentPlacementResolvesTransformsAndAdvancesCursor()
 testScheduledNotesSkipsFragmentPlacementsWithUnknownFragmentID()
 testScheduledNotesMergesAndSortsMelodyEventsAndFragmentPlacements()
+testScheduledNotesCarryTheTracksInstrumentName()
+testScheduledNotesTreatAnEmptyInstrumentAsDefault()
 
 testChordScheduledNotesSimultaneousDefaultIsRootPosition()
 testChordScheduledNotesFirstInversionMovesRootUpAnOctave()
 testChordScheduledNotesBassOverrideAddsSlashBassBelowChord()
 testChordScheduledNotesArpeggioUpSpreadsNotesAcrossDuration()
 testChordScheduledNotesUnknownTemplateProducesNoNotes()
+testChordScheduledNotesCarryTheSectionsChordInstrument()
+testChordScheduledNotesDefaultChordInstrumentIsNil()
 testPieceRenderedNotesCombinesChordsAndTracksInSeconds()
+testPieceRenderedNotesCarryDistinctInstrumentNamesForChordsAndTracks()
 testPieceRenderedNotesOffsetsSecondSectionByFirstSectionsLength()
 testHarmonicTimelineResolvesOneChordPerEventInSeconds()
 testHarmonicTimelineOffsetsSecondSectionAndCarriesItsOwnMode()
@@ -1145,6 +1817,14 @@ testMIDIEmptyBufferProducesNoEvents()
 testLoadDemoPieceSetsPieceAndLogsIt()
 testPlayWithoutAPieceLoadedThrows()
 testPlayTracksPlaybackStateSynchronouslyThenClearsItWhenFinished()
+testSetPieceTrackInstrumentUpdatesTrackAndLogs()
+testSetPieceTrackInstrumentNilRevertsToEmptyString()
+testSetPieceTrackInstrumentWithInvalidSectionIndexThrows()
+testSetPieceTrackInstrumentWithInvalidTrackIndexThrows()
+testSetPieceChordInstrumentUpdatesSectionAndLogs()
+testSetPieceChordInstrumentWithInvalidSectionIndexThrows()
+testPlayWarnsWhenATracksInstrumentFileIsNotFound()
+testPlayWithoutAnyTrackInstrumentLogsNoInstrumentWarning()
 testStartTrackOnAnUnlistedMIDIPortThrows()
 testDefaultMIDIFusionModeIsMergedWithASingleMIDITrack()
 testSetMIDIFusionModeSwitchesTrackList()
@@ -1364,6 +2044,105 @@ func testComposeFromTextWithInvalidResponseThrowsWithWarnings() {
         print("FAIL [compose with invalid response throws]: threw \(error)")
     }
 }
+
+func testComposeFromTextWithATitleOverridesTheLLMsOwnTitle() {
+    do {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
+            .write(to: folder.appendingPathComponent("fake.json"))
+
+        let session = ImprovSession()
+        session.setSourceText("a poem about the sea")
+        try session.listLLMConnections(in: folder.path)
+        try session.useLLMConnection(atIndex: 0)
+
+        let fakeResponse = """
+        { "title": "LLM Chosen Title", "tempoBPM": 80, "tonic": "D", "scaleID": "dorian",
+          "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
+            "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
+        """
+        try session.composeFromText(title: "My Own Title") { _, _ in fakeResponse }
+        check(session.piece?.title, "My Own Title", "composeFromText title override wins over the LLM's own title")
+    } catch {
+        failures += 1
+        print("FAIL [compose from text with title override]: threw \(error)")
+    }
+}
+testComposeFromTextWithATitleOverridesTheLLMsOwnTitle()
+
+func testSetAdditionalCompositionInstructionsAreIncludedInThePrompt() {
+    do {
+        let session = ImprovSession()
+        session.setSourceText("a poem about the sea")
+        session.setAdditionalCompositionInstructions("romantique, mode mineur")
+        let prompt = try session.currentTextCompositionPrompt()
+        checks += 1
+        if !prompt.contains("romantique, mode mineur") || !prompt.contains("a poem about the sea") {
+            failures += 1
+            print("FAIL [additional composition instructions included in prompt]: \(prompt)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [additional composition instructions included in prompt]: threw \(error)")
+    }
+}
+testSetAdditionalCompositionInstructionsAreIncludedInThePrompt()
+
+func testSetAdditionalCompositionInstructionsEmptyStringClearsThem() {
+    let session = ImprovSession()
+    session.setAdditionalCompositionInstructions("romantique")
+    check(session.additionalCompositionInstructions, "romantique", "setAdditionalCompositionInstructions stores the text")
+    session.setAdditionalCompositionInstructions("")
+    checkNil(session.additionalCompositionInstructions, "setAdditionalCompositionInstructions('') clears them")
+}
+testSetAdditionalCompositionInstructionsEmptyStringClearsThem()
+
+func testSetCompositionTitleEmptyStringClearsIt() {
+    let session = ImprovSession()
+    session.setCompositionTitle("Ma Ballade")
+    check(session.compositionTitle, "Ma Ballade", "setCompositionTitle stores the title")
+    session.setCompositionTitle("")
+    checkNil(session.compositionTitle, "setCompositionTitle('') clears it")
+    session.setCompositionTitle(nil)
+    checkNil(session.compositionTitle, "setCompositionTitle(nil) clears it")
+}
+testSetCompositionTitleEmptyStringClearsIt()
+
+func testComposeFromTextSendsAdditionalInstructionsInThePrompt() {
+    do {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
+            .write(to: folder.appendingPathComponent("fake.json"))
+
+        let session = ImprovSession()
+        session.setSourceText("a poem about the sea")
+        session.setAdditionalCompositionInstructions("romantique, mode mineur")
+        try session.listLLMConnections(in: folder.path)
+        try session.useLLMConnection(atIndex: 0)
+
+        let fakeResponse = """
+        { "title": "The Sea", "tempoBPM": 80, "tonic": "D", "scaleID": "dorian",
+          "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
+            "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
+        """
+        try session.composeFromText { prompt, _ in
+            checks += 1
+            if !prompt.contains("romantique, mode mineur") {
+                failures += 1
+                print("FAIL [compose from text sends additional instructions]: \(prompt)")
+            }
+            return fakeResponse
+        }
+    } catch {
+        failures += 1
+        print("FAIL [compose from text sends additional instructions]: threw \(error)")
+    }
+}
+testComposeFromTextSendsAdditionalInstructionsInThePrompt()
 
 testNewPieceStartsBlank()
 testSetSourceTextStoresItAndLogs()

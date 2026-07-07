@@ -91,6 +91,8 @@ midi-mode fusionne       # une seule piste 'midi', qui écoute toutes les source
 midi-mode individuel     # une piste par port MIDI visible ('midi:1', 'midi:2', ...)
 ```
 
+Menu **MusicLab > Mode MIDI: fusionné/individuel** fait la même chose.
+
 Changer de mode reconstruit la liste des pistes MIDI (et arrête celles qui écoutaient) —
 utile pour distinguer un vrai clavier MIDI d'un bus IAC virtuel non désiré, par exemple, en
 n'écoutant que le port qui nous intéresse (`track midi:2 on`).
@@ -186,16 +188,37 @@ Sur le clavier de chaque piste affiché en mode `console` :
 
 ## 6. Composer à partir d'un texte, avec une IA
 
-Menu « IA » (ou commandes équivalentes) :
+### Le plus simple : l'assistant « Décrire le morceau... » du menu Composition
+
+Menu **Composition > Décrire le morceau...** guide tout le processus en une seule action :
+il demande le **titre** du morceau, puis sa **description** (poème, paroles… terminée par
+une ligne vide), puis des **indications de style** facultatives (ex. « romantique, mode
+mineur »), et lance directement la composition. Le morceau obtenu porte le titre tapé (pas
+celui que l'IA aurait choisi elle-même) ; la description et les indications sont toutes les
+deux envoyées à l'IA. **Composition > Voir la description** affiche à tout moment le titre,
+la description et les indications actuellement en mémoire.
+
+Ça suppose qu'une connexion LLM a déjà été choisie (menu **MusicLab**, voir plus bas) — sinon
+l'assistant s'arrête avec une erreur claire à l'étape de composition, sans rien perdre : la
+description et les indications restent en mémoire, il suffit de choisir une connexion puis de
+relancer **Composition > Composer à partir de la description**.
+
+### Étape par étape (ou en ligne de commande)
 
 | Étape | Commande |
 |---|---|
-| 1. Nouveau morceau vierge | `new-piece <titre>` |
-| 2. Coller un texte (poème, paroles…) | `paste-text` (terminer par une ligne vide) |
-| 3. Choisir un dossier de connexions LLM | `llm-connections <dossier>` (par défaut : `LLMConnections/`) |
-| 4. Choisir une connexion | `use-llm <numéro ou nom>` |
-| 5. Composer | `compose` |
-| 6. Voir le résultat | `show-piece` |
+| 1. Titre du morceau, facultatif | `title <texte>` (vide efface) |
+| 2. Coller la description (poème, paroles…) | `paste-text` (terminer par une ligne vide) |
+| 3. Indications de style, facultatif | `indications <texte>` (vide efface) |
+| 4. Choisir un dossier de connexions LLM | `llm-connections <dossier>` (par défaut : `LLMConnections/` ; menu **MusicLab**) |
+| 5. Choisir une connexion | `use-llm <numéro ou nom>` (menu **MusicLab**) |
+| 6. Voir ce qui sera envoyé | `show-description` (titre/description/indications) |
+| 7. Composer | `compose [titre]` (le titre, s'il est donné, remplace celui que l'IA aurait choisi) |
+| 8. Voir le résultat | `show-piece` (menu **Morceaux**) |
+
+`new-piece <titre>` reste disponible séparément pour démarrer un morceau **vierge** (sans
+IA, à composer à la main plus tard) — l'assistant "Décrire le morceau..." ne l'utilise pas,
+il compose directement.
 
 Trois connexions d'exemple sont fournies dans `LLMConnections/` :
 - `ollama-local.json` — un serveur Ollama local, pas de clé.
@@ -208,6 +231,30 @@ d'environnement à définir avant de lancer l'application. La réponse du modèl
 validée avant d'être utilisée (gamme/accord invalide, note hors plage → rejetés avec un
 avertissement plutôt qu'acceptés tels quels).
 
+### Voir, sauvegarder et charger le prompt de composition
+
+Deux prompts distincts existent : un pour composer à partir d'un texte collé (`compose`), un
+pour composer à partir d'une soundtrack enregistrée (`compose-piece-from-soundtrack`, voir
+§10). Les deux sont visibles et modifiables :
+
+```
+show-text-prompt              # affiche le prompt exact qu'utiliserait 'compose' maintenant
+show-soundtrack-prompt        # idem pour 'compose-piece-from-soundtrack'
+
+prompts <dossier>              # pointe le dossier de prompts (sous-dossiers Texte/ et Soundtrack/, crees si absents ; par defaut Prompts/)
+save-text-prompt <nom>         # sauvegarde le prompt actuel (texte) sous ce nom
+save-soundtrack-prompt <nom>   # idem pour le prompt (soundtrack)
+use-text-prompt <numero|nom>   # charge un prompt sauvegarde — 'compose' l'utilisera tel quel, plutot que d'en reconstruire un
+use-soundtrack-prompt <numero|nom>
+reset-text-prompt              # revient au prompt reconstruit automatiquement (le comportement par defaut)
+reset-soundtrack-prompt
+```
+
+Un prompt chargé (`use-text-prompt`/`use-soundtrack-prompt`) est utilisé **verbatim** —
+`sourceText`/la soundtrack enregistrée ne sont alors plus lus du tout pour cette composition,
+tant qu'un `reset-...-prompt` n'a pas été fait. Utile pour ajuster soi-même la formulation
+envoyée à l'IA (ton, contraintes supplémentaires...) sans toucher au code.
+
 ## 7. Choisir un instrument
 
 ```
@@ -215,7 +262,37 @@ samples <dossier>          # liste les .sf2/.dls/.aupreset du dossier (par défa
 use-sample <numéro ou nom>
 ```
 
-Remplace le synthétiseur de base par un son chargé depuis un fichier SoundFont/DLS/aupreset.
+Remplace le synthétiseur de base par un son chargé depuis un fichier SoundFont/DLS/aupreset —
+c'est le son **par défaut** utilisé par toute piste/accord qui n'a pas son propre instrument.
+
+### Un instrument différent par piste mélodique et par accompagnement
+
+Un morceau (`Piece`) peut associer un fichier son différent à chaque piste mélodique et à
+l'accompagnement d'accords de chaque section, pour un rendu plus riche qu'un seul synthé
+partagé par tout le morceau :
+
+```
+show-piece                                          # affiche les numeros de section/piste
+set-track-instrument <section> <piste> <nom-sample>  # ex: set-track-instrument 1 1 mcb.sf2
+set-chord-instrument <section> <nom-sample>          # ex: set-chord-instrument 1 East_West_-_The_Ultimate_Piano_Collection.sf2
+save                                                 # ou save-as <nom> — sinon le changement ne survit pas au rechargement
+```
+
+Menu **Morceaux > Choisir le son d'une piste.../Choisir le son des accords d'une section...**
+fait exactement la même chose que les deux commandes ci-dessus.
+
+- `<nom-sample>` est un nom de fichier du dossier de sons courant (le même que `samples`/
+  `use-sample`) — `mcb.sf2`, `Nokia_Tongbao_Bank__Series_30__8-bit.sf2`, etc.
+- Passer une chaîne vide (`set-track-instrument 1 1 ""`) revient au son par défaut.
+- Un fichier introuvable ne fait pas échouer la lecture : `play` affiche un avertissement
+  (« instrument '...' introuvable — son par défaut utilisé ») et continue avec le
+  synthétiseur de base pour cette piste/ces accords uniquement.
+- Chaque instrument distinct sonne via son propre moteur audio, indépendant des autres —
+  plusieurs pistes/accords peuvent donc sonner avec des timbres vraiment différents en même
+  temps (même mécanisme que les pistes d'entrée en direct, voir §3).
+- Les morceaux créés avant cette fonctionnalité (ou par l'IA, voir §6) n'ont pas
+  d'instrument propre par défaut — ils sonnent exactement comme avant, avec le son choisi
+  par `use-sample`.
 
 ## 8. Le mode `console` — tableau de bord et menu façon DOS
 
@@ -237,24 +314,176 @@ Menus disponibles :
 
 | Menu | Contenu |
 |---|---|
-| **Fichier** | Charger la démo, choisir un dossier de morceaux, charger un morceau, sauvegarder, sauvegarder sous, quitter. |
-| **Lecture** | Jouer. |
-| **Source** | Lister les pistes, mode MIDI fusionné/individuel, activer/arrêter une piste, activer/désactiver le son d'une piste, choisir un instrument pour une piste. |
-| **Instrument** | Choisir un dossier de sons, choisir le son de lecture du morceau. |
-| **IA** | Nouveau morceau, coller un texte, choisir un dossier de connexions LLM, choisir une connexion LLM, composer, voir le morceau. |
+| **MusicLab** | Menu principal (premier de la barre, s'ouvre par défaut), en 4 groupes : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/connexions LLM/prompts), choisir une connexion LLM ; (3) mode MIDI fusionné/individuel ; (4) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
+| **Instruments** | Lister les instruments, activer/arrêter un instrument, *séparateur*, activer/désactiver le son d'un instrument, choisir un son pour un instrument. |
+| **Morceaux** | Quatre groupes, séparés par des traits : (1) écouter/voir le morceau ; (2) choisir le son par défaut de lecture, ou le son d'une piste/des accords d'une section (voir §7) ; (3) charger la démo, charger un morceau, sauvegarder le morceau, sauvegarder le morceau sous ; (4) **Assistant IA** — pour l'instant un intitulé de sous-section réservé, sans action, en attente d'une future fonction de modification par dialogue (« plus vite », « moins vite »…) applicable à n'importe quel morceau. |
+| **Enregistrement** | Démarrer/arrêter un enregistrement, voir l'enregistrement, jouer l'enregistrement, *séparateur*, charger/sauvegarder l'enregistrement, *séparateur*, composer un morceau à partir de l'enregistrement en le nommant (voir §10), *séparateur*, voir/sauvegarder/charger le prompt de composition. |
+| **Composition** | Décrire le morceau (assistant titre → description → indications → composition, voir §6), composer à partir de la description, voir la description, *séparateur*, voir/sauvegarder/charger le prompt de composition. |
+| **Jam Session** | Démarrer/arrêter une jam session, rejoindre une jam session, trouver une jam session (découverte), quitter la jam session — session collaborative (voir §9). |
+
+Les *séparateurs* sont de simples traits horizontaux dans le menu déroulant, pour grouper des
+items apparentés — jamais sélectionnables (les flèches ↑ ↓ passent par-dessus). Une
+**sous-section nommée** (ex. « Assistant IA » dans Morceaux) fonctionne pareil, mais affiche
+un titre au lieu d'un simple trait — utile quand un menu n'a pas de vrais sous-menus imbriqués.
 
 Une action de menu bascule temporairement en mode d'écran normal (pour pouvoir répondre à
 ses questions), puis revient au tableau de bord une fois terminée (« Entrée pour revenir »).
 
 **Ce que montre le tableau de bord**, du haut vers le bas :
 - Barre de menu.
-- Piece / Fichier / Playing / Mode MIDI / Dernier événement reçu.
+- Piece / Fichier / Playing / Recording / Soundtrack / Reseau / Mode MIDI / Dernier événement reçu.
 - *Pour chaque piste en écoute* : son nom, son état de son (ou le niveau du micro), l'accord
   détecté (`Chord`), les modes détectés (`Modes`), et son propre clavier (C3–B5).
 - *Pendant la lecture d'un morceau uniquement* : le déroulé de la composition, puis un
   clavier montrant ce que le morceau est en train de jouer.
 
+## 9. Session collaborative — serveur et clients
+
+Plusieurs personnes peuvent partager la même écoute/reconnaissance d'accords, un peu comme un
+serveur de jeu en LAN : l'une héberge (« serveur »), les autres se connectent (« clients »),
+et chacun voit les pistes de tout le monde apparaître dans sa propre liste de pistes.
+
+### Héberger
+
+```
+server            # port 7777 par defaut
+server 9000       # ou un port au choix
+```
+
+Accepte n'importe quel client qui atteint ce port — **il n'y a pour l'instant aucun mot de
+passe ni chiffrement** : à réserver à un réseau de confiance (le même Wi-Fi/LAN, ou un VPN),
+jamais exposé directement sur Internet. `stop-server` arrête l'hébergement.
+
+Le serveur s'annonce automatiquement sur le réseau local (Bonjour) sous le nom du
+participant (voir `localClientName`) — pas d'étape supplémentaire pour être visible via
+`discover` (ci-dessous), même en gardant un simple `server` sans argument.
+
+### Rejoindre — en connaissant déjà l'adresse
+
+```
+client                        # localhost:7777 par defaut
+client 192.168.1.42            # meme port (7777), autre machine
+client 192.168.1.42 9000       # host et port explicites
+```
+
+Toute piste déjà en écoute chez soi est annoncée immédiatement au serveur en rejoignant — pas
+besoin de tout réactiver. `disconnect` quitte la session.
+
+### Rejoindre — par découverte automatique
+
+```
+discover
+```
+
+Recherche les serveurs visibles sur le réseau local pendant quelques secondes, puis propose
+une liste numérotée :
+
+```
+Recherche de serveurs sur le reseau local...
+  1. player
+  2. clavier-de-marie
+Rejoindre quel serveur (numero, vide pour abandonner):
+```
+
+Tape le numéro pour rejoindre, ou laisse vide (Entrée) pour abandonner sans se connecter.
+Menu **Jam Session > Decouvrir des serveurs...** fait exactement la même chose.
+
+**Si `discover` ne trouve jamais rien** :
+1. Vérifier qu'un `server` tourne bien de l'autre côté, sur le **même réseau local** (la
+   découverte ne traverse pas un VPN ni un routeur vers un autre sous-réseau).
+2. macOS peut demander une autorisation « Réseau local » au premier essai (Réglages Système
+   > Confidentialité et sécurité > Réseau local) — l'accorder si elle apparaît.
+3. En dernier recours, se connecter par adresse connue (`client <IP> <port>`, IP visible sur
+   la machine qui héberge via `ifconfig`/Réglages Système > Réseau).
+
+### Ce qui est partagé, et ce qui reste local
+
+- **Les pistes de tout le monde apparaissent chez tout le monde** — `tracks`/`status`/
+  `console` listent, en plus des pistes locales habituelles (`midi`, `clavier`, `micro`), une
+  entrée par piste distante, sous la forme `remote:<identifiant>@<piste>` (copie-colle cet
+  identifiant depuis la liste plutôt que de le retaper — c'est un UUID).
+- **La reconnaissance d'accord/mode d'une piste distante est calculée par le serveur**, pas
+  recalculée chez chaque client — c'est lui qui « fait autorité ». Une piste distante ne peut
+  donc pas être démarrée/arrêtée depuis ailleurs que sa propre machine (`track <id> on/off`
+  échoue avec un message explicite si on essaie sur une piste `remote:...`).
+- **Le son reste toujours une décision locale**, exactement comme pour n'importe quelle piste
+  (voir §3) : `track remote:<id>@<piste> son on` et `track remote:<id>@<piste> instrument
+  <n|nom>` fonctionnent normalement — si l'instrument demandé n'est pas disponible chez soi,
+  ça reste sur le son par défaut, sans jamais forcer quoi que ce soit venant du réseau.
+- **L'identifiant de participant est propre à ce lancement** de l'application (pas encore
+  conservé d'un lancement à l'autre) — après un `quit`/relance, on rejoint comme un nouveau
+  participant.
+
+## 10. Enregistrement — le mode Soundtrack (événementiel)
+
+Un second mode, à côté du `Piece` (mesures/accords, §1-§2) : un enregistrement **en temps
+réel** d'une ou plusieurs pistes — juste « telle note, à tel instant en secondes » — sans
+tempo, sans mesure. Les deux modes ne sont **pas interchangeables** : une Soundtrack ne se
+charge pas comme un morceau, et réciproquement.
+
+### Enregistrer
+
+```
+record start                  # capture toutes les pistes actuellement en ecoute
+record start clavier          # ou seulement celles listees explicitement
+...joue quelque chose (press/release, ou un vrai clavier MIDI)...
+record stop
+```
+
+`record stop` affiche la durée et le nombre d'événements capturés, et la garde en mémoire
+comme soundtrack courante (voir `show-soundtrack`).
+
+### Jouer, sauvegarder, charger
+
+```
+play-soundtrack                     # rejoue la soundtrack courante, en temps reel
+soundtracks <dossier>               # liste les .json (par defaut SoundTracks/)
+use-soundtrack <numero ou nom>
+save-soundtrack-as <nom>
+show-soundtrack                     # titre, duree, nombre d'evenements, pistes capturees
+```
+
+En mode `console`, tant que la lecture est en cours, un troisième clavier apparaît
+(« Clavier soundtrack, en cours de jeu ») — sans coloration accord/mode (une Soundtrack est
+un enregistrement brut, pas un morceau analysé), juste les notes tenues.
+
+Menu **Enregistrement** : les mêmes actions, avec des libellés en « enregistrement » plutôt
+qu'en « soundtrack » (Jouer/Charger/Sauvegarder/Voir l'enregistrement) — même objet, juste un
+nom plus parlant que le mot anglais dans l'interface.
+
+### Déduire un Piece Model par IA
+
+Menu **Enregistrement > Composer un morceau à partir de l'enregistrement...**.
+À partir d'une soundtrack, essaie d'en déduire un tempo, une tonalité et une progression
+d'accords plausibles, et crée le résultat comme un nouveau morceau (même validation stricte
+que la composition à partir d'un texte, §6 — un ID de gamme/accord invalide est rejeté,
+jamais injecté tel quel) :
+
+```
+compose-piece-from-soundtrack                    # 1 candidat par defaut, titre choisi par l'IA
+compose-piece-from-soundtrack 3                  # 3 candidats independants
+compose-piece-from-soundtrack 1 Mon Morceau      # nomme le morceau (et son fichier) soi-meme
+```
+
+Chaque candidat qui survit à la validation est sauvegardé comme un fichier de morceau à part
+dans le dossier de morceaux (`<titre>-candidat-N.json` s'il y en a plusieurs) — à inspecter
+ensuite avec `pieces`/`use-piece`/`show-piece` comme n'importe quel autre morceau. Le dernier
+candidat généré devient aussi le morceau courant. Le titre (dernier argument, plusieurs mots
+acceptés) remplace celui que l'IA aurait choisi — pour tous les candidats du même appel, s'il
+y en a plusieurs, seul le suffixe `-candidat-N` les distingue alors. Voir §6 pour visualiser/
+sauvegarder/charger le prompt utilisé (`show-soundtrack-prompt`, etc.).
+
+**Pas encore possible** (prévu plus tard) : enregistrer une nouvelle soundtrack *pendant*
+qu'un `Piece` joue, et l'intégrer directement dans ce morceau.
+
 ## Liste complète des commandes
+
+`help` les affiche déjà regroupées par catégorie (Général / Morceaux / Pistes d'entrée /
+Instruments / Soundtrack / Composition / Session collaborative) — la liste ci-dessous reste
+à plat pour une recherche rapide.
+
+**Nom de fichier contenant des espaces** : entourez-le de guillemets, par exemple
+`use-sample "The Fox and The Crow General MIDI SoundFont Ultimate.sf2"`.
 
 ```
 help                    affiche l'aide
@@ -270,15 +499,43 @@ midi-mode <fusionne|individuel>  MIDI en une piste fusionnée, ou une piste par 
 track <id> on|off       démarre/arrête l'écoute d'une piste (id: midi, midi:<n>, clavier, micro)
 track <id> son on|off   active/désactive le son d'une piste (impossible pour 'micro')
 track <id> instrument <n|nom>  charge un instrument sur cette piste (active son son)
+record start [<id> ...] demarre l'enregistrement (toutes les pistes en ecoute, ou celles listees)
+record stop             arrete l'enregistrement en cours
+play-soundtrack         joue la soundtrack courante (mode temporel)
+soundtracks <dossier>   liste les fichiers .json (soundtracks) du dossier
+use-soundtrack <n|nom>  charge une soundtrack
+save-soundtrack         resauvegarde la soundtrack courante
+save-soundtrack-as <nom>  sauvegarde sous un nouveau nom
+show-soundtrack         affiche les infos de la soundtrack courante
+compose-piece-from-soundtrack [n] [titre]  demande a l'IA d'en deduire n Piece Model (defaut 1), nomme <titre> s'il est donne
+server [port]           demarre un serveur collaboratif (defaut port 7777)
+stop-server             arrete le serveur
+client [host] [port]    rejoint un serveur (defaut localhost:7777)
+discover                recherche des serveurs sur le reseau local et propose de rejoindre
+disconnect              se deconnecte du serveur
 press <hauteur>         simule l'appui d'une touche (0-127) sur la piste 'clavier'
 release <hauteur>       simule le relâchement d'une touche sur la piste 'clavier'
 samples <dossier>       liste les fichiers .sf2/.dls/.aupreset du dossier
-use-sample <n|nom>      charge l'instrument de lecture du morceau
-new-piece <titre>       démarre un morceau vierge
-paste-text              colle un texte (poème...), terminé par une ligne vide
+use-sample <n|nom>      charge le son par defaut de la lecture du morceau
+set-track-instrument <section> <piste> <nom|vide>  instrument d'une piste melodique (voir §7)
+set-chord-instrument <section> <nom|vide>           instrument des accords d'une section (voir §7)
+new-piece <titre>       démarre un morceau vierge (sans IA)
+title [texte]           titre du morceau a composer (vide efface)
+paste-text              colle la description du morceau (poème...), terminée par une ligne vide
+indications [texte]     indications de style additionnelles (vide efface)
+show-description        affiche le titre, la description et les indications en cours
 llm-connections <dir>   liste les connexions LLM (.json) du dossier
 use-llm <n|nom>         choisit une connexion LLM
-compose                 demande à l'IA de composer à partir du texte collé
+compose [titre]         demande à l'IA de composer à partir de la description, nomme <titre> s'il est donné
+prompts <dossier>       pointe le dossier de prompts (sous-dossiers Texte/ et Soundtrack/, crees si absents)
+show-text-prompt        affiche le prompt de composition a partir du texte colle
+show-soundtrack-prompt  affiche le prompt de composition a partir de la soundtrack
+save-text-prompt <nom>  sauvegarde le prompt (texte) affiche par show-text-prompt
+save-soundtrack-prompt <nom>  idem pour le prompt (soundtrack)
+use-text-prompt <n|nom>       charge un prompt (texte) sauvegarde, utilise par le prochain 'compose'
+use-soundtrack-prompt <n|nom>  idem pour 'compose-piece-from-soundtrack'
+reset-text-prompt       revient au prompt (texte) par defaut
+reset-soundtrack-prompt revient au prompt (soundtrack) par defaut
 show-piece              affiche la structure du morceau courant
 status                  affiche l'état courant
 console                 écran fixe qui se met à jour en direct (Ctrl+C pour revenir)
@@ -295,3 +552,6 @@ quit                    quitte
 | Une note reste affichée/jouée sans s'arrêter après `play` | Devrait être corrigé (filet de sécurité en fin de lecture) — si le problème réapparaît, le signaler. |
 | Le clavier ASCII scintille ou se déforme | Devrait être corrigé (largeur de ligne bornée) — si ça persiste, vérifier la largeur du terminal (≥ 80 colonnes recommandé). |
 | `compose` échoue avec une erreur réseau | Vérifier que le serveur (Ollama local) tourne, ou que la variable d'environnement de clé API est bien définie pour la connexion choisie. |
+| `client` échoue ou reste sans piste distante visible | Vérifier host/port, que `server` tourne bien de l'autre côté, et qu'aucun pare-feu ne bloque le port — voir §9. |
+| `discover` ne trouve jamais rien | Même réseau local requis (pas de VPN/sous-réseau différent) ; vérifier la permission « Réseau local » ; sinon se connecter par adresse connue (`client <IP> <port>`) — voir §9. |
+| `track remote:...` refuse `on`/`off` | Normal : une piste distante est démarrée/arrêtée sur sa propre machine, pas depuis ailleurs — voir §9. |

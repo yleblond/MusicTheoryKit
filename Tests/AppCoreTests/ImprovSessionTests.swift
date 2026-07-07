@@ -4,6 +4,7 @@ import XCTest
 import MIDIEngine
 import MusicTheoryKit
 import LLMEngine
+import SoundTrackModel
 
 final class ImprovSessionTests: XCTestCase {
 
@@ -48,6 +49,92 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertFalse(session.isPlaying)
         XCTAssertNil(session.playbackCurrentChordIndex)
         XCTAssertTrue(session.playbackHeldPitches.isEmpty)
+    }
+
+    private func loadTemporaryPiece(_ piece: Piece, into session: ImprovSession) throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        try JSONEncoder().encode(piece).write(to: url)
+        try session.loadPiece(fromJSONFile: url.path)
+    }
+
+    func testSetPieceTrackInstrumentUpdatesTrackAndLogs() throws {
+        let session = ImprovSession()
+        let track = Track(name: "lead", instrument: "")
+        let section = Section(name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"), tracks: [track])
+        try loadTemporaryPiece(Piece(title: "t", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [section]), into: session)
+
+        try session.setPieceTrackInstrument(sectionIndex: 0, trackIndex: 0, instrumentName: "mcb.sf2")
+
+        XCTAssertEqual(session.piece?.sections[0].tracks[0].instrument, "mcb.sf2")
+        XCTAssertTrue(session.log.contains { $0.contains("mcb.sf2") })
+    }
+
+    func testSetPieceTrackInstrumentNilRevertsToEmptyString() throws {
+        let session = ImprovSession()
+        let track = Track(name: "lead", instrument: "mcb.sf2")
+        let section = Section(name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"), tracks: [track])
+        try loadTemporaryPiece(Piece(title: "t", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [section]), into: session)
+
+        try session.setPieceTrackInstrument(sectionIndex: 0, trackIndex: 0, instrumentName: nil)
+
+        XCTAssertEqual(session.piece?.sections[0].tracks[0].instrument, "")
+    }
+
+    func testSetPieceTrackInstrumentWithInvalidSectionIndexThrows() {
+        let session = ImprovSession()
+        session.loadDemoPiece()
+        XCTAssertThrowsError(try session.setPieceTrackInstrument(sectionIndex: 99, trackIndex: 0, instrumentName: "mcb.sf2")) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .invalidPieceSectionIndex)
+        }
+    }
+
+    func testSetPieceTrackInstrumentWithInvalidTrackIndexThrows() {
+        let session = ImprovSession()
+        session.loadDemoPiece()
+        XCTAssertThrowsError(try session.setPieceTrackInstrument(sectionIndex: 0, trackIndex: 99, instrumentName: "mcb.sf2")) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .invalidPieceTrackIndex)
+        }
+    }
+
+    func testSetPieceChordInstrumentUpdatesSectionAndLogs() throws {
+        let session = ImprovSession()
+        session.loadDemoPiece()
+        try session.setPieceChordInstrument(sectionIndex: 0, instrumentName: "strings.sf2")
+        XCTAssertEqual(session.piece?.sections[0].chordInstrument, "strings.sf2")
+        XCTAssertTrue(session.log.contains { $0.contains("strings.sf2") })
+    }
+
+    func testSetPieceChordInstrumentWithInvalidSectionIndexThrows() {
+        let session = ImprovSession()
+        session.loadDemoPiece()
+        XCTAssertThrowsError(try session.setPieceChordInstrument(sectionIndex: 99, instrumentName: "strings.sf2")) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .invalidPieceSectionIndex)
+        }
+    }
+
+    func testPlayWarnsWhenATracksInstrumentFileIsNotFound() throws {
+        let session = ImprovSession()
+        try session.start()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try session.listSampleFiles(in: folder.path) // lists an empty folder, but sets sampleFolder
+
+        let track = Track(name: "lead", instrument: "does-not-exist.sf2", melodyEvents: [MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 60)])
+        let section = Section(name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"), tracks: [track])
+        try loadTemporaryPiece(Piece(title: "fast", tempoBPM: 6000, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [section]), into: session)
+
+        try session.play()
+
+        XCTAssertTrue(session.log.contains { $0.contains("does-not-exist.sf2") && $0.contains("introuvable") })
+    }
+
+    func testPlayWithoutAnyTrackInstrumentLogsNoInstrumentWarning() throws {
+        let session = ImprovSession()
+        try session.start()
+        session.loadDemoPiece() // every track/section here has an empty/nil instrument
+        try session.play()
+        Thread.sleep(forTimeInterval: 0.1)
+        XCTAssertFalse(session.log.contains { $0.hasPrefix("Instrument:") })
     }
 
     func testSaveWithoutAPieceLoadedThrows() {
@@ -330,6 +417,81 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertNil(session.currentPieceFilePath)
     }
 
+    func testComposeFromTextWithATitleOverridesTheLLMsOwnTitle() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
+            .write(to: folder.appendingPathComponent("fake.json"))
+
+        let session = ImprovSession()
+        session.setSourceText("a poem about the sea")
+        try session.listLLMConnections(in: folder.path)
+        try session.useLLMConnection(atIndex: 0)
+
+        let fakeResponse = """
+        { "title": "LLM Chosen Title", "tempoBPM": 80, "tonic": "D", "scaleID": "dorian",
+          "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
+            "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
+        """
+        try session.composeFromText(title: "My Own Title") { _, _ in fakeResponse }
+
+        XCTAssertEqual(session.piece?.title, "My Own Title")
+    }
+
+    func testSetAdditionalCompositionInstructionsAreIncludedInThePrompt() throws {
+        let session = ImprovSession()
+        session.setSourceText("a poem about the sea")
+        session.setAdditionalCompositionInstructions("romantique, mode mineur")
+
+        let prompt = try session.currentTextCompositionPrompt()
+
+        XCTAssertTrue(prompt.contains("romantique, mode mineur"))
+        XCTAssertTrue(prompt.contains("a poem about the sea"))
+    }
+
+    func testSetAdditionalCompositionInstructionsEmptyStringClearsThem() {
+        let session = ImprovSession()
+        session.setAdditionalCompositionInstructions("romantique")
+        XCTAssertEqual(session.additionalCompositionInstructions, "romantique")
+        session.setAdditionalCompositionInstructions("")
+        XCTAssertNil(session.additionalCompositionInstructions)
+    }
+
+    func testSetCompositionTitleEmptyStringClearsIt() {
+        let session = ImprovSession()
+        session.setCompositionTitle("Ma Ballade")
+        XCTAssertEqual(session.compositionTitle, "Ma Ballade")
+        session.setCompositionTitle("")
+        XCTAssertNil(session.compositionTitle)
+        session.setCompositionTitle(nil)
+        XCTAssertNil(session.compositionTitle)
+    }
+
+    func testComposeFromTextSendsAdditionalInstructionsInThePrompt() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
+            .write(to: folder.appendingPathComponent("fake.json"))
+
+        let session = ImprovSession()
+        session.setSourceText("a poem about the sea")
+        session.setAdditionalCompositionInstructions("romantique, mode mineur")
+        try session.listLLMConnections(in: folder.path)
+        try session.useLLMConnection(atIndex: 0)
+
+        let fakeResponse = """
+        { "title": "The Sea", "tempoBPM": 80, "tonic": "D", "scaleID": "dorian",
+          "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
+            "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
+        """
+        try session.composeFromText { prompt, _ in
+            XCTAssertTrue(prompt.contains("romantique, mode mineur"))
+            return fakeResponse
+        }
+    }
+
     func testComposeFromTextWithInvalidResponseThrowsWithWarnings() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -349,6 +511,256 @@ final class ImprovSessionTests: XCTestCase {
             }
         }
         XCTAssertNil(session.piece)
+    }
+
+    // MARK: - Recording (SoundTrack — purely event-based, real seconds)
+
+    func testRecordingCapturesFilteredTrackEvents() throws {
+        let session = ImprovSession()
+        try session.startTrack(.computerKeyboard)
+        try session.startTrack(.microphone)
+        try session.startRecording(title: "Test", tracks: [.computerKeyboard])
+        session.pressKey(pitch: 60, track: .computerKeyboard) // should be captured
+        session.pressKey(pitch: 64, track: .microphone) // filtered out, should not be captured
+        Thread.sleep(forTimeInterval: 0.05)
+        let soundTrack = try session.stopRecording()
+        XCTAssertEqual(soundTrack.events.count, 1)
+        XCTAssertEqual(soundTrack.events.first?.trackID, "clavier")
+        XCTAssertEqual(soundTrack.events.first?.pitch, 60)
+    }
+
+    func testStartRecordingTwiceThrows() throws {
+        let session = ImprovSession()
+        try session.startRecording(title: "A")
+        XCTAssertThrowsError(try session.startRecording(title: "B")) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .alreadyRecording)
+        }
+    }
+
+    func testStopRecordingWithoutStartingThrows() {
+        let session = ImprovSession()
+        XCTAssertThrowsError(try session.stopRecording()) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .notRecording)
+        }
+    }
+
+    func testSoundTrackSaveThenLoadRoundTrips() throws {
+        let session = ImprovSession()
+        try session.startRecording(title: "RoundTrip")
+        session.pressKey(pitch: 60)
+        session.releaseKey(pitch: 60)
+        _ = try session.stopRecording()
+
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.saveSoundTrack(toJSONFile: tempFile.path)
+
+        let reloaded = ImprovSession()
+        try reloaded.loadSoundTrack(fromJSONFile: tempFile.path)
+        XCTAssertEqual(reloaded.currentSoundTrack?.events.count, session.currentSoundTrack?.events.count)
+    }
+
+    func testPlaySoundTrackTracksPlaybackStateThenClearsItWhenFinished() throws {
+        let session = ImprovSession()
+        try session.start()
+        try session.startRecording(title: "Play")
+        session.pressKey(pitch: 60)
+        Thread.sleep(forTimeInterval: 0.05)
+        session.releaseKey(pitch: 60)
+        _ = try session.stopRecording()
+
+        try session.playSoundTrack()
+        XCTAssertTrue(session.isPlayingSoundTrack)
+
+        Thread.sleep(forTimeInterval: (session.currentSoundTrack?.durationSeconds ?? 0) + 0.4)
+        XCTAssertFalse(session.isPlayingSoundTrack)
+        XCTAssertTrue(session.soundTrackHeldPitches.isEmpty)
+    }
+
+    func testPlaySoundTrackWithoutARecordingThrows() {
+        let session = ImprovSession()
+        XCTAssertThrowsError(try session.playSoundTrack()) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .noSoundTrackRecorded)
+        }
+    }
+
+    func testComposeSoundTrackToPiecesWithAFakeGeneratorProducesValidatedPieces() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
+            .write(to: folder.appendingPathComponent("fake.json"))
+
+        let session = ImprovSession()
+        try session.listLLMConnections(in: folder.path)
+        try session.useLLMConnection(atIndex: 0)
+        try session.listPieceFiles(in: folder.path) // establishes pieceFolder for saving candidates
+
+        try session.startRecording(title: "ForCompose")
+        session.pressKey(pitch: 62)
+        session.releaseKey(pitch: 62)
+        _ = try session.stopRecording()
+
+        let fakeResponse = """
+        { "title": "From Recording", "tempoBPM": 90, "tonic": "D", "scaleID": "dorian",
+          "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
+            "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
+        """
+        let paths = try session.composeSoundTrackToPieces(candidateCount: 1) { prompt, connection in
+            XCTAssertTrue(prompt.contains("ON"))
+            XCTAssertEqual(connection.name, "Fake")
+            return fakeResponse
+        }
+        XCTAssertEqual(paths.count, 1)
+        XCTAssertEqual(session.piece?.title, "From Recording")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths[0]))
+    }
+
+    func testComposeSoundTrackToPiecesWithATitleOverridesTheLLMsOwnTitle() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
+            .write(to: folder.appendingPathComponent("fake.json"))
+
+        let session = ImprovSession()
+        try session.listLLMConnections(in: folder.path)
+        try session.useLLMConnection(atIndex: 0)
+        try session.listPieceFiles(in: folder.path)
+        try session.startRecording(title: "ForCompose")
+        session.pressKey(pitch: 62)
+        session.releaseKey(pitch: 62)
+        _ = try session.stopRecording()
+
+        let fakeResponse = """
+        { "title": "LLM Chosen Title", "tempoBPM": 90, "tonic": "D", "scaleID": "dorian",
+          "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
+            "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
+        """
+        let paths = try session.composeSoundTrackToPieces(candidateCount: 1, title: "My Own Title") { _, _ in fakeResponse }
+
+        XCTAssertEqual(session.piece?.title, "My Own Title")
+        XCTAssertTrue(paths[0].hasSuffix("My Own Title.json"))
+    }
+
+    // MARK: - Composition prompts (preview, save/load)
+
+    func testCurrentTextCompositionPromptWithoutSourceTextOrOverrideThrows() {
+        let session = ImprovSession()
+        XCTAssertThrowsError(try session.currentTextCompositionPrompt()) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .noSourceText)
+        }
+    }
+
+    func testCurrentTextCompositionPromptBuildsFromSourceText() throws {
+        let session = ImprovSession()
+        session.setSourceText("a poem about the sea")
+        let prompt = try session.currentTextCompositionPrompt()
+        XCTAssertTrue(prompt.contains("a poem about the sea"))
+    }
+
+    func testCurrentSoundTrackCompositionPromptWithoutARecordingOrOverrideThrows() {
+        let session = ImprovSession()
+        XCTAssertThrowsError(try session.currentSoundTrackCompositionPrompt()) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .noSoundTrackRecorded)
+        }
+    }
+
+    func testSetPromptsFolderCreatesBothSubfoldersAndListsFiles() throws {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try session.setPromptsFolder(root.path)
+
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Texte").path, isDirectory: &isDirectory))
+        XCTAssertTrue(isDirectory.boolValue)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Soundtrack").path, isDirectory: &isDirectory))
+        XCTAssertTrue(isDirectory.boolValue)
+        XCTAssertEqual(session.textPromptFiles, [])
+        XCTAssertEqual(session.soundTrackPromptFiles, [])
+    }
+
+    func testSaveAndUseTextCompositionPromptRoundTrips() throws {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        session.setSourceText("a poem about the sea")
+
+        try session.saveTextCompositionPrompt(as: "my-prompt")
+        XCTAssertEqual(session.textPromptFiles, ["my-prompt.txt"])
+
+        session.setSourceText("a totally different poem")
+        XCTAssertNil(session.activeTextCompositionPrompt)
+        try session.useTextCompositionPrompt(atIndex: 0)
+        XCTAssertTrue(session.activeTextCompositionPrompt?.contains("a poem about the sea") ?? false)
+        // The active override, not the (now different) sourceText, is what gets used.
+        XCTAssertTrue((try session.currentTextCompositionPrompt()).contains("a poem about the sea"))
+
+        session.resetTextCompositionPrompt()
+        XCTAssertNil(session.activeTextCompositionPrompt)
+        XCTAssertTrue((try session.currentTextCompositionPrompt()).contains("a totally different poem"))
+    }
+
+    func testSaveAndUseSoundTrackCompositionPromptRoundTrips() throws {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        try session.startRecording(title: "ForPrompt")
+        session.pressKey(pitch: 60)
+        session.releaseKey(pitch: 60)
+        _ = try session.stopRecording()
+
+        try session.saveSoundTrackCompositionPrompt(as: "my-soundtrack-prompt")
+        XCTAssertEqual(session.soundTrackPromptFiles, ["my-soundtrack-prompt.txt"])
+
+        try session.useSoundTrackCompositionPrompt(named: "my-soundtrack-prompt.txt")
+        XCTAssertNotNil(session.activeSoundTrackCompositionPrompt)
+
+        session.resetSoundTrackCompositionPrompt()
+        XCTAssertNil(session.activeSoundTrackCompositionPrompt)
+    }
+
+    func testUseTextCompositionPromptWithInvalidIndexThrows() throws {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        XCTAssertThrowsError(try session.useTextCompositionPrompt(atIndex: 0)) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .invalidTextPromptIndex)
+        }
+    }
+
+    func testComposeFromTextUsesTheActiveOverridePromptVerbatim() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
+            .write(to: folder.appendingPathComponent("fake.json"))
+
+        let session = ImprovSession()
+        try session.listLLMConnections(in: folder.path)
+        try session.useLLMConnection(atIndex: 0)
+        try session.setPromptsFolder(folder.path)
+        session.setSourceText("ignored once a prompt override is active")
+        try session.saveTextCompositionPrompt(as: "custom")
+        session.setSourceText("also ignored")
+        try session.useTextCompositionPrompt(named: "custom.txt")
+
+        let fakeResponse = """
+        { "title": "Override", "tempoBPM": 90, "tonic": "D", "scaleID": "dorian",
+          "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
+            "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
+        """
+        try session.composeFromText { prompt, _ in
+            XCTAssertTrue(prompt.contains("ignored once a prompt override is active"))
+            XCTAssertFalse(prompt.contains("also ignored"))
+            return fakeResponse
+        }
+        XCTAssertEqual(session.piece?.title, "Override")
     }
 }
 

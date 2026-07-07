@@ -111,6 +111,26 @@ final class RenderingTests: XCTestCase {
         XCTAssertEqual(notes.map(\.pitch), [60, 64, 72])
     }
 
+    func testScheduledNotesCarryTheTracksInstrumentName() {
+        let track = Track(name: "lead", instrument: "mcb.sf2", melodyEvents: [MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 60)])
+        let section = makeSection(tracks: [track])
+        let piece = makePiece(sections: [section])
+
+        let notes = track.scheduledNotes(in: piece, section: section)
+
+        XCTAssertEqual(notes.map(\.instrumentName), ["mcb.sf2"])
+    }
+
+    func testScheduledNotesTreatAnEmptyInstrumentAsDefault() {
+        let track = Track(name: "lead", instrument: "", melodyEvents: [MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 60)])
+        let section = makeSection(tracks: [track])
+        let piece = makePiece(sections: [section])
+
+        let notes = track.scheduledNotes(in: piece, section: section)
+
+        XCTAssertEqual(notes.map(\.instrumentName), [nil])
+    }
+
     private func makeSectionWithChord(_ event: ChordEvent) -> Section {
         Section(
             name: "A",
@@ -164,6 +184,19 @@ final class RenderingTests: XCTestCase {
         XCTAssertEqual(section.chordScheduledNotes(beatsPerMeasure: 4), [])
     }
 
+    func testChordScheduledNotesCarryTheSectionsChordInstrument() {
+        var section = makeSectionWithChord(ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 0, chordTemplateID: "Ma7")))
+        section.chordInstrument = "strings.sf2"
+        let notes = section.chordScheduledNotes(beatsPerMeasure: 4)
+        XCTAssertEqual(notes.map(\.instrumentName), Array(repeating: "strings.sf2", count: notes.count))
+    }
+
+    func testChordScheduledNotesDefaultChordInstrumentIsNil() {
+        let section = makeSectionWithChord(ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 0, chordTemplateID: "Ma7")))
+        let notes = section.chordScheduledNotes(beatsPerMeasure: 4)
+        XCTAssertTrue(notes.allSatisfy { $0.instrumentName == nil })
+    }
+
     func testPieceRenderedNotesCombinesChordsAndTracksInSeconds() {
         let track = Track(name: "lead", instrument: "piano", melodyEvents: [MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 72)])
         let section = Section(
@@ -180,6 +213,23 @@ final class RenderingTests: XCTestCase {
         XCTAssertEqual(notes.map(\.startSeconds), [0, 0, 0, 0, 0])
         XCTAssertTrue(notes.contains { $0.pitch == 72 && $0.durationSeconds == 0.5 })
         XCTAssertTrue(notes.contains { $0.pitch == 48 && $0.durationSeconds == 2.0 })
+    }
+
+    func testPieceRenderedNotesCarryDistinctInstrumentNamesForChordsAndTracks() {
+        let track = Track(name: "lead", instrument: "mcb.sf2", melodyEvents: [MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 72)])
+        var section = Section(
+            name: "A",
+            lengthInMeasures: 1,
+            mode: ModeReference(tonic: 0, scaleID: "ionian"),
+            chordProgression: [ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 0, chordTemplateID: "Ma7"))],
+            tracks: [track]
+        )
+        section.chordInstrument = "strings.sf2"
+        let piece = Piece(title: "t", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [section])
+        let notes = piece.renderedNotes()
+
+        XCTAssertTrue(notes.contains { $0.pitch == 72 && $0.instrumentName == "mcb.sf2" })
+        XCTAssertEqual(notes.filter { $0.pitch != 72 }.map(\.instrumentName), Array(repeating: "strings.sf2", count: 4))
     }
 
     func testPieceRenderedNotesOffsetsSecondSectionByFirstSectionsLength() {

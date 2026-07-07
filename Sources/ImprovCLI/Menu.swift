@@ -61,6 +61,31 @@ func readKey() -> Key? {
 struct MenuItem {
     let label: String
     let action: () throws -> Void
+    let isSeparator: Bool
+
+    init(label: String, action: @escaping () throws -> Void) {
+        self.label = label
+        self.action = action
+        self.isSeparator = false
+    }
+
+    /// A non-selectable divider line inside a dropdown, for grouping related items — never
+    /// landed on by up/down navigation (see `handleMenuKey`), so its `action` is never run.
+    nonisolated(unsafe) static let separator = MenuItem(label: "", isSeparator: true)
+
+    /// Same non-selectable behavior as `separator`, but with a title rendered dimmed inside
+    /// the box — a named sub-section within one dropdown (e.g. "Assistant IA" inside
+    /// `Morceaux`), since this app's menus are a flat list per category with no real nested
+    /// submenus.
+    static func header(_ title: String) -> MenuItem {
+        MenuItem(label: title, isSeparator: true)
+    }
+
+    private init(label: String, isSeparator: Bool) {
+        self.label = label
+        self.action = {}
+        self.isSeparator = isSeparator
+    }
 }
 
 struct MenuCategory {
@@ -110,9 +135,13 @@ func handleMenuKey(_ key: Key, categories: [MenuCategory]) {
         let items = categories[openIndex].items
         switch key {
         case .up:
-            selectedItemIndex = (selectedItemIndex - 1 + items.count) % items.count
+            var next = (selectedItemIndex - 1 + items.count) % items.count
+            while items[next].isSeparator { next = (next - 1 + items.count) % items.count }
+            selectedItemIndex = next
         case .down:
-            selectedItemIndex = (selectedItemIndex + 1) % items.count
+            var next = (selectedItemIndex + 1) % items.count
+            while items[next].isSeparator { next = (next + 1) % items.count }
+            selectedItemIndex = next
         case .left:
             openMenuIndex = (openIndex - 1 + categories.count) % categories.count
             selectedItemIndex = 0
@@ -177,6 +206,15 @@ func renderDropdown(_ category: MenuCategory) -> [String] {
     let width = (category.items.map(\.label.count).max() ?? 10) + 2
     var lines = ["┌" + String(repeating: "─", count: width) + "┐"]
     for (index, item) in category.items.enumerated() {
+        if item.isSeparator {
+            if item.label.isEmpty {
+                lines.append("├" + String(repeating: "─", count: width) + "┤")
+            } else {
+                let padded = item.label.padding(toLength: width, withPad: " ", startingAt: 0)
+                lines.append("│\u{1B}[2m\(padded)\u{1B}[0m│")
+            }
+            continue
+        }
         let padded = item.label.padding(toLength: width, withPad: " ", startingAt: 0)
         lines.append(index == selectedItemIndex ? "│\u{1B}[7m\(padded)\u{1B}[0m│" : "│\(padded)│")
     }
