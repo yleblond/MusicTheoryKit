@@ -58,23 +58,47 @@ struct LLMPieceDTO: Decodable {
 }
 
 public enum LLMPieceComposer {
-    /// Builds the prompt sent to the LLM: the source text plus the exact JSON schema to
-    /// answer with, restricted to the theory library's actual vocabulary (scale/chord IDs)
-    /// so as much of the response as possible survives validation. `additionalInstructions`
-    /// (e.g. "romantique, mode mineur" typed alongside a title/text in the "Nouveau morceau"
-    /// wizard) is appended as a separate, clearly-labeled block after the text — free-form
-    /// style guidance the LLM is asked to follow as long as it doesn't conflict with the
-    /// schema above, not itself validated (there's nothing to validate — the actual output
-    /// still goes through `parseAndValidate` regardless of whether guidance was given).
-    public static func buildPrompt(sourceText: String, additionalInstructions: String? = nil) -> String {
+    /// The "framing sentence" — the part of the prompt before the JSON schema that sets the
+    /// LLM's task — as sent when no override is active. Extracted as a named constant (rather
+    /// than left inline in `buildPrompt`) specifically so it can be shown/edited/saved/reloaded
+    /// on its own via `ImprovSession.currentTextFramingSentence()` and friends, independent of
+    /// the JSON schema and the pasted text — editing the *whole* prompt risks losing the schema
+    /// block the response actually depends on; editing just this part can't.
+    public static let defaultTextFramingSentence = """
+    You are a music composition assistant. Given the text below (e.g. a poem or lyrics), \
+    propose a short musical piece whose mode and chord progression express its mood.
+    """
+
+    /// The `buildPrompt(fromSoundTrack:)` counterpart of `defaultTextFramingSentence`.
+    public static let defaultSoundTrackFramingSentence = """
+    You are a music transcription assistant. Below is a raw, real-time recording of \
+    notes played on one or more input tracks — a list of note on/off events with exact \
+    timestamps in seconds, not yet aligned to any tempo or measure grid.
+
+    Infer a plausible tempo (BPM) and reconstruct this performance as a measure-based \
+    piece: a key/mode, and a chord progression that reasonably explains the notes \
+    actually played (group nearby simultaneous notes into chords where that makes \
+    musical sense; align to a steady beat even if the original timing wasn't perfectly \
+    steady).
+    """
+
+    /// Builds the prompt sent to the LLM: a framing sentence (see `defaultTextFramingSentence`)
+    /// plus the exact JSON schema to answer with, restricted to the theory library's actual
+    /// vocabulary (scale/chord IDs) so as much of the response as possible survives validation,
+    /// plus the source text itself. `additionalInstructions` (e.g. "romantique, mode mineur"
+    /// typed alongside a title/text in the "Decrire le morceau" wizard) is appended as a
+    /// separate, clearly-labeled block after the text — free-form style guidance the LLM is
+    /// asked to follow as long as it doesn't conflict with the schema above, not itself
+    /// validated (there's nothing to validate — the actual output still goes through
+    /// `parseAndValidate` regardless of whether guidance was given).
+    public static func buildPrompt(sourceText: String, framingSentence: String = defaultTextFramingSentence, additionalInstructions: String? = nil) -> String {
         let scaleIDs = ScaleLibrary.all.map(\.id).joined(separator: ", ")
         let chordIDs = ChordVocabulary.seed.map(\.id).joined(separator: ", ")
         let instructionsBlock = additionalInstructions.map {
             "\n\nAdditional style guidance from the user (follow it as long as it doesn't conflict with the schema above):\n\($0)"
         } ?? ""
         return """
-        You are a music composition assistant. Given the text below (e.g. a poem or lyrics), \
-        propose a short musical piece whose mode and chord progression express its mood.
+        \(framingSentence)
 
         Respond with ONLY a single JSON object — no markdown fences, no commentary — exactly \
         matching this schema:
@@ -109,7 +133,7 @@ public enum LLMPieceComposer {
     /// framing of the request: "infer a tempo/key/chords that explain this real performance"
     /// instead of "invent one to match this poem's mood." Note names use the same C4=MIDI 60
     /// convention as `ImprovCLI`'s own `noteNameWithOctave`.
-    public static func buildPrompt(fromSoundTrack soundTrack: SoundTrack) -> String {
+    public static func buildPrompt(fromSoundTrack soundTrack: SoundTrack, framingSentence: String = defaultSoundTrackFramingSentence) -> String {
         let scaleIDs = ScaleLibrary.all.map(\.id).joined(separator: ", ")
         let chordIDs = ChordVocabulary.seed.map(\.id).joined(separator: ", ")
         let eventLines = soundTrack.events.map { event -> String in
@@ -121,15 +145,7 @@ public enum LLMPieceComposer {
         }.joined(separator: "\n")
 
         return """
-        You are a music transcription assistant. Below is a raw, real-time recording of \
-        notes played on one or more input tracks — a list of note on/off events with exact \
-        timestamps in seconds, not yet aligned to any tempo or measure grid.
-
-        Infer a plausible tempo (BPM) and reconstruct this performance as a measure-based \
-        piece: a key/mode, and a chord progression that reasonably explains the notes \
-        actually played (group nearby simultaneous notes into chords where that makes \
-        musical sense; align to a steady beat even if the original timing wasn't perfectly \
-        steady).
+        \(framingSentence)
 
         Respond with ONLY a single JSON object — no markdown fences, no commentary — exactly \
         matching this schema:

@@ -30,7 +30,9 @@ try? session.listSampleFiles(in: projectRoot.appendingPathComponent("SoundFonts"
 try? session.listLLMConnections(in: projectRoot.appendingPathComponent("LLMConnections").path)
 try? FileManager.default.createDirectory(at: projectRoot.appendingPathComponent("SoundTracks"), withIntermediateDirectories: true)
 try? session.listSoundTrackFiles(in: projectRoot.appendingPathComponent("SoundTracks").path)
-try? session.setPromptsFolder(projectRoot.appendingPathComponent("Prompts").path) // creates Texte/Soundtrack if absent
+try? session.setPromptsFolder(projectRoot.appendingPathComponent("Prompts").path) // creates Texte/Soundtrack/Cadrage... if absent
+try? FileManager.default.createDirectory(at: projectRoot.appendingPathComponent("Composition"), withIntermediateDirectories: true)
+try? session.listCompositionFiles(in: projectRoot.appendingPathComponent("Composition").path)
 
 func printHelp() {
     print("""
@@ -101,6 +103,15 @@ func printHelp() {
       use-text-prompt <n ou nom>     charge un prompt (texte) sauvegarde, utilise par le prochain 'compose'
       use-soundtrack-prompt <n ou nom>  idem pour 'compose-piece-from-soundtrack'
       reset-text-prompt / reset-soundtrack-prompt  revient au prompt par defaut (reconstruit a chaque fois)
+      show-text-framing / show-soundtrack-framing  affiche la phrase de cadrage active (avant le schema JSON)
+      set-text-framing / set-soundtrack-framing     colle une nouvelle phrase de cadrage, termine par une ligne vide
+      save-text-framing <nom> / save-soundtrack-framing <nom>  sauvegarde la phrase de cadrage active
+      use-text-framing <n|nom> / use-soundtrack-framing <n|nom>  charge une phrase de cadrage sauvegardee
+      reset-text-framing / reset-soundtrack-framing  revient a la phrase de cadrage par defaut
+      compositions <dossier>     liste les descriptions (.json) du dossier (titre+texte+indications)
+      use-description <n|nom>   charge une description (remplace titre/texte/indications en cours)
+      save-description-as <nom> sauvegarde la description en cours sous un nouveau nom
+      save-description          resauvegarde la description en cours
 
     Session collaborative (reseau)
       pseudo [nom]               affiche/change le pseudo affiche aux autres participants (defaut "player")
@@ -857,6 +868,23 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         session.setCompositionTitle(args.isEmpty ? nil : args.joined(separator: " "))
     case "show-description":
         printCompositionDescription()
+    case "compositions":
+        guard let folder = args.first else { print("usage: compositions <dossier>"); break }
+        try session.listCompositionFiles(in: folder)
+        drainLog() // flush "Found N composition description file(s)..." before the numbered list
+        for (index, name) in session.compositionFiles.enumerated() { print("  \(index + 1). \(name)") }
+    case "use-description":
+        guard let arg = args.first else { print("usage: use-description <numero ou nom de fichier>"); break }
+        if let index = Int(arg) {
+            try session.loadCompositionDescription(atIndex: index - 1)
+        } else {
+            try session.loadCompositionDescription(named: arg)
+        }
+    case "save-description":
+        try session.saveCompositionDescription()
+    case "save-description-as":
+        guard let name = args.first else { print("usage: save-description-as <nom>"); break }
+        try session.saveCompositionDescription(as: name)
     case "llm-connections":
         guard let folder = args.first else { print("usage: llm-connections <dossier>"); break }
         try session.listLLMConnections(in: folder)
@@ -909,6 +937,44 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         session.resetTextCompositionPrompt()
     case "reset-soundtrack-prompt":
         session.resetSoundTrackCompositionPrompt()
+    case "show-text-framing":
+        print(session.currentTextFramingSentence())
+    case "show-soundtrack-framing":
+        print(session.currentSoundTrackFramingSentence())
+    case "set-text-framing":
+        print("Colle la phrase de cadrage (termine par une ligne vide) :")
+        var lines: [String] = []
+        while let textLine = readLine(), !textLine.isEmpty { lines.append(textLine) }
+        session.setTextFramingSentence(lines.joined(separator: "\n"))
+    case "set-soundtrack-framing":
+        print("Colle la phrase de cadrage (termine par une ligne vide) :")
+        var lines: [String] = []
+        while let textLine = readLine(), !textLine.isEmpty { lines.append(textLine) }
+        session.setSoundTrackFramingSentence(lines.joined(separator: "\n"))
+    case "save-text-framing":
+        guard let name = args.first else { print("usage: save-text-framing <nom>"); break }
+        try session.saveTextFramingSentence(as: name)
+    case "save-soundtrack-framing":
+        guard let name = args.first else { print("usage: save-soundtrack-framing <nom>"); break }
+        try session.saveSoundTrackFramingSentence(as: name)
+    case "use-text-framing":
+        guard let arg = args.first else { print("usage: use-text-framing <numero ou nom de fichier>"); break }
+        if let index = Int(arg) {
+            try session.useTextFramingSentence(atIndex: index - 1)
+        } else {
+            try session.useTextFramingSentence(named: arg)
+        }
+    case "use-soundtrack-framing":
+        guard let arg = args.first else { print("usage: use-soundtrack-framing <numero ou nom de fichier>"); break }
+        if let index = Int(arg) {
+            try session.useSoundTrackFramingSentence(atIndex: index - 1)
+        } else {
+            try session.useSoundTrackFramingSentence(named: arg)
+        }
+    case "reset-text-framing":
+        session.resetTextFramingSentence()
+    case "reset-soundtrack-framing":
+        session.resetSoundTrackFramingSentence()
     case "set-track-instrument":
         guard args.count >= 3, let section = Int(args[0]), let track = Int(args[1]) else {
             print("usage: set-track-instrument <section> <piste> <nom-sample|numero|vide>")
@@ -1032,6 +1098,10 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         MenuItem(label: "Choisir dossier de prompts...") {
             guard let folder = promptLine("Dossier de prompts (sous-dossiers Texte/Soundtrack crees si absents): "), !folder.isEmpty else { return }
             try executeCommand("prompts", [folder])
+        },
+        MenuItem(label: "Choisir dossier de compositions...") {
+            guard let folder = promptLine("Dossier de descriptions de composition: "), !folder.isEmpty else { return }
+            try executeCommand("compositions", [folder])
         },
         MenuItem.separator,
         MenuItem(label: "Choisir une connexion LLM...") {
@@ -1170,6 +1240,20 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             try executeCommand("use-soundtrack-prompt", [choice])
         },
         MenuItem(label: "Revenir au prompt de composition par defaut") { try executeCommand("reset-soundtrack-prompt", []) },
+        MenuItem.separator,
+        MenuItem(label: "Voir la phrase de cadrage...") { try executeCommand("show-soundtrack-framing", []) },
+        MenuItem(label: "Modifier la phrase de cadrage...") { try executeCommand("set-soundtrack-framing", []) },
+        MenuItem(label: "Sauvegarder la phrase de cadrage...") {
+            guard let name = promptLine("Nom de sauvegarde de la phrase de cadrage: "), !name.isEmpty else { return }
+            try executeCommand("save-soundtrack-framing", [name])
+        },
+        MenuItem(label: "Charger une phrase de cadrage...") {
+            guard !session.soundTrackFramingFiles.isEmpty else { print("Choisis d'abord un dossier de prompts (menu MusicLab)."); return }
+            for (index, name) in session.soundTrackFramingFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard let choice = promptLine("Charger quelle phrase de cadrage (numero ou nom): "), !choice.isEmpty else { return }
+            try executeCommand("use-soundtrack-framing", [choice])
+        },
+        MenuItem(label: "Revenir a la phrase de cadrage par defaut") { try executeCommand("reset-soundtrack-framing", []) },
     ]),
     MenuCategory(mnemonic: "C", title: "Composition", items: [
         MenuItem(label: "Decrire le morceau...") {
@@ -1186,6 +1270,18 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         MenuItem(label: "Composer a partir de la description") { try executeCommand("compose", []) },
         MenuItem(label: "Voir la description") { try executeCommand("show-description", []) },
         MenuItem.separator,
+        MenuItem(label: "Charger une description...") {
+            guard !session.compositionFiles.isEmpty else { print("Choisis d'abord un dossier de compositions (menu MusicLab)."); return }
+            for (index, name) in session.compositionFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard let choice = promptLine("Charger quelle description (numero ou nom): "), !choice.isEmpty else { return }
+            try executeCommand("use-description", [choice])
+        },
+        MenuItem(label: "Sauvegarder la description sous...") {
+            guard let name = promptLine("Nom de sauvegarde: "), !name.isEmpty else { return }
+            try executeCommand("save-description-as", [name])
+        },
+        MenuItem(label: "Sauvegarder la description") { try executeCommand("save-description", []) },
+        MenuItem.separator,
         MenuItem(label: "Voir le prompt de composition...") { try executeCommand("show-text-prompt", []) },
         MenuItem(label: "Sauvegarder le prompt de composition...") {
             guard let name = promptLine("Nom de sauvegarde du prompt: "), !name.isEmpty else { return }
@@ -1198,6 +1294,20 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             try executeCommand("use-text-prompt", [choice])
         },
         MenuItem(label: "Revenir au prompt de composition par defaut") { try executeCommand("reset-text-prompt", []) },
+        MenuItem.separator,
+        MenuItem(label: "Voir la phrase de cadrage...") { try executeCommand("show-text-framing", []) },
+        MenuItem(label: "Modifier la phrase de cadrage...") { try executeCommand("set-text-framing", []) },
+        MenuItem(label: "Sauvegarder la phrase de cadrage...") {
+            guard let name = promptLine("Nom de sauvegarde de la phrase de cadrage: "), !name.isEmpty else { return }
+            try executeCommand("save-text-framing", [name])
+        },
+        MenuItem(label: "Charger une phrase de cadrage...") {
+            guard !session.textFramingFiles.isEmpty else { print("Choisis d'abord un dossier de prompts (menu MusicLab)."); return }
+            for (index, name) in session.textFramingFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard let choice = promptLine("Charger quelle phrase de cadrage (numero ou nom): "), !choice.isEmpty else { return }
+            try executeCommand("use-text-framing", [choice])
+        },
+        MenuItem(label: "Revenir a la phrase de cadrage par defaut") { try executeCommand("reset-text-framing", []) },
     ]),
     MenuCategory(mnemonic: "J", title: "Jam Session", items: [
         MenuItem(label: "Demarrer une jam session...") {

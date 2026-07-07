@@ -72,6 +72,13 @@ public final class ImprovSession: @unchecked Sendable {
     /// Full path the current `piece` was last loaded from or saved to — what a bare
     /// `savePiece()` (no name) re-saves to. `nil` until a load/save-as has happened once.
     public private(set) var currentPieceFilePath: String?
+    /// The folder last listed with `listCompositionFiles`, and the `.json` composition
+    /// descriptions found in it — mirrors `pieceFolder`/`pieceFiles`, but for a
+    /// `CompositionDescription` (title/text/indications) rather than a composed `Piece`.
+    public private(set) var compositionFolder: String?
+    public private(set) var compositionFiles: [String] = []
+    /// Mirrors `currentPieceFilePath` for the current composition description.
+    public private(set) var currentCompositionFilePath: String?
     /// A pasted text (e.g. a poem) to compose a piece from — see `composeFromText()`.
     public private(set) var sourceText: String?
     /// Free-form style guidance (e.g. "romantique, mode mineur") layered on top of
@@ -100,6 +107,20 @@ public final class ImprovSession: @unchecked Sendable {
     /// the prompt normally," reset by `resetTextCompositionPrompt`/`resetSoundTrackCompositionPrompt`.
     public private(set) var activeTextCompositionPrompt: String?
     public private(set) var activeSoundTrackCompositionPrompt: String?
+    /// The "framing sentence" (the part of the prompt before the JSON schema, see
+    /// `LLMPieceComposer.defaultTextFramingSentence`) overridden via
+    /// `setTextFramingSentence`/`useTextFramingSentence` — `nil` means "use the built-in
+    /// default." Deliberately independent of `activeTextCompositionPrompt`: overriding the
+    /// whole prompt already implies full manual control (this is ignored while that's
+    /// active), but overriding just the framing sentence lets someone adjust the LLM's tone/
+    /// task description without risking the JSON schema block itself, which the full-prompt
+    /// override can't protect against.
+    public private(set) var activeTextFramingSentence: String?
+    public private(set) var activeSoundTrackFramingSentence: String?
+    /// Saved framing-sentence files, listed by `setPromptsFolder` alongside `textPromptFiles`/
+    /// `soundTrackPromptFiles` — same folder root, two more fixed subfolders.
+    public private(set) var textFramingFiles: [String] = []
+    public private(set) var soundTrackFramingFiles: [String] = []
     /// Whether a `SoundTrack` recording is currently underway — see `startRecording`/
     /// `stopRecording`. Deliberately independent of `isPlaying` (that's the *other*,
     /// measure-based playback mode — see `SoundTrack`'s doc comment for why the two don't mix).
@@ -226,6 +247,11 @@ public final class ImprovSession: @unchecked Sendable {
         case invalidTextPromptIndex
         case invalidSoundTrackPromptIndex
         case webConsoleAlreadyActive
+        case invalidTextFramingIndex
+        case invalidSoundTrackFramingIndex
+        case noCompositionFolderListed
+        case invalidCompositionIndex
+        case noCurrentCompositionFile
         public var description: String {
             switch self {
             case .noPieceLoaded: return "no piece loaded — try 'load-demo' or 'load <path>'"
@@ -255,6 +281,11 @@ public final class ImprovSession: @unchecked Sendable {
             case .invalidTextPromptIndex: return "no text prompt at that index"
             case .invalidSoundTrackPromptIndex: return "no soundtrack prompt at that index"
             case .webConsoleAlreadyActive: return "web console already running — stop it first"
+            case .invalidTextFramingIndex: return "no text framing sentence at that index"
+            case .invalidSoundTrackFramingIndex: return "no soundtrack framing sentence at that index"
+            case .noCompositionFolderListed: return "no composition-description folder listed yet — try 'compositions <folder>' first"
+            case .invalidCompositionIndex: return "no composition description at that index"
+            case .noCurrentCompositionFile: return "this description was never loaded from or saved to a file — try saving with an explicit name"
             }
         }
     }
@@ -303,6 +334,93 @@ public final class ImprovSession: @unchecked Sendable {
         append(compositionTitle == nil ? "Titre du morceau efface." : "Titre du morceau: \(compositionTitle!)")
     }
 
+    // MARK: - Composition descriptions (save/load title+text+indications for later reuse)
+
+    private static let supportedCompositionExtensions: Set<String> = ["json"]
+
+    /// Scans `folderPath` for `.json` composition-description files — mirrors `listPieceFiles`.
+    public func listCompositionFiles(in folderPath: String) throws {
+        let folderURL = URL(fileURLWithPath: folderPath)
+        let contents = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
+        compositionFolder = folderPath
+        compositionFiles = contents
+            .filter { Self.supportedCompositionExtensions.contains($0.pathExtension.lowercased()) }
+            .map(\.lastPathComponent)
+            .sorted()
+        append(compositionFiles.isEmpty
+            ? "No .json composition description files found in \(folderPath)."
+            : "Found \(compositionFiles.count) composition description file(s) in \(folderPath).")
+    }
+
+    /// Loads a saved description and applies it via the same setters the "Decrire le
+    /// morceau..." wizard itself uses (`setCompositionTitle`/`setSourceText`/
+    /// `setAdditionalCompositionInstructions`) — so it logs and behaves identically to typing
+    /// it in by hand.
+    public func loadCompositionDescription(fromJSONFile path: String) throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let decoded = try JSONDecoder().decode(CompositionDescription.self, from: data)
+        setCompositionTitle(decoded.title)
+        setSourceText(decoded.sourceText)
+        setAdditionalCompositionInstructions(decoded.additionalInstructions)
+        currentCompositionFilePath = path
+        append("Loaded composition description from \(path).")
+    }
+
+    /// Loads a description by name from the last-listed folder (see `listCompositionFiles`).
+    public func loadCompositionDescription(named name: String) throws {
+        guard let compositionFolder else { throw SessionError.noCompositionFolderListed }
+        try loadCompositionDescription(fromJSONFile: URL(fileURLWithPath: compositionFolder).appendingPathComponent(name).path)
+    }
+
+    /// Convenience over `loadCompositionDescription(named:)` using the 0-based position in `compositionFiles`.
+    public func loadCompositionDescription(atIndex index: Int) throws {
+        guard compositionFiles.indices.contains(index) else { throw SessionError.invalidCompositionIndex }
+        try loadCompositionDescription(named: compositionFiles[index])
+    }
+
+    public func saveCompositionDescription(toJSONFile path: String) throws {
+        guard let sourceText else { throw SessionError.noSourceText }
+        let description = CompositionDescription(title: compositionTitle, sourceText: sourceText, additionalInstructions: additionalCompositionInstructions)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(description)
+        try data.write(to: URL(fileURLWithPath: path))
+        currentCompositionFilePath = path
+        // Keep `compositionFiles` in sync so a fresh save is immediately visible without
+        // re-listing the folder — mirrors `saveTextCompositionPrompt(as:)`'s convention
+        // rather than `savePiece(as:)`'s (which leaves its own file list untouched), since a
+        // description is small and named specifically to be picked again right away. Only
+        // when the file actually landed in the currently-listed folder — `toJSONFile`/`as:`
+        // also accept an arbitrary explicit path outside it.
+        let savedURL = URL(fileURLWithPath: path)
+        if savedURL.deletingLastPathComponent().path == compositionFolder {
+            let fileName = savedURL.lastPathComponent
+            if !compositionFiles.contains(fileName) { compositionFiles = (compositionFiles + [fileName]).sorted() }
+        }
+        append("Saved composition description to \(path).")
+    }
+
+    /// Re-saves the current description to wherever it was last loaded from or saved to.
+    /// Fails if that's never happened yet — use `saveCompositionDescription(as:)` for a first save.
+    public func saveCompositionDescription() throws {
+        guard let currentCompositionFilePath else { throw SessionError.noCurrentCompositionFile }
+        try saveCompositionDescription(toJSONFile: currentCompositionFilePath)
+    }
+
+    /// Saves under a new name/path — "Save As". Mirrors `savePiece(as:)`: `nameOrPath`
+    /// containing a "/" is used as-is, a bare name is resolved against `compositionFolder`.
+    /// Adds a ".json" extension if missing either way.
+    public func saveCompositionDescription(as nameOrPath: String) throws {
+        let resolvedPath: String
+        if nameOrPath.contains("/") {
+            resolvedPath = nameOrPath
+        } else {
+            guard let compositionFolder else { throw SessionError.noCompositionFolderListed }
+            resolvedPath = URL(fileURLWithPath: compositionFolder).appendingPathComponent(nameOrPath).path
+        }
+        try saveCompositionDescription(toJSONFile: resolvedPath.hasSuffix(".json") ? resolvedPath : resolvedPath + ".json")
+    }
+
     private static let supportedLLMConnectionExtensions: Set<String> = ["json"]
 
     /// Scans `folderPath` for `.json` LLM connection descriptors — mirrors `listSampleFiles`.
@@ -338,41 +456,149 @@ public final class ImprovSession: @unchecked Sendable {
 
     private static let promptsTextSubfolder = "Texte"
     private static let promptsSoundTrackSubfolder = "Soundtrack"
+    private static let promptsTextFramingSubfolder = "Cadrage Composition Descriptive"
+    private static let promptsSoundTrackFramingSubfolder = "Cadrage Composition Soundtrack"
 
     /// The exact prompt `composeFromText()` would send right now: `activeTextCompositionPrompt`
     /// if one was loaded via `useTextCompositionPrompt`, otherwise freshly built from
     /// `sourceText` (plus `additionalCompositionInstructions`, if any) — the same resolution
     /// `composeFromText()` itself uses, exposed so a caller (e.g. "show the prompt" in the
     /// UI) can see it without triggering a real network call. A loaded override is used
-    /// verbatim — `additionalCompositionInstructions` only ever layers onto a freshly built
-    /// prompt, same as `sourceText` itself doesn't apply once an override is active.
+    /// verbatim — `additionalCompositionInstructions`/`currentTextFramingSentence()` only ever
+    /// layer onto a freshly built prompt, same as `sourceText` itself doesn't apply once an
+    /// override is active.
     public func currentTextCompositionPrompt() throws -> String {
         if let activeTextCompositionPrompt { return activeTextCompositionPrompt }
         guard let sourceText else { throw SessionError.noSourceText }
-        return LLMPieceComposer.buildPrompt(sourceText: sourceText, additionalInstructions: additionalCompositionInstructions)
+        return LLMPieceComposer.buildPrompt(sourceText: sourceText, framingSentence: currentTextFramingSentence(), additionalInstructions: additionalCompositionInstructions)
     }
 
     /// The `composeSoundTrackToPieces()` counterpart of `currentTextCompositionPrompt()`.
     public func currentSoundTrackCompositionPrompt() throws -> String {
         if let activeSoundTrackCompositionPrompt { return activeSoundTrackCompositionPrompt }
         guard let currentSoundTrack else { throw SessionError.noSoundTrackRecorded }
-        return LLMPieceComposer.buildPrompt(fromSoundTrack: currentSoundTrack)
+        return LLMPieceComposer.buildPrompt(fromSoundTrack: currentSoundTrack, framingSentence: currentSoundTrackFramingSentence())
     }
 
-    /// Points at a root folder for saved prompts, creating its two fixed subfolders
-    /// (`Texte`/`Soundtrack`) if they don't exist yet, and lists whatever's already in each.
+    /// The framing sentence `currentTextCompositionPrompt()` would use right now:
+    /// `activeTextFramingSentence` if one was set/loaded, otherwise the built-in default.
+    /// Never throws — unlike the full prompt, there's always a value to fall back to.
+    public func currentTextFramingSentence() -> String {
+        activeTextFramingSentence ?? LLMPieceComposer.defaultTextFramingSentence
+    }
+
+    /// The soundtrack counterpart of `currentTextFramingSentence()`.
+    public func currentSoundTrackFramingSentence() -> String {
+        activeSoundTrackFramingSentence ?? LLMPieceComposer.defaultSoundTrackFramingSentence
+    }
+
+    /// Sets a new in-memory framing-sentence override — same "empty clears" convention as
+    /// `setAdditionalCompositionInstructions`. Purely in-memory: follow with
+    /// `saveTextFramingSentence(as:)` to persist it for later reuse.
+    public func setTextFramingSentence(_ text: String) {
+        activeTextFramingSentence = text.isEmpty ? nil : text
+        append(activeTextFramingSentence == nil
+            ? "Phrase de cadrage (texte) : retour au prompt par defaut."
+            : "Phrase de cadrage (texte) mise a jour.")
+    }
+
+    /// The soundtrack counterpart of `setTextFramingSentence(_:)`.
+    public func setSoundTrackFramingSentence(_ text: String) {
+        activeSoundTrackFramingSentence = text.isEmpty ? nil : text
+        append(activeSoundTrackFramingSentence == nil
+            ? "Phrase de cadrage (soundtrack) : retour au prompt par defaut."
+            : "Phrase de cadrage (soundtrack) mise a jour.")
+    }
+
+    /// Points at a root folder for saved prompts, creating its four fixed subfolders
+    /// (`Texte`/`Soundtrack` for whole prompts, plus `Cadrage Composition Descriptive`/
+    /// `Cadrage Composition Soundtrack` for framing-sentence-only saves) if they don't exist
+    /// yet, and lists whatever's already in each.
     public func setPromptsFolder(_ folderPath: String) throws {
         let root = URL(fileURLWithPath: folderPath)
         let textURL = root.appendingPathComponent(Self.promptsTextSubfolder)
         let soundTrackURL = root.appendingPathComponent(Self.promptsSoundTrackSubfolder)
+        let textFramingURL = root.appendingPathComponent(Self.promptsTextFramingSubfolder)
+        let soundTrackFramingURL = root.appendingPathComponent(Self.promptsSoundTrackFramingSubfolder)
         try FileManager.default.createDirectory(at: textURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: soundTrackURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: textFramingURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: soundTrackFramingURL, withIntermediateDirectories: true)
         promptsFolder = folderPath
         textPromptFiles = try FileManager.default.contentsOfDirectory(at: textURL, includingPropertiesForKeys: nil)
             .map(\.lastPathComponent).sorted()
         soundTrackPromptFiles = try FileManager.default.contentsOfDirectory(at: soundTrackURL, includingPropertiesForKeys: nil)
             .map(\.lastPathComponent).sorted()
-        append("Dossier de prompts: \(folderPath) (\(textPromptFiles.count) texte, \(soundTrackPromptFiles.count) soundtrack).")
+        textFramingFiles = try FileManager.default.contentsOfDirectory(at: textFramingURL, includingPropertiesForKeys: nil)
+            .map(\.lastPathComponent).sorted()
+        soundTrackFramingFiles = try FileManager.default.contentsOfDirectory(at: soundTrackFramingURL, includingPropertiesForKeys: nil)
+            .map(\.lastPathComponent).sorted()
+        append("Dossier de prompts: \(folderPath) (\(textPromptFiles.count) texte, \(soundTrackPromptFiles.count) soundtrack, \(textFramingFiles.count) cadrage texte, \(soundTrackFramingFiles.count) cadrage soundtrack).")
+    }
+
+    /// Saves `currentTextFramingSentence()` (the active override, or the default if none) as
+    /// a new file under the `Cadrage Composition Descriptive` subfolder — mirrors
+    /// `saveTextCompositionPrompt(as:)`, one level narrower (just this one part of the prompt).
+    public func saveTextFramingSentence(as name: String) throws {
+        guard let promptsFolder else { throw SessionError.noPromptsFolderListed }
+        let fileName = name.hasSuffix(".txt") ? name : name + ".txt"
+        let url = URL(fileURLWithPath: promptsFolder).appendingPathComponent(Self.promptsTextFramingSubfolder).appendingPathComponent(fileName)
+        try currentTextFramingSentence().write(to: url, atomically: true, encoding: .utf8)
+        if !textFramingFiles.contains(fileName) { textFramingFiles = (textFramingFiles + [fileName]).sorted() }
+        append("Phrase de cadrage (texte) sauvegardee: \(url.path).")
+    }
+
+    /// The soundtrack counterpart of `saveTextFramingSentence(as:)`.
+    public func saveSoundTrackFramingSentence(as name: String) throws {
+        guard let promptsFolder else { throw SessionError.noPromptsFolderListed }
+        let fileName = name.hasSuffix(".txt") ? name : name + ".txt"
+        let url = URL(fileURLWithPath: promptsFolder).appendingPathComponent(Self.promptsSoundTrackFramingSubfolder).appendingPathComponent(fileName)
+        try currentSoundTrackFramingSentence().write(to: url, atomically: true, encoding: .utf8)
+        if !soundTrackFramingFiles.contains(fileName) { soundTrackFramingFiles = (soundTrackFramingFiles + [fileName]).sorted() }
+        append("Phrase de cadrage (soundtrack) sauvegardee: \(url.path).")
+    }
+
+    /// Loads a previously saved framing sentence and makes it `activeTextFramingSentence` —
+    /// used by `currentTextCompositionPrompt()` in place of the built-in default until
+    /// `resetTextFramingSentence()` is called.
+    public func useTextFramingSentence(named name: String) throws {
+        guard let promptsFolder else { throw SessionError.noPromptsFolderListed }
+        let url = URL(fileURLWithPath: promptsFolder).appendingPathComponent(Self.promptsTextFramingSubfolder).appendingPathComponent(name)
+        activeTextFramingSentence = try String(contentsOf: url, encoding: .utf8)
+        append("Phrase de cadrage (texte) chargee depuis \(url.path).")
+    }
+
+    /// Convenience over `useTextFramingSentence(named:)` using the 0-based position in `textFramingFiles`.
+    public func useTextFramingSentence(atIndex index: Int) throws {
+        guard textFramingFiles.indices.contains(index) else { throw SessionError.invalidTextFramingIndex }
+        try useTextFramingSentence(named: textFramingFiles[index])
+    }
+
+    /// The soundtrack counterpart of `useTextFramingSentence(named:)`.
+    public func useSoundTrackFramingSentence(named name: String) throws {
+        guard let promptsFolder else { throw SessionError.noPromptsFolderListed }
+        let url = URL(fileURLWithPath: promptsFolder).appendingPathComponent(Self.promptsSoundTrackFramingSubfolder).appendingPathComponent(name)
+        activeSoundTrackFramingSentence = try String(contentsOf: url, encoding: .utf8)
+        append("Phrase de cadrage (soundtrack) chargee depuis \(url.path).")
+    }
+
+    /// Convenience over `useSoundTrackFramingSentence(named:)` using the 0-based position in `soundTrackFramingFiles`.
+    public func useSoundTrackFramingSentence(atIndex index: Int) throws {
+        guard soundTrackFramingFiles.indices.contains(index) else { throw SessionError.invalidSoundTrackFramingIndex }
+        try useSoundTrackFramingSentence(named: soundTrackFramingFiles[index])
+    }
+
+    /// Clears `activeTextFramingSentence` — `currentTextCompositionPrompt()` goes back to
+    /// using `LLMPieceComposer.defaultTextFramingSentence`.
+    public func resetTextFramingSentence() {
+        activeTextFramingSentence = nil
+        append("Phrase de cadrage (texte) : retour a la phrase par defaut.")
+    }
+
+    /// The soundtrack counterpart of `resetTextFramingSentence()`.
+    public func resetSoundTrackFramingSentence() {
+        activeSoundTrackFramingSentence = nil
+        append("Phrase de cadrage (soundtrack) : retour a la phrase par defaut.")
     }
 
     /// Saves `currentTextCompositionPrompt()` (whatever would actually be sent right now) as

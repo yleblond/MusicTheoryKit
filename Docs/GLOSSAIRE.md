@@ -110,6 +110,31 @@ vs `save-soundtrack-prompt`/`use-soundtrack-prompt`) et son propre retour au com
 défaut (`reset-text-prompt`/`reset-soundtrack-prompt`) — les deux mécanismes sont parallèles
 mais totalement indépendants l'un de l'autre.
 
+## Description vs phrase de cadrage vs prompt complet — trois granularités différentes
+
+Trois choses liées, mais à ne pas confondre, du plus étroit au plus large (le même
+découpage existe côté texte **et** côté soundtrack, en parallèle) :
+
+- **Description** (`compositions`/`save-description-as`/`use-description`, menu
+  **Composition** uniquement) — juste le **titre + le texte collé + les indications de
+  style**, tel que tapé dans l'assistant "Decrire le morceau...". Un simple `.json`
+  (`CompositionDescription`), dans le dossier `Composition/` — n'existe pas côté soundtrack
+  (rien à "décrire", c'est un enregistrement, pas un texte).
+- **Phrase de cadrage** (`show/set/save/use/reset-text-framing` et `...-soundtrack-framing`,
+  menus **Composition**/**Enregistrement**) — seulement le premier paragraphe du prompt, celui
+  qui donne le ton/la tâche à l'IA, avant le schéma JSON. La modifier ne touche jamais au
+  schéma ni aux données — voir la note "Attention en personnalisant le prompt complet" du
+  guide utilisateur pour pourquoi ça compte. Sauvegardée dans
+  `Prompts/Cadrage Composition Descriptive/`ou `Prompts/Cadrage Composition Soundtrack/`.
+- **Prompt complet** (`show/save/use/reset-text-prompt` et `...-soundtrack-prompt`) — le
+  texte intégral effectivement envoyé à l'IA : phrase de cadrage + schéma JSON + données. Un
+  override ici remplace tout, verbatim — y compris le schéma, si on l'a supprimé en éditant.
+  Sauvegardé dans `Prompts/Texte/`/`Prompts/Soundtrack/`.
+
+Une description alimente un prompt complet (via `sourceText`/`compositionTitle`/
+`additionalCompositionInstructions`) qui lui-même intègre la phrase de cadrage — les trois
+se composent, mais se gèrent (et se sauvegardent) chacun séparément.
+
 ## `Jam Session` (menu) vs `server`/`client` (commandes) vs `Reseau` (champ de statut)
 
 Encore un seul concept, trois habillages :

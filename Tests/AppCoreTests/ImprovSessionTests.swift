@@ -666,7 +666,7 @@ final class ImprovSessionTests: XCTestCase {
         }
     }
 
-    func testSetPromptsFolderCreatesBothSubfoldersAndListsFiles() throws {
+    func testSetPromptsFolderCreatesAllFourSubfoldersAndListsFiles() throws {
         let session = ImprovSession()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -674,12 +674,14 @@ final class ImprovSessionTests: XCTestCase {
         try session.setPromptsFolder(root.path)
 
         var isDirectory: ObjCBool = false
-        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Texte").path, isDirectory: &isDirectory))
-        XCTAssertTrue(isDirectory.boolValue)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Soundtrack").path, isDirectory: &isDirectory))
-        XCTAssertTrue(isDirectory.boolValue)
+        for subfolder in ["Texte", "Soundtrack", "Cadrage Composition Descriptive", "Cadrage Composition Soundtrack"] {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(subfolder).path, isDirectory: &isDirectory))
+            XCTAssertTrue(isDirectory.boolValue)
+        }
         XCTAssertEqual(session.textPromptFiles, [])
         XCTAssertEqual(session.soundTrackPromptFiles, [])
+        XCTAssertEqual(session.textFramingFiles, [])
+        XCTAssertEqual(session.soundTrackFramingFiles, [])
     }
 
     func testSaveAndUseTextCompositionPromptRoundTrips() throws {
@@ -732,6 +734,146 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertThrowsError(try session.useTextCompositionPrompt(atIndex: 0)) { error in
             XCTAssertEqual(error as? ImprovSession.SessionError, .invalidTextPromptIndex)
         }
+    }
+
+    // MARK: - Framing sentence (the part of the prompt before the JSON schema)
+
+    func testCurrentFramingSentenceDefaultsToTheBuiltInConstants() {
+        let session = ImprovSession()
+        XCTAssertEqual(session.currentTextFramingSentence(), LLMPieceComposer.defaultTextFramingSentence)
+        XCTAssertEqual(session.currentSoundTrackFramingSentence(), LLMPieceComposer.defaultSoundTrackFramingSentence)
+    }
+
+    func testSetTextFramingSentenceIsReflectedInTheFullPrompt() throws {
+        let session = ImprovSession()
+        session.setSourceText("a poem about the sea")
+        session.setTextFramingSentence("Custom framing sentence.")
+        XCTAssertEqual(session.currentTextFramingSentence(), "Custom framing sentence.")
+        XCTAssertTrue((try session.currentTextCompositionPrompt()).contains("Custom framing sentence."))
+    }
+
+    func testSetTextFramingSentenceEmptyStringRevertsToDefault() {
+        let session = ImprovSession()
+        session.setTextFramingSentence("Custom.")
+        XCTAssertEqual(session.currentTextFramingSentence(), "Custom.")
+        session.setTextFramingSentence("")
+        XCTAssertEqual(session.currentTextFramingSentence(), LLMPieceComposer.defaultTextFramingSentence)
+    }
+
+    func testSaveAndUseTextFramingSentenceRoundTrips() throws {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        session.setTextFramingSentence("A distinctive custom framing sentence.")
+
+        try session.saveTextFramingSentence(as: "my-framing")
+        XCTAssertEqual(session.textFramingFiles, ["my-framing.txt"])
+
+        session.resetTextFramingSentence()
+        XCTAssertEqual(session.currentTextFramingSentence(), LLMPieceComposer.defaultTextFramingSentence)
+
+        try session.useTextFramingSentence(atIndex: 0)
+        XCTAssertEqual(session.activeTextFramingSentence, "A distinctive custom framing sentence.")
+    }
+
+    func testSaveAndUseSoundTrackFramingSentenceRoundTrips() throws {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        session.setSoundTrackFramingSentence("A distinctive soundtrack framing sentence.")
+
+        try session.saveSoundTrackFramingSentence(as: "my-soundtrack-framing")
+        XCTAssertEqual(session.soundTrackFramingFiles, ["my-soundtrack-framing.txt"])
+
+        session.resetSoundTrackFramingSentence()
+        try session.useSoundTrackFramingSentence(named: "my-soundtrack-framing.txt")
+        XCTAssertEqual(session.activeSoundTrackFramingSentence, "A distinctive soundtrack framing sentence.")
+    }
+
+    func testUseTextFramingSentenceWithInvalidIndexThrows() throws {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        XCTAssertThrowsError(try session.useTextFramingSentence(atIndex: 0)) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .invalidTextFramingIndex)
+        }
+    }
+
+    // MARK: - Composition descriptions (save/load title+text+indications)
+
+    func testSaveThenLoadCompositionDescriptionRoundTrips() throws {
+        let session = ImprovSession()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try session.listCompositionFiles(in: folder.path)
+
+        session.setCompositionTitle("My Ballad")
+        session.setSourceText("a poem about the sea")
+        session.setAdditionalCompositionInstructions("romantique, mode mineur")
+        try session.saveCompositionDescription(as: "my-description")
+        XCTAssertEqual(session.compositionFiles, ["my-description.json"])
+
+        let reloaded = ImprovSession()
+        try reloaded.listCompositionFiles(in: folder.path)
+        try reloaded.loadCompositionDescription(atIndex: 0)
+        XCTAssertEqual(reloaded.compositionTitle, "My Ballad")
+        XCTAssertEqual(reloaded.sourceText, "a poem about the sea")
+        XCTAssertEqual(reloaded.additionalCompositionInstructions, "romantique, mode mineur")
+    }
+
+    func testLoadCompositionDescriptionAtInvalidIndexThrows() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let session = ImprovSession()
+        try session.listCompositionFiles(in: folder.path)
+        XCTAssertThrowsError(try session.loadCompositionDescription(atIndex: 0)) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .invalidCompositionIndex)
+        }
+    }
+
+    func testSaveCompositionDescriptionWithoutSourceTextThrows() {
+        let session = ImprovSession()
+        XCTAssertThrowsError(try session.saveCompositionDescription(as: "/tmp/whatever")) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .noSourceText)
+        }
+    }
+
+    func testSaveCompositionDescriptionWithoutFolderListedThrows() {
+        let session = ImprovSession()
+        session.setSourceText("a poem")
+        XCTAssertThrowsError(try session.saveCompositionDescription(as: "bare-name")) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .noCompositionFolderListed)
+        }
+    }
+
+    func testSaveCompositionDescriptionWithoutHavingSavedOnceThrows() {
+        let session = ImprovSession()
+        session.setSourceText("a poem")
+        XCTAssertThrowsError(try session.saveCompositionDescription()) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .noCurrentCompositionFile)
+        }
+    }
+
+    func testSaveCompositionDescriptionReSavesToTheSameFile() throws {
+        let session = ImprovSession()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try session.listCompositionFiles(in: folder.path)
+        session.setSourceText("first version")
+        try session.saveCompositionDescription(as: "iterate")
+
+        session.setSourceText("second version")
+        try session.saveCompositionDescription()
+
+        let reloaded = ImprovSession()
+        try reloaded.loadCompositionDescription(fromJSONFile: folder.appendingPathComponent("iterate.json").path)
+        XCTAssertEqual(reloaded.sourceText, "second version")
     }
 
     func testComposeFromTextUsesTheActiveOverridePromptVerbatim() throws {

@@ -1419,7 +1419,7 @@ func testCurrentSoundTrackCompositionPromptWithoutARecordingOrOverrideThrows() {
 }
 testCurrentSoundTrackCompositionPromptWithoutARecordingOrOverrideThrows()
 
-func testSetPromptsFolderCreatesBothSubfoldersAndListsFiles() {
+func testSetPromptsFolderCreatesAllFourSubfoldersAndListsFiles() {
     do {
         let session = ImprovSession()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -1427,24 +1427,23 @@ func testSetPromptsFolderCreatesBothSubfoldersAndListsFiles() {
         try session.setPromptsFolder(root.path)
 
         var isDirectory: ObjCBool = false
-        checks += 1
-        if !FileManager.default.fileExists(atPath: root.appendingPathComponent("Texte").path, isDirectory: &isDirectory) || !isDirectory.boolValue {
-            failures += 1
-            print("FAIL [setPromptsFolder creates Texte subfolder]")
-        }
-        checks += 1
-        if !FileManager.default.fileExists(atPath: root.appendingPathComponent("Soundtrack").path, isDirectory: &isDirectory) || !isDirectory.boolValue {
-            failures += 1
-            print("FAIL [setPromptsFolder creates Soundtrack subfolder]")
+        for subfolder in ["Texte", "Soundtrack", "Cadrage Composition Descriptive", "Cadrage Composition Soundtrack"] {
+            checks += 1
+            if !FileManager.default.fileExists(atPath: root.appendingPathComponent(subfolder).path, isDirectory: &isDirectory) || !isDirectory.boolValue {
+                failures += 1
+                print("FAIL [setPromptsFolder creates \(subfolder) subfolder]")
+            }
         }
         check(session.textPromptFiles, [], "setPromptsFolder starts with no text prompt files")
         check(session.soundTrackPromptFiles, [], "setPromptsFolder starts with no soundtrack prompt files")
+        check(session.textFramingFiles, [], "setPromptsFolder starts with no text framing files")
+        check(session.soundTrackFramingFiles, [], "setPromptsFolder starts with no soundtrack framing files")
     } catch {
         failures += 1
         print("FAIL [setPromptsFolder creates subfolders and lists files]: threw \(error)")
     }
 }
-testSetPromptsFolderCreatesBothSubfoldersAndListsFiles()
+testSetPromptsFolderCreatesAllFourSubfoldersAndListsFiles()
 
 func testSaveAndUseTextCompositionPromptRoundTrips() {
     do {
@@ -1534,6 +1533,235 @@ func testUseTextCompositionPromptWithInvalidIndexThrows() {
     }
 }
 testUseTextCompositionPromptWithInvalidIndexThrows()
+
+// Mirrors ImprovSessionTests.swift's framing-sentence tests.
+func testCurrentFramingSentenceDefaultsToTheBuiltInConstants() {
+    let session = ImprovSession()
+    check(session.currentTextFramingSentence(), LLMPieceComposer.defaultTextFramingSentence, "text framing defaults to the built-in constant")
+    check(session.currentSoundTrackFramingSentence(), LLMPieceComposer.defaultSoundTrackFramingSentence, "soundtrack framing defaults to the built-in constant")
+}
+testCurrentFramingSentenceDefaultsToTheBuiltInConstants()
+
+func testSetTextFramingSentenceIsReflectedInTheFullPrompt() {
+    do {
+        let session = ImprovSession()
+        session.setSourceText("a poem about the sea")
+        session.setTextFramingSentence("Custom framing sentence.")
+        check(session.currentTextFramingSentence(), "Custom framing sentence.", "setTextFramingSentence updates currentTextFramingSentence")
+        checks += 1
+        if !(try session.currentTextCompositionPrompt()).contains("Custom framing sentence.") {
+            failures += 1
+            print("FAIL [setTextFramingSentence reflected in full prompt]")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [setTextFramingSentence reflected in full prompt]: threw \(error)")
+    }
+}
+testSetTextFramingSentenceIsReflectedInTheFullPrompt()
+
+func testSetTextFramingSentenceEmptyStringRevertsToDefault() {
+    let session = ImprovSession()
+    session.setTextFramingSentence("Custom.")
+    check(session.currentTextFramingSentence(), "Custom.", "setTextFramingSentence sets a custom value")
+    session.setTextFramingSentence("")
+    check(session.currentTextFramingSentence(), LLMPieceComposer.defaultTextFramingSentence, "empty setTextFramingSentence reverts to default")
+}
+testSetTextFramingSentenceEmptyStringRevertsToDefault()
+
+func testSaveAndUseTextFramingSentenceRoundTrips() {
+    do {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        session.setTextFramingSentence("A distinctive custom framing sentence.")
+
+        try session.saveTextFramingSentence(as: "my-framing")
+        check(session.textFramingFiles, ["my-framing.txt"], "saveTextFramingSentence adds the file to textFramingFiles")
+
+        session.resetTextFramingSentence()
+        check(session.currentTextFramingSentence(), LLMPieceComposer.defaultTextFramingSentence, "resetTextFramingSentence reverts to default")
+
+        try session.useTextFramingSentence(atIndex: 0)
+        check(session.activeTextFramingSentence, "A distinctive custom framing sentence.", "useTextFramingSentence reloads the saved sentence")
+    } catch {
+        failures += 1
+        print("FAIL [save and use text framing sentence round trips]: threw \(error)")
+    }
+}
+testSaveAndUseTextFramingSentenceRoundTrips()
+
+func testSaveAndUseSoundTrackFramingSentenceRoundTrips() {
+    do {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        session.setSoundTrackFramingSentence("A distinctive soundtrack framing sentence.")
+
+        try session.saveSoundTrackFramingSentence(as: "my-soundtrack-framing")
+        check(session.soundTrackFramingFiles, ["my-soundtrack-framing.txt"], "saveSoundTrackFramingSentence adds the file to soundTrackFramingFiles")
+
+        session.resetSoundTrackFramingSentence()
+        try session.useSoundTrackFramingSentence(named: "my-soundtrack-framing.txt")
+        check(session.activeSoundTrackFramingSentence, "A distinctive soundtrack framing sentence.", "useSoundTrackFramingSentence reloads the saved sentence")
+    } catch {
+        failures += 1
+        print("FAIL [save and use soundtrack framing sentence round trips]: threw \(error)")
+    }
+}
+testSaveAndUseSoundTrackFramingSentenceRoundTrips()
+
+func testUseTextFramingSentenceWithInvalidIndexThrows() {
+    do {
+        let session = ImprovSession()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try session.setPromptsFolder(root.path)
+        checks += 1
+        do {
+            try session.useTextFramingSentence(atIndex: 0)
+            failures += 1
+            print("FAIL [useTextFramingSentence invalid index throws]: did not throw")
+        } catch let error as ImprovSession.SessionError {
+            if error != .invalidTextFramingIndex {
+                failures += 1
+                print("FAIL [useTextFramingSentence invalid index throws]: wrong error \(error)")
+            }
+        }
+    } catch {
+        failures += 1
+        print("FAIL [use text framing sentence with invalid index]: threw \(error)")
+    }
+}
+testUseTextFramingSentenceWithInvalidIndexThrows()
+
+// Mirrors ImprovSessionTests.swift's composition-description tests.
+func testSaveThenLoadCompositionDescriptionRoundTrips() {
+    do {
+        let session = ImprovSession()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try session.listCompositionFiles(in: folder.path)
+
+        session.setCompositionTitle("My Ballad")
+        session.setSourceText("a poem about the sea")
+        session.setAdditionalCompositionInstructions("romantique, mode mineur")
+        try session.saveCompositionDescription(as: "my-description")
+        check(session.compositionFiles, ["my-description.json"], "saveCompositionDescription adds the file to compositionFiles")
+
+        let reloaded = ImprovSession()
+        try reloaded.listCompositionFiles(in: folder.path)
+        try reloaded.loadCompositionDescription(atIndex: 0)
+        check(reloaded.compositionTitle, "My Ballad", "loadCompositionDescription restores the title")
+        check(reloaded.sourceText, "a poem about the sea", "loadCompositionDescription restores the source text")
+        check(reloaded.additionalCompositionInstructions, "romantique, mode mineur", "loadCompositionDescription restores the indications")
+    } catch {
+        failures += 1
+        print("FAIL [save then load composition description round trips]: threw \(error)")
+    }
+}
+testSaveThenLoadCompositionDescriptionRoundTrips()
+
+func testLoadCompositionDescriptionAtInvalidIndexThrows() {
+    do {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let session = ImprovSession()
+        try session.listCompositionFiles(in: folder.path)
+        checks += 1
+        do {
+            try session.loadCompositionDescription(atIndex: 0)
+            failures += 1
+            print("FAIL [loadCompositionDescription invalid index throws]: did not throw")
+        } catch let error as ImprovSession.SessionError {
+            if error != .invalidCompositionIndex {
+                failures += 1
+                print("FAIL [loadCompositionDescription invalid index throws]: wrong error \(error)")
+            }
+        }
+    } catch {
+        failures += 1
+        print("FAIL [load composition description at invalid index]: threw \(error)")
+    }
+}
+testLoadCompositionDescriptionAtInvalidIndexThrows()
+
+func testSaveCompositionDescriptionWithoutSourceTextThrows() {
+    let session = ImprovSession()
+    checks += 1
+    do {
+        try session.saveCompositionDescription(as: "/tmp/whatever")
+        failures += 1
+        print("FAIL [saveCompositionDescription without sourceText throws]: did not throw")
+    } catch ImprovSession.SessionError.noSourceText {
+        // expected
+    } catch {
+        failures += 1
+        print("FAIL [saveCompositionDescription without sourceText throws]: wrong error \(error)")
+    }
+}
+testSaveCompositionDescriptionWithoutSourceTextThrows()
+
+func testSaveCompositionDescriptionWithoutFolderListedThrows() {
+    let session = ImprovSession()
+    session.setSourceText("a poem")
+    checks += 1
+    do {
+        try session.saveCompositionDescription(as: "bare-name")
+        failures += 1
+        print("FAIL [saveCompositionDescription without folder listed throws]: did not throw")
+    } catch ImprovSession.SessionError.noCompositionFolderListed {
+        // expected
+    } catch {
+        failures += 1
+        print("FAIL [saveCompositionDescription without folder listed throws]: wrong error \(error)")
+    }
+}
+testSaveCompositionDescriptionWithoutFolderListedThrows()
+
+func testSaveCompositionDescriptionWithoutHavingSavedOnceThrows() {
+    let session = ImprovSession()
+    session.setSourceText("a poem")
+    checks += 1
+    do {
+        try session.saveCompositionDescription()
+        failures += 1
+        print("FAIL [saveCompositionDescription without prior save throws]: did not throw")
+    } catch ImprovSession.SessionError.noCurrentCompositionFile {
+        // expected
+    } catch {
+        failures += 1
+        print("FAIL [saveCompositionDescription without prior save throws]: wrong error \(error)")
+    }
+}
+testSaveCompositionDescriptionWithoutHavingSavedOnceThrows()
+
+func testSaveCompositionDescriptionReSavesToTheSameFile() {
+    do {
+        let session = ImprovSession()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try session.listCompositionFiles(in: folder.path)
+        session.setSourceText("first version")
+        try session.saveCompositionDescription(as: "iterate")
+
+        session.setSourceText("second version")
+        try session.saveCompositionDescription()
+
+        let reloaded = ImprovSession()
+        try reloaded.loadCompositionDescription(fromJSONFile: folder.appendingPathComponent("iterate.json").path)
+        check(reloaded.sourceText, "second version", "saveCompositionDescription() re-saves to the same file")
+    } catch {
+        failures += 1
+        print("FAIL [saveCompositionDescription re-saves to the same file]: threw \(error)")
+    }
+}
+testSaveCompositionDescriptionReSavesToTheSameFile()
 
 func testComposeFromTextUsesTheActiveOverridePromptVerbatim() {
     do {
