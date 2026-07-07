@@ -1,7 +1,7 @@
 # Guide utilisateur — Music Improv Assistant
 
 Manuel d'utilisation de l'application en ligne de commande, dans son état à la fin de la
-session du 2026-07-07.
+session du 2026-07-07. Un terme ambigu ou peu clair ? Voir `Docs/GLOSSAIRE.md`.
 
 ## Lancer l'application
 
