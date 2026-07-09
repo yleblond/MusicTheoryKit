@@ -1654,7 +1654,19 @@ public final class ImprovSession: @unchecked Sendable {
         switch path {
         case "/state":
             let info: TrackInfo? = liveInputQueue.sync { tracks.first { $0.id == track } }
-            guard let data = try? JSONEncoder().encode(info.map(Self.webConsoleTrackState)) else { return .notFound() }
+            // The wheel/guide info is only included while a guide is actually running (see
+            // the caller's doc comment) — unlike the read-only console, where the wheel is
+            // always present; this page is meant to stay a plain "just play" keyboard the
+            // rest of the time.
+            let guideState = buildWebConsoleGuideState()
+            let isGuideActive = guideState?.isActive == true
+            var wheelState: WebConsoleWheelState?
+            if isGuideActive {
+                let listeningTracks: [TrackInfo] = liveInputQueue.sync { tracks.filter(\.isListening) }
+                wheelState = buildWebConsoleWheelState(listeningTracks: listeningTracks)
+            }
+            let response = VirtualKeyboardStateResponse(track: info.map(Self.webConsoleTrackState), guide: isGuideActive ? guideState : nil, wheel: wheelState)
+            guard let data = try? JSONEncoder().encode(response) else { return .notFound() }
             return HTTPResponse(contentType: "application/json", body: data)
         case "/note-on":
             guard let pitch = query["pitch"].flatMap(Int.init) else { return .text("bad pitch", contentType: "text/plain", status: 400) }

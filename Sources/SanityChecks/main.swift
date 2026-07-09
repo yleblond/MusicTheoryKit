@@ -1481,6 +1481,46 @@ func testVirtualKeyboardServesPageAndAcceptsNoteOnOff() {
 }
 testVirtualKeyboardServesPageAndAcceptsNoteOnOff()
 
+func testVirtualKeyboardStateIncludesGuideAndWheelOnlyWhileGuideIsActive() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.start()
+        try session.startVirtualKeyboard(port: 18399)
+        let client = "&client=guide-client&name=Guidee"
+
+        if let noGuide = syncGET("http://127.0.0.1:18399/state?dummy=1" + client) {
+            // Synthesized `Encodable` conformance uses `encodeIfPresent` for `Optional`
+            // properties — a `nil` field is OMITTED from the JSON entirely, not written as
+            // an explicit `null`, so the absence check is on the key itself.
+            check(noGuide.body.contains("\"guide\""), false, "no guide running — guide key is omitted")
+            check(noGuide.body.contains("\"wheel\""), false, "no guide running — wheel key is also omitted")
+        } else {
+            failures += 1
+            print("FAIL [virtual keyboard no guide]: no response")
+        }
+
+        session.newGuideSequence(title: "Test")
+        try session.addGuideStep(ModeReference(tonic: 9, scaleID: "lydian")) // A Lydian
+        try session.startGuide()
+        Thread.sleep(forTimeInterval: 0.1)
+
+        if let withGuide = syncGET("http://127.0.0.1:18399/state?dummy=1" + client) {
+            check(withGuide.body.contains("\"isActive\":true"), true, "guide running — guide.isActive is true")
+            check(withGuide.body.contains("\"activeModeName\":\"Lydian\""), true, "guide running — wheel reflects the guide's own mode, not this track's")
+        } else {
+            failures += 1
+            print("FAIL [virtual keyboard with guide]: no response")
+        }
+
+        session.stopVirtualKeyboard()
+    } catch {
+        failures += 1
+        print("FAIL [virtual keyboard guide/wheel]: threw \(error)")
+    }
+}
+testVirtualKeyboardStateIncludesGuideAndWheelOnlyWhileGuideIsActive()
+
 func testReleaseAllKeysClearsHeldPitchesForOneTrackOnly() {
     let session = ImprovSession()
     checks += 1

@@ -88,8 +88,8 @@ public let webConsoleIndexHTML = """
   .wheel-mode-name { fill: #555; font-size: 11px; text-anchor: middle; dominant-baseline: middle; }
   .wheel-mode-name.active { fill: #b36b00; font-weight: bold; }
   .instrument-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.4em; }
-  .guide-columns { display: flex; flex-wrap: wrap; gap: 2rem; align-items: flex-start; }
-  .guide-col-left, .guide-col-right { flex: 1 1 380px; min-width: 0; }
+  .layout-columns { display: flex; flex-wrap: wrap; gap: 2rem; align-items: flex-start; }
+  .layout-col-left, .layout-col-right { flex: 1 1 380px; min-width: 0; }
 </style>
 </head>
 <body>
@@ -400,21 +400,15 @@ async function refresh() {
     : '<p class="empty">(aucune piste en ecoute)</p>';
   let html = `<div class="field">Dernier evt: <b>${state.lastEvent || '-'}</b></div>`;
 
-  if (state.guide && state.guide.isActive) {
-    // Guide mode gets a dedicated 2-column layout instead of one long stacked page: left is
-    // "what mode am I in" (its keyboard + the wheel), right is "what's everyone playing"
-    // (every active instrument's own keyboard) — reading the two side by side is the whole
-    // point while actually playing against a guide sequence.
-    const left = renderGuide(state.guide) + renderWheelSection(state.wheel, tracks);
-    html += `<div class="guide-columns"><div class="guide-col-left">${left}</div><div class="guide-col-right">${tracksHTML}</div></div>`;
-    html += renderPlayback(state.playback);
-    html += renderSoundTrackPlayback(state.soundTrackPlayback);
-  } else {
-    html += tracksHTML;
-    html += renderPlayback(state.playback);
-    html += renderSoundTrackPlayback(state.soundTrackPlayback);
-    html += renderWheelSection(state.wheel, tracks);
-  }
+  // Always the same 2-column layout: left is just the wheel ("what mode/key are we in"),
+  // right leads with whatever represents "the mode" right now — the guide's own keyboard if
+  // one is running, the piece/soundtrack currently playing otherwise — then every individual
+  // active instrument's own keyboard below that. Reading "the mode" and "who's playing what"
+  // side by side is the point, whether or not a guide happens to be active.
+  const modeHTML = renderGuide(state.guide) + renderPlayback(state.playback) + renderSoundTrackPlayback(state.soundTrackPlayback);
+  const left = renderWheelSection(state.wheel, tracks);
+  const right = modeHTML + tracksHTML;
+  html += `<div class="layout-columns"><div class="layout-col-left">${left}</div><div class="layout-col-right">${right}</div></div>`;
   document.getElementById('app').innerHTML = html;
 }
 

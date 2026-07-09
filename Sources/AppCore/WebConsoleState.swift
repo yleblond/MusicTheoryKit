@@ -129,3 +129,15 @@ struct WebConsoleWheelCellState: Codable {
     /// which function right now.
     var trackLabels: [String]
 }
+
+/// `GET /state?client=...`'s response shape for the virtual keyboard (see
+/// `ImprovSession.handleVirtualKeyboardRequest`) — deliberately a small wrapper rather than
+/// reusing `WebConsoleState` wholesale: this page only ever needs ONE client's own track
+/// (never the whole session's `tracks` array), and `guide`/`wheel` are only included while a
+/// guide is actually running (unlike the read-only console, where the wheel is always
+/// present) — a plain "just play" keyboard the rest of the time.
+struct VirtualKeyboardStateResponse: Codable {
+    var track: WebConsoleTrackState?
+    var guide: WebConsoleGuideState?
+    var wheel: WebConsoleWheelState?
+}

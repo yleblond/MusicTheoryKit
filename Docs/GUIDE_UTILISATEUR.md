@@ -629,6 +629,11 @@ lecture, le clavier du morceau ou de l'enregistrement en cours. Un simple miroir
 montre l'écran `run` (§8) — la console web n'a aucun contrôle ni menu, elle ne fait qu'afficher
 (pour jouer depuis un navigateur, voir §12, une page distincte).
 
+**Disposition en deux colonnes** : le cercle des quintes à gauche, et à droite d'abord "le
+clavier du mode" — celui du guide musical s'il est en cours (menu **Guide Musicaux**), sinon
+celui du morceau/de l'enregistrement en cours de lecture — puis chaque piste active, la
+sienne. Cette disposition est désormais la même que le guide soit actif ou non.
+
 **Fonctionnement interne** (pour comprendre ce qu'on voit) : l'état affiché est recalculé côté
 application environ toutes les 150ms et mis en cache — chaque `GET /state` du navigateur
 renvoie juste ce dernier instantané, sans jamais recalculer quoi que ce soit à la demande.
@@ -684,6 +689,11 @@ clavier virtuel **tient vraiment** la note jusqu'au relâchement, comme un vrai 
 **Ce qui s'affiche** : les mêmes couleurs de rôle que partout ailleurs dans l'app (magenta la
 fondamentale, jaune les autres notes de l'accord, vert une note tenue hors accord — voir §5),
 plus la ligne de degrés au-dessus du clavier et le libellé accord/mode détecté au-dessus.
+
+**Si un guide musical est en cours** : la page affiche aussi le cercle des quintes et le titre
+du guide, et la ligne de degrés au-dessus du clavier bascule sur les notes du **mode du
+guide** plutôt que sur l'accord détecté de cette piste (qui reste, lui, personnel — chacun
+voit son propre accord détecté, mais tout le monde voit les mêmes degrés de référence).
 
 **Touche non relâchée** : `GET /note-on`/`GET /note-off` sont deux connexions HTTP
 indépendantes (pas de garantie d'ordre entre elles) — une frappe très rapide peut, rarement,

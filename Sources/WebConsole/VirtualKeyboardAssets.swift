@@ -13,16 +13,28 @@
 /// once via `prompt()` on first load, also kept in `localStorage`; see
 /// `ImprovSession.ensureWebKeyboardTrack`.
 ///
-/// **JSON contract with `AppCore.ImprovSession`**: `GET /state?client=...` returns either
-/// `null` (nothing has ever pressed a key for this `client` yet) or a single track object,
-/// scoped to just this one client's own track, same shape as one entry of the web console's
-/// `tracks` array (see `StaticAssets.swift`'s own contract comment):
+/// **JSON contract with `AppCore.ImprovSession`**: `GET /state?client=...` returns a
+/// `VirtualKeyboardStateResponse` (`AppCore/WebConsoleState.swift`) — `track` scoped to just
+/// this one client's own track (same shape as one entry of the web console's `tracks` array,
+/// see `StaticAssets.swift`'s own contract comment), `guide`/`wheel` only while a guide is
+/// actually running (see `ImprovSession.handleVirtualKeyboardRequest`'s doc comment) — the
+/// role-line (degree badges) switches to the guide's own mode while active, but held/chord/
+/// root coloring stays this client's own personal feedback either way:
 /// ```json
-/// {"id": "clavier-web:<uuid>", "label": "Alice", "owner": null,
-///  "heldPitches": [60, 64, 67], "chordRoot": 0, "chordTones": [0, 4, 7],
-///  "modeTones": [0, 2, 4, 5, 7, 9, 11], "chordLabel": "Cmaj", "modesLabel": "C ionian",
-///  "microphoneLevel": null}
+/// {"track": {"id": "clavier-web:<uuid>", "label": "Alice", "owner": null,
+///            "heldPitches": [60, 64, 67], "chordRoot": 0, "chordTones": [0, 4, 7],
+///            "modeTones": [0, 2, 4, 5, 7, 9, 11], "chordLabel": "Cmaj",
+///            "modesLabel": "C ionian", "microphoneLevel": null} | null,
+///  "guide": {"isActive": true, "steps": [{"label": "A Lydian", "isCurrent": true}],
+///            "currentStepIndex": 0, "currentModeTones": [9, 11, 1, 3, 4, 6, 8],
+///            "heldPitches": [...]},
+///  "wheel": { ...same shape as the web console's own "wheel" field... }}
 /// ```
+/// `guide`/`wheel` (a `nil` `Optional` under Swift's synthesized `Encodable`) are OMITTED
+/// from the JSON entirely while no guide is running, not present as an explicit `null` —
+/// `app.js` only ever checks `state.guide && state.guide.isActive`, which is `undefined`-safe
+/// either way.
+///
 /// `GET /note-on?pitch=<midi>&client=...&name=...` / `GET /note-off?pitch=<midi>&client=
 /// ...&name=...` / `GET /release-all?client=...&name=...` are the only ways this page
 /// *changes* anything — plain `GET`s with everything in the query string (not a POST body):
@@ -44,6 +56,15 @@ public let virtualKeyboardIndexHTML = """
   .hint { color: #666; font-size: 0.85rem; margin-top: 0.3rem; }
   .identity { color: #666; font-size: 0.85rem; }
   .identity a { color: #6cf; cursor: pointer; text-decoration: underline; }
+  .wheel { margin: 0.5rem 0 1rem; display: block; width: 100%; max-width: 520px; height: auto; }
+  .wheel-disk { fill: #fff; }
+  .wheel-grid-line { stroke: #000; stroke-width: 1; }
+  .wheel-cell-shape { stroke: #333; stroke-width: 1; }
+  .wheel-diatonic-boundary { fill: none; stroke: #1a3a6b; stroke-width: 5; stroke-linejoin: round; }
+  .wheel-cell-symbol { font-size: 8px; font-weight: bold; text-anchor: middle; fill: #111; pointer-events: none; }
+  .wheel-cell-degree { font-size: 6.5px; font-family: Georgia, 'Times New Roman', serif; text-anchor: middle; fill: #111; pointer-events: none; opacity: 0.75; }
+  .wheel-mode-name { fill: #555; font-size: 11px; text-anchor: middle; dominant-baseline: middle; }
+  .wheel-mode-name.active { fill: #b36b00; font-weight: bold; }
   .keyboard { position: relative; margin: 2.5rem 0 0.8rem; user-select: none; -webkit-user-select: none; touch-action: none; }
   .pkey { position: absolute; top: 0; box-sizing: border-box; border: 1px solid #333; border-radius: 0 0 4px 4px; cursor: pointer; }
   .pkey.white { background: #f5f5f5; z-index: 1; }
@@ -104,6 +125,105 @@ function identityQuery() {
   return 'client=' + encodeURIComponent(clientID) + '&name=' + encodeURIComponent(alias);
 }
 
+// --- Circle-of-fifths wheel — shown only while a guide is active (see `refresh()`) ---
+// Ported from `StaticAssets.swift`'s own `renderWheel`/`diatonicBoundaryPath`/`polarPoint`
+// (see there for the reasoning behind each constant/shape) but trimmed down: no per-track
+// outline rings or legend, since this page has no `tracks` list to color-code against — just
+// the plain wheel itself, per "juste le cercle des quintes."
+const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+const CHORD_SUFFIX = { major: '', minor: 'm', diminished: '°' };
+function degreeSVGMarkup(degree) {
+  if (!degree.endsWith('°')) return degree;
+  return `${degree.slice(0, -1)}<tspan baseline-shift="super" font-size="75%">°</tspan>`;
+}
+function polarPoint(cx, cy, r, index, count) {
+  const angle = (2 * Math.PI * index) / count - Math.PI / 2;
+  return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+}
+const WHEEL_RING_RADIUS = { major: 110, minor: 160, diminished: 205 };
+const WHEEL_MODE_NAME_RADIUS = 248;
+const WHEEL_DISK_RADIUS = 262;
+const WHEEL_HUB_RADIUS = 70;
+const WHEEL_GRID_OUTER_RADIUS = 225;
+const WHEEL_RING_BOUNDARIES = [
+  (WHEEL_HUB_RADIUS + WHEEL_RING_RADIUS.major) / 2,
+  (WHEEL_RING_RADIUS.major + WHEEL_RING_RADIUS.minor) / 2,
+  (WHEEL_RING_RADIUS.minor + WHEEL_RING_RADIUS.diminished) / 2,
+];
+
+function diatonicBoundaryPath(wheel, cx, cy) {
+  const count = wheel.columns.length;
+  const tonicIndex = wheel.activeColumnIndex;
+  const boundaryAngle = index => (2 * Math.PI * (index + 0.5)) / count - Math.PI / 2;
+  const angleLeft = boundaryAngle(tonicIndex - 2);
+  const angleIV = boundaryAngle(tonicIndex - 1);
+  const angleV = boundaryAngle(tonicIndex);
+  const angleRight = boundaryAngle(tonicIndex + 1);
+  const rInner = WHEEL_RING_BOUNDARIES[0];
+  const rMid = WHEEL_RING_BOUNDARIES[2];
+  const rOuter = WHEEL_GRID_OUTER_RADIUS;
+  function arcTo(points, radius, fromAngle, toAngle) {
+    const span = toAngle - fromAngle;
+    const steps = Math.max(1, Math.ceil((Math.abs(span) * 180) / Math.PI / 3));
+    for (let s = 1; s <= steps; s++) {
+      const a = fromAngle + (span * s) / steps;
+      points.push({ x: cx + radius * Math.cos(a), y: cy + radius * Math.sin(a) });
+    }
+  }
+  const points = [{ x: cx + rInner * Math.cos(angleLeft), y: cy + rInner * Math.sin(angleLeft) }];
+  points.push({ x: cx + rMid * Math.cos(angleLeft), y: cy + rMid * Math.sin(angleLeft) });
+  arcTo(points, rMid, angleLeft, angleIV);
+  points.push({ x: cx + rOuter * Math.cos(angleIV), y: cy + rOuter * Math.sin(angleIV) });
+  arcTo(points, rOuter, angleIV, angleV);
+  points.push({ x: cx + rMid * Math.cos(angleV), y: cy + rMid * Math.sin(angleV) });
+  arcTo(points, rMid, angleV, angleRight);
+  points.push({ x: cx + rInner * Math.cos(angleRight), y: cy + rInner * Math.sin(angleRight) });
+  arcTo(points, rInner, angleRight, angleLeft);
+  return 'M' + points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L') + ' Z';
+}
+
+function renderWheel(wheel) {
+  if (!wheel) return '';
+  const cx = 270, cy = 270;
+  const count = wheel.columns.length;
+  let svg = `<svg class="wheel" viewBox="0 0 540 540">`;
+  svg += `<circle class="wheel-disk" cx="${cx}" cy="${cy}" r="${WHEEL_DISK_RADIUS}" />`;
+  [WHEEL_RING_BOUNDARIES[1], WHEEL_RING_BOUNDARIES[2]].forEach(r => {
+    svg += `<circle class="wheel-grid-line" fill="none" cx="${cx}" cy="${cy}" r="${r}" />`;
+  });
+  for (let i = 0; i < count; i++) {
+    const angle = (2 * Math.PI * (i + 0.5)) / count - Math.PI / 2;
+    const x1 = cx + WHEEL_HUB_RADIUS * Math.cos(angle), y1 = cy + WHEEL_HUB_RADIUS * Math.sin(angle);
+    const x2 = cx + WHEEL_GRID_OUTER_RADIUS * Math.cos(angle), y2 = cy + WHEEL_GRID_OUTER_RADIUS * Math.sin(angle);
+    svg += `<line class="wheel-grid-line" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
+  }
+  wheel.columns.forEach((column, index) => {
+    if (column.modeName) {
+      const pos = polarPoint(cx, cy, WHEEL_MODE_NAME_RADIUS, index, count);
+      const cls = column.modeName === wheel.activeModeName ? 'wheel-mode-name active' : 'wheel-mode-name';
+      svg += `<text class="${cls}" x="${pos.x}" y="${pos.y}">${column.modeName}</text>`;
+    }
+    column.cells.forEach(cell => {
+      const r = WHEEL_RING_RADIUS[cell.quality];
+      const pos = polarPoint(cx, cy, r, index, count);
+      const color = PITCH_CLASS_COLORS[cell.pitchClass];
+      const size = 18;
+      const rotateDeg = (360 * index) / count;
+      if (cell.shape === 'square') {
+        svg += `<g transform="rotate(${rotateDeg} ${pos.x} ${pos.y})"><rect class="wheel-cell-shape" x="${pos.x - size}" y="${pos.y - size}" width="${size * 2}" height="${size * 2}" fill="${color}" /></g>`;
+      } else {
+        svg += `<circle class="wheel-cell-shape" cx="${pos.x}" cy="${pos.y}" r="${size}" fill="${color}" />`;
+      }
+      const symbol = NOTE_NAMES[cell.pitchClass] + CHORD_SUFFIX[cell.quality];
+      svg += `<text class="wheel-cell-symbol" x="${pos.x}" y="${pos.y + 1}">${symbol}</text>`;
+      svg += `<text class="wheel-cell-degree" x="${pos.x}" y="${pos.y + 9}">${degreeSVGMarkup(cell.relativeDegree)}</text>`;
+    });
+  });
+  svg += `<path class="wheel-diatonic-boundary" d="${diatonicBoundaryPath(wheel, cx, cy)}" />`;
+  svg += '</svg>';
+  return svg;
+}
+
 // Hand-mirrors `MusicTheoryKit.PitchClassPalette.hex` — see this module's JSON-contract
 // comment above for the "no compiler-enforced contract, kept in sync by hand" convention.
 const PITCH_CLASS_COLORS = [
@@ -134,6 +254,7 @@ let heldPitches = new Set();
 let chordRoot = null;
 let chordTones = new Set();
 let infoLine = '<span class="empty">(aucune note)</span>';
+let guideHTML = '';   // guide title/steps + wheel, only while a guide is active — see refresh()
 
 // This client's OWN currently-pressed pitches — shown immediately (`.pressed`) without
 // waiting for the next /state poll, which only carries the *server's* confirmed view (used
@@ -154,17 +275,29 @@ function sendNoteEvent(path) {
   requestQueue = requestQueue.then(() => fetch(path + separator + identityQuery()).catch(() => {}));
 }
 
+// Toggles the `.pressed` class directly on the existing DOM node — NOT via `renderKeyboard()`
+// (a full innerHTML rebuild): replacing a key's element while a touch that started on it is
+// still active is what caused the reported "release only registers on a second tap" bug —
+// WebKit (and others) can silently stop delivering touchend/touchmove for a touch whose
+// original target got detached from the document mid-gesture, permanently orphaning it.
+// Mutating the existing node in place never detaches it, so the touch's own touchend always
+// still finds it.
+function setPressedVisual(pitch, isPressed) {
+  const el = document.querySelector('.pkey[data-pitch="' + pitch + '"]');
+  if (el) el.classList.toggle('pressed', isPressed);
+}
+
 function noteOn(pitch) {
   if (pressedLocally.has(pitch)) return; // already down — computer keydown auto-repeats
   pressedLocally.add(pitch);
+  setPressedVisual(pitch, true);
   sendNoteEvent('/note-on?pitch=' + pitch);
-  renderKeyboard();
 }
 function noteOff(pitch) {
   if (!pressedLocally.has(pitch)) return;
   pressedLocally.delete(pitch);
+  setPressedVisual(pitch, false);
   sendNoteEvent('/note-off?pitch=' + pitch);
-  renderKeyboard();
 }
 // The panic button: asks the *session* to release whatever it thinks this track is holding,
 // rather than replaying this client's own (possibly already-wrong) idea of what's down —
@@ -217,6 +350,7 @@ function keyboardHTML() {
 function renderKeyboard() {
   document.getElementById('app').innerHTML =
     `<div class="identity">Vous : <b>${alias}</b> — <a onclick="renameIdentity()">changer</a></div>` +
+    guideHTML +
     `<div class="field">Accord: <b>${infoLine}</b></div>` +
     keyboardHTML() +
     '<div class="hint">Touches: A S D F G H J K L ; (blanches), W E T Y U O P (noires) — ou clique/touche directement les touches. Echap: relache tout.</div>';
@@ -293,7 +427,8 @@ document.addEventListener('keyup', e => {
 async function refresh() {
   try {
     const response = await fetch('/state?' + identityQuery(), { cache: 'no-store' });
-    const track = await response.json();
+    const state = await response.json();
+    const track = state.track;
     if (track) {
       heldPitches = new Set(track.heldPitches || []);
       chordRoot = track.chordRoot;
@@ -306,6 +441,19 @@ async function refresh() {
     } else {
       heldPitches = new Set(); chordRoot = null; chordTones = new Set(); roles = {};
       infoLine = '<span class="empty">(piste non initialisee)</span>';
+    }
+    // While a guide is running, the role-line (degree badges) switches to ITS mode's notes
+    // instead of this track's own recognized mode — "présente le clavier avec les notes du
+    // mode [du guide]" — but held/chord/root coloring above stays this track's own, personal
+    // feedback either way. `state.guide`/`state.wheel` are only present at all while a guide
+    // is active (see `ImprovSession.handleVirtualKeyboardRequest`'s doc comment).
+    if (state.guide && state.guide.isActive) {
+      roles = {};
+      (state.guide.currentModeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc] }; });
+      const steps = (state.guide.steps || []).map(step => step.isCurrent ? `<b>[${step.label}]</b>` : step.label).join(' ');
+      guideHTML = '<h2>Guide</h2>' + `<div class="field">${steps}</div>` + renderWheel(state.wheel);
+    } else {
+      guideHTML = '';
     }
   } catch {
     infoLine = '<span class="empty">(connexion perdue — l\\'application est-elle toujours lancee ?)</span>';
