@@ -324,36 +324,88 @@ function keyClasses(pitch, pc) {
   return classes.join(' ');
 }
 
-function keyboardHTML() {
+// Built exactly ONCE (`ensureKeyboardBuilt`), then only ever mutated in place
+// (`updateKeyVisuals`) — NOT rebuilt via `innerHTML` on every poll. A touch that starts on a
+// `.pkey` element and is still down when the periodic `refresh()` tick lands (any hold longer
+// than the ~200ms poll interval — i.e. any deliberately sustained note, not just a fast tap)
+// used to have its element destroyed and recreated mid-gesture: WebKit (and others) then
+// silently stop delivering that touch's `touchend`, permanently orphaning it — this is what
+// was still reproducing the "release only registers on a second tap" bug even after `noteOn`/
+// `noteOff` stopped rebuilding the DOM themselves (a fast tap could dodge a 200ms tick; a held
+// note could not). Never destroying the element at all removes the failure mode entirely,
+// regardless of hold duration or poll timing.
+let keyboardBuilt = false;
+function ensureKeyboardBuilt() {
+  if (keyboardBuilt) return;
   const octaveCount = Math.ceil((MAX_MIDI - MIN_MIDI + 1) / 12);
   const totalWidth = octaveCount * 7 * WHITE_KEY_WIDTH;
-  let whiteHTML = '', blackHTML = '';
+  const keyboardEl = document.createElement('div');
+  keyboardEl.className = 'keyboard';
+  keyboardEl.style.width = totalWidth + 'px';
+  keyboardEl.style.height = WHITE_KEY_HEIGHT + 'px';
   for (let pitch = MIN_MIDI; pitch <= MAX_MIDI; pitch++) {
     const pc = ((pitch % 12) + 12) % 12;
     const octave = Math.floor((pitch - MIN_MIDI) / 12);
-    const role = roles[pc];
-    const badge = role ? `<span class="degree-badge" style="background:${role.color}">${role.degree}</span>` : '';
-    const cls = keyClasses(pitch, pc);
+    const el = document.createElement('div');
+    el.dataset.pitch = String(pitch);
+    // A base class up front (`updateKeyVisuals` only ever selects elements that already
+    // have it) — without this, the very first `.pkey` query after building would match
+    // nothing and every key would silently stay unstyled until some later, unrelated DOM
+    // change happened to touch it.
     if (WHITE_SLOT_BY_SEMITONE[pc] !== undefined) {
       const slot = octave * 7 + WHITE_SLOT_BY_SEMITONE[pc];
-      const x = slot * WHITE_KEY_WIDTH;
-      whiteHTML += `<div class="${cls}" data-pitch="${pitch}" style="left:${x}px; width:${WHITE_KEY_WIDTH}px; height:${WHITE_KEY_HEIGHT}px;">${badge}</div>`;
+      el.className = 'pkey white';
+      el.style.left = (slot * WHITE_KEY_WIDTH) + 'px';
+      el.style.width = WHITE_KEY_WIDTH + 'px';
+      el.style.height = WHITE_KEY_HEIGHT + 'px';
     } else {
       const slot = octave * 7 + BLACK_AFTER_WHITE_SLOT[pc] + 1;
-      const x = slot * WHITE_KEY_WIDTH - BLACK_KEY_WIDTH / 2;
-      blackHTML += `<div class="${cls}" data-pitch="${pitch}" style="left:${x}px; width:${BLACK_KEY_WIDTH}px; height:${BLACK_KEY_HEIGHT}px;">${badge}</div>`;
+      el.className = 'pkey black';
+      el.style.left = (slot * WHITE_KEY_WIDTH - BLACK_KEY_WIDTH / 2) + 'px';
+      el.style.width = BLACK_KEY_WIDTH + 'px';
+      el.style.height = BLACK_KEY_HEIGHT + 'px';
     }
+    const badge = document.createElement('span');
+    badge.className = 'degree-badge';
+    badge.style.display = 'none';
+    el.appendChild(badge);
+    keyboardEl.appendChild(el);
   }
-  return `<div class="keyboard" style="width:${totalWidth}px; height:${WHITE_KEY_HEIGHT}px;">${whiteHTML}${blackHTML}</div>`;
+  document.getElementById('keyboard-container').appendChild(keyboardEl);
+  keyboardBuilt = true;
+}
+
+function updateKeyVisuals() {
+  document.querySelectorAll('#keyboard-container .pkey').forEach(el => {
+    const pitch = parseInt(el.dataset.pitch, 10);
+    const pc = ((pitch % 12) + 12) % 12;
+    el.className = keyClasses(pitch, pc);
+    const badge = el.querySelector('.degree-badge');
+    const role = roles[pc];
+    if (role) {
+      badge.style.display = '';
+      badge.style.background = role.color;
+      badge.textContent = role.degree;
+    } else {
+      badge.style.display = 'none';
+    }
+  });
 }
 
 function renderKeyboard() {
-  document.getElementById('app').innerHTML =
-    `<div class="identity">Vous : <b>${alias}</b> — <a onclick="renameIdentity()">changer</a></div>` +
-    guideHTML +
-    `<div class="field">Accord: <b>${infoLine}</b></div>` +
-    keyboardHTML() +
-    '<div class="hint">Touches: A S D F G H J K L ; (blanches), W E T Y U O P (noires) — ou clique/touche directement les touches. Echap: relache tout.</div>';
+  if (!document.getElementById('keyboard-container')) {
+    document.getElementById('app').innerHTML =
+      '<div id="identity-container"></div>' +
+      '<div id="guide-container"></div>' +
+      '<div id="info-container"></div>' +
+      '<div id="keyboard-container"></div>' +
+      '<div class="hint">Touches: A S D F G H J K L ; (blanches), W E T Y U O P (noires) — ou clique/touche directement les touches. Echap: relache tout.</div>';
+  }
+  ensureKeyboardBuilt();
+  document.getElementById('identity-container').innerHTML = `<div class="identity">Vous : <b>${alias}</b> — <a onclick="renameIdentity()">changer</a></div>`;
+  document.getElementById('guide-container').innerHTML = guideHTML;
+  document.getElementById('info-container').innerHTML = `<div class="field">Accord: <b>${infoLine}</b></div>`;
+  updateKeyVisuals();
 }
 
 // Pointer/pitch resolution is by DOM lookup (`data-pitch`), not by tracking coordinates —
