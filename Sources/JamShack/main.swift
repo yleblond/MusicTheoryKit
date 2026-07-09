@@ -71,6 +71,8 @@ func printHelp() {
       guide                      ecran fixe: sequence de modes a parcourir en jouant (fleches gauche/droite) — Ctrl+C pour revenir
       web-console [port]         demarre la console web (miroir de 'run' dans un navigateur, defaut port 8080)
       web-console stop           arrete la console web
+      virtual-keyboard [port]    demarre le clavier virtuel (piano interactif souris/tactile/clavier dans un navigateur, piste 'clavier-web', defaut port 8081)
+      virtual-keyboard stop      arrete le clavier virtuel
       quit                       quitte
 
     Morceaux (Piece Model — mesures/accords)
@@ -93,7 +95,7 @@ func printHelp() {
       press <pitch>              simule l'appui d'une touche (0-127) sur la piste 'clavier'
       release <pitch>            simule le relachement d'une touche sur la piste 'clavier'
 
-    Instruments (lecture du morceau)
+    Scene (lecture du morceau)
       samples <dossier>          liste les fichiers .sf2/.dls/.aupreset du dossier
       use-sample <n ou nom>      charge le son par defaut de la lecture (pistes/accords sans instrument propre)
       set-track-instrument <section> <piste> <nom-sample|numero|vide>  instrument d'une piste melodique
@@ -136,7 +138,7 @@ func printHelp() {
       show-text-prompt / show-soundtrack-prompt  affiche le prompt complet qui serait envoye maintenant
       export-text-prompt <nom> / export-soundtrack-prompt <nom>  exporte le prompt complet (jamais recharge)
 
-    Guide (sequence de modes a parcourir en jouant)
+    Guide Musicaux (sequence de modes a parcourir en jouant)
       guide-new <titre>          demarre une sequence de guide vierge
       guide-add-mode <tonique> <id-gamme>  ajoute une etape (ex: guide-add-mode D dorian)
       guides <dossier>           liste les fichiers .json (sequences de guide) du dossier
@@ -221,9 +223,13 @@ func printCompositionDescription() {
 
 /// Parses a track id as typed in commands — the inverse of `trackIDText`: "midi" (the
 /// merged stream), "midi:<n>" (one-based port index, only meaningful in individual mode),
-/// "clavier" (computer keyboard), "micro" (microphone), "remote:<clientID>@<trackID>" (a
-/// participant's own track in a collaborative session — copy/paste the exact id shown by
-/// `tracks`, its `clientID` is a UUID not meant to be typed from scratch).
+/// "clavier" (computer keyboard), "clavier-web:<clientID>" (one connected browser's virtual
+/// keyboard, see `ImprovSession.startVirtualKeyboard`/`ensureWebKeyboardTrack` — copy/paste
+/// the exact id shown by `tracks`, its `clientID` is a UUID not meant to be typed from
+/// scratch, same convention as `remote:` just below), "micro" (microphone),
+/// "remote:<clientID>@<trackID>" (a participant's own track in a collaborative session —
+/// copy/paste the exact id shown by `tracks`, its `clientID` is a UUID not meant to be typed
+/// from scratch).
 func parseTrackID(_ text: String) -> TrackID? {
     let lower = text.lowercased()
     switch lower {
@@ -233,6 +239,11 @@ func parseTrackID(_ text: String) -> TrackID? {
     default:
         if lower.hasPrefix("midi:"), let n = Int(lower.dropFirst(5)), n >= 1 {
             return .midiSource(n - 1)
+        }
+        if text.hasPrefix("clavier-web:") {
+            let clientID = String(text.dropFirst("clavier-web:".count))
+            guard !clientID.isEmpty else { return nil }
+            return .webKeyboard(clientID: clientID)
         }
         if text.hasPrefix("remote:"), let atIndex = text.firstIndex(of: "@") {
             let clientID = String(text[text.index(text.startIndex, offsetBy: 7)..<atIndex])
@@ -279,6 +290,7 @@ func trackIDText(_ id: TrackID) -> String {
     case .midiMerged: return "midi"
     case .midiSource(let index): return "midi:\(index + 1)"
     case .computerKeyboard: return "clavier"
+    case .webKeyboard(let clientID): return "clavier-web:\(clientID)"
     case .microphone: return "micro"
     case .remote(let clientID, let trackID): return "remote:\(clientID)@\(trackID)"
     }
@@ -361,6 +373,10 @@ func webConsoleStatusText() -> String {
     session.webConsolePort.map { "http://localhost:\($0)" } ?? TextStyle.placeholder("(inactive)")
 }
 
+func virtualKeyboardStatusText() -> String {
+    session.virtualKeyboardPort.map { "http://localhost:\($0)" } ?? TextStyle.placeholder("(inactif)")
+}
+
 /// One line per track — shared by the `tracks` command and the Source/Reseau menus'
 /// prompts, so picking a track id to act on always shows the same up-to-date list first.
 func printTracks() {
@@ -422,7 +438,7 @@ func resolvedTrackIDText(_ text: String) -> String {
 /// shared by "Choisir un son pour un instrument..." and the post-activation prompt in
 /// "Activer un instrument...", so both stay in sync.
 func promptChooseSoundForTrack(_ resolvedTrackID: String) throws {
-    guard !session.sampleFiles.isEmpty else { print("Choisis d'abord un dossier de sons (menu MusicLab)."); return }
+    guard !session.sampleFiles.isEmpty else { print("Choisis d'abord un dossier de sons (menu JamShack)."); return }
     for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
     guard let sampleChoice = promptLine("Quel son (numero ou nom): "), !sampleChoice.isEmpty else { return }
     try executeCommand("track", [resolvedTrackID, "instrument", sampleChoice])
@@ -436,6 +452,7 @@ func printStatus() {
     print(TextStyle.field("Soundtrack", session.currentSoundTrack.map { $0.title } ?? TextStyle.placeholder("(aucune)")))
     print(TextStyle.field("Playing (soundtrack)", TextStyle.flag(session.isPlayingSoundTrack)))
     print(TextStyle.field("Console Web", webConsoleStatusText()))
+    print(TextStyle.field("Clavier virtuel", virtualKeyboardStatusText()))
     print()
     printTracks()
     print()
@@ -639,7 +656,7 @@ enum ConsoleScreenMode: CaseIterable {
         switch self {
         case .run: return "Run"
         case .config: return "Config"
-        case .guide: return "Guide"
+        case .guide: return "Guide Musical"
         }
     }
 }
@@ -681,6 +698,7 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
         line(TextStyle.field("Soundtrack", session.currentSoundTrack.map { $0.title } ?? TextStyle.placeholder("(aucune)")))
         line(TextStyle.field("Reseau", networkRoleText()))
         line(TextStyle.field("Console Web", webConsoleStatusText()))
+        line(TextStyle.field("Clavier virtuel", virtualKeyboardStatusText()))
         line(TextStyle.field("Mode MIDI", session.midiFusionMode == .merged ? "fusionne" : "individuel"))
         line()
         line(TextStyle.heading("Detail du morceau actif:"))
@@ -693,7 +711,7 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
         let listeningTracks = session.tracks.filter { $0.isListening }
         if listeningTracks.isEmpty {
             line()
-            line(TextStyle.placeholder("(aucune piste en ecoute — menu Instruments pour en activer une)"))
+            line(TextStyle.placeholder("(aucune piste en ecoute — menu Scene pour en activer une)"))
         }
         for track in listeningTracks {
             line()
@@ -775,12 +793,12 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
 
     case .guide:
         guard let currentGuide = session.currentGuide else {
-            line(TextStyle.placeholder("(aucune sequence de guide — menu Guide)"))
+            line(TextStyle.placeholder("(aucune sequence de guide — menu Guide Musicaux)"))
             break
         }
         line(TextStyle.heading("Sequence: \(currentGuide.title)"))
         if currentGuide.steps.isEmpty {
-            line(TextStyle.placeholder("(sequence vide — menu Guide > Ajouter un mode)"))
+            line(TextStyle.placeholder("(sequence vide — menu Guide Musicaux > Ajouter un mode au guide musical)"))
         } else {
             let items = currentGuide.steps.enumerated().map { index, reference -> (display: String, plainWidth: Int) in
                 let name = reference.resolve()?.displayName ?? "?"
@@ -800,7 +818,7 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
             if session.currentGuideStepIndex != nil {
                 line(TextStyle.placeholder("(l'etape courante ne resout pas — tonique/gamme invalide dans le fichier)"))
             } else {
-                line(TextStyle.placeholder("(guide non demarre — menu Guide > Demarrer le guide)"))
+                line(TextStyle.placeholder("(guide non demarre — barre d'espace, ou menu Guide Musicaux > Demarrer le guide musical)"))
             }
             break
         }
@@ -868,6 +886,12 @@ func runConsoleScreen(mode initialMode: ConsoleScreenMode) {
                 session.advanceGuideStep(by: -1)
             case .right where mode == .guide && openMenuIndex == nil:
                 session.advanceGuideStep(by: 1)
+            case .char(" ") where mode == .guide && openMenuIndex == nil && !computerKeyboardSourceActive:
+                if session.currentGuideStepIndex != nil {
+                    session.stopGuide()
+                } else {
+                    try? session.startGuide()
+                }
             case .char("q") where !computerKeyboardSourceActive:
                 // A calmer way out than Ctrl+C — same effect as the SIGINT handler below
                 // (just sets the same flag), kept as a fallback rather than replaced: it's
@@ -1026,6 +1050,14 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         default:
             let port = args.first.flatMap(Int.init) ?? 8080
             try session.startWebConsole(port: port)
+        }
+    case "virtual-keyboard":
+        switch args.first {
+        case "stop":
+            session.stopVirtualKeyboard()
+        default:
+            let port = args.first.flatMap(Int.init) ?? 8081
+            try session.startVirtualKeyboard(port: port)
         }
     case "press":
         guard let pitch = args.first.flatMap(Int.init) else { print("usage: press <pitch 0-127>"); break }
@@ -1330,8 +1362,8 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             guard let folder = promptLine("Dossier de soundtracks: "), !folder.isEmpty else { return }
             try executeCommand("soundtracks", [folder])
         },
-        MenuItem(label: "Choisir dossier de sequences de guide...") {
-            guard let folder = promptLine("Dossier de sequences de guide: "), !folder.isEmpty else { return }
+        MenuItem(label: "Choisir dossier de guides musicaux...") {
+            guard let folder = promptLine("Dossier de guides musicaux: "), !folder.isEmpty else { return }
             try executeCommand("guides", [folder])
         },
         MenuItem(label: "Choisir dossier de scenes...") {
@@ -1363,9 +1395,15 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         },
         MenuItem(label: "Arreter la console web") { try executeCommand("web-console", ["stop"]) },
         MenuItem.separator,
+        MenuItem(label: "Demarrer le clavier virtuel...") {
+            let portText = promptLine("Port (defaut 8081): ") ?? ""
+            try executeCommand("virtual-keyboard", [portText.isEmpty ? "8081" : portText])
+        },
+        MenuItem(label: "Arreter le clavier virtuel") { try executeCommand("virtual-keyboard", ["stop"]) },
+        MenuItem.separator,
         MenuItem(label: "Quitter") { try executeCommand("quit", []) },
     ]),
-    MenuCategory(mnemonic: "I", title: "Instruments", items: [
+    MenuCategory(mnemonic: "n", title: "Scene", items: [
         MenuItem(label: "Lister les instruments") { try executeCommand("tracks", []) },
         MenuItem(label: "Activer un instrument...") {
             printNumberedTracks()
@@ -1406,7 +1444,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             try executeCommand("save-scene", [name])
         },
         MenuItem(label: "Charger scene...") {
-            guard !session.sceneFiles.isEmpty else { print("Choisis d'abord un dossier de scenes (menu MusicLab)."); return }
+            guard !session.sceneFiles.isEmpty else { print("Choisis d'abord un dossier de scenes (menu JamShack)."); return }
             for (index, name) in session.sceneFiles.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Charger quelle scene (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-scene", [choice])
@@ -1417,7 +1455,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         MenuItem(label: "Voir le morceau (structure et instruments)") { try executeCommand("show-piece", []) },
         MenuItem.separator,
         MenuItem(label: "Choisir le son de lecture du morceau...") {
-            guard !session.sampleFiles.isEmpty else { print("Choisis d'abord un dossier de sons (menu MusicLab)."); return }
+            guard !session.sampleFiles.isEmpty else { print("Choisis d'abord un dossier de sons (menu JamShack)."); return }
             for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Charger quel son (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-sample", [choice])
@@ -1426,7 +1464,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             printPieceDetail()
             guard let sectionText = promptLine("Quelle section (numero): "), !sectionText.isEmpty else { return }
             guard let trackText = promptLine("Quelle piste (numero): "), !trackText.isEmpty else { return }
-            if session.sampleFiles.isEmpty { print("(Astuce: choisis d'abord un dossier de sons, menu MusicLab.)") }
+            if session.sampleFiles.isEmpty { print("(Astuce: choisis d'abord un dossier de sons, menu JamShack.)") }
             for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
             let instrumentText = promptLine("Quel son (numero, nom, ou vide pour le son par defaut): ") ?? ""
             try executeCommand("set-track-instrument", [sectionText, trackText, instrumentText])
@@ -1434,7 +1472,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         MenuItem(label: "Choisir le son des accords d'une section...") {
             printPieceDetail()
             guard let sectionText = promptLine("Quelle section (numero): "), !sectionText.isEmpty else { return }
-            if session.sampleFiles.isEmpty { print("(Astuce: choisis d'abord un dossier de sons, menu MusicLab.)") }
+            if session.sampleFiles.isEmpty { print("(Astuce: choisis d'abord un dossier de sons, menu JamShack.)") }
             for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
             let instrumentText = promptLine("Quel son (numero, nom, ou vide pour le son par defaut): ") ?? ""
             try executeCommand("set-chord-instrument", [sectionText, instrumentText])
@@ -1442,7 +1480,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         MenuItem.separator,
         MenuItem(label: "Charger demo") { try executeCommand("load-demo", []) },
         MenuItem(label: "Charger morceau...") {
-            guard !session.pieceFiles.isEmpty else { print("Choisis d'abord un dossier de morceaux (menu MusicLab)."); return }
+            guard !session.pieceFiles.isEmpty else { print("Choisis d'abord un dossier de morceaux (menu JamShack)."); return }
             for (index, name) in session.pieceFiles.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Charger quel morceau (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-piece", [choice])
@@ -1455,10 +1493,10 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         MenuItem.separator,
         MenuItem.header("Assistant IA"),
     ]),
-    MenuCategory(mnemonic: "G", title: "Guide", items: [
-        MenuItem(label: "Voir l'ecran Guide") { try executeCommand("guide", []) },
+    MenuCategory(mnemonic: "G", title: "Guide Musicaux", items: [
+        MenuItem(label: "Voir le Guide Musical") { try executeCommand("guide", []) },
         MenuItem.separator,
-        MenuItem(label: "Nouveau guide...") {
+        MenuItem(label: "Nouveau guide musical...") {
             guard let title = promptLine("Titre de la sequence: "), !title.isEmpty else { return }
             try executeCommand("guide-new", [title])
             // Keep prompting for one more step until the user leaves the tonic blank,
@@ -1475,27 +1513,27 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
                 }
             }
         },
-        MenuItem(label: "Ajouter un mode au guide...") {
+        MenuItem(label: "Ajouter un mode au guide musical...") {
             guard let tonicText = promptLine("Tonique (ex: D, F#, Bb): "), !tonicText.isEmpty else { return }
             printNumberedScales()
             guard let scaleText = promptLine("Id de gamme (numero ci-dessus, ou id ecrit, ex: ionian): "), !scaleText.isEmpty else { return }
             try executeCommand("guide-add-mode", [tonicText, resolvedScaleID(scaleText)])
         },
         MenuItem.separator,
-        MenuItem(label: "Charger un guide...") {
-            guard !session.guideFiles.isEmpty else { print("Choisis d'abord un dossier de sequences de guide."); return }
+        MenuItem(label: "Charger un guide musical...") {
+            guard !session.guideFiles.isEmpty else { print("Choisis d'abord un dossier de guides musicaux."); return }
             for (index, name) in session.guideFiles.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Charger quelle sequence (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-guide", [choice])
         },
-        MenuItem(label: "Sauvegarder le guide") { try executeCommand("save-guide", []) },
-        MenuItem(label: "Sauvegarder le guide sous...") {
+        MenuItem(label: "Sauvegarder le guide musical") { try executeCommand("save-guide", []) },
+        MenuItem(label: "Sauvegarder le guide musical sous...") {
             guard let name = promptLine("Nom de sauvegarde: "), !name.isEmpty else { return }
             try executeCommand("save-guide-as", [name])
         },
         MenuItem.separator,
-        MenuItem(label: "Demarrer le guide") { try executeCommand("guide-start", []) },
-        MenuItem(label: "Arreter le guide") { try executeCommand("guide-stop", []) },
+        MenuItem(label: "Demarrer le guide musical") { try executeCommand("guide-start", []) },
+        MenuItem(label: "Arreter le guide musical") { try executeCommand("guide-stop", []) },
     ]),
     MenuCategory(mnemonic: "E", title: "Enregistrement", items: [
         MenuItem(label: "Demarrer un enregistrement...") {
@@ -1508,7 +1546,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         MenuItem(label: "Jouer l'enregistrement") { try executeCommand("play-soundtrack", []) },
         MenuItem.separator,
         MenuItem(label: "Charger un enregistrement...") {
-            guard !session.soundTrackFiles.isEmpty else { print("Choisis d'abord un dossier de soundtracks (menu MusicLab)."); return }
+            guard !session.soundTrackFiles.isEmpty else { print("Choisis d'abord un dossier de soundtracks (menu JamShack)."); return }
             for (index, name) in session.soundTrackFiles.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Charger quel enregistrement (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-soundtrack", [choice])
@@ -1534,7 +1572,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             try executeCommand("save-soundtrack-framing", [name])
         },
         MenuItem(label: "Charger une phrase de cadrage...") {
-            guard !session.soundTrackFramingFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu MusicLab)."); return }
+            guard !session.soundTrackFramingFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu JamShack)."); return }
             for (index, name) in session.soundTrackFramingFiles.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Charger quelle phrase de cadrage (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-soundtrack-framing", [choice])
@@ -1551,7 +1589,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             try executeCommand("save-soundtrack-instructions", [name])
         },
         MenuItem(label: "Charger des indications de style...") {
-            guard !session.soundTrackInstructionsFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu MusicLab)."); return }
+            guard !session.soundTrackInstructionsFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu JamShack)."); return }
             for (index, name) in session.soundTrackInstructionsFiles.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Charger quelles indications (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-soundtrack-instructions", [choice])
@@ -1580,7 +1618,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         MenuItem(label: "Voir la description") { try executeCommand("show-description", []) },
         MenuItem.separator,
         MenuItem(label: "Charger une description...") {
-            guard !session.compositionFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu MusicLab)."); return }
+            guard !session.compositionFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu JamShack)."); return }
             for (index, name) in session.compositionFiles.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Charger quelle description (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-description", [choice])
@@ -1598,7 +1636,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             try executeCommand("save-text-framing", [name])
         },
         MenuItem(label: "Charger une phrase de cadrage...") {
-            guard !session.textFramingFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu MusicLab)."); return }
+            guard !session.textFramingFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu JamShack)."); return }
             for (index, name) in session.textFramingFiles.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Charger quelle phrase de cadrage (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-text-framing", [choice])

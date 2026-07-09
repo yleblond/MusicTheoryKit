@@ -210,6 +210,10 @@ public final class ImprovSession: @unchecked Sendable {
     /// `nil` when inactive — the port the web console is currently listening on, for display
     /// (`status`/`config`) and to guard against starting it twice.
     public private(set) var webConsolePort: Int?
+    private var virtualKeyboardServer: HTTPServer?
+    /// `nil` when inactive — the port the interactive browser keyboard (see
+    /// `startVirtualKeyboard`) is currently listening on.
+    public private(set) var virtualKeyboardPort: Int?
     /// Server-side only: which participant (`clientID`) each live TCP connection belongs
     /// to, learned from that connection's `hello` message — needed because `onDisconnect`
     /// only ever reports the connection's own transient id, not the participant identity.
@@ -274,6 +278,7 @@ public final class ImprovSession: @unchecked Sendable {
         case noCurrentGuideFile
         case noSceneFolderListed
         case invalidSceneIndex
+        case virtualKeyboardAlreadyActive
         public var description: String {
             switch self {
             case .noPieceLoaded: return "no piece loaded — try 'load-demo' or 'load <path>'"
@@ -316,6 +321,7 @@ public final class ImprovSession: @unchecked Sendable {
             case .noCurrentGuideFile: return "this guide sequence was never loaded from or saved to a file — try 'save-guide-as <name>'"
             case .noSceneFolderListed: return "no scene folder listed yet — try 'scenes <folder>' first"
             case .invalidSceneIndex: return "no scene at that index"
+            case .virtualKeyboardAlreadyActive: return "virtual keyboard already running — stop it first"
             }
         }
     }
@@ -1142,6 +1148,12 @@ public final class ImprovSession: @unchecked Sendable {
             }
         }
         updated.append(preservedOrNewTrack(.computerKeyboard, label: "Clavier ordinateur"))
+        // `.webKeyboard(clientID:)` tracks are NOT recreated here — unlike every other kind,
+        // they're dynamic and per-browser (see `ensureWebKeyboardTrack`), so this would
+        // either need a fixed clientID (defeating the point) or drop every connected
+        // browser's track on every `refreshTracks()` call (e.g. after `midi-mode`). Existing
+        // ones are preserved below, just never freshly created here.
+        updated.append(contentsOf: tracks.filter { if case .webKeyboard = $0.id { return true }; return false })
         updated.append(preservedOrNewTrack(.microphone, label: "Microphone", canHaveSound: false))
         tracks = updated
     }
@@ -1157,7 +1169,7 @@ public final class ImprovSession: @unchecked Sendable {
     private func isMIDITrack(_ id: TrackID) -> Bool {
         switch id {
         case .midiMerged, .midiSource: return true
-        case .computerKeyboard, .microphone, .remote: return false
+        case .computerKeyboard, .webKeyboard, .microphone, .remote: return false
         }
     }
 
@@ -1188,7 +1200,7 @@ public final class ImprovSession: @unchecked Sendable {
                 newListener.connectAllSources()
             }
             midiListeners[id] = newListener
-        case .computerKeyboard:
+        case .computerKeyboard, .webKeyboard:
             break
         case .microphone:
             let newListener = MicrophonePitchListener { [weak self] detected, level in
@@ -1216,7 +1228,7 @@ public final class ImprovSession: @unchecked Sendable {
             return
         case .midiMerged, .midiSource:
             midiListeners[id] = nil
-        case .computerKeyboard:
+        case .computerKeyboard, .webKeyboard:
             break
         case .microphone:
             microphoneListener?.stop()
@@ -1330,6 +1342,17 @@ public final class ImprovSession: @unchecked Sendable {
 
     public func releaseKey(pitch: Int, channel: Int = 0, track: TrackID = .computerKeyboard) {
         handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOff, pitch: pitch, velocity: 0, channel: channel), track: track)
+    }
+
+    /// Releases every pitch this track currently thinks is held — a "panic button" for a
+    /// client that can't reliably enumerate what it thinks is down itself (see the virtual
+    /// keyboard's Escape handler): two independent `GET /note-on`/`GET /note-off` requests
+    /// are two independent TCP connections with no ordering guarantee between them, so a fast
+    /// tap can occasionally have its "off" processed before its "on", leaving a note stuck —
+    /// this recovers by asking the *session*, not the client, what's actually still held.
+    public func releaseAllKeys(track: TrackID = .computerKeyboard) {
+        let stuck: [Int] = liveInputQueue.sync { Array(tracks.first { $0.id == track }?.heldPitches ?? []) }
+        for pitch in stuck { releaseKey(pitch: pitch, track: track) }
     }
 
     /// Everything a note on/off does to one track's recognition state: logging,
@@ -1576,6 +1599,125 @@ public final class ImprovSession: @unchecked Sendable {
             wheel: buildWebConsoleWheelState(listeningTracks: listeningTracks),
             guide: buildWebConsoleGuideState()
         )
+    }
+
+    // MARK: - Virtual keyboard (interactive browser piano — keydown/keyup + mouse/touch)
+
+    /// Starts a small hand-rolled HTTP server serving an interactive piano keyboard page.
+    /// Unlike the web console above (a read-only mirror of `run`), this one accepts input:
+    /// clicking/touching a key, or typing on the browser's own keyboard, drives
+    /// `pressKey`/`releaseKey` on a `.webKeyboard(clientID:)` track — a real hardware
+    /// keyboard, the terminal's typed "clavier", and any number of browser tabs can all
+    /// listen/sound independently (each tab gets its own track, see
+    /// `ensureWebKeyboardTrack`). Deliberately a *separate* server/page from the web console
+    /// rather than a new mode bolted onto it, so that always-on read-only mirror stays
+    /// simple. Both can run at once, on different ports, with no interaction between them.
+    public func startVirtualKeyboard(port: Int) throws {
+        guard virtualKeyboardPort == nil else { throw SessionError.virtualKeyboardAlreadyActive }
+        guard let uPort = UInt16(exactly: port) else { throw HTTPServerError.invalidPort }
+        let server = HTTPServer(onRequest: { [weak self] request in
+            self?.handleVirtualKeyboardRequest(request) ?? .notFound()
+        })
+        try server.start(port: uPort)
+        virtualKeyboardServer = server
+        virtualKeyboardPort = port
+        append("Clavier virtuel demarre sur http://localhost:\(port)")
+    }
+
+    public func stopVirtualKeyboard() {
+        guard virtualKeyboardPort != nil else { return }
+        virtualKeyboardServer?.stop()
+        virtualKeyboardServer = nil
+        virtualKeyboardPort = nil
+        liveInputQueue.sync { removeAllWebKeyboardTracks() }
+        append("Clavier virtuel arrete.")
+    }
+
+    /// `/` and `/app.js` need no identity (the page hasn't loaded/run its own script yet, so
+    /// it has no `clientID` to send). Every other route requires `?client=<uuid>` (a random
+    /// id the browser generates once and keeps in `localStorage`, so the SAME browser keeps
+    /// driving the SAME track across reloads) and takes `?name=<alias>` as this connection's
+    /// current display name — sent on every request rather than a separate "register" call,
+    /// since this server keeps no persistent connection to notice a client ever arrived.
+    private func handleVirtualKeyboardRequest(_ request: HTTPRequest) -> HTTPResponse {
+        let (path, query) = Self.splitQuery(request.path)
+        switch path {
+        case "/": return .text(virtualKeyboardIndexHTML, contentType: "text/html; charset=utf-8")
+        case "/app.js": return .text(virtualKeyboardAppJS, contentType: "application/javascript")
+        default: break
+        }
+        guard let clientID = query["client"], !clientID.isEmpty else {
+            return .text("missing ?client=<id>", contentType: "text/plain", status: 400)
+        }
+        let track = TrackID.webKeyboard(clientID: clientID)
+        ensureWebKeyboardTrack(clientID: clientID, alias: query["name"]?.isEmpty == false ? query["name"]! : "Invite")
+        switch path {
+        case "/state":
+            let info: TrackInfo? = liveInputQueue.sync { tracks.first { $0.id == track } }
+            guard let data = try? JSONEncoder().encode(info.map(Self.webConsoleTrackState)) else { return .notFound() }
+            return HTTPResponse(contentType: "application/json", body: data)
+        case "/note-on":
+            guard let pitch = query["pitch"].flatMap(Int.init) else { return .text("bad pitch", contentType: "text/plain", status: 400) }
+            pressKey(pitch: pitch, track: track)
+            return .text("", contentType: "text/plain")
+        case "/note-off":
+            guard let pitch = query["pitch"].flatMap(Int.init) else { return .text("bad pitch", contentType: "text/plain", status: 400) }
+            releaseKey(pitch: pitch, track: track)
+            return .text("", contentType: "text/plain")
+        case "/release-all":
+            releaseAllKeys(track: track)
+            return .text("", contentType: "text/plain")
+        default: return .notFound()
+        }
+    }
+
+    /// This server only ever needs a few flat query parameters (`pitch`, `client`, `name`) —
+    /// no need for `HTTPRequest` itself to grow general query-string support for that, so
+    /// this stays a small local helper rather than a change to `WebConsole`'s wire format.
+    private static func splitQuery(_ path: String) -> (path: String, query: [String: String]) {
+        guard let qIndex = path.firstIndex(of: "?") else { return (path, [:]) }
+        let base = String(path[..<qIndex])
+        var result: [String: String] = [:]
+        for pair in path[path.index(after: qIndex)...].split(separator: "&") {
+            let parts = pair.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            result[String(parts[0])] = String(parts[1]).removingPercentEncoding ?? String(parts[1])
+        }
+        return (base, result)
+    }
+
+    /// Creates a fresh, already-listening track the first time `clientID` is seen, or just
+    /// refreshes its display name (`alias`) on every later request — recognition doesn't
+    /// depend on `isListening` at all (`updateRecognitionState` only requires the track to
+    /// exist), so there's no need to touch it again once true. Mirrors
+    /// `addOrUpdateRemoteTrack`'s shape for the same reason: both are tracks that come and go
+    /// dynamically, unlike MIDI ports or the computer keyboard, which `refreshTracks()` owns.
+    private func ensureWebKeyboardTrack(clientID: String, alias: String) {
+        let id = TrackID.webKeyboard(clientID: clientID)
+        liveInputQueue.sync {
+            if let index = tracks.firstIndex(where: { $0.id == id }) {
+                tracks[index].label = alias
+            } else {
+                tracks.append(TrackInfo(id: id, label: alias, isListening: true, canHaveSound: true))
+                recognizers[id] = RecognitionEngine()
+            }
+        }
+    }
+
+    /// Drops every `.webKeyboard(...)` track regardless of client — used when the virtual
+    /// keyboard server itself stops, since none of them mean anything without it. Must run
+    /// inside `liveInputQueue.sync`, mirroring `removeAllRemoteTracks()`.
+    private func removeAllWebKeyboardTracks() {
+        let ids = tracks.compactMap { track -> TrackID? in
+            if case .webKeyboard = track.id { return track.id }
+            return nil
+        }
+        for id in ids {
+            recognizers[id] = nil
+            samplers[id]?.stop()
+            samplers[id] = nil
+        }
+        tracks.removeAll { ids.contains($0.id) }
     }
 
     /// The mode the always-visible circle-of-fifths wheel is computed for — the first

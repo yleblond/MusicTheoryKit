@@ -8,6 +8,17 @@ public enum TrackID: Hashable, Sendable {
     case midiMerged
     case midiSource(Int)
     case computerKeyboard
+    /// A piano keyboard rendered in a browser (see `ImprovSession.startVirtualKeyboard`) —
+    /// keydown/keyup and mouse/touch on the rendered keys drive `pressKey`/`releaseKey` just
+    /// like `.computerKeyboard`, but kept as its own distinct track/id: a real hardware
+    /// keyboard, the terminal's typed "clavier", and a browser tab can all listen at once
+    /// without fighting over the same recognizer/held-notes state. Parameterized by
+    /// `clientID` (a UUID the browser generates once and keeps in `localStorage`, not the
+    /// user-chosen display name — that's `TrackInfo.label` instead, see
+    /// `ImprovSession.ensureWebKeyboardTrack`) so *several* browsers/tablets can each drive
+    /// their own independent track against the same running server — one virtual keyboard,
+    /// several players, same as several MIDI ports or several `.remote` tracks.
+    case webKeyboard(clientID: String)
     case microphone
     /// A track owned by another participant in a collaborative session (see
     /// `ImprovSession.startServer`/`connectToServer`) — `clientID` is that participant's
@@ -26,6 +37,7 @@ public enum TrackID: Hashable, Sendable {
         case .midiMerged: return "midi"
         case .midiSource(let index): return "midi:\(index + 1)"
         case .computerKeyboard: return "clavier"
+        case .webKeyboard(let clientID): return "clavier-web:\(clientID)"
         case .microphone: return "micro"
         case .remote: return nil
         }
@@ -40,8 +52,17 @@ public enum TrackID: Hashable, Sendable {
         case "clavier": self = .computerKeyboard
         case "micro": self = .microphone
         default:
-            guard text.hasPrefix("midi:"), let n = Int(text.dropFirst(5)), n >= 1 else { return nil }
-            self = .midiSource(n - 1)
+            if text.hasPrefix("midi:"), let n = Int(text.dropFirst(5)), n >= 1 {
+                self = .midiSource(n - 1)
+                return
+            }
+            if text.hasPrefix("clavier-web:") {
+                let clientID = String(text.dropFirst("clavier-web:".count))
+                guard !clientID.isEmpty else { return nil }
+                self = .webKeyboard(clientID: clientID)
+                return
+            }
+            return nil
         }
     }
 }

@@ -26,8 +26,8 @@ Le mot revient dans trois contextes qui n'ont rien à voir entre eux :
   `set-track-instrument`, menu **Morceaux**.
 - **`AppCore.TrackInfo` / `TrackID`** — une *source d'entrée en direct* (MIDI, clavier
   ordinateur, micro, ou une piste distante `.remote(...)`), listée dans `session.tracks`. Se
-  manipule avec `track <id> on/off/son/instrument`, menu **Instruments**. C'est ce sens-là que
-  visent les libellés du menu **Instruments** (« Activer un instrument... » = démarrer
+  manipule avec `track <id> on/off/son/instrument`, menu **Scene**. C'est ce sens-là que
+  visent les libellés du menu **Scene** (« Activer un instrument... » = démarrer
   l'écoute d'une `TrackInfo`, pas d'un `PieceModel.Track`).
 - **`SoundTrack.trackIDs`** — l'ensemble des `TrackID` (au sens ci-dessus) ayant contribué au
   moins un événement à un enregistrement donné ; un simple `Set` calculé, pas un type à part.
@@ -71,11 +71,21 @@ Facile à confondre à cause du nom, mais ce sont deux concepts complètement di
 
 - **`console`** (voir juste au-dessus) — un ancien écran *terminal*, retiré, remplacé par
   `run`/`config`.
-- **Console Web** (`web-console`, menu **MusicLab**) — un **nouveau** serveur HTTP fait main
+- **Console Web** (`web-console`, menu **JamShack**) — un **nouveau** serveur HTTP fait main
   (module `WebConsole`), qui sert une page dans un **navigateur** — un miroir en lecture seule
   de l'écran `run`, pas un mode d'affichage du terminal. Les deux n'ont aucun lien de code ou
   d'historique ; le nom se recoupe par coïncidence (« console » au sens large de « tableau de
   bord »).
+
+## Console Web vs Clavier virtuel — deux serveurs HTTP distincts, volontairement
+
+`web-console` et `virtual-keyboard` (`ImprovSession.startWebConsole`/`startVirtualKeyboard`,
+module `WebConsole`) sont deux `HTTPServer` séparés, sur des ports indépendants — pas deux
+routes d'un seul serveur. La Console Web reste strictement en lecture seule (aucune route
+n'accepte d'entrée) ; le Clavier virtuel est strictement l'inverse, une page qui ne fait que
+jouer (`GET /note-on`/`GET /note-off`, piste dédiée `TrackID.webKeyboard(clientID:)` — une par
+navigateur connecté, voir `ImprovSession.ensureWebKeyboardTrack`). Choix délibéré pour garder
+la Console Web simple plutôt que d'y ajouter un mode « clavier actif ».
 
 ## `MenuItem.separator` vs `MenuItem.header(_:)`
 

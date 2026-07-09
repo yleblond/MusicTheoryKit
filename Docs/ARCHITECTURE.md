@@ -358,6 +358,35 @@ wrapper avant que ce callback n'ait eu la moindre chance de s'exécuter :
   seule — même discipline que la leçon `feedback-debug-verify-dont-theorize` déjà retenue pour
   le bug de scintillement du terminal.
 
+### Second serveur : le Clavier virtuel (`VirtualKeyboardAssets.swift`)
+
+Une seconde instance d'`HTTPServer`, sur un port indépendant, pilotée par
+`ImprovSession.startVirtualKeyboard(port:)`/`stopVirtualKeyboard()` — même classe `HTTPServer`
+réutilisée telle quelle (elle ne connaît qu'un closure `onRequest`, aucune notion de "combien
+d'instances"), juste un second `onRequest` différent
+(`handleVirtualKeyboardRequest`) et ses propres assets (`virtualKeyboardIndexHTML`/
+`virtualKeyboardAppJS`). Contrairement à la console web (strictement lecture seule),
+`GET /note-on?pitch=<midi>`/`GET /note-off?pitch=<midi>` acceptent une entrée — en query
+string plutôt qu'un corps de requête, `HTTPRequest`/`HTTPWireFormat` ne parsant toujours que
+la ligne de requête (voir plus haut) ; `ImprovSession.splitQuery(_:)` découpe le `?...` à la
+main, un besoin trop ponctuel pour justifier un vrai parseur de query string générique dans
+`WebConsole`. Ces deux routes appellent `pressKey`/`releaseKey` sur
+`TrackID.webKeyboard(clientID:)` — une piste dédiée (voir `Track.swift`), distincte de
+`.computerKeyboard` : un vrai clavier MIDI, le "clavier" tapé dans le terminal, et un onglet
+de navigateur peuvent ainsi tous écouter/sonner indépendamment sans se marcher dessus.
+
+**Multi-clavier** : `clientID` (pas le nom affiché) identifie une connexion — chaque
+navigateur génère et garde le sien en `localStorage`, envoyé sur chaque requête
+(`?client=...&name=...`). Contrairement à `.computerKeyboard`/aux ports MIDI (fixes,
+recréés à chaque `refreshTracks()`), ces pistes sont dynamiques : `ensureWebKeyboardTrack`
+crée la piste au premier contact d'un `clientID` (et met juste à jour son `label` — l'alias —
+ensuite), mirroir de `addOrUpdateRemoteTrack` pour les pistes `.remote` d'une jam session ;
+`removeAllWebKeyboardTracks` les efface toutes quand le serveur s'arrête (mirroir de
+`removeAllRemoteTracks`). `GET /state?client=...` ne renvoie donc que la piste de CE client —
+pas un instantané partagé mis en cache comme la console web (`refreshWebConsoleStateSoon`),
+puisque chaque client attend un état différent ; recalculer à la demande reste bon marché
+(la reconnaissance elle-même tourne déjà en continu, cette route ne fait que la lire).
+
 ## AppCore — `ImprovSession`, le cœur applicatif
 
 Une seule classe, `@Observable`, `@unchecked Sendable`, qui détient tout l'état de
@@ -661,19 +690,21 @@ le scintillement observé avant ce point).
 
 ### Menus
 
-Barre de menu façon interface DOS graphique, six catégories (`menuCategories`, `main.swift`) :
+Barre de menu façon interface DOS graphique, sept catégories (`menuCategories`, `main.swift`) :
 
 | Menu (mnémonique) | Contenu |
 |---|---|
-| **MusicLab (L)** | Menu principal, ouvert par défaut. 6 groupes séparés par des traits : infos/aide ; choisir chacun des dossiers (morceaux/sons/soundtracks/connexions LLM/**composition IA**) ; choisir une connexion LLM (isolée dans son propre groupe) ; mode MIDI fusionné/individuel ; démarrer/arrêter la console web (§WebConsole) ; quitter. Point d'entrée unique pour toute la configuration de session — aucun autre menu ne propose de choisir un dossier ou une connexion. |
-| **Instruments (I)** | Lister/activer/arrêter les pistes d'entrée, *séparateur*, activer/désactiver leur son, *séparateur*, choisir un son. Les quatre actions qui demandent une piste (`Activer/Arreter un instrument...`, `Activer/Desactiver le son...`) et la sélection d'instrument dans "Choisir un son..." présentent `session.tracks` numérotée (`printNumberedTracks()`) — le choix accepte un numéro ou l'id littéral (`resolvedTrackIDText(_:)`, même convention que `resolvedSampleName`). |
+| **JamShack (S)** | Menu principal, ouvert par défaut. Groupes séparés par des traits : infos/aide ; choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/connexions LLM/**composition IA**) ; choisir une connexion LLM (isolée dans son propre groupe) ; mode MIDI fusionné/individuel ; démarrer/arrêter la console web (§WebConsole) ; quitter. Point d'entrée unique pour toute la configuration de session — aucun autre menu ne propose de choisir un dossier ou une connexion. |
+| **Scene (n)** | Lister/activer/arrêter les pistes d'entrée, *séparateur*, activer/désactiver leur son, *séparateur*, choisir un son, *séparateur*, sauvegarder/charger une scène (configuration d'instruments : actif, son actif, quel son). Les actions qui demandent une piste et la sélection d'instrument dans "Choisir un son..." présentent `session.tracks` numérotée (`printNumberedTracks()`) — le choix accepte un numéro ou l'id littéral (`resolvedTrackIDText(_:)`, même convention que `resolvedSampleName`). |
 | **Morceaux (M)** | 4 groupes : écouter/voir le morceau ; choisir le son de lecture, d'une piste, ou des accords d'une section (`pieceDetailLines()` numérote visuellement chaque section — `"Section 1: A"` — et chaque piste — `"piste 1 '...'"` — pour que l'utilisateur sache directement quel numéro saisir) ; charger la démo/un morceau, sauvegarder ; `MenuItem.header("Assistant IA")` — sous-section réservée, sans item pour l'instant, en attente d'une future fonction de modification par dialogue applicable à n'importe quel morceau. |
+| **Guide Musicaux (G)** | Voir l'écran Guide Musical, *séparateur*, créer un nouveau guide musical (boucle "ajouter un mode" jusqu'à tonique vide) / ajouter un mode au guide musical en cours, *séparateur*, charger/sauvegarder(-sous) un guide musical, *séparateur*, démarrer/arrêter le guide musical (aussi accessible par la barre d'espace sur l'écran Guide Musical). |
 | **Enregistrement (E)** | Démarrer/arrêter/voir/jouer un enregistrement, *séparateur*, charger/sauvegarder, *séparateur*, composer un morceau à partir de l'enregistrement, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser les indications de style, *séparateur*, voir/exporter le prompt de composition. Ordre — cadrage puis indications avant le prompt — délibéré (voir §LLMEngine/§AppCore). |
 | **Composition (C)** | Décrire le morceau (assistant titre → description → indications → composition), composer à partir de la description, voir la description, *séparateur*, charger/sauvegarder(-sous) une description, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/exporter le prompt de composition. |
 | **Jam Session (J)** | Démarrer/arrêter une jam session, rejoindre, trouver (découverte), quitter — session collaborative. Les trois premiers items appellent `promptForPseudo()` avant de continuer. |
 
-Convention des mnémoniques : pas toujours la première lettre du titre (`MusicLab`→`L`,
-`Composition`→`C`...) — choisies pour éviter toute collision entre menus (voir le commentaire
+Convention des mnémoniques : pas toujours la première lettre du titre (`JamShack`→`S` pour ne
+pas entrer en collision avec `Jam Session`→`J`, `Scene`→`n` pour ne pas entrer en collision
+avec `JamShack`→`S`...) — choisies pour éviter toute collision entre menus (voir le commentaire
 de `renderMenuBar`).
 
 Instrument par piste/accord depuis le menu **Morceaux** : "Choisir le son d'une piste..."/
@@ -698,7 +729,7 @@ retrouver (reproduire le crash avant de théoriser, ne pas empiler des correctif
 
 Autres commandes CLI : réseau (`server`/`stop-server`/`client`/`discover`/`disconnect`, menu
 Jam Session), pseudo (`pseudo [nom]` — affiche/change `localClientName`, voir §AppCore pour
-`ownerName`), console web (`web-console [port]`/`web-console stop`, menu MusicLab — voir
+`ownerName`), console web (`web-console [port]`/`web-console stop`, menu JamShack — voir
 §WebConsole), composition (`title`/`indications`/`show-description`/`compose [titre]`),
 descriptions (`use-description`/`save-description`/`save-description-as` — dossier fixe, dérivé
 de `prompts <dossier>`), phrases de cadrage

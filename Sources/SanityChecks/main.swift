@@ -1321,6 +1321,185 @@ func testWebConsoleServesPageScriptAndState() {
 }
 testWebConsoleServesPageScriptAndState()
 
+// No `.webKeyboard(clientID:)` track is pre-created at all anymore — unlike the computer
+// keyboard, it's created on demand per browser the first time that browser's `clientID`
+// shows up in a request (see `ensureWebKeyboardTrack`), so `startVirtualKeyboard` on its own
+// leaves `tracks` unchanged; only an actual `GET` with `?client=...` creates one, and
+// `stopVirtualKeyboard` drops every such track regardless of client.
+func testStartVirtualKeyboardSetsPortAndStopRemovesAnyConnectedClientTracks() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.start()
+        checkNil(session.virtualKeyboardPort, "virtualKeyboardPort starts nil")
+        try session.startVirtualKeyboard(port: 18395)
+        check(session.virtualKeyboardPort, 18395, "virtualKeyboardPort set after start")
+        check(session.tracks.contains { if case .webKeyboard = $0.id { return true }; return false }, false, "starting the server alone creates no .webKeyboard track yet")
+        _ = syncGET("http://127.0.0.1:18395/note-on?pitch=60&client=test-client-1&name=Alice")
+        check(session.tracks.contains { if case .webKeyboard = $0.id { return true }; return false }, true, "a request with ?client=... creates its track on demand")
+        session.stopVirtualKeyboard()
+        checkNil(session.virtualKeyboardPort, "virtualKeyboardPort cleared after stop")
+        check(session.tracks.contains { if case .webKeyboard = $0.id { return true }; return false }, false, "stopVirtualKeyboard removes every connected client's track")
+    } catch {
+        failures += 1
+        print("FAIL [virtual keyboard start/stop]: threw \(error)")
+    }
+}
+testStartVirtualKeyboardSetsPortAndStopRemovesAnyConnectedClientTracks()
+
+func testStartVirtualKeyboardTwiceThrows() {
+    let session = ImprovSession()
+    checks += 1
+    do {
+        try session.startVirtualKeyboard(port: 18396)
+        defer { session.stopVirtualKeyboard() }
+        do {
+            try session.startVirtualKeyboard(port: 18397)
+            failures += 1
+            print("FAIL [virtual keyboard double start]: did not throw")
+        } catch ImprovSession.SessionError.virtualKeyboardAlreadyActive {
+            // expected
+        } catch {
+            failures += 1
+            print("FAIL [virtual keyboard double start]: wrong error \(error)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [virtual keyboard double start]: setup threw \(error)")
+    }
+}
+testStartVirtualKeyboardTwiceThrows()
+
+// Real HTTP round trip over real loopback TCP — note-on/note-off through the actual
+// `GET /note-on`/`GET /note-off` routes (not `session.pressKey` directly), since the whole
+// point is verifying the HTTP-to-session wiring, mirroring `testWebConsoleServesPageScriptAndState`.
+func testVirtualKeyboardServesPageAndAcceptsNoteOnOff() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.start()
+        try session.startVirtualKeyboard(port: 18398)
+
+        if let page = syncGET("http://127.0.0.1:18398/") {
+            check(page.status, 200, "GET / returns 200")
+            check(page.contentType?.contains("text/html") ?? false, true, "GET / is HTML")
+        } else {
+            failures += 1
+            print("FAIL [virtual keyboard GET /]: no response")
+        }
+
+        if let script = syncGET("http://127.0.0.1:18398/app.js") {
+            check(script.status, 200, "GET /app.js returns 200")
+            check(script.contentType ?? "", "application/javascript", "GET /app.js content type")
+        } else {
+            failures += 1
+            print("FAIL [virtual keyboard GET /app.js]: no response")
+        }
+
+        if let noClient = syncGET("http://127.0.0.1:18398/state") {
+            check(noClient.status, 400, "GET /state with no ?client=... returns 400")
+        } else {
+            failures += 1
+            print("FAIL [virtual keyboard GET /state no client]: no response")
+        }
+
+        let alice = "&client=alice-uuid&name=Alice"
+        if let before = syncGET("http://127.0.0.1:18398/state?dummy=1" + alice) {
+            check(before.body.contains("\"heldPitches\":[]"), true, "GET /state starts with no held pitches")
+            check(before.body.contains("\"label\":\"Alice\""), true, "GET /state reports the chosen alias as the track's label")
+        } else {
+            failures += 1
+            print("FAIL [virtual keyboard GET /state before note-on]: no response")
+        }
+
+        _ = syncGET("http://127.0.0.1:18398/note-on?pitch=60" + alice)
+        _ = syncGET("http://127.0.0.1:18398/note-on?pitch=64" + alice)
+        _ = syncGET("http://127.0.0.1:18398/note-on?pitch=67" + alice)
+        Thread.sleep(forTimeInterval: 0.2)
+
+        if let held = syncGET("http://127.0.0.1:18398/state?dummy=1" + alice) {
+            check(held.body.contains("\"chordRoot\":0"), true, "GET /note-on drove the session — C major triad recognized")
+            check(held.body.contains("\"id\":\"clavier-web:alice-uuid\""), true, "GET /state reports this client's own dedicated track id")
+        } else {
+            failures += 1
+            print("FAIL [virtual keyboard GET /state after note-on]: no response")
+        }
+
+        // A second, unrelated client (different `?client=...`) must get its OWN independent
+        // track — no cross-talk between the two connected browsers.
+        let bob = "&client=bob-uuid&name=Bob"
+        _ = syncGET("http://127.0.0.1:18398/note-on?pitch=62" + bob)
+        Thread.sleep(forTimeInterval: 0.2)
+        if let bobState = syncGET("http://127.0.0.1:18398/state?dummy=1" + bob), let aliceState = syncGET("http://127.0.0.1:18398/state?dummy=1" + alice) {
+            check(bobState.body.contains("\"heldPitches\":[62]"), true, "the second client's own track only has its own note held")
+            check(aliceState.body.contains("\"heldPitches\":[60,64,67]") || aliceState.body.contains("\"heldPitches\":[60,67,64]") || aliceState.body.contains("\"heldPitches\":[64,60,67]") || aliceState.body.contains("\"heldPitches\":[64,67,60]") || aliceState.body.contains("\"heldPitches\":[67,60,64]") || aliceState.body.contains("\"heldPitches\":[67,64,60]"), true, "the first client's track is untouched by the second client's note")
+        } else {
+            failures += 1
+            print("FAIL [virtual keyboard two clients]: no response")
+        }
+
+        _ = syncGET("http://127.0.0.1:18398/note-off?pitch=60" + alice)
+        _ = syncGET("http://127.0.0.1:18398/note-off?pitch=64" + alice)
+        _ = syncGET("http://127.0.0.1:18398/note-off?pitch=67" + alice)
+        Thread.sleep(forTimeInterval: 0.2)
+
+        if let released = syncGET("http://127.0.0.1:18398/state?dummy=1" + alice) {
+            check(released.body.contains("\"heldPitches\":[]"), true, "GET /note-off released every note")
+        } else {
+            failures += 1
+            print("FAIL [virtual keyboard GET /state after note-off]: no response")
+        }
+
+        // The Escape "panic button" route — simulates a note stuck held (as if its matching
+        // note-off had raced and lost, see `releaseAllKeys`'s doc comment) and confirms
+        // GET /release-all clears it without needing to know which pitch was stuck.
+        _ = syncGET("http://127.0.0.1:18398/note-on?pitch=72" + alice)
+        Thread.sleep(forTimeInterval: 0.2)
+        _ = syncGET("http://127.0.0.1:18398/release-all?dummy=1" + alice)
+        Thread.sleep(forTimeInterval: 0.2)
+        if let afterReleaseAll = syncGET("http://127.0.0.1:18398/state?dummy=1" + alice) {
+            check(afterReleaseAll.body.contains("\"heldPitches\":[]"), true, "GET /release-all clears a stuck-held note")
+        } else {
+            failures += 1
+            print("FAIL [virtual keyboard GET /state after release-all]: no response")
+        }
+
+        if let badPitch = syncGET("http://127.0.0.1:18398/note-on?pitch=notanumber" + alice) {
+            check(badPitch.status, 400, "GET /note-on with a non-numeric pitch returns 400")
+        } else {
+            failures += 1
+            print("FAIL [virtual keyboard GET /note-on bad pitch]: no response")
+        }
+
+        session.stopVirtualKeyboard()
+        Thread.sleep(forTimeInterval: 0.2)
+        check(syncGET("http://127.0.0.1:18398/state" + alice, timeout: 1) == nil, true, "stopVirtualKeyboard actually releases the port")
+    } catch {
+        failures += 1
+        print("FAIL [virtual keyboard HTTP round trip]: threw \(error)")
+    }
+}
+testVirtualKeyboardServesPageAndAcceptsNoteOnOff()
+
+func testReleaseAllKeysClearsHeldPitchesForOneTrackOnly() {
+    let session = ImprovSession()
+    checks += 1
+    do {
+        try session.startTrack(.computerKeyboard)
+        try session.startTrack(.midiMerged)
+        session.pressKey(pitch: 60, track: .computerKeyboard)
+        session.pressKey(pitch: 64, track: .midiMerged)
+        session.pressKey(pitch: 67, track: .midiMerged)
+        session.releaseAllKeys(track: .midiMerged)
+        check(session.tracks.first { $0.id == .midiMerged }?.heldPitches.isEmpty, true, "releaseAllKeys clears every held pitch on the targeted track")
+        check(session.tracks.first { $0.id == .computerKeyboard }?.heldPitches, Set([60]), "releaseAllKeys leaves an unrelated track's held pitches untouched")
+    } catch {
+        failures += 1
+        print("FAIL [releaseAllKeys]: threw \(error)")
+    }
+}
+testReleaseAllKeysClearsHeldPitchesForOneTrackOnly()
+
 func testRecordingCapturesFilteredTrackEvents() {
     checks += 1
     do {
@@ -2142,7 +2321,7 @@ func testAddGuideStepWithUnknownScaleIDThrowsAndDoesNotAppendAStep() {
 }
 
 func testTrackIDWireIDTextRoundTrips() {
-    for id: TrackID in [.midiMerged, .computerKeyboard, .microphone, .midiSource(0), .midiSource(3)] {
+    for id: TrackID in [.midiMerged, .computerKeyboard, .webKeyboard(clientID: "abc-123"), .microphone, .midiSource(0), .midiSource(3)] {
         guard let wireText = id.wireIDText else {
             failures += 1; checks += 1
             print("FAIL [TrackID wireIDText round trip]: \(id) has no wireIDText")

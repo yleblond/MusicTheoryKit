@@ -94,7 +94,7 @@ midi-mode fusionne       # une seule piste 'midi', qui écoute toutes les source
 midi-mode individuel     # une piste par port MIDI visible ('midi:1', 'midi:2', ...)
 ```
 
-Menu **MusicLab > Mode MIDI: fusionné/individuel** fait la même chose.
+Menu **JamShack > Mode MIDI: fusionné/individuel** fait la même chose.
 
 Changer de mode reconstruit la liste des pistes MIDI (et arrête celles qui écoutaient) —
 utile pour distinguer un vrai clavier MIDI d'un bus IAC virtuel non désiré, par exemple, en
@@ -201,7 +201,7 @@ celui que l'IA aurait choisi elle-même) ; la description et les indications son
 deux envoyées à l'IA. **Composition > Voir la description** affiche à tout moment le titre,
 la description et les indications actuellement en mémoire.
 
-Ça suppose qu'une connexion LLM a déjà été choisie (menu **MusicLab**, voir plus bas) — sinon
+Ça suppose qu'une connexion LLM a déjà été choisie (menu **JamShack**, voir plus bas) — sinon
 l'assistant s'arrête avec une erreur claire à l'étape de composition, sans rien perdre : la
 description et les indications restent en mémoire, il suffit de choisir une connexion puis de
 relancer **Composition > Composer à partir de la description**.
@@ -213,8 +213,8 @@ relancer **Composition > Composer à partir de la description**.
 | 1. Titre du morceau, facultatif | `title <texte>` (vide efface) |
 | 2. Coller la description (poème, paroles…) | `paste-text` (terminer par une ligne vide) |
 | 3. Indications de style, facultatif | `indications <texte>` (vide efface) |
-| 4. Choisir un dossier de connexions LLM | `llm-connections <dossier>` (par défaut : `LLMConnections/` ; menu **MusicLab**) |
-| 5. Choisir une connexion | `use-llm <numéro ou nom>` (menu **MusicLab**) |
+| 4. Choisir un dossier de connexions LLM | `llm-connections <dossier>` (par défaut : `LLMConnections/` ; menu **JamShack**) |
+| 5. Choisir une connexion | `use-llm <numéro ou nom>` (menu **JamShack**) |
 | 6. Voir ce qui sera envoyé | `show-description` (titre/description/indications) |
 | 7. Composer | `compose [titre]` (le titre, s'il est donné, remplace celui que l'IA aurait choisi) |
 | 8. Voir le résultat | `show-piece` (menu **Morceaux**) |
@@ -331,7 +331,7 @@ sous un même dossier racine :
 prompts <dossier>   # pointe le dossier de composition IA (par defaut "Composition IA/"), cree ses sous-dossiers si absents
 ```
 
-Menu **MusicLab > Choisir dossier de composition IA...** fait la même chose. Sous-dossiers
+Menu **JamShack > Choisir dossier de composition IA...** fait la même chose. Sous-dossiers
 créés automatiquement : `Cadrage Composition Descriptive/`, `Cadrage Composition Soundtrack/`,
 `composition Descriptive/` (descriptions), `Indications Soundtracks/`, `Export/`.
 
@@ -414,9 +414,10 @@ Menus disponibles :
 
 | Menu | Contenu |
 |---|---|
-| **MusicLab** | Menu principal (premier de la barre, s'ouvre par défaut), en 6 groupes : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/connexions LLM/**composition IA**) ; (3) choisir une connexion LLM, isolée dans son propre groupe ; (4) mode MIDI fusionné/individuel ; (5) démarrer/arrêter la console web (voir §11) ; (6) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
-| **Instruments** | Lister les instruments, activer/arrêter un instrument, *séparateur*, activer/désactiver le son d'un instrument, *séparateur*, choisir un son pour un instrument. Les quatre actions qui demandent de choisir un instrument présentent la liste numérotée (voir §3) — répondre par le numéro évite d'avoir à retaper `midi:1`/`clavier`/etc. |
+| **JamShack** | Menu principal (premier de la barre, s'ouvre par défaut) : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/connexions LLM/**composition IA**) ; (3) choisir une connexion LLM, isolée dans son propre groupe ; (4) mode MIDI fusionné/individuel ; (5) démarrer/arrêter la console web (voir §11) ; (6) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
+| **Scene** | Lister les instruments, activer/arrêter un instrument, *séparateur*, activer/désactiver le son d'un instrument, *séparateur*, choisir un son pour un instrument, *séparateur*, sauvegarder/charger une scène (la configuration complète des instruments : actif, son actif, quel son). Les actions qui demandent de choisir un instrument présentent la liste numérotée (voir §3) — répondre par le numéro évite d'avoir à retaper `midi:1`/`clavier`/etc. |
 | **Morceaux** | Quatre groupes, séparés par des traits : (1) écouter/voir le morceau ; (2) choisir le son par défaut de lecture, ou le son d'une piste/des accords d'une section (voir §7 — la structure affichée numérote les sections et les pistes, pour savoir directement quel numéro saisir) ; (3) charger la démo, charger un morceau, sauvegarder le morceau, sauvegarder le morceau sous ; (4) **Assistant IA** — pour l'instant un intitulé de sous-section réservé, sans action, en attente d'une future fonction de modification par dialogue (« plus vite », « moins vite »…) applicable à n'importe quel morceau. |
+| **Guide Musicaux** | Voir l'écran Guide Musical, *séparateur*, créer un nouveau guide musical (propose d'ajouter un mode en boucle jusqu'à laisser la tonique vide) / ajouter un mode au guide musical en cours, *séparateur*, charger un guide musical / sauvegarder le guide musical (sous...), *séparateur*, démarrer/arrêter le guide musical — aussi accessible directement par la barre d'espace une fois sur l'écran Guide Musical. |
 | **Enregistrement** | Démarrer/arrêter un enregistrement, voir l'enregistrement, jouer l'enregistrement, *séparateur*, charger/sauvegarder l'enregistrement, *séparateur*, composer un morceau à partir de l'enregistrement en le nommant (voir §10), *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser les indications de style, *séparateur*, voir/exporter le prompt de composition (voir §6). |
 | **Composition** | Décrire le morceau (assistant titre → description → indications → composition, voir §6), composer à partir de la description, voir la description, *séparateur*, charger une description/sauvegarder la description (sous...), *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/exporter le prompt de composition. |
 | **Jam Session** | Démarrer/arrêter une jam session, rejoindre une jam session, trouver une jam session (découverte), quitter la jam session — session collaborative (voir §9). Les trois premiers items demandent le pseudo à afficher aux autres avant de continuer. |
@@ -615,7 +616,7 @@ web-console 8080       # demarre la console web sur ce port (defaut 8080)
 web-console stop       # arrete la console web
 ```
 
-Menu **MusicLab > Demarrer la console web.../Arreter la console web** fait la même chose (le
+Menu **JamShack > Demarrer la console web.../Arreter la console web** fait la même chose (le
 port est demandé, vide = 8080). Une fois démarrée, ouvre `http://localhost:<port>` dans un
 navigateur (sur la même machine, ou une autre machine du même réseau local via l'adresse IP
 de celle qui héberge) — la page se rafraîchit d'elle-même environ 4 fois par seconde, tant
@@ -625,8 +626,8 @@ qu'elle reste ouverte, sans rien à faire de plus.
 couleurs que le terminal — magenta la fondamentale, jaune les autres notes de l'accord, vert
 une note tenue hors accord, une ligne cyan pour le mode détecté — voir §5), et, pendant la
 lecture, le clavier du morceau ou de l'enregistrement en cours. Un simple miroir de ce que
-montre l'écran `run` (§8) — la console web n'a aucun contrôle, ni menu, ni clavier virtuel :
-tout se pilote toujours depuis le terminal.
+montre l'écran `run` (§8) — la console web n'a aucun contrôle ni menu, elle ne fait qu'afficher
+(pour jouer depuis un navigateur, voir §12, une page distincte).
 
 **Fonctionnement interne** (pour comprendre ce qu'on voit) : l'état affiché est recalculé côté
 application environ toutes les 150ms et mis en cache — chaque `GET /state` du navigateur
@@ -640,11 +641,61 @@ connexion permanente (WebSocket/SSE), juste un sondage régulier côté navigate
 affiche « connexion perdue », vérifie que l'application tourne toujours et que
 `web-console stop` n'a pas été appelé.
 
+## 12. Clavier virtuel — jouer depuis un navigateur (souris/tactile/clavier)
+
+Une seconde page web, distincte de la console web (§11) et volontairement séparée d'elle :
+là où la console web n'affiche que (aucun contrôle), celle-ci **joue** — un piano interactif
+dans le navigateur.
+
+```
+virtual-keyboard 8081       # demarre le clavier virtuel sur ce port (defaut 8081)
+virtual-keyboard stop       # arrete le clavier virtuel
+```
+
+Menu **JamShack > Demarrer le clavier virtuel.../Arreter le clavier virtuel** fait la même
+chose (le port est demandé, vide = 8081).
+
+**Plusieurs navigateurs à la fois, chacun sa piste** : ouvrir la page depuis plusieurs
+appareils/onglets (plusieurs personnes sur plusieurs tablettes, par exemple) donne à
+**chacun sa propre piste** (`clavier-web:<identifiant>`, visible dans `tracks`, au même titre
+que `midi` ou `clavier` — voir §3) — pas une piste unique partagée où tout le monde jouerait
+mélangé. Au premier chargement, la page demande un nom à afficher (« Alice », « Bob »...) —
+gardé par le navigateur (il ne redemande plus aux rechargements suivants sur le même
+appareil ; un lien « changer » permet de le modifier). Ce nom devient le libellé de la piste
+dans `tracks`/`status`, pour savoir qui joue quoi. La piste apparaît dès la première note
+jouée (pas avant) ; sonoriser cette piste, ou l'enregistrer, se fait comme n'importe quelle
+autre (`track clavier-web:<id> son on`, `record start clavier-web:<id>`...), l'identifiant
+exact se copiant depuis `tracks`. Arrêter le clavier virtuel supprime toutes les pistes
+connectées d'un coup.
+
+**Trois façons de jouer, en même temps si besoin** :
+- **Souris/tactile** : clique ou touche directement une touche du piano affiché.
+  Vraiment multi-tactile — sur un iPad/écran tactile, plusieurs doigts sur plusieurs touches
+  jouent un accord, chaque doigt suivi indépendamment.
+- **Clavier de l'ordinateur** : même disposition « Musical Typing » que la piste `clavier` du
+  terminal (§3.2) — `A S D F G H J K L ;` pour les touches blanches, `W E T Y U O P` pour les
+  noires.
+
+**Différence importante avec la piste `clavier` du terminal** : un terminal ne voit jamais le
+relâchement d'une touche (§3.2), donc chaque frappe y déclenche une note "pincée" de ~300ms.
+Un navigateur, lui, reçoit un vrai événement de relâchement (`keyup`) — une touche tenue sur le
+clavier virtuel **tient vraiment** la note jusqu'au relâchement, comme un vrai instrument.
+
+**Ce qui s'affiche** : les mêmes couleurs de rôle que partout ailleurs dans l'app (magenta la
+fondamentale, jaune les autres notes de l'accord, vert une note tenue hors accord — voir §5),
+plus la ligne de degrés au-dessus du clavier et le libellé accord/mode détecté au-dessus.
+
+**Touche non relâchée** : `GET /note-on`/`GET /note-off` sont deux connexions HTTP
+indépendantes (pas de garantie d'ordre entre elles) — une frappe très rapide peut, rarement,
+laisser une note affichée comme tenue alors qu'elle a bien été relâchée. **Échap** relâche
+alors tout le clavier virtuel d'un coup (interroge la session elle-même sur ce qu'elle tient
+encore, pas la mémoire locale du navigateur qui pourrait aussi être fausse).
+
 ## Liste complète des commandes
 
 `help` les affiche déjà regroupées par catégorie (Général / Morceaux / Pistes d'entrée /
-Instruments / Soundtrack / Composition / Session collaborative) — la liste ci-dessous reste
-à plat pour une recherche rapide.
+Scene / Soundtrack / Composition / Guide Musicaux / Session collaborative) — la liste
+ci-dessous reste à plat pour une recherche rapide.
 
 **Nom de fichier contenant des espaces** : entourez-le de guillemets, par exemple
 `use-sample "The Fox and The Crow General MIDI SoundFont Ultimate.sf2"`.
@@ -714,6 +765,8 @@ run                     écran fixe: activité musicale en direct (q pour reveni
 config                  écran fixe: configuration active et détail du morceau (q pour revenir)
 web-console [port]      demarre la console web (miroir de 'run' dans un navigateur, defaut port 8080)
 web-console stop        arrete la console web
+virtual-keyboard [port] demarre le clavier virtuel (piano interactif dans un navigateur, piste 'clavier-web', defaut port 8081)
+virtual-keyboard stop   arrete le clavier virtuel
 quit                    quitte
 ```
 
@@ -722,7 +775,7 @@ quit                    quitte
 | Symptôme | Piste |
 |---|---|
 | Le micro ne détecte jamais rien | Vérifier la permission microphone (Réglages Système > Confidentialité et sécurité > Microphone) et le niveau affiché — voir §3.3. |
-| Les lettres tapées en `run` ouvrent un menu au lieu de jouer une note | La piste « clavier » n'écoute pas — `track clavier on` (ou menu Instruments). |
+| Les lettres tapées en `run` ouvrent un menu au lieu de jouer une note | La piste « clavier » n'écoute pas — `track clavier on` (ou menu Scene). |
 | Impossible de sortir de la piste « clavier » pour ouvrir un menu | Appuyer sur **Échap**. |
 | Une note reste affichée/jouée sans s'arrêter après `play` | Devrait être corrigé (filet de sécurité en fin de lecture) — si le problème réapparaît, le signaler. |
 | Le clavier ASCII scintille ou se déforme | Devrait être corrigé (largeur de ligne bornée) — si ça persiste, vérifier la largeur du terminal (≥ 80 colonnes recommandé). |
@@ -732,3 +785,4 @@ quit                    quitte
 | `track remote:...` refuse `on`/`off` | Normal : une piste distante est démarrée/arrêtée sur sa propre machine, pas depuis ailleurs — voir §9. |
 | La console web affiche « connexion perdue » | Vérifier que l'application tourne toujours et que `web-console stop` n'a pas été appelé — voir §11. |
 | `web-console <port>` echoue | Le port est peut-être déjà utilisé par une autre application — réessayer avec un autre port. |
+| `virtual-keyboard <port>` echoue | Même cause/solution que `web-console <port>` ci-dessus — un port différent (`web-console` et `virtual-keyboard` ne peuvent pas non plus partager le même port entre eux). |
