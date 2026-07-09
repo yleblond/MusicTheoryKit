@@ -74,6 +74,139 @@ func testChordVocabularyCMajorTriad() {
     }
 }
 
+// MARK: - CircleOfFifths / PitchClassPalette
+
+func testCircleOfFifthsPhysicalOrderIsFixedAscendingFifthsFromC() {
+    let wheel = CircleOfFifths.wheel(tonic: PitchClass(0))
+    check(wheel.columns.map { $0.pitchClass.value }, [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5], "circle of fifths physical column order (C,G,D,A,E,B,F#,Db,Ab,Eb,Bb,F)")
+}
+
+func testCircleOfFifthsCTonicModeNamePositions() {
+    let wheel = CircleOfFifths.wheel(tonic: PitchClass(0))
+    let named = wheel.columns.filter { $0.modeName != nil }
+    // NOT the 7 diatonic columns (see `CircleOfFifthsColumn.modeName`'s doc comment): each
+    // mode name sits at "the interval up to its own parent" from the tonic, so only I/IV/V
+    // (Ionian/Lydian/Mixolydian) coincide with a diatonic column here — Locrian/Phrygian/
+    // Aeolian/Dorian land on Db/Ab/Eb/Bb, none of which are diatonic to C major.
+    check(named.map { $0.pitchClass.value }, [0, 7, 1, 8, 3, 10, 5], "circle of fifths C tonic mode-name columns in physical order (C,G,Db,Ab,Eb,Bb,F)")
+    check(named.map(\.modeName), ["Ionian", "Lydian", "Locrian", "Phrygian", "Aeolian", "Dorian", "Mixolydian"], "circle of fifths C tonic mode names")
+    check(wheel.activeColumnIndex, 0, "circle of fifths C tonic active column is C itself")
+}
+
+func testCircleOfFifthsCTonicDiatonicCellsMatchExpectedQualityAndDegree() {
+    let wheel = CircleOfFifths.wheel(tonic: PitchClass(0))
+    // Looked up by the CELL's own chord root (not its column's pitch class) — only the major
+    // ring is rooted on its column; minor/diminished are the column's relative-minor/
+    // leading-tone-diminished (see `CircleOfFifthsCell`'s doc comment).
+    func cell(_ root: Int, _ quality: ChordQuality) -> CircleOfFifthsCell {
+        wheel.columns.flatMap(\.cells).first { $0.pitchClass.value == root && $0.quality == quality }!
+    }
+    check(cell(0, .major).relativeDegree, "I", "circle of fifths C major cell is I")
+    check(cell(0, .major).isDiatonic, true, "circle of fifths C major cell is diatonic in C")
+    check(cell(5, .major).relativeDegree, "IV", "circle of fifths F major cell is IV in C")
+    check(cell(7, .major).relativeDegree, "V", "circle of fifths G major cell is V in C")
+    // D minor (ii of C) is the relative minor of F major — rooted at column F, not column D.
+    check(cell(2, .minor).relativeDegree, "ii", "circle of fifths D minor cell (at column F) is ii in C")
+    check(cell(2, .minor).isDiatonic, true, "circle of fifths D minor cell is diatonic in C")
+    check(cell(2, .major).isDiatonic, false, "circle of fifths D major cell is NOT diatonic in C")
+    // B diminished (vii° of C) is the leading-tone diminished of C major — rooted at column C.
+    check(cell(11, .diminished).relativeDegree, "vii\u{00B0}", "circle of fifths B diminished cell (at column C) is vii° in C")
+    check(cell(11, .diminished).isDiatonic, true, "circle of fifths B diminished cell is diatonic in C")
+    check(cell(10, .major).relativeDegree, "bVII", "circle of fifths Bb major cell is bVII in C")
+    check(cell(6, .major).relativeDegree, "bV", "circle of fifths F# major cell is bV in C (major ring spells the tritone flat)")
+}
+
+func testCircleOfFifthsMinorAndDiminishedRingsHaveTheirOwnSpelling() {
+    // Each ring spells its accidental degrees independently — NOT `majorDegreeLabels`
+    // lowercased. Same tritone (F#/Gb, column F#) as the case above: "bV" on the major ring,
+    // "#iv" on the minor ring, "#iv°" on the diminished ring — three different spellings.
+    let wheel = CircleOfFifths.wheel(tonic: PitchClass(0))
+    func cell(_ root: Int, _ quality: ChordQuality) -> CircleOfFifthsCell {
+        wheel.columns.flatMap(\.cells).first { $0.pitchClass.value == root && $0.quality == quality }!
+    }
+    check(cell(6, .minor).relativeDegree, "#iv", "circle of fifths F# minor cell is #iv in C (minor ring spells the tritone sharp)")
+    check(cell(6, .diminished).relativeDegree, "#iv\u{00B0}", "circle of fifths F# diminished cell is #iv° in C")
+    // The minor ring's two sharp-not-flat anomalies (offsets 1 and 8: sharp here, flat on the
+    // major ring) — C#m (not Dbm) is iii's relative-minor-of-relative-minor at column E/vi,
+    // G#m (not Abm) at column B/vii.
+    check(cell(1, .minor).relativeDegree, "#i", "circle of fifths C# minor cell is #i in C (minor ring, not bii)")
+    check(cell(8, .minor).relativeDegree, "#v", "circle of fifths G# minor cell is #v in C (minor ring, not bvi)")
+    // The diminished ring uses sharps for every accidental offset (never flats).
+    check(cell(1, .diminished).relativeDegree, "#i\u{00B0}", "circle of fifths C# diminished cell is #i° in C")
+    check(cell(3, .diminished).relativeDegree, "#ii\u{00B0}", "circle of fifths D# diminished cell is #ii° in C")
+    check(cell(8, .diminished).relativeDegree, "#v\u{00B0}", "circle of fifths G# diminished cell is #v° in C")
+    check(cell(10, .diminished).relativeDegree, "#vi\u{00B0}", "circle of fifths A# diminished cell is #vi° in C")
+}
+
+func testCircleOfFifthsMinorAndDiminishedCellsAreOffsetFromTheirColumn() {
+    let wheel = CircleOfFifths.wheel(tonic: PitchClass(0))
+    func column(_ pitchClass: Int) -> CircleOfFifthsColumn { wheel.columns.first { $0.pitchClass.value == pitchClass }! }
+    // Column C: major=C(I), minor=Am(vi, relative minor of C), diminished=B°(vii°, leading tone).
+    check(column(0).cells.first { $0.quality == .major }!.pitchClass, PitchClass(0), "circle of fifths column C major cell rooted on C")
+    check(column(0).cells.first { $0.quality == .minor }!.pitchClass, PitchClass(9), "circle of fifths column C minor cell rooted on A (relative minor)")
+    check(column(0).cells.first { $0.quality == .diminished }!.pitchClass, PitchClass(11), "circle of fifths column C diminished cell rooted on B (leading tone)")
+    // Column F: major=F(IV), minor=Dm(ii), diminished=E°.
+    check(column(5).cells.first { $0.quality == .minor }!.pitchClass, PitchClass(2), "circle of fifths column F minor cell rooted on D")
+    check(column(5).cells.first { $0.quality == .diminished }!.pitchClass, PitchClass(4), "circle of fifths column F diminished cell rooted on E")
+}
+
+func testCircleOfFifthsActiveTonicPutsDegreeIOnTheModesOwnTonicNotTheParents() {
+    // "A Lydian": parent is E (Lydian is degree 4, so E's major scale collection). Without
+    // `activeTonic`, "I" used to land on E (the parent) — correct only for Ionian, off by
+    // one degree for Lydian/Mixolydian, and completely wrong (opposite end of the label
+    // table) for Locrian — see the two cases below.
+    let aLydian = Mode(tonic: PitchClass(9), scale: ScaleLibrary.byID("lydian")!)
+    let parentOfA = CircleOfFifths.parentTonic(for: aLydian)
+    check(parentOfA, PitchClass(4), "circle of fifths A Lydian's parent is E")
+    let lydianWheel = CircleOfFifths.wheel(tonic: parentOfA!, activeTonic: aLydian.tonic)
+    let aMajorCell = lydianWheel.columns.flatMap(\.cells).first { $0.pitchClass == PitchClass(9) && $0.quality == .major }!
+    check(aMajorCell.relativeDegree, "I", "circle of fifths A Lydian: degree I lands on A itself, not the parent E")
+    check(aMajorCell.isDiatonic, true, "circle of fifths A Lydian: A major cell is still diatonic (it's E major's own IV)")
+
+    // "D Locrian": parent is Eb (Locrian is degree 7, the farthest possible from its parent —
+    // without `activeTonic` this used to be the most visibly broken case ("completely
+    // offset"), since D's degree label relative to Eb sits at the opposite end of the table.
+    // D Locrian's own tonic triad is diminished (not major/minor), so "I" belongs on D's
+    // *diminished* cell specifically.
+    let dLocrian = Mode(tonic: PitchClass(2), scale: ScaleLibrary.byID("locrian")!)
+    let parentOfD = CircleOfFifths.parentTonic(for: dLocrian)
+    check(parentOfD, PitchClass(3), "circle of fifths D Locrian's parent is Eb")
+    let locrianWheel = CircleOfFifths.wheel(tonic: parentOfD!, activeTonic: dLocrian.tonic)
+    let dDiminishedCell = locrianWheel.columns.flatMap(\.cells).first { $0.pitchClass == PitchClass(2) && $0.quality == .diminished }!
+    check(dDiminishedCell.relativeDegree, "i\u{00B0}", "circle of fifths D Locrian: degree i° lands on D itself, not the parent Eb")
+    check(dDiminishedCell.isDiatonic, true, "circle of fifths D Locrian: D diminished cell is still diatonic (it's Eb major's own vii°)")
+
+    // Omitting `activeTonic` must keep behaving exactly as before (defaults to `tonic`) —
+    // every other caller (e.g. the terminal's guide-screen neighbor line, which never looks
+    // at `relativeDegree`) shouldn't need to change.
+    let unspecified = CircleOfFifths.wheel(tonic: PitchClass(0))
+    let cMajorCell = unspecified.columns.flatMap(\.cells).first { $0.pitchClass == PitchClass(0) && $0.quality == .major }!
+    check(cMajorCell.relativeDegree, "I", "circle of fifths wheel(tonic:) without activeTonic still puts I on the tonic itself")
+}
+
+func testCircleOfFifthsShapeAlternatesByCellPitchClassParity() {
+    let wheel = CircleOfFifths.wheel(tonic: PitchClass(0))
+    for cell in wheel.columns.flatMap(\.cells) {
+        let expected: ChordShape = cell.pitchClass.value % 2 == 0 ? .square : .circle
+        check(cell.shape, expected, "circle of fifths shape parity for cell pitch class \(cell.pitchClass.value)")
+    }
+}
+
+func testCircleOfFifthsDDorianParentTonicMatchesCIonian() {
+    let mode = Mode(tonic: PitchClass(2), scale: ScaleLibrary.byID("dorian")!)
+    check(CircleOfFifths.parentTonic(for: mode), PitchClass(0), "circle of fifths D dorian parent tonic matches C ionian")
+}
+
+func testCircleOfFifthsParentTonicNonFamily1ReturnsNil() {
+    let mode = Mode(tonic: PitchClass(0), scale: ScaleLibrary.byID("altered")!)
+    checkNil(CircleOfFifths.parentTonic(for: mode), "circle of fifths non-family-1 scale has no parent tonic")
+}
+
+func testPitchClassPaletteHas12DistinctEntries() {
+    check(PitchClassPalette.hex.count, 12, "pitch class palette has 12 entries")
+    check(Set(PitchClassPalette.hex).count, 12, "pitch class palette entries are distinct")
+}
+
 // MARK: - ModeReferenceTests
 
 func testResolveValidScaleIDMatchesDirectConstruction() {
@@ -1945,6 +2078,149 @@ func testSaveAsWithoutAPieceFolderListedThrowsForABareName() {
     }
 }
 
+// MARK: - GuideSequence / ImprovSession guide-mode tests
+
+func testNewGuideSequenceThenAddStepsThenStartAndAdvance() {
+    do {
+        let session = ImprovSession()
+        checkNil(session.currentGuide, "improv session starts with no guide sequence")
+        session.newGuideSequence(title: "Practice")
+        check(session.currentGuide?.title, "Practice", "newGuideSequence sets title")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        try session.addGuideStep(ModeReference(tonic: 2, scaleID: "dorian"))
+        check(session.currentGuide?.steps.count, 2, "addGuideStep appends steps")
+
+        checkNil(session.currentGuideStepIndex, "guide not started has no current step index")
+        checkNil(session.currentGuideStepMode(), "guide not started has no current mode")
+
+        try session.startGuide()
+        check(session.currentGuideStepIndex, 0, "startGuide defaults to step 0")
+        check(session.currentGuideStepMode()?.displayName, "C Major", "guide step 0 mode")
+
+        session.advanceGuideStep(by: 1)
+        check(session.currentGuideStepIndex, 1, "advanceGuideStep(+1) moves to step 1")
+        check(session.currentGuideStepMode()?.displayName, "D Dorian", "guide step 1 mode")
+
+        session.advanceGuideStep(by: 1)
+        check(session.currentGuideStepIndex, 1, "advanceGuideStep clamps at the last step")
+
+        session.advanceGuideStep(by: -5)
+        check(session.currentGuideStepIndex, 0, "advanceGuideStep clamps at the first step")
+
+        session.stopGuide()
+        checkNil(session.currentGuideStepIndex, "stopGuide clears the current step index")
+    } catch {
+        failures += 1
+        print("FAIL [guide sequence start/advance]: threw \(error)")
+    }
+}
+
+func testAddGuideStepWithoutASequenceThrows() {
+    let session = ImprovSession()
+    checks += 1
+    do {
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        failures += 1
+        print("FAIL [addGuideStep without sequence throws]: did not throw")
+    } catch {
+        // expected
+    }
+}
+
+func testAddGuideStepWithUnknownScaleIDThrowsAndDoesNotAppendAStep() {
+    let session = ImprovSession()
+    session.newGuideSequence(title: "Practice")
+    checks += 1
+    do {
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "majeur")) // not a real ScaleLibrary id
+        failures += 1
+        print("FAIL [addGuideStep unknown scaleID throws]: did not throw")
+    } catch {
+        // expected
+    }
+    check(session.currentGuide?.steps.count, 0, "addGuideStep with an unresolvable reference doesn't leave a dangling step")
+}
+
+func testTrackIDWireIDTextRoundTrips() {
+    for id: TrackID in [.midiMerged, .computerKeyboard, .microphone, .midiSource(0), .midiSource(3)] {
+        guard let wireText = id.wireIDText else {
+            failures += 1; checks += 1
+            print("FAIL [TrackID wireIDText round trip]: \(id) has no wireIDText")
+            continue
+        }
+        check(TrackID(wireIDText: wireText), id, "TrackID(wireIDText:) inverts wireIDText for \(id)")
+    }
+    checkNil(TrackID(wireIDText: "not-a-real-id"), "TrackID(wireIDText:) rejects an unrecognized string")
+}
+
+func testSceneSaveAndLoadRoundTripsTrackListeningAndSound() {
+    do {
+        let session = ImprovSession()
+        try session.start()
+        try session.startTrack(.computerKeyboard)
+        try session.setSoundEnabled(true, for: .computerKeyboard)
+
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.saveScene(title: "Test Scene", toJSONFile: tempFile.path)
+
+        let reloaded = ImprovSession()
+        try reloaded.start()
+        let before = reloaded.tracks.first { $0.id == .computerKeyboard }
+        check(before?.isListening, false, "fresh session's computer-keyboard track starts not listening")
+
+        try reloaded.loadScene(fromJSONFile: tempFile.path)
+        let after = reloaded.tracks.first { $0.id == .computerKeyboard }
+        check(after?.isListening, true, "loadScene restores isListening")
+        check(after?.soundEnabled, true, "loadScene restores soundEnabled")
+    } catch {
+        failures += 1
+        print("FAIL [scene save/load round trip]: threw \(error)")
+    }
+}
+
+func testLoadSceneLeavesTracksNotMentionedUntouched() {
+    do {
+        let session = ImprovSession()
+        try session.start()
+        // An explicitly empty scene (built by hand, not via `saveScene` — which always
+        // captures every local track, including as "not listening") must not touch
+        // whatever's currently listening: only tracks it actually mentions are restored.
+        let emptyScene = Scene(title: "Empty", tracks: [])
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try JSONEncoder().encode(emptyScene).write(to: tempFile)
+
+        try session.startTrack(.computerKeyboard)
+        try session.loadScene(fromJSONFile: tempFile.path)
+        check(session.tracks.first { $0.id == .computerKeyboard }?.isListening, true, "loading a scene that doesn't mention a track leaves it untouched")
+    } catch {
+        failures += 1
+        print("FAIL [scene leaves unmentioned tracks untouched]: threw \(error)")
+    }
+}
+
+func testGuideSequenceSaveAndLoadRoundTrips() {
+    do {
+        let session = ImprovSession()
+        session.newGuideSequence(title: "Round Trip")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        try session.addGuideStep(ModeReference(tonic: 7, scaleID: "mixolydian"))
+
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.saveGuideSequence(toJSONFile: tempFile.path)
+
+        let reloaded = ImprovSession()
+        try reloaded.loadGuideSequence(fromJSONFile: tempFile.path)
+        check(reloaded.currentGuide, session.currentGuide, "guide sequence round-trips through JSON")
+        checkNil(reloaded.currentGuideStepIndex, "loading a guide sequence resets the current step index")
+    } catch {
+        failures += 1
+        print("FAIL [guide sequence save/load round trip]: threw \(error)")
+    }
+}
+
 // MARK: - RecognitionEngineTests (mirrors Tests/RecognitionEngineTests/RecognitionEngineTests.swift)
 
 func testRecognizesBareMajorTriadAsATriadNotA7thChord() {
@@ -2155,6 +2431,17 @@ func testBuildPromptEmbedsSourceTextAndVocabulary() {
 testChordVocabularySizeIncludesTriads()
 testChordVocabularyCMajorTriad()
 
+testCircleOfFifthsPhysicalOrderIsFixedAscendingFifthsFromC()
+testCircleOfFifthsCTonicModeNamePositions()
+testCircleOfFifthsMinorAndDiminishedRingsHaveTheirOwnSpelling()
+testCircleOfFifthsCTonicDiatonicCellsMatchExpectedQualityAndDegree()
+testCircleOfFifthsMinorAndDiminishedCellsAreOffsetFromTheirColumn()
+testCircleOfFifthsActiveTonicPutsDegreeIOnTheModesOwnTonicNotTheParents()
+testCircleOfFifthsShapeAlternatesByCellPitchClassParity()
+testCircleOfFifthsDDorianParentTonicMatchesCIonian()
+testCircleOfFifthsParentTonicNonFamily1ReturnsNil()
+testPitchClassPaletteHas12DistinctEntries()
+
 testParsesNaturalNoteNames()
 testParsesSharpsAndFlats()
 testRejectsGarbagePitchClass()
@@ -2241,6 +2528,14 @@ testUsePieceByIndexAndNameLoadFromTheListedFolder()
 testSaveWithoutEverLoadingOrSavingThrows()
 testSaveAsThenBareSaveRoundTripToTheSameFile()
 testSaveAsWithoutAPieceFolderListedThrowsForABareName()
+
+testNewGuideSequenceThenAddStepsThenStartAndAdvance()
+testAddGuideStepWithoutASequenceThrows()
+testAddGuideStepWithUnknownScaleIDThrowsAndDoesNotAppendAStep()
+testGuideSequenceSaveAndLoadRoundTrips()
+testTrackIDWireIDTextRoundTrips()
+testSceneSaveAndLoadRoundTripsTrackListeningAndSound()
+testLoadSceneLeavesTracksNotMentionedUntouched()
 
 testRecognizesBareMajorTriadAsATriadNotA7thChord()
 testRecognizesRootPositionSeventhChord()

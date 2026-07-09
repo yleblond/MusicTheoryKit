@@ -1,6 +1,7 @@
 import Foundation
 import AppCore
 import MusicTheoryKit
+import PieceModel
 
 setvbuf(stdout, nil, _IONBF, 0)
 
@@ -16,12 +17,12 @@ try session.start()
 // Default working folders, so `pieces`/`samples`/`llm-connections` don't need to be
 // re-typed on every launch. Derived from this source file's own path (baked in at compile
 // time via `#filePath`) rather than assumed from the current working directory, so it
-// still resolves correctly no matter where `swift run` is invoked from — `Sources/ImprovCLI/
+// still resolves correctly no matter where `swift run` is invoked from — `Sources/JamShack/
 // main.swift` is 4 levels below the project root that holds `Pieces`/`SoundFonts`/
 // `LLMConnections` as siblings of `MusicTheoryKit/`. `try?`: silently skipped if a folder
 // doesn't exist (e.g. a different checkout) rather than failing startup.
 let projectRoot = URL(fileURLWithPath: #filePath)
-    .deletingLastPathComponent() // ImprovCLI
+    .deletingLastPathComponent() // JamShack
     .deletingLastPathComponent() // Sources
     .deletingLastPathComponent() // MusicTheoryKit
     .deletingLastPathComponent() // Music
@@ -30,7 +31,31 @@ try? session.listSampleFiles(in: projectRoot.appendingPathComponent("SoundFonts"
 try? session.listLLMConnections(in: projectRoot.appendingPathComponent("LLMConnections").path)
 try? FileManager.default.createDirectory(at: projectRoot.appendingPathComponent("SoundTracks"), withIntermediateDirectories: true)
 try? session.listSoundTrackFiles(in: projectRoot.appendingPathComponent("SoundTracks").path)
+try? FileManager.default.createDirectory(at: projectRoot.appendingPathComponent("Sequences"), withIntermediateDirectories: true)
+try? session.listGuideFiles(in: projectRoot.appendingPathComponent("Sequences").path)
+try? FileManager.default.createDirectory(at: projectRoot.appendingPathComponent("Scenes"), withIntermediateDirectories: true)
+try? session.listSceneFiles(in: projectRoot.appendingPathComponent("Scenes").path)
 try? session.setPromptsFolder(projectRoot.appendingPathComponent("Composition IA").path) // creates its fixed subfolders if absent
+
+// If any scenes are already sitting in the default folder, offer to load one right away —
+// picking up a known instrument setup (e.g. "piano solo") shouldn't require knowing the
+// `use-scene`/menu path exists on a first launch. Purely optional: leaving the prompt blank
+// (or any answer that doesn't resolve) just moves on to the normal REPL with nothing loaded.
+if !session.sceneFiles.isEmpty {
+    print("\nScenes disponibles dans \(session.sceneFolder ?? "?"):")
+    for (index, name) in session.sceneFiles.enumerated() { print("  \(index + 1). \(name)") }
+    if let choice = promptLine("Charger quelle scene au demarrage ? (numero, ou vide pour aucune): "), !choice.isEmpty {
+        do {
+            if let index = Int(choice) {
+                try session.loadScene(atIndex: index - 1)
+            } else {
+                try session.loadScene(named: choice)
+            }
+        } catch {
+            print("Erreur: \(error)")
+        }
+    }
+}
 
 func printHelp() {
     print("""
@@ -43,6 +68,7 @@ func printHelp() {
       status                     affiche l'etat courant (piece, pistes actives, accord/mode)
       run                        ecran fixe: activite musicale en direct (claviers, accords) — Ctrl+C pour revenir
       config                     ecran fixe: configuration active et detail du morceau — Ctrl+C pour revenir
+      guide                      ecran fixe: sequence de modes a parcourir en jouant (fleches gauche/droite) — Ctrl+C pour revenir
       web-console [port]         demarre la console web (miroir de 'run' dans un navigateur, defaut port 8080)
       web-console stop           arrete la console web
       quit                       quitte
@@ -109,6 +135,16 @@ func printHelp() {
       reset-soundtrack-instructions        efface les indications de style (aucune)
       show-text-prompt / show-soundtrack-prompt  affiche le prompt complet qui serait envoye maintenant
       export-text-prompt <nom> / export-soundtrack-prompt <nom>  exporte le prompt complet (jamais recharge)
+
+    Guide (sequence de modes a parcourir en jouant)
+      guide-new <titre>          demarre une sequence de guide vierge
+      guide-add-mode <tonique> <id-gamme>  ajoute une etape (ex: guide-add-mode D dorian)
+      guides <dossier>           liste les fichiers .json (sequences de guide) du dossier
+      use-guide <n ou nom>       charge une sequence (numero de la liste ou nom de fichier)
+      save-guide                 resauvegarde la sequence courante
+      save-guide-as <nom>        sauvegarde sous un nouveau nom
+      guide-start [n]            demarre le guide a l'etape n (1-based, defaut 1)
+      guide-stop                 arrete le guide
 
     Session collaborative (reseau)
       pseudo [nom]               affiche/change le pseudo affiche aux autres participants (defaut "player")
@@ -205,6 +241,20 @@ func parseTrackID(_ text: String) -> TrackID? {
             return .remote(clientID: clientID, trackID: trackID)
         }
         return nil
+    }
+}
+
+/// Parses a note name ("C", "F#", "Bb"...) into a `PitchClass` for `guide-add-mode` — a
+/// small local parser rather than reusing `LLMEngine`'s own note-name parser, to avoid
+/// wiring up a cross-module dependency for a need this localized.
+func parseTonicPitchClass(_ text: String) -> PitchClass? {
+    let naturals: [Character: Int] = ["C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11]
+    guard let letter = text.first, let base = naturals[Character(letter.uppercased())] else { return nil }
+    switch text.dropFirst() {
+    case "": return PitchClass(base)
+    case "#", "♯": return PitchClass(base + 1)
+    case "b", "♭": return PitchClass(base - 1)
+    default: return nil
     }
 }
 
@@ -335,6 +385,29 @@ func printNumberedTracks() {
     }
 }
 
+/// The 7 classic "Major Modes" (family 1), in degree order — the common case for a guide
+/// step, and the only family the circle-of-fifths wheel understands (see
+/// `CircleOfFifths.parentTonic(for:)`). Printed as a numbered pick-list before prompting for
+/// a scale id, so typing a bare number meant for this list (instead of the id itself) still
+/// resolves — that exact mistake used to silently save an unresolvable guide step (see
+/// `resolvedScaleID`).
+func printNumberedScales() {
+    for (index, scale) in ScaleLibrary.scales(inFamily: 1).enumerated() {
+        print("  \(index + 1). \(scale.id) (\(scale.popularName))")
+    }
+}
+
+/// Resolves a "<n|id>" argument against the family-1 pick-list `printNumberedScales()` just
+/// printed — a number picks by 1-based position, anything else (e.g. a family-2+ id like
+/// "melodic_minor", or a correctly-typed family-1 id) is passed through literally.
+func resolvedScaleID(_ text: String) -> String {
+    let familyOne = ScaleLibrary.scales(inFamily: 1)
+    if let index = Int(text), familyOne.indices.contains(index - 1) {
+        return familyOne[index - 1].id
+    }
+    return text
+}
+
 /// Resolves a "<n|id>" argument against `session.tracks` — a number picks by 1-based
 /// position (mirrors `resolvedSampleName`'s convention), anything else is passed through
 /// literally so a typed raw id ("midi:2", "remote:...") still works untouched.
@@ -343,6 +416,16 @@ func resolvedTrackIDText(_ text: String) -> String {
         return trackIDText(session.tracks[index - 1].id)
     }
     return text
+}
+
+/// Prompts to pick a sample from `session.sampleFiles` and load it onto `resolvedTrackID` —
+/// shared by "Choisir un son pour un instrument..." and the post-activation prompt in
+/// "Activer un instrument...", so both stay in sync.
+func promptChooseSoundForTrack(_ resolvedTrackID: String) throws {
+    guard !session.sampleFiles.isEmpty else { print("Choisis d'abord un dossier de sons (menu MusicLab)."); return }
+    for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
+    guard let sampleChoice = promptLine("Quel son (numero ou nom): "), !sampleChoice.isEmpty else { return }
+    try executeCommand("track", [resolvedTrackID, "instrument", sampleChoice])
 }
 
 func printStatus() {
@@ -464,6 +547,27 @@ func wrapItems(_ items: [(display: String, plainWidth: Int)], separator: String 
     return lines
 }
 
+/// Builds a `renderKeyboard(modeMarker:)` closure from a `Mode` — shared by every keyboard
+/// that draws a role-line (per-track, playback, and the `.guide` screen), so "which color
+/// and degree number goes with this pitch class" is computed in exactly one place. `nil`
+/// mode draws no markers at all (same as `renderKeyboard`'s own default).
+///
+/// `KeyboardColor.degreeColors` only has 7 entries — plenty for every 7-note scale (the
+/// overwhelming majority: all of families 1-4), but some recognized scales have more (the
+/// "Diminished Modes" family is 8 notes) or fewer (whole tone/augmented are 6). Degrees past
+/// the 7th used to index `degreeColors` out of bounds and crash the whole process the moment
+/// a track's live recognition landed on one of those scales mid-performance — now they just
+/// draw no marker for that note instead (still correct for degrees 1-7, silently skipped
+/// beyond that) rather than taking the app down.
+func degreeMarker(for mode: Mode?) -> (Int) -> (degree: Int, color: String)? {
+    guard let mode else { return { _ in nil } }
+    let ordered = mode.pitchClasses.map(\.value)
+    return { semitone in
+        guard let index = ordered.firstIndex(of: semitone), KeyboardColor.degreeColors.indices.contains(index) else { return nil }
+        return (index + 1, KeyboardColor.degreeColors[index])
+    }
+}
+
 /// Renders one track's keyboard (its own held pitches / recognized chord+mode, not any
 /// other track's) — the console screen shows one of these per currently-listening track.
 /// A `.remote` track mirrored on a client only carries `heldPitches` plus display-string
@@ -481,14 +585,14 @@ func renderTrackKeyboard(_ track: TrackInfo) -> [String] {
         }
     }
     let topScale = track.recognizedModes.first.flatMap { mode in ScaleLibrary.byID(mode.scaleID).map { (mode, $0) } }
-    let modeScaleSet: Set<PitchClass>? = topScale.map { Mode(tonic: $0.0.tonic, scale: $0.1).pitchClassSet }
+    let trackMode = topScale.map { Mode(tonic: $0.0.tonic, scale: $0.1) }
 
     return renderKeyboard(
         startMIDI: 48,
         octaveCount: 3,
         blackZoneRows: 2,
         whiteZoneRows: 1,
-        modeMarker: { semitone in modeScaleSet?.contains(PitchClass(semitone)) ?? false },
+        modeMarker: degreeMarker(for: trackMode),
         colorFor: { pitch in
             guard heldPitches.contains(pitch) else { return nil }
             guard let chord, let chordPitchClasses else { return KeyboardColor.heldNoChord }
@@ -515,8 +619,9 @@ func renderTrackKeyboard(_ track: TrackInfo) -> [String] {
 /// bar/dropdown/redraw mechanism (`runConsoleScreen`/`renderConsoleFrame`), different body
 /// content per mode, so each screen stays focused and short rather than one ever-growing
 /// dashboard. `.command` isn't rendered by this function at all — it's the plain REPL
-/// prompt, the state you're in whenever `console`-mode isn't active.
-enum ConsoleScreenMode {
+/// prompt, the state you're in whenever `console`-mode isn't active. `CaseIterable` backs
+/// Tab's 3-way cycle in `runConsoleScreen`.
+enum ConsoleScreenMode: CaseIterable {
     /// Live musical activity only: the last MIDI event, every listening track's own
     /// keyboard/chord/mode, and a playback keyboard while a `Piece` or `SoundTrack` plays —
     /// nothing about setup/config, so this screen stays minimal while actually playing.
@@ -524,6 +629,31 @@ enum ConsoleScreenMode {
     /// Session setup/state and the active piece's full structure — nothing that updates
     /// note-by-note, so this screen stays calm to read even while `run` is busy elsewhere.
     case config
+    /// A user-driven mode sequence (see `ImprovSession.startGuide`/`advanceGuideStep`):
+    /// the sequence, the current step's neighbors on the circle of fifths, and a role-line
+    /// keyboard for the current step's mode — independent of any track's own recognized
+    /// mode, which keeps showing on `.run` unaffected.
+    case guide
+
+    var label: String {
+        switch self {
+        case .run: return "Run"
+        case .config: return "Config"
+        case .guide: return "Guide"
+        }
+    }
+}
+
+/// A persistent tab-bar-style indicator of which of the 3 screens is currently showing —
+/// always rendered (menu open or not), so it stays visible regardless of anything else
+/// changing on screen. Deliberately styled nothing like `renderMenuBar` (no underlined
+/// mnemonic, no reverse-video-on-open) — a bracketed bold-yellow active tab against a dim
+/// "Ecran:" label reads as a status indicator, not a 4th menu to click into.
+func renderScreenTabs(_ mode: ConsoleScreenMode) -> String {
+    let tabs = ConsoleScreenMode.allCases.map { candidate -> String in
+        candidate == mode ? "\u{1B}[1;33m[\(candidate.label)]\u{1B}[0m" : "\u{1B}[2m\(candidate.label)\u{1B}[0m"
+    }.joined(separator: "  ")
+    return "\u{1B}[2mEcran:\u{1B}[0m  \(tabs)"
 }
 
 func renderConsoleFrame(mode: ConsoleScreenMode) {
@@ -531,6 +661,7 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
     func line(_ text: String = "") {
         output += "\u{1B}[K" + text + "\n"
     }
+    line(renderScreenTabs(mode))
     line(renderMenuBar(menuCategories))
     if let openIndex = openMenuIndex {
         for row in renderDropdown(menuCategories[openIndex]) { line(row) }
@@ -605,8 +736,8 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
                 guard let template = ChordVocabulary.byID(segment.chord.chordTemplateID) else { return [] }
                 return Set(template.intervalsFromRoot.map { (segment.chord.root + $0) % 12 })
             }
-            let playbackModeSet: Set<PitchClass>? = currentSegment.flatMap { segment in
-                ScaleLibrary.byID(segment.mode.scaleID).map { scale in Mode(tonic: PitchClass(segment.mode.tonic), scale: scale).pitchClassSet }
+            let playbackMode: Mode? = currentSegment.flatMap { segment in
+                ScaleLibrary.byID(segment.mode.scaleID).map { scale in Mode(tonic: PitchClass(segment.mode.tonic), scale: scale) }
             }
             let playbackHeld = session.playbackHeldPitches
 
@@ -617,7 +748,7 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
                 octaveCount: 3,
                 blackZoneRows: 2,
                 whiteZoneRows: 1,
-                modeMarker: { semitone in playbackModeSet?.contains(PitchClass(semitone)) ?? false },
+                modeMarker: degreeMarker(for: playbackMode),
                 colorFor: { pitch in
                     guard playbackHeld.contains(pitch) else { return nil }
                     guard let currentSegment, let playbackChordPitchClasses else { return KeyboardColor.heldNoChord }
@@ -641,6 +772,63 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
                 colorFor: { pitch in soundTrackHeld.contains(pitch) ? KeyboardColor.heldNoChord : nil }
             ) { line(row) }
         }
+
+    case .guide:
+        guard let currentGuide = session.currentGuide else {
+            line(TextStyle.placeholder("(aucune sequence de guide — menu Guide)"))
+            break
+        }
+        line(TextStyle.heading("Sequence: \(currentGuide.title)"))
+        if currentGuide.steps.isEmpty {
+            line(TextStyle.placeholder("(sequence vide — menu Guide > Ajouter un mode)"))
+        } else {
+            let items = currentGuide.steps.enumerated().map { index, reference -> (display: String, plainWidth: Int) in
+                let name = reference.resolve()?.displayName ?? "?"
+                if index == session.currentGuideStepIndex {
+                    return ("\(KeyboardColor.chordRoot)[\(name)]\(KeyboardColor.reset)", name.count + 2)
+                }
+                return (name, name.count)
+            }
+            for wrapped in wrapItems(items) { line(wrapped) }
+        }
+        line()
+        guard let guideMode = session.currentGuideStepMode() else {
+            // Distinguish "not started yet" from "started, but this step's mode reference
+            // doesn't resolve" (shouldn't happen for a step added via `addGuideStep` since
+            // it now validates up front, but a hand-edited or older save file could still
+            // have one) — the two used to show the same misleading "not started" message.
+            if session.currentGuideStepIndex != nil {
+                line(TextStyle.placeholder("(l'etape courante ne resout pas — tonique/gamme invalide dans le fichier)"))
+            } else {
+                line(TextStyle.placeholder("(guide non demarre — menu Guide > Demarrer le guide)"))
+            }
+            break
+        }
+        if let parentTonic = CircleOfFifths.parentTonic(for: guideMode) {
+            let wheel = CircleOfFifths.wheel(tonic: parentTonic)
+            // Ordered by "brightness" (Lydian...Locrian), not by the wheel's physical fifths
+            // order — the two happen to coincide for 5 of the 7 modes, but wrapping the
+            // physical array would make Lydian and Locrian (the two extremes, not actually
+            // adjacent) look like each other's neighbor.
+            let brightnessOffsets = [5, 0, 7, 2, 9, 4, 11] // Lydian,Ionian,Mixolydian,Dorian,Aeolian,Phrygian,Locrian
+            let orderedColumns = brightnessOffsets.map { offset in
+                wheel.columns.first { ($0.pitchClass.value - parentTonic.value + 12) % 12 == offset }!
+            }
+            let activeIndex = orderedColumns.firstIndex { $0.pitchClass == guideMode.tonic } ?? 0
+            let previous = activeIndex > 0 ? orderedColumns[activeIndex - 1].modeName : nil
+            let next = activeIndex < orderedColumns.count - 1 ? orderedColumns[activeIndex + 1].modeName : nil
+            line("\u{25C2} \(previous ?? "—") — [\(orderedColumns[activeIndex].modeName ?? "?")] — \(next ?? "—") \u{25B8}")
+        } else {
+            line(TextStyle.placeholder("(roue non disponible pour cette famille de gamme)"))
+        }
+        line()
+        line(TextStyle.heading("Clavier (fleches gauche/droite: etape precedente/suivante):"))
+        let guideHeldPitches = Set(session.tracks.filter(\.isListening).flatMap(\.heldPitches))
+        for row in renderKeyboard(
+            startMIDI: 48, octaveCount: 3, blackZoneRows: 2, whiteZoneRows: 1,
+            modeMarker: degreeMarker(for: guideMode),
+            colorFor: { pitch in guideHeldPitches.contains(pitch) ? KeyboardColor.heldNoChord : nil }
+        ) { line(row) }
     }
 
     output += "\u{1B}[J" // erase any leftover lines below from a previous, taller frame
@@ -669,11 +857,17 @@ func runConsoleScreen(mode initialMode: ConsoleScreenMode) {
         if let key = readKey() {
             switch key {
             case .tab:
-                // Jump directly between the two screens without going back through Command
-                // — deliberately doesn't touch `openMenuIndex`: an open dropdown is the same
-                // shared menu system in both modes, so there's no reason to close it just
-                // because the content area underneath switched.
-                mode = (mode == .run) ? .config : .run
+                // Cycle through the three screens (.run -> .config -> .guide -> .run) without
+                // going back through Command — deliberately doesn't touch `openMenuIndex`: an
+                // open dropdown is the same shared menu system in every mode, so there's no
+                // reason to close it just because the content area underneath switched.
+                let allModes = ConsoleScreenMode.allCases
+                let nextIndex = (allModes.firstIndex(of: mode)! + 1) % allModes.count
+                mode = allModes[nextIndex]
+            case .left where mode == .guide && openMenuIndex == nil:
+                session.advanceGuideStep(by: -1)
+            case .right where mode == .guide && openMenuIndex == nil:
+                session.advanceGuideStep(by: 1)
             case .char("q") where !computerKeyboardSourceActive:
                 // A calmer way out than Ctrl+C — same effect as the SIGINT handler below
                 // (just sets the same flag), kept as a fallback rather than replaced: it's
@@ -1041,6 +1235,57 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         runConsoleScreen(mode: .run)
     case "config":
         runConsoleScreen(mode: .config)
+    case "guide":
+        runConsoleScreen(mode: .guide)
+    case "guides":
+        guard let folder = args.first else { print("usage: guides <dossier>"); break }
+        try session.listGuideFiles(in: folder)
+        drainLog()
+        for (index, name) in session.guideFiles.enumerated() { print("  \(index + 1). \(name)") }
+    case "guide-new":
+        guard let title = args.first else { print("usage: guide-new <titre>"); break }
+        session.newGuideSequence(title: title)
+    case "guide-add-mode":
+        guard args.count >= 2, let tonic = parseTonicPitchClass(args[0]) else {
+            print("usage: guide-add-mode <tonique> <id-gamme>"); break
+        }
+        try session.addGuideStep(ModeReference(tonic: tonic.value, scaleID: args[1]))
+    case "use-guide":
+        guard let arg = args.first else { print("usage: use-guide <numero ou nom de fichier>"); break }
+        if let index = Int(arg) {
+            try session.loadGuideSequence(atIndex: index - 1)
+        } else {
+            try session.loadGuideSequence(named: arg)
+        }
+    case "save-guide":
+        if let path = args.first {
+            try session.saveGuideSequence(toJSONFile: path)
+        } else {
+            try session.saveGuideSequence()
+        }
+    case "save-guide-as":
+        guard let name = args.first else { print("usage: save-guide-as <nom>"); break }
+        try session.saveGuideSequence(as: name)
+    case "guide-start":
+        let index = args.first.flatMap(Int.init).map { $0 - 1 } ?? 0
+        try session.startGuide(atStepIndex: index)
+    case "guide-stop":
+        session.stopGuide()
+    case "scenes":
+        guard let folder = args.first else { print("usage: scenes <dossier>"); break }
+        try session.listSceneFiles(in: folder)
+        drainLog()
+        for (index, name) in session.sceneFiles.enumerated() { print("  \(index + 1). \(name)") }
+    case "use-scene":
+        guard let arg = args.first else { print("usage: use-scene <numero ou nom de fichier>"); break }
+        if let index = Int(arg) {
+            try session.loadScene(atIndex: index - 1)
+        } else {
+            try session.loadScene(named: arg)
+        }
+    case "save-scene":
+        guard let name = args.first else { print("usage: save-scene <nom>"); break }
+        try session.saveScene(title: name, as: name)
     case "quit", "exit":
         stopAllTracks()
         drainLog()
@@ -1067,9 +1312,9 @@ func promptForPseudo() {
 /// first for a folder/name/choice where needed. Defined after `executeCommand` (which they
 /// all call) but before it's used in `runConsoleScreen`.
 nonisolated(unsafe) let menuCategories: [MenuCategory] = [
-    // Mnemonic "L" (not the first letter) to avoid colliding with "Morceaux"'s "M" — same
+    // Mnemonic "S" (not the first letter) to avoid colliding with "Jam Session"'s "J" — same
     // trick already used for "IA" vs "Instrument", see renderMenuBar's doc comment.
-    MenuCategory(mnemonic: "L", title: "MusicLab", items: [
+    MenuCategory(mnemonic: "S", title: "JamShack", items: [
         MenuItem(label: "Infos") { try executeCommand("status", []) },
         MenuItem(label: "Aide") { try executeCommand("help", []) },
         MenuItem.separator,
@@ -1084,6 +1329,14 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         MenuItem(label: "Choisir dossier de soundtracks...") {
             guard let folder = promptLine("Dossier de soundtracks: "), !folder.isEmpty else { return }
             try executeCommand("soundtracks", [folder])
+        },
+        MenuItem(label: "Choisir dossier de sequences de guide...") {
+            guard let folder = promptLine("Dossier de sequences de guide: "), !folder.isEmpty else { return }
+            try executeCommand("guides", [folder])
+        },
+        MenuItem(label: "Choisir dossier de scenes...") {
+            guard let folder = promptLine("Dossier de scenes: "), !folder.isEmpty else { return }
+            try executeCommand("scenes", [folder])
         },
         MenuItem(label: "Choisir dossier de connexions LLM...") {
             guard let folder = promptLine("Dossier de connexions LLM: "), !folder.isEmpty else { return }
@@ -1117,7 +1370,12 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         MenuItem(label: "Activer un instrument...") {
             printNumberedTracks()
             guard let choice = promptLine("Activer quel instrument (numero ou id): "), !choice.isEmpty else { return }
-            try executeCommand("track", [resolvedTrackIDText(choice), "on"])
+            let resolvedID = resolvedTrackIDText(choice)
+            try executeCommand("track", [resolvedID, "on"])
+            let soundAnswer = promptLine("Activer aussi le son de cet instrument ? (o/n): ") ?? ""
+            if soundAnswer.lowercased().hasPrefix("o") {
+                try promptChooseSoundForTrack(resolvedID)
+            }
         },
         MenuItem(label: "Arreter un instrument...") {
             printNumberedTracks()
@@ -1139,10 +1397,19 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         MenuItem(label: "Choisir un son pour un instrument...") {
             printNumberedTracks()
             guard let trackChoice = promptLine("Pour quel instrument (numero ou id): "), !trackChoice.isEmpty else { return }
-            guard !session.sampleFiles.isEmpty else { print("Choisis d'abord un dossier de sons (menu MusicLab)."); return }
-            for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let sampleChoice = promptLine("Quel son (numero ou nom): "), !sampleChoice.isEmpty else { return }
-            try executeCommand("track", [resolvedTrackIDText(trackChoice), "instrument", sampleChoice])
+            try promptChooseSoundForTrack(resolvedTrackIDText(trackChoice))
+        },
+        MenuItem.separator,
+        MenuItem.header("Scene"),
+        MenuItem(label: "Sauvegarder scene...") {
+            guard let name = promptLine("Nom de la scene: "), !name.isEmpty else { return }
+            try executeCommand("save-scene", [name])
+        },
+        MenuItem(label: "Charger scene...") {
+            guard !session.sceneFiles.isEmpty else { print("Choisis d'abord un dossier de scenes (menu MusicLab)."); return }
+            for (index, name) in session.sceneFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard let choice = promptLine("Charger quelle scene (numero ou nom): "), !choice.isEmpty else { return }
+            try executeCommand("use-scene", [choice])
         },
     ]),
     MenuCategory(mnemonic: "M", title: "Morceaux", items: [
@@ -1187,6 +1454,48 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         },
         MenuItem.separator,
         MenuItem.header("Assistant IA"),
+    ]),
+    MenuCategory(mnemonic: "G", title: "Guide", items: [
+        MenuItem(label: "Voir l'ecran Guide") { try executeCommand("guide", []) },
+        MenuItem.separator,
+        MenuItem(label: "Nouveau guide...") {
+            guard let title = promptLine("Titre de la sequence: "), !title.isEmpty else { return }
+            try executeCommand("guide-new", [title])
+            // Keep prompting for one more step until the user leaves the tonic blank,
+            // instead of a single add-then-back-to-menu round trip — building a sequence of
+            // several modes otherwise means reopening this same menu item repeatedly.
+            while true {
+                guard let tonicText = promptLine("Tonique (ex: D, F#, Bb ; vide pour terminer): "), !tonicText.isEmpty else { break }
+                printNumberedScales()
+                guard let scaleText = promptLine("Id de gamme (numero ci-dessus, ou id ecrit, ex: ionian): "), !scaleText.isEmpty else { break }
+                do {
+                    try executeCommand("guide-add-mode", [tonicText, resolvedScaleID(scaleText)])
+                } catch {
+                    print("Erreur: \(error)")
+                }
+            }
+        },
+        MenuItem(label: "Ajouter un mode au guide...") {
+            guard let tonicText = promptLine("Tonique (ex: D, F#, Bb): "), !tonicText.isEmpty else { return }
+            printNumberedScales()
+            guard let scaleText = promptLine("Id de gamme (numero ci-dessus, ou id ecrit, ex: ionian): "), !scaleText.isEmpty else { return }
+            try executeCommand("guide-add-mode", [tonicText, resolvedScaleID(scaleText)])
+        },
+        MenuItem.separator,
+        MenuItem(label: "Charger un guide...") {
+            guard !session.guideFiles.isEmpty else { print("Choisis d'abord un dossier de sequences de guide."); return }
+            for (index, name) in session.guideFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard let choice = promptLine("Charger quelle sequence (numero ou nom): "), !choice.isEmpty else { return }
+            try executeCommand("use-guide", [choice])
+        },
+        MenuItem(label: "Sauvegarder le guide") { try executeCommand("save-guide", []) },
+        MenuItem(label: "Sauvegarder le guide sous...") {
+            guard let name = promptLine("Nom de sauvegarde: "), !name.isEmpty else { return }
+            try executeCommand("save-guide-as", [name])
+        },
+        MenuItem.separator,
+        MenuItem(label: "Demarrer le guide") { try executeCommand("guide-start", []) },
+        MenuItem(label: "Arreter le guide") { try executeCommand("guide-stop", []) },
     ]),
     MenuCategory(mnemonic: "E", title: "Enregistrement", items: [
         MenuItem(label: "Demarrer un enregistrement...") {
@@ -1349,7 +1658,13 @@ func tokenizeCommandLine(_ line: String) -> [String] {
     return tokens
 }
 
-print("Music Improv Assistant — mode Command")
+// Straight into the run screen at launch (right after the scene prompt above) rather than
+// dropping into the plain Command REPL first — the run screen is where playing actually
+// happens, so it shouldn't need an extra `run` command every time. Ctrl+C/`q` falls back
+// to this same Command REPL exactly as it always has when leaving `run` explicitly.
+runConsoleScreen(mode: .run)
+
+print("JamShack — mode Command")
 print("Tape 'help' pour la liste des commandes.")
 drainLog() // flush the "Audio engine started." line logged by session.start() above
 printPrompt()

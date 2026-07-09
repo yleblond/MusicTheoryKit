@@ -12,7 +12,7 @@ graphique (SwiftUI) puisse s'y brancher sans rien réécrire.
 
 ```sh
 cd MusicTheoryKit
-swift run ImprovCLI
+swift run JamShack
 ```
 
 Au lancement, l'application écoute automatiquement ses dossiers de travail par défaut
@@ -103,7 +103,7 @@ LLMEngine          composition assistée par IA (3 fournisseurs), validation str
 NetEngine          transport réseau de la session collaborative (TCP fait main)
 WebConsole         serveur HTTP fait main pour la console web
 AppCore            ImprovSession — tout l'état et la logique applicative
-ImprovCLI          l'exécutable : REPL + écrans figés + menus
+JamShack          l'exécutable : REPL + écrans figés + menus
 SanityChecks       exécutable de test de secours (voir ci-dessous)
 ```
 

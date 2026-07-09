@@ -72,6 +72,23 @@ public final class ImprovSession: @unchecked Sendable {
     /// Full path the current `piece` was last loaded from or saved to — what a bare
     /// `savePiece()` (no name) re-saves to. `nil` until a load/save-as has happened once.
     public private(set) var currentPieceFilePath: String?
+    /// The currently authored/loaded mode sequence for the Guide screen (see `startGuide`/
+    /// `advanceGuideStep`) — independent of `piece`: a guide step is only "which mode",
+    /// never a timed composition.
+    public private(set) var currentGuide: GuideSequence?
+    public private(set) var currentGuideFilePath: String?
+    /// `nil` means the guide is loaded (or absent) but not started — see `startGuide`/`stopGuide`.
+    public private(set) var currentGuideStepIndex: Int?
+    /// The folder last listed with `listGuideFiles`, and the `.json` guide-sequence files
+    /// found in it — mirrors `pieceFolder`/`pieceFiles`.
+    public private(set) var guideFolder: String?
+    public private(set) var guideFiles: [String] = []
+    /// The folder last listed with `listSceneFiles`, and the `.json` scene files found in
+    /// it — mirrors `pieceFolder`/`pieceFiles`. No "current scene" is tracked the way a
+    /// piece/guide is: saving/loading a scene is a one-shot action on `tracks`, not an
+    /// ongoing document to keep editing.
+    public private(set) var sceneFolder: String?
+    public private(set) var sceneFiles: [String] = []
     /// The folder last listed with `listCompositionFiles`, and the `.json` composition
     /// descriptions found in it — mirrors `pieceFolder`/`pieceFiles`, but for a
     /// `CompositionDescription` (title/text/indications) rather than a composed `Piece`.
@@ -249,6 +266,14 @@ public final class ImprovSession: @unchecked Sendable {
         case noCurrentCompositionFile
         case noSoundTrackCompositionInstructions
         case invalidSoundTrackInstructionsIndex
+        case noGuideSequence
+        case invalidModeReference
+        case noGuideFolderListed
+        case invalidGuideIndex
+        case invalidGuideStepIndex
+        case noCurrentGuideFile
+        case noSceneFolderListed
+        case invalidSceneIndex
         public var description: String {
             switch self {
             case .noPieceLoaded: return "no piece loaded — try 'load-demo' or 'load <path>'"
@@ -283,6 +308,14 @@ public final class ImprovSession: @unchecked Sendable {
             case .noCurrentCompositionFile: return "this description was never loaded from or saved to a file — try saving with an explicit name"
             case .noSoundTrackCompositionInstructions: return "no soundtrack style indications set — try 'set-soundtrack-instructions <texte>' first"
             case .invalidSoundTrackInstructionsIndex: return "no soundtrack style indications at that index"
+            case .noGuideSequence: return "no guide sequence — try 'guide-new <titre>' first, or load one"
+            case .invalidModeReference: return "unknown tonic or scale id — the scale id must match ScaleLibrary (e.g. ionian, dorian, phrygian, lydian, mixolydian, aeolian, locrian)"
+            case .noGuideFolderListed: return "no guide sequence folder listed yet — try 'guides <folder>' first"
+            case .invalidGuideIndex: return "no guide sequence at that index"
+            case .invalidGuideStepIndex: return "no step at that index in the guide sequence"
+            case .noCurrentGuideFile: return "this guide sequence was never loaded from or saved to a file — try 'save-guide-as <name>'"
+            case .noSceneFolderListed: return "no scene folder listed yet — try 'scenes <folder>' first"
+            case .invalidSceneIndex: return "no scene at that index"
             }
         }
     }
@@ -764,6 +797,220 @@ public final class ImprovSession: @unchecked Sendable {
             resolvedPath = URL(fileURLWithPath: pieceFolder).appendingPathComponent(nameOrPath).path
         }
         try savePiece(toJSONFile: resolvedPath.hasSuffix(".json") ? resolvedPath : resolvedPath + ".json")
+    }
+
+    // MARK: - Guide sequences (mode sequences for the Guide screen)
+
+    /// Starts a blank guide sequence (no steps yet) — mirrors `newPiece`.
+    public func newGuideSequence(title: String) {
+        currentGuide = GuideSequence(title: title)
+        currentGuideFilePath = nil
+        currentGuideStepIndex = nil
+        append("New guide sequence created: \(title)")
+    }
+
+    public func addGuideStep(_ reference: ModeReference) throws {
+        guard var currentGuide else { throw SessionError.noGuideSequence }
+        // Rejected here (the one place every caller — CLI command, menu — goes through)
+        // rather than silently stored: an unresolvable reference (typo'd/unknown scaleID)
+        // used to end up saved as a step that could never resolve, showing "?" everywhere
+        // and making the guide screen wrongly claim "not started" even after `startGuide`.
+        guard reference.resolve() != nil else { throw SessionError.invalidModeReference }
+        currentGuide.steps.append(reference)
+        self.currentGuide = currentGuide
+        append("Added step to guide sequence '\(currentGuide.title)': \(reference.resolve()?.displayName ?? reference.scaleID).")
+    }
+
+    public func removeGuideStep(atIndex index: Int) throws {
+        guard var currentGuide else { throw SessionError.noGuideSequence }
+        guard currentGuide.steps.indices.contains(index) else { throw SessionError.invalidGuideStepIndex }
+        currentGuide.steps.remove(at: index)
+        self.currentGuide = currentGuide
+        if let currentGuideStepIndex, currentGuideStepIndex >= currentGuide.steps.count {
+            self.currentGuideStepIndex = currentGuide.steps.isEmpty ? nil : currentGuide.steps.count - 1
+        }
+        append("Removed step \(index + 1) from guide sequence '\(currentGuide.title)'.")
+    }
+
+    public func loadGuideSequence(fromJSONFile path: String) throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let decoded = try JSONDecoder().decode(GuideSequence.self, from: data)
+        currentGuide = decoded
+        currentGuideFilePath = path
+        currentGuideStepIndex = nil
+        append("Loaded guide sequence from \(path): \(decoded.title)")
+    }
+
+    public func saveGuideSequence(toJSONFile path: String) throws {
+        guard let currentGuide else { throw SessionError.noGuideSequence }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(currentGuide)
+        try data.write(to: URL(fileURLWithPath: path))
+        currentGuideFilePath = path
+        append("Saved guide sequence to \(path).")
+    }
+
+    private static let supportedGuideExtensions: Set<String> = ["json"]
+
+    /// Scans `folderPath` for `.json` guide sequence files — mirrors `listPieceFiles`.
+    public func listGuideFiles(in folderPath: String) throws {
+        let folderURL = URL(fileURLWithPath: folderPath)
+        let contents = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
+        guideFolder = folderPath
+        guideFiles = contents
+            .filter { Self.supportedGuideExtensions.contains($0.pathExtension.lowercased()) }
+            .map(\.lastPathComponent)
+            .sorted()
+        append(guideFiles.isEmpty
+            ? "No .json guide sequence files found in \(folderPath)."
+            : "Found \(guideFiles.count) guide sequence file(s) in \(folderPath).")
+    }
+
+    /// Loads a guide sequence by name from the last-listed folder (see `listGuideFiles`).
+    public func loadGuideSequence(named name: String) throws {
+        guard let guideFolder else { throw SessionError.noGuideFolderListed }
+        try loadGuideSequence(fromJSONFile: URL(fileURLWithPath: guideFolder).appendingPathComponent(name).path)
+    }
+
+    /// Convenience over `loadGuideSequence(named:)` using the 0-based position in `guideFiles`.
+    public func loadGuideSequence(atIndex index: Int) throws {
+        guard guideFiles.indices.contains(index) else { throw SessionError.invalidGuideIndex }
+        try loadGuideSequence(named: guideFiles[index])
+    }
+
+    /// Re-saves the current guide sequence to wherever it was last loaded from or saved to.
+    public func saveGuideSequence() throws {
+        guard let currentGuideFilePath else { throw SessionError.noCurrentGuideFile }
+        try saveGuideSequence(toJSONFile: currentGuideFilePath)
+    }
+
+    /// Saves under a new name/path — "Save As". Mirrors `savePiece(as:)`.
+    public func saveGuideSequence(as nameOrPath: String) throws {
+        let resolvedPath: String
+        if nameOrPath.contains("/") {
+            resolvedPath = nameOrPath
+        } else {
+            guard let guideFolder else { throw SessionError.noGuideFolderListed }
+            resolvedPath = URL(fileURLWithPath: guideFolder).appendingPathComponent(nameOrPath).path
+        }
+        try saveGuideSequence(toJSONFile: resolvedPath.hasSuffix(".json") ? resolvedPath : resolvedPath + ".json")
+    }
+
+    /// Positions the guide at `index` (default the first step) — the Guide screen then
+    /// shows that step's mode until `advanceGuideStep`/`stopGuide` changes it.
+    public func startGuide(atStepIndex index: Int = 0) throws {
+        guard let currentGuide else { throw SessionError.noGuideSequence }
+        guard currentGuide.steps.indices.contains(index) else { throw SessionError.invalidGuideStepIndex }
+        currentGuideStepIndex = index
+        append("Guide started at step \(index + 1)/\(currentGuide.steps.count).")
+    }
+
+    public func stopGuide() {
+        guard currentGuideStepIndex != nil else { return }
+        currentGuideStepIndex = nil
+        append("Guide stopped.")
+    }
+
+    /// Moves the guide's current step by `delta` (±1 for left/right), clamped to the
+    /// sequence's bounds — no wraparound, so repeatedly pressing the same arrow at either
+    /// end is a safe no-op. Does nothing if the guide isn't running.
+    public func advanceGuideStep(by delta: Int) {
+        guard let currentGuide, let currentGuideStepIndex else { return }
+        let clamped = max(0, min(currentGuide.steps.count - 1, currentGuideStepIndex + delta))
+        self.currentGuideStepIndex = clamped
+    }
+
+    /// The currently-active guide step's resolved mode, or `nil` if the guide isn't running
+    /// or the step's `ModeReference` doesn't resolve (unknown `scaleID`).
+    public func currentGuideStepMode() -> Mode? {
+        guard let currentGuide, let currentGuideStepIndex, currentGuide.steps.indices.contains(currentGuideStepIndex) else { return nil }
+        return currentGuide.steps[currentGuideStepIndex].resolve()
+    }
+
+    // MARK: - Scenes (saved instrument configurations — which tracks listen, with what sound)
+
+    /// Captures every *local* track's current `isListening`/`soundEnabled`/`instrumentName`
+    /// into a `Scene` and writes it to `path` — `.remote` tracks are skipped (`wireIDText` is
+    /// `nil` for them): a scene only ever describes this machine's own instrument setup.
+    public func saveScene(title: String, toJSONFile path: String) throws {
+        let sceneTracks = tracks.compactMap { track -> SceneTrack? in
+            guard let wireID = track.id.wireIDText else { return nil }
+            return SceneTrack(trackID: wireID, isListening: track.isListening, soundEnabled: track.soundEnabled, instrumentName: track.instrumentName)
+        }
+        let scene = Scene(title: title, tracks: sceneTracks)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(scene)
+        try data.write(to: URL(fileURLWithPath: path))
+        append("Saved scene to \(path).")
+    }
+
+    /// Saves under `nameOrPath` — `title` becomes both the scene's stored title and (unless
+    /// `nameOrPath` is itself a full path) the file name, mirroring `savePiece(as:)`'s
+    /// bare-name-resolves-against-the-listed-folder convention.
+    public func saveScene(title: String, as nameOrPath: String) throws {
+        let resolvedPath: String
+        if nameOrPath.contains("/") {
+            resolvedPath = nameOrPath
+        } else {
+            guard let sceneFolder else { throw SessionError.noSceneFolderListed }
+            resolvedPath = URL(fileURLWithPath: sceneFolder).appendingPathComponent(nameOrPath).path
+        }
+        try saveScene(title: title, toJSONFile: resolvedPath.hasSuffix(".json") ? resolvedPath : resolvedPath + ".json")
+    }
+
+    private static let supportedSceneExtensions: Set<String> = ["json"]
+
+    /// Scans `folderPath` for `.json` scene files — mirrors `listPieceFiles`.
+    public func listSceneFiles(in folderPath: String) throws {
+        let folderURL = URL(fileURLWithPath: folderPath)
+        let contents = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
+        sceneFolder = folderPath
+        sceneFiles = contents
+            .filter { Self.supportedSceneExtensions.contains($0.pathExtension.lowercased()) }
+            .map(\.lastPathComponent)
+            .sorted()
+        append(sceneFiles.isEmpty
+            ? "No .json scene files found in \(folderPath)."
+            : "Found \(sceneFiles.count) scene file(s) in \(folderPath).")
+    }
+
+    /// Applies a saved scene to whichever of its tracks still exist on this machine (e.g. a
+    /// saved MIDI source index that's no longer visible is silently skipped, same spirit as
+    /// every other "best effort, don't abort the rest" restore in this app) — tracks NOT
+    /// mentioned in the scene are left exactly as they are, so loading a scene never turns
+    /// off something it doesn't know about.
+    public func loadScene(fromJSONFile path: String) throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let scene = try JSONDecoder().decode(Scene.self, from: data)
+        for sceneTrack in scene.tracks {
+            guard let id = TrackID(wireIDText: sceneTrack.trackID), tracks.contains(where: { $0.id == id }) else { continue }
+            if sceneTrack.isListening {
+                try? startTrack(id)
+            } else {
+                stopTrack(id)
+            }
+            if let instrumentName = sceneTrack.instrumentName {
+                try? setInstrument(named: instrumentName, for: id)
+                if !sceneTrack.soundEnabled { try? setSoundEnabled(false, for: id) }
+            } else {
+                try? setSoundEnabled(sceneTrack.soundEnabled, for: id)
+            }
+        }
+        append("Loaded scene from \(path): \(scene.title)")
+    }
+
+    /// Loads a scene by name from the last-listed folder (see `listSceneFiles`).
+    public func loadScene(named name: String) throws {
+        guard let sceneFolder else { throw SessionError.noSceneFolderListed }
+        try loadScene(fromJSONFile: URL(fileURLWithPath: sceneFolder).appendingPathComponent(name).path)
+    }
+
+    /// Convenience over `loadScene(named:)` using the 0-based position in `sceneFiles`.
+    public func loadScene(atIndex index: Int) throws {
+        guard sceneFiles.indices.contains(index) else { throw SessionError.invalidSceneIndex }
+        try loadScene(named: sceneFiles[index])
     }
 
     /// Sets one melodic track's instrument (a sample file name, resolved against
@@ -1300,9 +1547,8 @@ public final class ImprovSession: @unchecked Sendable {
     private func buildWebConsoleState() -> WebConsoleState {
         let lastEvent = lastMIDIEvent.map { "\($0.kind == .noteOn ? "on " : "off")pitch=\($0.pitch) vel=\($0.velocity)" }
 
-        let trackStates: [WebConsoleTrackState] = liveInputQueue.sync {
-            tracks.filter { $0.isListening }.map(Self.webConsoleTrackState)
-        }
+        let listeningTracks: [TrackInfo] = liveInputQueue.sync { tracks.filter { $0.isListening } }
+        let trackStates = listeningTracks.map(Self.webConsoleTrackState)
 
         let playback: WebConsolePlaybackState? = playbackStateQueue.sync {
             guard isPlaying else { return nil }
@@ -1325,12 +1571,100 @@ public final class ImprovSession: @unchecked Sendable {
             isPlayingSoundTrack ? WebConsoleSoundTrackPlaybackState(heldPitches: Array(soundTrackHeldPitches)) : nil
         }
 
-        return WebConsoleState(lastEvent: lastEvent, tracks: trackStates, playback: playback, soundTrackPlayback: soundTrackPlayback)
+        return WebConsoleState(
+            lastEvent: lastEvent, tracks: trackStates, playback: playback, soundTrackPlayback: soundTrackPlayback,
+            wheel: buildWebConsoleWheelState(listeningTracks: listeningTracks),
+            guide: buildWebConsoleGuideState()
+        )
+    }
+
+    /// The mode the always-visible circle-of-fifths wheel is computed for — the first
+    /// candidate (in priority order: the active guide step, the piece currently playing, the
+    /// first listening track's top recognized mode) whose scale actually has a parent major
+    /// key (family 1 only, see `CircleOfFifths.parentTonic(for:)`), falling back to C Ionian
+    /// so the wheel is genuinely always present rather than disappearing while nothing
+    /// suitable is detected.
+    ///
+    /// Callers need BOTH this mode's own tonic (e.g. D, for "D Dorian" — which mode-name to
+    /// mark active, and where relative-degree "I" belongs) and its parent tonic (e.g. C —
+    /// which 7 cells are diatonic at all) — see `CircleOfFifths.wheel(tonic:activeTonic:)`.
+    private func wheelReferenceMode() -> Mode {
+        let playbackMode: Mode? = playbackStateQueue.sync {
+            guard isPlaying, let index = playbackCurrentChordIndex, playbackTimeline.indices.contains(index) else { return nil }
+            let segment = playbackTimeline[index]
+            return ScaleLibrary.byID(segment.mode.scaleID).map { Mode(tonic: PitchClass(segment.mode.tonic), scale: $0) }
+        }
+        let trackMode: Mode? = liveInputQueue.sync {
+            for track in tracks where track.isListening {
+                if let recognized = track.recognizedModes.first, let scale = ScaleLibrary.byID(recognized.scaleID) {
+                    return Mode(tonic: recognized.tonic, scale: scale)
+                }
+            }
+            return nil
+        }
+        for candidate in [currentGuideStepMode(), playbackMode, trackMode] {
+            if let candidate, CircleOfFifths.parentTonic(for: candidate) != nil { return candidate }
+        }
+        return Mode(tonic: PitchClass(0), scale: ScaleLibrary.byID("ionian")!)
+    }
+
+    /// A plain triad template's quality ("Ma"/"mi"/"dim") from a possibly-extended chord
+    /// template (e.g. "Ma7", "mi7b5", "7") — used to match a track's recognized chord to the
+    /// specific (root, quality) wheel cell it's sounding, not just its root.
+    private static func chordQuality(templateID: String) -> ChordQuality? {
+        guard let intervals = ChordVocabulary.byID(templateID)?.intervalsFromRoot else { return nil }
+        let set = Set(intervals)
+        if set.contains(3) && set.contains(6) { return .diminished }
+        if set.contains(3) { return .minor }
+        if set.contains(4) { return .major }
+        return nil
+    }
+
+    /// Builds the always-present circle-of-fifths wheel (see `wheelReferenceMode()`),
+    /// annotating each cell with the label of every currently-listening track whose
+    /// recognized chord is rooted there with a matching quality — the multi-instrument
+    /// "who's playing what function right now" view.
+    private func buildWebConsoleWheelState(listeningTracks: [TrackInfo]) -> WebConsoleWheelState {
+        let mode = wheelReferenceMode()
+        let wheel = CircleOfFifths.wheel(tonic: CircleOfFifths.parentTonic(for: mode)!, activeTonic: mode.tonic)
+        let columns = wheel.columns.map { column -> WebConsoleWheelColumnState in
+            let cells = column.cells.map { cell -> WebConsoleWheelCellState in
+                let trackLabels = listeningTracks.compactMap { track -> String? in
+                    guard let chord = track.recognizedChord, chord.root == cell.pitchClass,
+                          Self.chordQuality(templateID: chord.chordTemplateID) == cell.quality else { return nil }
+                    return track.label
+                }
+                return WebConsoleWheelCellState(pitchClass: cell.pitchClass.value, shape: cell.shape.rawValue, quality: cell.quality.rawValue, relativeDegree: cell.relativeDegree, isDiatonic: cell.isDiatonic, trackLabels: trackLabels)
+            }
+            return WebConsoleWheelColumnState(pitchClass: column.pitchClass.value, modeName: column.modeName, cells: cells)
+        }
+        return WebConsoleWheelState(tonic: wheel.tonic.value, activeModeName: mode.scale.systematicName, columns: columns, activeColumnIndex: wheel.activeColumnIndex)
+    }
+
+    /// The Guide screen's own state (see `startGuide`/`advanceGuideStep`) — entirely
+    /// independent of `tracks`/`playback` above: a track's own role-line keeps showing its
+    /// own recognized mode regardless of whether a guide is running (the guide only drives
+    /// its own dedicated panel/screen, both here and in `JamShack`'s `.guide` screen). The
+    /// wheel itself is no longer part of this — see `buildWebConsoleWheelState()`, always
+    /// present at the top level of `WebConsoleState`.
+    private func buildWebConsoleGuideState() -> WebConsoleGuideState? {
+        guard let currentGuide else { return nil }
+        let steps = currentGuide.steps.enumerated().map { index, reference in
+            WebConsoleGuideStepState(label: reference.resolve()?.displayName ?? "?", isCurrent: index == currentGuideStepIndex)
+        }
+        guard let mode = currentGuideStepMode() else {
+            return WebConsoleGuideState(isActive: false, steps: steps, currentStepIndex: nil, currentModeTones: [], heldPitches: [])
+        }
+        let heldPitches = liveInputQueue.sync { Array(Set(tracks.filter(\.isListening).flatMap(\.heldPitches))) }
+        return WebConsoleGuideState(
+            isActive: true, steps: steps, currentStepIndex: currentGuideStepIndex,
+            currentModeTones: mode.pitchClasses.map(\.value), heldPitches: heldPitches
+        )
     }
 
     /// One listening track's state, transposed from `TrackInfo`'s structured recognition into
     /// the flat pitch-class sets/labels the browser needs — same computation
-    /// `renderTrackKeyboard`/`chordDisplayText`/`modesDisplayText` do in `ImprovCLI/main.swift`
+    /// `renderTrackKeyboard`/`chordDisplayText`/`modesDisplayText` do in `JamShack/main.swift`
     /// for the terminal's own keyboard, just producing data instead of ANSI text.
     private static func webConsoleTrackState(_ track: TrackInfo) -> WebConsoleTrackState {
         let (chordTones, modeTones) = pitchClassSets(
@@ -1365,7 +1699,9 @@ public final class ImprovSession: @unchecked Sendable {
         }
         var modeTones: [Int] = []
         if let modeTonic, let scaleID, let scale = ScaleLibrary.byID(scaleID) {
-            modeTones = Mode(tonic: PitchClass(modeTonic), scale: scale).pitchClassSet.map(\.value)
+            // Degree-ordered (index 0 = degree 1), not a `Set` — the web console's role-line
+            // badges rely on `modeTones[i]` meaning "degree i+1".
+            modeTones = Mode(tonic: PitchClass(modeTonic), scale: scale).pitchClasses.map(\.value)
         }
         return (chordTones, modeTones)
     }

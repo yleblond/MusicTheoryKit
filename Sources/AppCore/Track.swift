@@ -30,6 +30,20 @@ public enum TrackID: Hashable, Sendable {
         case .remote: return nil
         }
     }
+
+    /// The inverse of `wireIDText` for every *local* track kind (never produces `.remote` —
+    /// a saved `Scene` only ever captures this machine's own tracks, see
+    /// `ImprovSession.saveScene`). `nil` for anything that isn't one of those wire strings.
+    public init?(wireIDText text: String) {
+        switch text {
+        case "midi": self = .midiMerged
+        case "clavier": self = .computerKeyboard
+        case "micro": self = .microphone
+        default:
+            guard text.hasPrefix("midi:"), let n = Int(text.dropFirst(5)), n >= 1 else { return nil }
+            self = .midiSource(n - 1)
+        }
+    }
 }
 
 /// Whether MIDI is heard as one merged stream (`.midiMerged`, the historical/default

@@ -8,7 +8,7 @@ session du 2026-07-07. Pour l'historique détaillé des décisions/itérations, 
 ## Vue d'ensemble
 
 Une application Swift Package Manager, orchestrée aujourd'hui par un front-end en ligne de
-commande (`ImprovCLI`), mais dont toute la logique métier vit dans une couche
+commande (`JamShack`), mais dont toute la logique métier vit dans une couche
 présentation-agnostique (`AppCore`) pensée pour qu'une future interface SwiftUI puisse s'y
 brancher sans rien réécrire.
 
@@ -46,7 +46,7 @@ AudioEngine (lecture Piece + SoundTrack, micro/FFT)   MIDIEngine (CoreMIDI)   Ne
                                                                     AppCore
                                                    (ImprovSession — logique applicative)
                                                                         │
-                                                                   ImprovCLI
+                                                                   JamShack
                                             (REPL + écrans "run"/"config" + menus DOS)
 ```
 
@@ -301,7 +301,7 @@ volontairement simple puisque les échanges eux-mêmes sont simples (notes, anno
   recherche fixe (pont synchrone au-dessus de l'API à callback de `NWBrowser`, même principe
   que `LLMProvider` pour `URLSession`) puis renvoie ce qui a été trouvé — vide n'est pas une
   erreur, juste « rien vu sur ce réseau pendant cette fenêtre ». Testé pour de vrai (pas
-  seulement en théorie) : deux processus `ImprovCLI` séparés sur cette machine, l'un en
+  seulement en théorie) : deux processus `JamShack` séparés sur cette machine, l'un en
   `server`, l'autre tapant `discover`, se voient bien l'un l'autre — voir §AppCore.
 - **`FramedConnection`/`NetworkServer`/`NetworkClient` sont `@unchecked Sendable`** : chaque
   propriété mutable n'est touchée que depuis la queue série dédiée à cette instance — même
@@ -312,7 +312,7 @@ volontairement simple puisque les échanges eux-mêmes sont simples (notes, anno
 Un second transport réseau, indépendant de `NetEngine` : là où `NetEngine` fait du TCP+JSON
 fait main pour la session collaborative, `WebConsole` fait du HTTP/1.1 fait main (toujours
 `Network.framework`, toujours aucune dépendance tierce) pour servir une page/un script à un
-navigateur — voir §AppCore pour qui le pilote et §ImprovCLI pour la commande/le menu.
+navigateur — voir §AppCore pour qui le pilote et §JamShack pour la commande/le menu.
 `WebConsole` ne connaît rien à `ImprovSession`/`AppCore` : il reçoit juste un closure
 `onRequest` et ne sait rien de ce qu'il sert.
 
@@ -575,7 +575,7 @@ l'appeler et lire son état ; une future interface SwiftUI pourrait s'y brancher
   `GET /state` ne fait que relire ce cache (`webConsoleStateQueue.sync`), jamais recalculer à
   la demande, pour que le coût reste constant quel que soit le nombre de clients/la fréquence
   de sondage de chacun. `buildWebConsoleState()` transpose la même donnée que
-  `renderConsoleFrame(mode: .run)` (`ImprovCLI/main.swift`) — pistes en écoute, lecture d'un
+  `renderConsoleFrame(mode: .run)` (`JamShack/main.swift`) — pistes en écoute, lecture d'un
   `Piece`/d'une `SoundTrack` — en valeurs déjà résolues (classes de hauteur 0…11 pour
   l'accord/le mode, libellés déjà formatés via `Self.describe`) plutôt qu'en `RecognizedChord`/
   `RecognizedMode` bruts, pour que `app.js` n'ait plus qu'à peindre, jamais à ré-interpréter de
@@ -605,7 +605,7 @@ session doit réutiliser l'une de ces deux queues, ou en créer une nouvelle —
 directement depuis `.global()`. Voir la mémoire `feedback-improv-app-concurrency` pour le
 détail des trois incidents.
 
-## ImprovCLI — l'interface en ligne de commande
+## JamShack — l'interface en ligne de commande
 
 Trois modes d'affichage coexistent, tous alimentés par le même `ImprovSession` :
 - **Command** — REPL classique (le prompt `>`), commandes tapées au clavier, mode par défaut.
@@ -745,7 +745,7 @@ plusieurs exécutions répétées.
 cd MusicTheoryKit
 swift build                 # compile tout
 swift run SanityChecks      # exécute tous les checks (seul moyen de "tester" ici)
-swift run ImprovCLI         # lance l'application
+swift run JamShack         # lance l'application
 ```
 
 ## Limites connues

@@ -50,7 +50,7 @@ let package = Package(
         // SwiftUI front-end can bind to the same `ImprovSession` instance later.
         .target(name: "AppCore", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "AudioEngine", "MIDIEngine", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole"]),
         .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit", "LLMEngine", "NetEngine", "SoundTrackModel"]),
-        .executableTarget(name: "ImprovCLI", dependencies: ["AppCore"]),
+        .executableTarget(name: "JamShack", dependencies: ["AppCore"]),
         .executableTarget(name: "SanityChecks", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "AudioEngine", "MIDIEngine", "AppCore", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole"]),
     ]
 )

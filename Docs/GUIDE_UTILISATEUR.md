@@ -8,7 +8,7 @@ session du 2026-07-07. Un terme ambigu ou peu clair ? Voir `Docs/GLOSSAIRE.md`.
 Depuis le dossier `MusicTheoryKit/` :
 
 ```sh
-swift run ImprovCLI
+swift run JamShack
 ```
 
 Au démarrage, l'application charge automatiquement les dossiers de travail par défaut

@@ -2,15 +2,27 @@ import Foundation
 
 /// ANSI colors used on the keyboard: a held note explained by no chord at all (too few
 /// notes, or nothing recognized), a held note that IS accompanied by a recognized chord
-/// but isn't itself part of it, a recognized chord's root vs. its other tones, and the
-/// mode-membership marker row.
+/// but isn't itself part of it, and a recognized chord's root vs. its other tones.
 enum KeyboardColor {
     static let reset = "\u{1B}[0m"
     static let heldNoChord = "\u{1B}[1;37m"      // bold white
     static let heldOutsideChord = "\u{1B}[1;32m" // bold green
     static let chordRoot = "\u{1B}[1;35m"        // bold magenta
     static let chordTone = "\u{1B}[1;33m"        // bold yellow
-    static let modeMarker = "\u{1B}[1;36m"       // bold cyan
+
+    /// One color per scale degree (index 0 = degree 1 ... index 6 = degree 7) for the
+    /// mode role-line — 256-color ANSI, deliberately distinct from the basic-16-color
+    /// root/tone/outside highlights above (which can appear on the same frame) so a
+    /// role-line color is never mistaken for a chord-highlight color.
+    static let degreeColors: [String] = [
+        "\u{1B}[1;38;5;208m", // 1 tonic — orange
+        "\u{1B}[1;38;5;39m",  // 2 — sky blue
+        "\u{1B}[1;38;5;205m", // 3 — hot pink
+        "\u{1B}[1;38;5;141m", // 4 — lavender
+        "\u{1B}[1;38;5;202m", // 5 — red-orange
+        "\u{1B}[1;38;5;75m",  // 6 — light blue
+        "\u{1B}[1;38;5;245m", // 7 — grey (deliberately desaturated)
+    ]
 }
 
 private let blackSemitones: Set<Int> = [1, 3, 6, 8, 10]
@@ -36,11 +48,12 @@ private let eToFSeparator = "\u{1B}[2m┊\u{1B}[0m"
 /// height without making anything easier to see).
 ///
 /// `colorFor` maps an absolute MIDI pitch to an ANSI color prefix, or nil to leave it
-/// unhighlighted. `modeMarker` marks which pitch classes (0...11, repeating every octave)
-/// belong to the current mode, using "▬" — a standalone rectangle glyph, not a box-drawing
-/// character — so consecutive marked notes read as separate dashes, not one continuous
-/// joined line. The marker row is always drawn (blank where nothing matches when the
-/// default `{ _ in false }` is used, e.g. no mode detected yet) rather than being omitted —
+/// unhighlighted. `modeMarker` gives the scale-degree role (1-7) and color of each pitch
+/// class (0...11, repeating every octave) that belongs to the current mode, or nil for a
+/// pitch class outside it — the marker row shows that colored digit above the note instead
+/// of a uniform mark, so the role-line conveys *which* degree each note is, not just
+/// membership. The marker row is always drawn (blank where nothing matches when the
+/// default `{ _ in nil }` is used, e.g. no mode detected yet) rather than being omitted —
 /// an omitted row used to shift the keyboard, and everything below it, up and down as mode
 /// detection came and went, which read as another kind of flicker.
 ///
@@ -51,7 +64,7 @@ func renderKeyboard(
     octaveCount: Int,
     blackZoneRows: Int = 1,
     whiteZoneRows: Int = 1,
-    modeMarker: (Int) -> Bool = { _ in false },
+    modeMarker: (Int) -> (degree: Int, color: String)? = { _ in nil },
     colorFor: (Int) -> String?
 ) -> [String] {
     var rows = Array(repeating: "", count: blackZoneRows + whiteZoneRows)
@@ -70,7 +83,7 @@ func renderKeyboard(
             for r in 0..<blackZoneRows { rows[r] += isBlack ? blackCell : whiteCell }
             for r in 0..<whiteZoneRows { rows[blackZoneRows + r] += isBlack ? " " : whiteCell }
 
-            markerRow += modeMarker(semitone) ? "\(KeyboardColor.modeMarker)▬\(KeyboardColor.reset)" : " "
+            markerRow += modeMarker(semitone).map { "\($0.color)\($0.degree)\(KeyboardColor.reset)" } ?? " "
 
             if isBlack {
                 labelRow += " "

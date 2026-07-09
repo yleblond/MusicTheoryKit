@@ -185,7 +185,7 @@ func handleMenuKey(_ key: Key, categories: [MenuCategory]) {
         case .left, .right, .escape:
             // Escape alongside the arrows: a way into the menu that isn't a letter, so it
             // stays available even when letter mnemonics are disabled (see "Source clavier"
-            // in ImprovCLI/main.swift, which relies on this to get back to the menu).
+            // in JamShack/main.swift, which relies on this to get back to the menu).
             openMenuIndex = 0
             selectedItemIndex = 0
         default:
