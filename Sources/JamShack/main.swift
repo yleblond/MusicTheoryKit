@@ -1450,49 +1450,6 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             try executeCommand("use-scene", [choice])
         },
     ]),
-    MenuCategory(mnemonic: "M", title: "Morceaux", items: [
-        MenuItem(label: "Ecouter le morceau") { try executeCommand("play", []) },
-        MenuItem(label: "Voir le morceau (structure et instruments)") { try executeCommand("show-piece", []) },
-        MenuItem.separator,
-        MenuItem(label: "Choisir le son de lecture du morceau...") {
-            guard !session.sampleFiles.isEmpty else { print("Choisis d'abord un dossier de sons (menu JamShack)."); return }
-            for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let choice = promptLine("Charger quel son (numero ou nom): "), !choice.isEmpty else { return }
-            try executeCommand("use-sample", [choice])
-        },
-        MenuItem(label: "Choisir le son d'une piste...") {
-            printPieceDetail()
-            guard let sectionText = promptLine("Quelle section (numero): "), !sectionText.isEmpty else { return }
-            guard let trackText = promptLine("Quelle piste (numero): "), !trackText.isEmpty else { return }
-            if session.sampleFiles.isEmpty { print("(Astuce: choisis d'abord un dossier de sons, menu JamShack.)") }
-            for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
-            let instrumentText = promptLine("Quel son (numero, nom, ou vide pour le son par defaut): ") ?? ""
-            try executeCommand("set-track-instrument", [sectionText, trackText, instrumentText])
-        },
-        MenuItem(label: "Choisir le son des accords d'une section...") {
-            printPieceDetail()
-            guard let sectionText = promptLine("Quelle section (numero): "), !sectionText.isEmpty else { return }
-            if session.sampleFiles.isEmpty { print("(Astuce: choisis d'abord un dossier de sons, menu JamShack.)") }
-            for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
-            let instrumentText = promptLine("Quel son (numero, nom, ou vide pour le son par defaut): ") ?? ""
-            try executeCommand("set-chord-instrument", [sectionText, instrumentText])
-        },
-        MenuItem.separator,
-        MenuItem(label: "Charger demo") { try executeCommand("load-demo", []) },
-        MenuItem(label: "Charger morceau...") {
-            guard !session.pieceFiles.isEmpty else { print("Choisis d'abord un dossier de morceaux (menu JamShack)."); return }
-            for (index, name) in session.pieceFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let choice = promptLine("Charger quel morceau (numero ou nom): "), !choice.isEmpty else { return }
-            try executeCommand("use-piece", [choice])
-        },
-        MenuItem(label: "Sauvegarder le morceau") { try executeCommand("save", []) },
-        MenuItem(label: "Sauvegarder le morceau sous...") {
-            guard let name = promptLine("Nom de sauvegarde: "), !name.isEmpty else { return }
-            try executeCommand("save-as", [name])
-        },
-        MenuItem.separator,
-        MenuItem.header("Assistant IA"),
-    ]),
     MenuCategory(mnemonic: "G", title: "Guide Musicaux", items: [
         MenuItem(label: "Voir le Guide Musical") { try executeCommand("guide", []) },
         MenuItem.separator,
@@ -1601,6 +1558,49 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             guard let name = promptLine("Nom d'export du prompt: "), !name.isEmpty else { return }
             try executeCommand("export-soundtrack-prompt", [name])
         },
+    ]),
+    MenuCategory(mnemonic: "M", title: "Morceaux", items: [
+        MenuItem(label: "Ecouter le morceau") { try executeCommand("play", []) },
+        MenuItem(label: "Voir le morceau (structure et instruments)") { try executeCommand("show-piece", []) },
+        MenuItem.separator,
+        MenuItem(label: "Choisir le son de lecture du morceau...") {
+            guard !session.sampleFiles.isEmpty else { print("Choisis d'abord un dossier de sons (menu JamShack)."); return }
+            for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard let choice = promptLine("Charger quel son (numero ou nom): "), !choice.isEmpty else { return }
+            try executeCommand("use-sample", [choice])
+        },
+        MenuItem(label: "Choisir le son d'une piste...") {
+            printPieceDetail()
+            guard let sectionText = promptLine("Quelle section (numero): "), !sectionText.isEmpty else { return }
+            guard let trackText = promptLine("Quelle piste (numero): "), !trackText.isEmpty else { return }
+            if session.sampleFiles.isEmpty { print("(Astuce: choisis d'abord un dossier de sons, menu JamShack.)") }
+            for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
+            let instrumentText = promptLine("Quel son (numero, nom, ou vide pour le son par defaut): ") ?? ""
+            try executeCommand("set-track-instrument", [sectionText, trackText, instrumentText])
+        },
+        MenuItem(label: "Choisir le son des accords d'une section...") {
+            printPieceDetail()
+            guard let sectionText = promptLine("Quelle section (numero): "), !sectionText.isEmpty else { return }
+            if session.sampleFiles.isEmpty { print("(Astuce: choisis d'abord un dossier de sons, menu JamShack.)") }
+            for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
+            let instrumentText = promptLine("Quel son (numero, nom, ou vide pour le son par defaut): ") ?? ""
+            try executeCommand("set-chord-instrument", [sectionText, instrumentText])
+        },
+        MenuItem.separator,
+        MenuItem(label: "Charger demo") { try executeCommand("load-demo", []) },
+        MenuItem(label: "Charger morceau...") {
+            guard !session.pieceFiles.isEmpty else { print("Choisis d'abord un dossier de morceaux (menu JamShack)."); return }
+            for (index, name) in session.pieceFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard let choice = promptLine("Charger quel morceau (numero ou nom): "), !choice.isEmpty else { return }
+            try executeCommand("use-piece", [choice])
+        },
+        MenuItem(label: "Sauvegarder le morceau") { try executeCommand("save", []) },
+        MenuItem(label: "Sauvegarder le morceau sous...") {
+            guard let name = promptLine("Nom de sauvegarde: "), !name.isEmpty else { return }
+            try executeCommand("save-as", [name])
+        },
+        MenuItem.separator,
+        MenuItem.header("Assistant IA"),
     ]),
     MenuCategory(mnemonic: "C", title: "Composition", items: [
         MenuItem(label: "Decrire le morceau...") {

@@ -58,11 +58,12 @@ public let webConsoleIndexHTML = """
 <meta charset="utf-8">
 <title>JamShack — Console Web</title>
 <style>
-  body { background: #111; color: #ddd; font-family: -apple-system, sans-serif; margin: 1.5rem; }
+  body { background: #111; color: #ddd; font-family: -apple-system, sans-serif; box-sizing: border-box; margin: 1.5rem auto; max-width: 1600px; padding: 0 1.5rem; }
   h1 { font-size: 1.1rem; color: #888; font-weight: normal; }
   h2 { font-size: 1rem; margin: 1.5rem 0 0.4rem; }
   .field { color: #888; }
   .field b { color: #ddd; }
+  .keyboard-scroll { overflow-x: auto; max-width: 100%; }
   .keyboard { position: relative; margin: 1rem 0 0.8rem; }
   .pkey { position: absolute; top: 0; box-sizing: border-box; border: 1px solid #333; border-radius: 0 0 4px 4px; }
   .pkey.white { background: #f5f5f5; z-index: 1; }
@@ -77,7 +78,7 @@ public let webConsoleIndexHTML = """
     font-size: 9px; line-height: 14px; text-align: center; color: #111; font-weight: bold;
   }
   .empty { color: #666; font-style: italic; }
-  .wheel { margin: 0.5rem 0 1rem; display: block; width: 100%; max-width: 680px; height: auto; }
+  .wheel { margin: 0.5rem 0 1rem; display: block; width: 100%; max-width: 820px; height: auto; }
   .wheel-disk { fill: #fff; }
   .wheel-grid-line { stroke: #000; stroke-width: 1; }
   .wheel-cell-shape { stroke: #333; stroke-width: 1; }
@@ -160,7 +161,11 @@ function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones) {
       blackHTML += `<div class="pkey black ${cls}" style="left:${x}px; width:${BLACK_KEY_WIDTH}px; height:${BLACK_KEY_HEIGHT}px;">${badge}</div>`;
     }
   }
-  return `<div class="keyboard" style="width:${totalWidth}px; height:${WHITE_KEY_HEIGHT}px;">${whiteHTML}${blackHTML}</div>`;
+  // The keyboard itself is necessarily a fixed pixel width (`.pkey` children are absolutely
+  // positioned, which a percentage-based layout can't drive) — wrapped in its own scrolling
+  // container so a narrow browser window scrolls just this widget horizontally instead of
+  // the whole page (see `.keyboard-scroll` in the CSS above).
+  return `<div class="keyboard-scroll"><div class="keyboard" style="width:${totalWidth}px; height:${WHITE_KEY_HEIGHT}px;">${whiteHTML}${blackHTML}</div></div>`;
 }
 
 // Point at angle `2*PI*index/columnCount - PI/2` (column 0 at 12 o'clock, clockwise — matches
