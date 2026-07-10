@@ -1,8 +1,10 @@
 /// The two static assets served by the virtual-keyboard HTTP server (`GET /` and `GET
 /// /app.js`) — see `ImprovSession.startVirtualKeyboard`. Deliberately a separate page/module
 /// concern from `StaticAssets.swift`'s read-only web console: this one is interactive (typed
-/// keys, mouse clicks, touches all play notes), so keeping it in its own file/route means the
-/// always-on console page never has to reason about input handling at all.
+/// keys, mouse clicks, touches all play notes — including clicking/tapping a circle-of-fifths
+/// wheel cell, while a guide is active, to play that chord's triad), so keeping it in its own
+/// file/route means the always-on console page never has to reason about input handling at
+/// all — its own `renderWheel` has no click handling, deliberately.
 ///
 /// **Multi-client**: every route below `/`/`/app.js` requires `?client=<uuid>` — a random id
 /// this page generates once and keeps in `localStorage`, so the SAME browser/device keeps
@@ -65,7 +67,8 @@ public let virtualKeyboardIndexHTML = """
   .wheel { margin: 0.5rem 0 1rem; display: block; width: 100%; max-width: 520px; height: auto; }
   .wheel-disk { fill: #fff; }
   .wheel-grid-line { stroke: #000; stroke-width: 1; }
-  .wheel-cell-shape { stroke: #333; stroke-width: 1; }
+  .wheel-cell-shape { stroke: #333; stroke-width: 1; cursor: pointer; }
+  .wheel-cell-shape.pressed { filter: brightness(0.7); }
   .wheel-diatonic-boundary { fill: none; stroke: #1a3a6b; stroke-width: 5; stroke-linejoin: round; }
   /* No `fill` here (unlike most rules) — the palette's per-note text color is set inline,
      since it varies by pitch class (`PITCH_CLASS_TEXT_COLORS[cell.pitchClass]`), not fixed. */
@@ -140,6 +143,20 @@ function identityQuery() {
 // the plain wheel itself, per "juste le cercle des quintes."
 const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 const CHORD_SUFFIX = { major: '', minor: 'm', diminished: '°' };
+// Plain triads (root/third/fifth), rooted an octave that always lands inside
+// [MIN_MIDI, MAX_MIDI] no matter which pitch class/quality (root in C4..B4, at most a
+// fifth above) — so clicking a wheel cell always lights up real, visible keys on this
+// page's own piano, not just an abstract "chord root" pitch class.
+const WHEEL_CHORD_INTERVALS = { major: [0, 4, 7], minor: [0, 3, 7], diminished: [0, 3, 6] };
+function chordPitchesForCell(pitchClass, quality) {
+  const root = 60 + pitchClass;
+  return WHEEL_CHORD_INTERVALS[quality].map(interval => root + interval);
+}
+function wheelCellFromTarget(el) {
+  const cell = el && el.closest ? el.closest('.wheel-cell-shape') : null;
+  if (!cell) return null;
+  return { pitches: chordPitchesForCell(parseInt(cell.dataset.pitchClass, 10), cell.dataset.quality), el: cell };
+}
 function degreeSVGMarkup(degree) {
   if (!degree.endsWith('°')) return degree;
   return `${degree.slice(0, -1)}<tspan baseline-shift="super" font-size="75%">°</tspan>`;
@@ -218,10 +235,15 @@ function renderWheel(wheel) {
       const textColor = PITCH_CLASS_TEXT_COLORS[cell.pitchClass];
       const size = 18;
       const rotateDeg = (360 * index) / count;
+      // `data-pitch-class`/`data-quality` — read back by `wheelCellFromTarget()` to figure out
+      // which chord to play when this shape is clicked/tapped (see there); the read-only web
+      // console's own `renderWheel` deliberately has no equivalent, since only this
+      // interactive page plays notes.
+      const cellAttrs = `class="wheel-cell-shape" data-pitch-class="${cell.pitchClass}" data-quality="${cell.quality}"`;
       if (cell.shape === 'square') {
-        svg += `<g transform="rotate(${rotateDeg} ${pos.x} ${pos.y})"><rect class="wheel-cell-shape" x="${pos.x - size}" y="${pos.y - size}" width="${size * 2}" height="${size * 2}" fill="${color}" /></g>`;
+        svg += `<g transform="rotate(${rotateDeg} ${pos.x} ${pos.y})"><rect ${cellAttrs} x="${pos.x - size}" y="${pos.y - size}" width="${size * 2}" height="${size * 2}" fill="${color}" /></g>`;
       } else {
-        svg += `<circle class="wheel-cell-shape" cx="${pos.x}" cy="${pos.y}" r="${size}" fill="${color}" />`;
+        svg += `<circle ${cellAttrs} cx="${pos.x}" cy="${pos.y}" r="${size}" fill="${color}" />`;
       }
       const symbol = NOTE_NAMES[cell.pitchClass] + CHORD_SUFFIX[cell.quality];
       svg += `<text class="wheel-cell-symbol" x="${pos.x}" y="${pos.y + 1}" fill="${textColor}">${symbol}</text>`;
@@ -273,6 +295,15 @@ let chordRoot = null;
 let chordTones = new Set();
 let infoLine = '<span class="empty">(aucune note)</span>';
 let guideHTML = '';   // guide title/steps + wheel, only while a guide is active — see refresh()
+
+// How many wheel-cell presses (mouse + every active touch) are currently in flight — while
+// this is > 0, `renderKeyboard()` skips rebuilding `#guide-container` (see there): the wheel
+// SVG is thrown away and rebuilt from scratch on every poll, and a touch that's still down
+// when that happens has its element detached mid-gesture — the exact "release only registers
+// on a second tap" failure mode `ensureKeyboardBuilt()`'s own comment describes, just for the
+// wheel instead of the piano. Freezing the wheel's DOM for the (usually sub-second) duration
+// of a press sidesteps it without needing the piano's full "build once, mutate" treatment.
+let wheelChordActiveCount = 0;
 
 // This client's OWN currently-pressed pitches — shown immediately (`.pressed`) without
 // waiting for the next /state poll, which only carries the *server's* confirmed view (used
@@ -326,6 +357,11 @@ function releaseAll() {
   downKeys.clear();
   activeTouches.clear();
   mouseHeldPitch = null;
+  if (mouseHeldWheelEl) { mouseHeldWheelEl.classList.remove('pressed'); mouseHeldWheelEl = null; }
+  mouseHeldWheelPitches = [];
+  activeWheelTouches.forEach(t => t.el.classList.remove('pressed'));
+  activeWheelTouches.clear();
+  wheelChordActiveCount = 0;
   sendNoteEvent('/release-all');
   renderKeyboard();
 }
@@ -422,7 +458,11 @@ function renderKeyboard() {
   }
   ensureKeyboardBuilt();
   document.getElementById('identity-container').innerHTML = `<div class="identity">Vous : <b>${alias}</b> — <a onclick="renameIdentity()">changer</a></div>`;
-  document.getElementById('guide-container').innerHTML = guideHTML;
+  // Skipped entirely (not just "kept identical") while a wheel-cell press is in flight — see
+  // `wheelChordActiveCount`'s doc comment.
+  if (wheelChordActiveCount === 0) {
+    document.getElementById('guide-container').innerHTML = guideHTML;
+  }
   document.getElementById('info-container').innerHTML = `<div class="field">Accord: <b>${infoLine}</b></div>`;
   updateKeyVisuals();
 }
@@ -434,41 +474,78 @@ function pitchFromTarget(el) {
   return key ? parseInt(key.dataset.pitch, 10) : null;
 }
 
-// Mouse: only one pointer, so at most one note at a time — mouseup/mouseleave anywhere
-// (not just on the key itself) releases it, so dragging off a held key while the button is
-// still down doesn't leave a stuck note.
+// Mouse: only one pointer, so at most one note (or one wheel chord) at a time — mouseup
+// anywhere (not just on the key/cell itself) releases it, so dragging off while the button
+// is still down doesn't leave a stuck note.
 let mouseHeldPitch = null;
+let mouseHeldWheelPitches = [];
+let mouseHeldWheelEl = null;
 document.addEventListener('mousedown', e => {
   const pitch = pitchFromTarget(e.target);
-  if (pitch === null) return;
+  if (pitch !== null) {
+    e.preventDefault();
+    mouseHeldPitch = pitch;
+    noteOn(pitch);
+    return;
+  }
+  const cell = wheelCellFromTarget(e.target);
+  if (cell === null) return;
   e.preventDefault();
-  mouseHeldPitch = pitch;
-  noteOn(pitch);
+  mouseHeldWheelPitches = cell.pitches;
+  mouseHeldWheelEl = cell.el;
+  wheelChordActiveCount++;
+  cell.el.classList.add('pressed');
+  cell.pitches.forEach(noteOn);
 });
 document.addEventListener('mouseup', () => {
   if (mouseHeldPitch !== null) { noteOff(mouseHeldPitch); mouseHeldPitch = null; }
+  if (mouseHeldWheelPitches.length) {
+    mouseHeldWheelPitches.forEach(noteOff);
+    mouseHeldWheelPitches = [];
+    mouseHeldWheelEl.classList.remove('pressed');
+    mouseHeldWheelEl = null;
+    wheelChordActiveCount--;
+  }
 });
 
 // Touch: genuinely multi-touch — each `Touch` has a stable `identifier` across its own
 // start/end, tracked independently so chords via several fingers (or several people on an
-// iPad) work correctly.
+// iPad) work correctly. Kept as two separate maps (piano pitch vs. wheel chord) rather than
+// one, since a wheel touch needs to remember its own element too (to un-highlight it) and a
+// piano touch doesn't.
 const activeTouches = new Map(); // identifier -> pitch
+const activeWheelTouches = new Map(); // identifier -> {pitches, el}
 document.addEventListener('touchstart', e => {
   e.preventDefault();
   for (const touch of e.changedTouches) {
     const pitch = pitchFromTarget(touch.target);
-    if (pitch === null) continue;
-    activeTouches.set(touch.identifier, pitch);
-    noteOn(pitch);
+    if (pitch !== null) {
+      activeTouches.set(touch.identifier, pitch);
+      noteOn(pitch);
+      continue;
+    }
+    const cell = wheelCellFromTarget(touch.target);
+    if (cell === null) continue;
+    activeWheelTouches.set(touch.identifier, cell);
+    wheelChordActiveCount++;
+    cell.el.classList.add('pressed');
+    cell.pitches.forEach(noteOn);
   }
 }, { passive: false });
 function endTouch(e) {
   e.preventDefault();
   for (const touch of e.changedTouches) {
     const pitch = activeTouches.get(touch.identifier);
-    if (pitch === undefined) continue;
-    activeTouches.delete(touch.identifier);
-    noteOff(pitch);
+    if (pitch !== undefined) {
+      activeTouches.delete(touch.identifier);
+      noteOff(pitch);
+    }
+    const cell = activeWheelTouches.get(touch.identifier);
+    if (cell === undefined) continue;
+    activeWheelTouches.delete(touch.identifier);
+    cell.el.classList.remove('pressed');
+    cell.pitches.forEach(noteOff);
+    wheelChordActiveCount--;
   }
 }
 document.addEventListener('touchend', endTouch, { passive: false });
