@@ -203,6 +203,17 @@ function polarPoint(cx, cy, r, index, count) {
   return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
 }
 
+// Degrees to rotate a label around its own `polarPoint` so its baseline runs tangent to the
+// wheel (perpendicular to the radius) instead of staying horizontal — same `360*index/count`
+// angle already used to spin the square cells (see `renderWheel`), since a label rotated by
+// that amount ends up aligned the same way. Flipped by 180° on the lower half of the circle
+// (deg strictly between 90 and 270) so labels there still read left-to-right instead of
+// upside-down — the tangent line is the same either way, only which end reads "first" flips.
+function circularLabelRotation(index, count) {
+  const deg = (360 * index) / count;
+  return deg > 90 && deg < 270 ? deg + 180 : deg;
+}
+
 // One note name per pitch class — mirrors the physical wheel's own mixed convention (sharp
 // side C,G,D,A,E,B,F# stays sharp; the remaining 5 black keys are spelled flat: Db,Ab,Eb,
 // Bb,F), not a single global sharps-only or flats-only table.
@@ -320,7 +331,8 @@ function renderWheel(wheel, tracks) {
       // on) — comparing pitch classes would only ever match "Ionian" (whichever column IS the
       // active tonic never carries the active mode's own name unless it's Ionian).
       const cls = column.modeName === wheel.activeModeName ? 'wheel-mode-name active' : 'wheel-mode-name';
-      svg += `<text class="${cls}" x="${pos.x}" y="${pos.y}">${column.modeName}</text>`;
+      const rotate = circularLabelRotation(index, count);
+      svg += `<text class="${cls}" x="${pos.x}" y="${pos.y}" transform="rotate(${rotate} ${pos.x} ${pos.y})">${column.modeName}</text>`;
     }
     // Each cell has its OWN chord root (`cell.pitchClass`) — only the major ring is rooted
     // on the column itself; minor/diminished are the column's relative-minor/leading-tone-

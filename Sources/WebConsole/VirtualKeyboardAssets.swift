@@ -165,6 +165,15 @@ function polarPoint(cx, cy, r, index, count) {
   const angle = (2 * Math.PI * index) / count - Math.PI / 2;
   return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
 }
+
+// Degrees to rotate a label around its own `polarPoint` so its baseline runs tangent to the
+// wheel (perpendicular to the radius) instead of staying horizontal — mirrors
+// `StaticAssets.swift`'s own `circularLabelRotation` (see there for the reasoning behind the
+// 180° flip on the lower half of the circle).
+function circularLabelRotation(index, count) {
+  const deg = (360 * index) / count;
+  return deg > 90 && deg < 270 ? deg + 180 : deg;
+}
 const WHEEL_RING_RADIUS = { major: 110, minor: 160, diminished: 205 };
 const WHEEL_MODE_NAME_RADIUS = 248;
 const WHEEL_DISK_RADIUS = 262;
@@ -226,7 +235,8 @@ function renderWheel(wheel) {
     if (column.modeName) {
       const pos = polarPoint(cx, cy, WHEEL_MODE_NAME_RADIUS, index, count);
       const cls = column.modeName === wheel.activeModeName ? 'wheel-mode-name active' : 'wheel-mode-name';
-      svg += `<text class="${cls}" x="${pos.x}" y="${pos.y}">${column.modeName}</text>`;
+      const rotate = circularLabelRotation(index, count);
+      svg += `<text class="${cls}" x="${pos.x}" y="${pos.y}" transform="rotate(${rotate} ${pos.x} ${pos.y})">${column.modeName}</text>`;
     }
     column.cells.forEach(cell => {
       const r = WHEEL_RING_RADIUS[cell.quality];
