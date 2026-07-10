@@ -679,13 +679,33 @@ autre (`track clavier-web:<id> son on`, `record start clavier-web:<id>`...), l'i
 exact se copiant depuis `tracks`. Arrêter le clavier virtuel supprime toutes les pistes
 connectées d'un coup.
 
-**Trois façons de jouer, en même temps si besoin** :
+**Quatre façons de jouer, en même temps si besoin** :
 - **Souris/tactile** : clique ou touche directement une touche du piano affiché.
   Vraiment multi-tactile — sur un iPad/écran tactile, plusieurs doigts sur plusieurs touches
   jouent un accord, chaque doigt suivi indépendamment.
-- **Clavier de l'ordinateur** : même disposition « Musical Typing » que la piste `clavier` du
-  terminal (§3.2) — `A S D F G H J K L ;` pour les touches blanches, `W E T Y U O P` pour les
-  noires.
+- **Cercle des quintes** (si un guide musical est en cours, voir plus bas) : clique/touche une
+  case pour jouer l'accord (majeur/mineur/diminué) qu'elle représente — la case et les touches
+  du piano concernées s'allument tant que la pression est maintenue.
+- **Clavier de l'ordinateur** : deux paires de rangées superposées couvrant environ 2,3
+  octaves — la rangée de chiffres + `qwertyuiop` pour le registre grave (de Sol à Si, `Q` à
+  `P`), `S D G H J` + la rangée du bas (`zxcvbnm`) pour le registre aigu qui suit juste
+  au-dessus (de Do à Si, `Z` à `M`, directement à la suite du Si grave). La lettre qui joue chaque
+  note est affichée directement sur la touche (majuscule, blanc sur les touches noires, noir
+  sur les blanches, bien centrée sur la partie visible des touches Do/Fa/Mi/Si) ; le nom de la
+  touche (C3, C4...) apparaît en bas des touches Do. Le mappage se fait par **position
+  physique de la touche**, pas par caractère — reste donc correct même sur un clavier
+  QWERTZ/AZERTY. La lettre *affichée*, elle, doit en plus savoir laquelle des deux
+  dispositions (QWERTY ou QWERTZ) tu utilises réellement — seuls Y et Z diffèrent entre les
+  deux pour les touches utilisées ici : un lien **Disposition clavier : QWERTY/QWERTZ —
+  changer**, juste sous ton nom, bascule l'un vers l'autre et retient le choix (comme
+  l'alias). Deviné automatiquement au premier chargement quand le navigateur le permet
+  (Chrome/Edge, et seulement si la page est ouverte en HTTPS ou en `http://localhost` — pas
+  depuis l'adresse réseau d'un autre appareil), sinon QWERTY par défaut : à corriger à la main
+  une fois avec ce lien si besoin, ça reste ensuite.
+- **Glissement d'octave** : les boutons **Octave -/+**, juste au-dessus du piano, déplacent
+  toute la zone jouable par pas d'une octave, de C0 à C6 — le piano affiché s'ajuste pour montrer
+  exactement la zone jouable au clavier de l'ordinateur à cet instant. Change d'octave relâche
+  d'abord toutes les notes en cours (comme Échap), la zone affichée changeant entièrement.
 
 **Différence importante avec la piste `clavier` du terminal** : un terminal ne voit jamais le
 relâchement d'une touche (§3.2), donc chaque frappe y déclenche une note "pincée" de ~300ms.

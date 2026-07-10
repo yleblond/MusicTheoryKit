@@ -6,6 +6,14 @@
 /// file/route means the always-on console page never has to reason about input handling at
 /// all — its own `renderWheel` has no click handling, deliberately.
 ///
+/// **Computer keyboard**: two overlaid row-pairs (`KEY_MAP`) cover ~2.3 octaves at once
+/// (bass: number row + `qwertyuiop`; treble, continuing right above it: `asdfgh` + the bottom
+/// letter row), mapped by physical position (`KeyboardEvent.code`) rather than by character —
+/// stays correct on a QWERTZ/AZERTY/etc. keyboard, not just the US layout the letters are
+/// named after. `shiftOctave()` (the on-screen Octave -/+ buttons) slides this whole window
+/// by a full octave at a time across `OCTAVE_STOPS` (C0..C6), rebuilding the on-screen piano
+/// to match every time — see `ensureKeyboardBuilt`/`recomputeKeyRange`.
+///
 /// **Multi-client**: every route below `/`/`/app.js` requires `?client=<uuid>` — a random id
 /// this page generates once and keeps in `localStorage`, so the SAME browser/device keeps
 /// driving the SAME `TrackID.webKeyboard(clientID:)` track across reloads, and several
@@ -64,6 +72,13 @@ public let virtualKeyboardIndexHTML = """
   .hint { color: #666; font-size: 0.85rem; margin-top: 0.3rem; }
   .identity { color: #666; font-size: 0.85rem; }
   .identity a { color: #6cf; cursor: pointer; text-decoration: underline; }
+  .octave-controls { color: #888; font-size: 0.85rem; margin: 0.4rem 0; }
+  .octave-controls b { color: #ddd; }
+  .octave-controls button {
+    background: #333; color: #ddd; border: 1px solid #555; border-radius: 4px;
+    width: 1.7rem; height: 1.7rem; font-size: 1rem; line-height: 1; cursor: pointer;
+  }
+  .octave-controls button:hover { background: #444; }
   .wheel { margin: 0.5rem 0 1rem; display: block; width: 100%; max-width: 520px; height: auto; }
   .wheel-disk { fill: #fff; }
   .wheel-grid-line { stroke: #000; stroke-width: 1; }
@@ -86,10 +101,23 @@ public let virtualKeyboardIndexHTML = """
   .pkey.held { background: #bbb !important; }
   .pkey.pressed { filter: brightness(0.7); }
   .degree-badge {
-    position: absolute; top: -32px; left: 50%; transform: translateX(-50%);
-    width: 28px; height: 28px; border-radius: 50%;
-    font-size: 15px; line-height: 28px; text-align: center; font-weight: bold;
+    position: absolute; top: -24px; left: 50%; transform: translateX(-50%);
+    width: 20px; height: 20px; border-radius: 50%;
+    font-size: 11px; line-height: 20px; text-align: center; font-weight: bold;
     pointer-events: none;
+  }
+  /* Same `top` on every key regardless of white/black (both start at the key's own top edge)
+     — that's what makes these line up into one straight horizontal row across the whole
+     keyboard instead of following each key's own height. */
+  .key-letter {
+    position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; font-weight: bold; pointer-events: none; z-index: 3;
+  }
+  .pkey.white .key-letter { color: #111; }
+  .pkey.black .key-letter { color: #fff; }
+  .octave-label {
+    position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; color: #999; pointer-events: none;
   }
 </style>
 </head>
@@ -102,8 +130,121 @@ public let virtualKeyboardIndexHTML = """
 """
 
 public let virtualKeyboardAppJS = """
-const MIN_MIDI = 48; // C3, same range as the terminal's/web console's own keyboards
-const MAX_MIDI = 83; // B5
+// Two overlaid row-pairs — the number row + top letter row form one "black keys above,
+// white keys below" register for the low notes (bass), the home row + bottom letter row
+// form the next one up (treble), continuing right where the bass register's last white key
+// left off. Same shape as the classic computer-keyboard-as-piano layout many trackers/DAWs
+// use, just spelled out explicitly here. Keyed by `KeyboardEvent.code` (physical key
+// position), never by character/`.key` — `.code` names a key by where it SITS on a
+// reference US/ANSI layout regardless of what the visitor's OS keyboard layout actually
+// produces there, so this mapping stays positionally correct on a QWERTZ keyboard (which
+// swaps the Y/Z labels but not their physical slots), AZERTY, etc. — only the on-screen
+// LABEL (`codeLabels` below) needs to know what the visitor's layout actually prints.
+const BASS_WHITE_CODES = ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP'];
+// G A B C D E F G A B, relative to the octave anchor (`root`, below) — ends on a B so the
+// treble register can start clean on the very next natural note, a C (see TREBLE_WHITE_OFFSETS).
+const BASS_WHITE_OFFSETS = [-5, -3, -1, 0, 2, 4, 5, 7, 9, 11];
+const BASS_BLACK_CODES = ['Digit2', 'Digit3', 'Digit5', 'Digit6', 'Digit8', 'Digit9', 'Digit0'];
+// Digit1/4/7 are skipped (no key maps to them) — Digit1 sits above the Q-side edge, Digit4/7
+// sit above the two "natural" gaps (B-C, E-F) that have no black key at all.
+const BASS_BLACK_OFFSETS = [-4, -2, 1, 3, 6, 8, 10];
+const TREBLE_WHITE_CODES = ['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM'];
+const TREBLE_WHITE_OFFSETS = [12, 14, 16, 17, 19, 21, 23]; // C D E F G A B, straight after the bass register's last B
+// Shifted one key right of the naive "same shape as the bass row" alignment (KeyA/KeyD would
+// otherwise be the first two) — matches how these two rows actually sit on a real keyboard.
+// KeyF is skipped — it sits above the E-F gap, which (like B-C above) has no black key; KeyA
+// isn't used at all here (it's one column left of where this row's black keys start).
+const TREBLE_BLACK_CODES = ['KeyS', 'KeyD', 'KeyG', 'KeyH', 'KeyJ'];
+const TREBLE_BLACK_OFFSETS = [13, 15, 18, 20, 22];
+
+// C0..C6 (MIDI 12..84, scientific pitch notation — same convention as the old fixed
+// `MIN_MIDI`/`MAX_MIDI` this replaces) — anchor points `shiftOctave()` steps through, so the
+// ~2.3-octave window the two row-pairs above cover can slide across a real 88-key piano's
+// full range instead of being stuck wherever it started. `root` is the reference C landmark
+// (`KeyR`, the bass register's 4th white key) — NOT the window's own lowest note, which sits
+// 5 semitones below it (see `BASS_WHITE_OFFSETS`).
+const OCTAVE_STOPS = [12, 24, 36, 48, 60, 72, 84];
+let octaveIndex = 3; // C3 — close to the old fixed layout's own MIN_MIDI, kept as the default
+let MIN_MIDI, MAX_MIDI, KEY_MAP, pitchToCode;
+function recomputeKeyRange() {
+  const root = OCTAVE_STOPS[octaveIndex];
+  MIN_MIDI = root - 5; // the bass register's own lowest note (a G)
+  MAX_MIDI = root + 23; // the treble register's last white key (KeyM, a B)
+  KEY_MAP = {};
+  BASS_WHITE_CODES.forEach((code, i) => { KEY_MAP[code] = root + BASS_WHITE_OFFSETS[i]; });
+  BASS_BLACK_CODES.forEach((code, i) => { KEY_MAP[code] = root + BASS_BLACK_OFFSETS[i]; });
+  TREBLE_WHITE_CODES.forEach((code, i) => { KEY_MAP[code] = root + TREBLE_WHITE_OFFSETS[i]; });
+  TREBLE_BLACK_CODES.forEach((code, i) => { KEY_MAP[code] = root + TREBLE_BLACK_OFFSETS[i]; });
+  // One entry per pitch, not per code — every pitch in [MIN_MIDI, MAX_MIDI] has exactly one
+  // mapped code by construction above, which is what lets `ensureKeyboardBuilt()` show a
+  // letter on every single key it draws.
+  pitchToCode = {};
+  Object.entries(KEY_MAP).forEach(([code, pitch]) => { pitchToCode[pitch] = code; });
+}
+recomputeKeyRange();
+
+// Canonical QWERTY reference letters for each code above — the labels shown by default, and
+// always for every code except KeyY/KeyZ (see `applyKeyboardLayout` below). Uppercase
+// already, per "en majuscule".
+const CODE_QWERTY_LABEL = {
+  KeyQ: 'Q', KeyW: 'W', KeyE: 'E', KeyR: 'R', KeyT: 'T', KeyY: 'Y', KeyU: 'U', KeyI: 'I', KeyO: 'O', KeyP: 'P',
+  KeyA: 'A', KeyS: 'S', KeyD: 'D', KeyF: 'F', KeyG: 'G', KeyH: 'H', KeyJ: 'J',
+  KeyZ: 'Z', KeyX: 'X', KeyC: 'C', KeyV: 'V', KeyB: 'B', KeyN: 'N', KeyM: 'M',
+  Digit1: '1', Digit2: '2', Digit3: '3', Digit4: '4', Digit5: '5',
+  Digit6: '6', Digit7: '7', Digit8: '8', Digit9: '9', Digit0: '0',
+};
+// QWERTY vs. QWERTZ differ, for every code this page actually maps, in exactly one place: the
+// Y/Z swap — so a manual, persistent, two-way toggle (`toggleKeyboardLayout`, wired to a link
+// near the identity line) covers it completely, rather than `navigator.keyboard.getLayoutMap()`
+// alone: that API needs a SECURE CONTEXT (https, or http://localhost specifically) and isn't
+// implemented at all in Safari/Firefox, so it silently never corrects anything the moment this
+// page is reached over plain http:// from another device's LAN address — the normal way to
+// reach it from a second browser/tablet, and exactly the situation that kept showing the
+// un-swapped labels even after the underlying `.code`-based `KEY_MAP` was already correct.
+let keyboardLayout = localStorage.getItem('vkKeyboardLayout') || 'qwerty';
+let codeLabels = {};
+function applyKeyboardLayout() {
+  codeLabels = Object.assign({}, CODE_QWERTY_LABEL);
+  if (keyboardLayout === 'qwertz') {
+    codeLabels.KeyY = 'Z';
+    codeLabels.KeyZ = 'Y';
+  }
+}
+applyKeyboardLayout();
+function toggleKeyboardLayout() {
+  keyboardLayout = keyboardLayout === 'qwertz' ? 'qwerty' : 'qwertz';
+  localStorage.setItem('vkKeyboardLayout', keyboardLayout);
+  applyKeyboardLayout();
+  refreshKeyLetterLabels();
+  renderKeyboard();
+}
+// Best-effort pre-fill for the FIRST visit only (never overrides an explicit manual choice
+// above) — if the API happens to be available (secure context, Chrome/Edge) and agrees this
+// is a QWERTZ-style layout, start the toggle there instead of always defaulting to QWERTY.
+if (!localStorage.getItem('vkKeyboardLayout') && navigator.keyboard && navigator.keyboard.getLayoutMap) {
+  navigator.keyboard.getLayoutMap().then(layoutMap => {
+    if (layoutMap.get('KeyY') === 'z' && keyboardLayout === 'qwerty') {
+      keyboardLayout = 'qwertz';
+      applyKeyboardLayout();
+      refreshKeyLetterLabels(); // may resolve after the first paint — patch labels in place
+    }
+  }).catch(() => {}); // unsupported or permission denied — keep the QWERTY default
+}
+
+// Slides the whole bass+treble window up/down by one of the `OCTAVE_STOPS`, then rebuilds the
+// on-screen piano to match — "ajuster la zone affichee en fonction de la zone jouable au
+// clavier". Releases everything first: the visible range is about to change entirely, so
+// whatever was held may not even have an on-screen key left afterward.
+function shiftOctave(delta) {
+  const nextIndex = octaveIndex + delta;
+  if (nextIndex < 0 || nextIndex >= OCTAVE_STOPS.length) return;
+  clearAllLocalPressState();
+  sendNoteEvent('/release-all');
+  octaveIndex = nextIndex;
+  recomputeKeyRange();
+  keyboardBuilt = false;
+  renderKeyboard();
+}
 
 // This browser's persistent identity — generated once, kept in `localStorage` so reloading
 // the page (or closing/reopening the tab) keeps driving the SAME track rather than starting
@@ -143,10 +284,11 @@ function identityQuery() {
 // the plain wheel itself, per "juste le cercle des quintes."
 const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 const CHORD_SUFFIX = { major: '', minor: 'm', diminished: '°' };
-// Plain triads (root/third/fifth), rooted an octave that always lands inside
-// [MIN_MIDI, MAX_MIDI] no matter which pitch class/quality (root in C4..B4, at most a
-// fifth above) — so clicking a wheel cell always lights up real, visible keys on this
-// page's own piano, not just an abstract "chord root" pitch class.
+// Plain triads (root/third/fifth), rooted at a fixed C4-based octave regardless of
+// `shiftOctave()` — lights up real on-screen keys as long as the current octave window
+// happens to overlap C4..G5, same as before this page could slide its own visible range;
+// outside that window the notes still play (the session gets the note-on/off either way),
+// they just won't have a highlighted key to show for it until you shift back.
 const WHEEL_CHORD_INTERVALS = { major: [0, 4, 7], minor: [0, 3, 7], diminished: [0, 3, 6] };
 function chordPitchesForCell(pitchClass, quality) {
   const root = 60 + pitchClass;
@@ -289,15 +431,15 @@ const WHITE_KEY_WIDTH = 44, WHITE_KEY_HEIGHT = 144, BLACK_KEY_WIDTH = 26, BLACK_
 const WHITE_SLOT_BY_SEMITONE = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
 const BLACK_AFTER_WHITE_SLOT = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };
 
-// Same "Musical Typing"-style layout as the terminal's own computer-keyboard track (see
-// `computerKeyboardNoteMap` in `JamShack/main.swift`) — kept in sync by hand, same convention
-// as `PITCH_CLASS_COLORS` above. Unlike the terminal (which can't see key-*up*, so it fakes a
-// 300ms pluck per keystroke), a real keyup event is available here — held keys genuinely
-// sustain until released.
-const COMPUTER_KEY_MAP = {
-  a: 60, w: 61, s: 62, e: 63, d: 64, f: 65, t: 66, g: 67,
-  y: 68, h: 69, u: 70, j: 71, k: 72, o: 73, l: 74, p: 75, ';': 76,
-};
+// C/F have a black key ONLY on their right (nothing between B-C or E-F), E/B have one ONLY
+// on their left — so the visually "exposed" top portion of those 4 white keys (the part not
+// covered by an adjacent black key) isn't centered on the key's own full width like it is for
+// D/G/A (flanked on both sides). `key-letter`'s default `left: 50%` only suits D/G/A and the
+// black keys themselves; `ensureKeyboardBuilt()` overrides it with one of these two for C/F/
+// E/B, so their letters actually sit in the middle of the visible white area, not the middle
+// of the whole key.
+const KEY_LETTER_LEFT_SHIFTED_TOWARD_LEFT = (WHITE_KEY_WIDTH - BLACK_KEY_WIDTH / 2) / 2; // C, F
+const KEY_LETTER_LEFT_SHIFTED_TOWARD_RIGHT = WHITE_KEY_WIDTH - KEY_LETTER_LEFT_SHIFTED_TOWARD_LEFT; // E, B
 
 let roles = {};          // pitch class -> {degree, color, textColor}, from the last /state poll
 let heldPitches = new Set();
@@ -358,13 +500,12 @@ function noteOff(pitch) {
   setPressedVisual(pitch, false);
   sendNoteEvent('/note-off?pitch=' + pitch);
 }
-// The panic button: asks the *session* to release whatever it thinks this track is holding,
-// rather than replaying this client's own (possibly already-wrong) idea of what's down —
-// clears local tracking too, so typed/touched keys don't look stuck after this even if the
-// server had nothing left to release.
-function releaseAll() {
+// Shared by the panic button (below) and `shiftOctave()` — both need to drop every local
+// "what's currently down" record without individually replaying note-offs (the session is
+// asked to release everything itself, via one `/release-all`, right after).
+function clearAllLocalPressState() {
   pressedLocally.clear();
-  downKeys.clear();
+  downCodes.clear();
   activeTouches.clear();
   mouseHeldPitch = null;
   if (mouseHeldWheelEl) { mouseHeldWheelEl.classList.remove('pressed'); mouseHeldWheelEl = null; }
@@ -372,6 +513,13 @@ function releaseAll() {
   activeWheelTouches.forEach(t => t.el.classList.remove('pressed'));
   activeWheelTouches.clear();
   wheelChordActiveCount = 0;
+}
+// The panic button: asks the *session* to release whatever it thinks this track is holding,
+// rather than replaying this client's own (possibly already-wrong) idea of what's down —
+// clears local tracking too, so typed/touched keys don't look stuck after this even if the
+// server had nothing left to release.
+function releaseAll() {
+  clearAllLocalPressState();
   sendNoteEvent('/release-all');
   renderKeyboard();
 }
@@ -401,15 +549,26 @@ function keyClasses(pitch, pc) {
 let keyboardBuilt = false;
 function ensureKeyboardBuilt() {
   if (keyboardBuilt) return;
+  // Only reached right after `shiftOctave()` sets `keyboardBuilt = false` (a deliberate,
+  // one-off user action, never something a periodic `refresh()` tick triggers on its own —
+  // see `wheelChordActiveCount`'s doc comment for why that distinction matters) — safe to
+  // drop whatever the previous range's keyboard div was.
+  document.getElementById('keyboard-container').innerHTML = '';
   const octaveCount = Math.ceil((MAX_MIDI - MIN_MIDI + 1) / 12);
   const totalWidth = octaveCount * 7 * WHITE_KEY_WIDTH;
   const keyboardEl = document.createElement('div');
   keyboardEl.className = 'keyboard';
   keyboardEl.style.width = totalWidth + 'px';
   keyboardEl.style.height = WHITE_KEY_HEIGHT + 'px';
+  // Octave number relative to a fixed reference (pitch 0), not to `MIN_MIDI` itself — `MIN_MIDI`
+  // is no longer always a C (the bass register now starts on a G, see `BASS_WHITE_OFFSETS`),
+  // and computing `octave` from `pitch - MIN_MIDI` silently assumed it was: G2 would land in
+  // "octave 0" while the very next C landed in "octave 1", pushing it 7 white-key slots to the
+  // RIGHT of where it belongs and scrambling the whole keyboard's left-to-right order.
+  const octaveBase = Math.floor(MIN_MIDI / 12);
   for (let pitch = MIN_MIDI; pitch <= MAX_MIDI; pitch++) {
     const pc = ((pitch % 12) + 12) % 12;
-    const octave = Math.floor((pitch - MIN_MIDI) / 12);
+    const octave = Math.floor(pitch / 12) - octaveBase;
     const el = document.createElement('div');
     el.dataset.pitch = String(pitch);
     // A base class up front (`updateKeyVisuals` only ever selects elements that already
@@ -433,10 +592,50 @@ function ensureKeyboardBuilt() {
     badge.className = 'degree-badge';
     badge.style.display = 'none';
     el.appendChild(badge);
+    // The letter/digit that plays this exact pitch (see `KEY_MAP`/`pitchToCode`) — every
+    // pitch in [MIN_MIDI, MAX_MIDI] has exactly one, by construction, so this is never absent
+    // within the range this loop draws. Text filled in by `refreshKeyLetterLabels()`, not
+    // here — it needs to re-run standalone once the real keyboard layout resolves (see
+    // `codeLabels` above), without rebuilding the whole keyboard again.
+    const code = pitchToCode[pitch];
+    if (code) {
+      el.dataset.keyCode = code;
+      const letter = document.createElement('span');
+      letter.className = 'key-letter';
+      // Re-centers on C/F/E/B's own visible white area — see `KEY_LETTER_LEFT_SHIFTED_...`'s
+      // doc comment. Left as the CSS default (`left: 50%`) for D/G/A and every black key.
+      if (pc === 0 || pc === 5) { letter.style.left = KEY_LETTER_LEFT_SHIFTED_TOWARD_LEFT + 'px'; }
+      else if (pc === 4 || pc === 11) { letter.style.left = KEY_LETTER_LEFT_SHIFTED_TOWARD_RIGHT + 'px'; }
+      el.appendChild(letter);
+    }
+    // Only the C of each octave gets a landmark label — not every white key.
+    if (pc === 0) {
+      const octaveLabel = document.createElement('span');
+      octaveLabel.className = 'octave-label';
+      octaveLabel.textContent = noteLabel(pitch);
+      el.appendChild(octaveLabel);
+    }
     keyboardEl.appendChild(el);
   }
   document.getElementById('keyboard-container').appendChild(keyboardEl);
   keyboardBuilt = true;
+  refreshKeyLetterLabels();
+}
+
+function refreshKeyLetterLabels() {
+  document.querySelectorAll('#keyboard-container .pkey').forEach(el => {
+    const letter = el.querySelector('.key-letter');
+    if (!letter) return;
+    letter.textContent = codeLabels[el.dataset.keyCode] || '';
+  });
+}
+
+// "C4", "F#3", etc. — reuses the wheel's own `NOTE_NAMES` rather than a second note-name
+// table, for the octave landmark labels and the octave-controls range readout.
+function noteLabel(pitch) {
+  const pc = ((pitch % 12) + 12) % 12;
+  const octave = Math.floor(pitch / 12) - 1;
+  return NOTE_NAMES[pc] + octave;
 }
 
 function updateKeyVisuals() {
@@ -463,11 +662,18 @@ function renderKeyboard() {
       '<div id="identity-container"></div>' +
       '<div id="guide-container"></div>' +
       '<div id="info-container"></div>' +
+      '<div id="octave-container" class="octave-controls">Octave : ' +
+      '<button onclick="shiftOctave(-1)">-</button> <b id="octave-range-label"></b> ' +
+      '<button onclick="shiftOctave(1)">+</button></div>' +
       '<div id="keyboard-container"></div>' +
-      '<div class="hint">Touches: A S D F G H J K L ; (blanches), W E T Y U O P (noires) — ou clique/touche directement les touches. Echap: relache tout.</div>';
+      '<div class="hint">Lettres affichees sur les touches (positionnelles — fonctionne quel que soit ton agencement clavier). Octave -/+ : glisse la zone jouable. Echap : relache tout.</div>';
   }
   ensureKeyboardBuilt();
-  document.getElementById('identity-container').innerHTML = `<div class="identity">Vous : <b>${alias}</b> — <a onclick="renameIdentity()">changer</a></div>`;
+  const layoutLabel = keyboardLayout === 'qwertz' ? 'QWERTZ' : 'QWERTY';
+  document.getElementById('identity-container').innerHTML =
+    `<div class="identity">Vous : <b>${alias}</b> — <a onclick="renameIdentity()">changer</a>` +
+    ` · Disposition clavier : <b>${layoutLabel}</b> — <a onclick="toggleKeyboardLayout()">changer</a></div>`;
+  document.getElementById('octave-range-label').textContent = noteLabel(MIN_MIDI) + ' – ' + noteLabel(MAX_MIDI);
   // Skipped entirely (not just "kept identical") while a wheel-cell press is in flight — see
   // `wheelChordActiveCount`'s doc comment.
   if (wheelChordActiveCount === 0) {
@@ -561,23 +767,23 @@ function endTouch(e) {
 document.addEventListener('touchend', endTouch, { passive: false });
 document.addEventListener('touchcancel', endTouch, { passive: false });
 
-// Computer keyboard: `downKeys` dedupes the browser's own auto-repeat (a held key fires
+// Computer keyboard: `downCodes` dedupes the browser's own auto-repeat (a held key fires
 // `keydown` over and over) so a sustained key press doesn't hammer `/note-on` — the actual
 // sustain is real here (unlike the terminal), since a browser genuinely reports `keyup`.
-const downKeys = new Set();
+// Keyed by `e.code` (physical position), not `e.key` (produced character) — see `KEY_MAP`'s
+// own doc comment for why.
+const downCodes = new Set();
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { releaseAll(); return; }
-  const k = e.key.toLowerCase();
-  if (downKeys.has(k)) return;
-  const pitch = COMPUTER_KEY_MAP[k];
+  const pitch = KEY_MAP[e.code];
   if (pitch === undefined) return;
-  downKeys.add(k);
+  if (downCodes.has(e.code)) return;
+  downCodes.add(e.code);
   noteOn(pitch);
 });
 document.addEventListener('keyup', e => {
-  const k = e.key.toLowerCase();
-  downKeys.delete(k);
-  const pitch = COMPUTER_KEY_MAP[k];
+  downCodes.delete(e.code);
+  const pitch = KEY_MAP[e.code];
   if (pitch === undefined) return;
   noteOff(pitch);
 });

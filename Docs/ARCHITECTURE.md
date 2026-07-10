@@ -394,6 +394,40 @@ pas un instantané partagé mis en cache comme la console web (`refreshWebConsol
 puisque chaque client attend un état différent ; recalculer à la demande reste bon marché
 (la reconnaissance elle-même tourne déjà en continu, cette route ne fait que la lire).
 
+**Clavier de l'ordinateur, entièrement côté client** (`virtualKeyboardAppJS`, aucune donnée
+serveur impliquée) : `KEY_MAP` (objet `code -> pitch`) est reconstruit par
+`recomputeKeyRange()` à partir de deux paires de rangées superposées (`BASS_WHITE_CODES`/
+`BASS_BLACK_CODES` pour le grave — chiffres + `qwertyuiop`, `G3` à `B4`... — et
+`TREBLE_WHITE_CODES`/`TREBLE_BLACK_CODES` pour l'aigu qui suit — `S D G H J` + `zxcvbnm`,
+continuant proprement sur un Do juste après le Si grave), ancrées sur `OCTAVE_STOPS` (C0..C6,
+MIDI 12..84) via `octaveIndex`. Indexé par `KeyboardEvent.code` (position physique de la
+touche), pas par `.key` (caractère produit) : `.code` nomme la touche d'après sa position sur
+une disposition ANSI/US de référence, quelle que soit la disposition réellement configurée
+côté OS — ce qui reste vrai sur QWERTZ (qui échange les étiquettes Y/Z, pas leurs
+emplacements physiques), AZERTY, etc.
+
+`codeLabels` (l'étiquette affichée sur chaque touche) reste séparé de `KEY_MAP` — seule la
+LABEL a besoin de savoir quelle disposition le visiteur utilise réellement, jamais `KEY_MAP`
+lui-même. QWERTY et QWERTZ ne diffèrent, pour les codes utilisés ici, que par un seul
+échange (Y/Z) : `keyboardLayout` (`'qwerty'` | `'qwertz'`, persisté dans `localStorage`,
+comme `alias`) pilote ce seul échange via `applyKeyboardLayout()`, basculé par
+`toggleKeyboardLayout()` (lien "Disposition clavier ... — changer", à côté de l'alias) —
+c'est la source de vérité, pas `navigator.keyboard.getLayoutMap()` : cette API a d'abord été
+essayée seule, mais elle exige un **contexte sécurisé** (`https:`, ou `http://localhost`
+précisément) et n'existe pas du tout sur Safari/Firefox — elle échoue donc silencieusement
+dès que la page est ouverte en `http://<adresse-LAN>:port` depuis un second appareil, le cas
+d'usage normal de cette page (voir "Multi-clavier" plus haut), laissant l'inversion Y/Z non
+corrigée malgré un `KEY_MAP` déjà correct. Elle reste utilisée, mais seulement comme
+pré-remplissage au tout premier chargement (si `localStorage` n'a encore aucune préférence
+ET que l'API répond) — jamais pour écraser un choix déjà fait via le lien. `shiftOctave(delta)` change `octaveIndex`, relance
+`recomputeKeyRange()`, puis force un rebuild complet du piano affiché (`keyboardBuilt = false`
+avant `renderKeyboard()`) — un rebuild déclenché par une action utilisateur ponctuelle
+(bouton Octave -/+), jamais par le sondage périodique (`refresh()`, ~200ms) — c'est cette
+distinction qui compte : un rebuild déclenché par le sondage périodique pendant qu'un doigt
+est encore posé sur une touche est ce qui a causé le bug de relâchement tactile décrit dans
+`ensureKeyboardBuilt`/`wheelChordActiveCount` (`VirtualKeyboardAssets.swift`), pas le rebuild
+en lui-même.
+
 ### Palettes de couleur (`AppCore/ColorPalette.swift`)
 
 `ColorPalette` (`name` + 12 couleurs hex `colors` + 12 couleurs de texte `textColors`, même
