@@ -330,6 +330,13 @@ navigateur — voir §AppCore pour qui le pilote et §JamShack pour la commande/
   attendu par `app.js` en réponse à `GET /state` est documenté dans le commentaire de
   `webConsoleIndexHTML` — maintenu à la main en synchronisation avec `AppCore.WebConsoleState`
   (aucune vérification par le compilateur entre les deux, `WebConsole` n'important pas `AppCore`).
+- **Mise en page responsive** : `body` a un `max-width` (1600px) centré (`margin: auto`) plutôt
+  qu'une largeur fixe ou illimitée — profite de l'espace sur un grand écran sans s'étirer à
+  l'infini. `.layout-columns` (flexbox, `flex-wrap: wrap`) passe automatiquement en une seule
+  colonne sous une certaine largeur. Chaque clavier reste nécessairement de largeur fixe en
+  pixels (les touches `.pkey` sont positionnées en absolu, incompatible avec un dimensionnement
+  en pourcentage) — enveloppé dans son propre `.keyboard-scroll` (`overflow-x: auto`) pour que
+  ce soit CE widget qui défile sur un écran étroit, pas la page entière.
 
 **Piège réel trouvé pendant la vérification manuelle, pas en théorie** — deux bugs de durée de
 vie distincts, tous deux liés à la même cause : un objet `Network.framework`
@@ -387,7 +394,38 @@ pas un instantané partagé mis en cache comme la console web (`refreshWebConsol
 puisque chaque client attend un état différent ; recalculer à la demande reste bon marché
 (la reconnaissance elle-même tourne déjà en continu, cette route ne fait que la lire).
 
-## AppCore — `ImprovSession`, le cœur applicatif
+### Palettes de couleur (`AppCore/ColorPalette.swift`)
+
+`ColorPalette` (`name` + 12 couleurs hex `colors` + 12 couleurs de texte `textColors`, même
+indexation, 0 = C ... 11 = B) et `ColorPaletteFile` (`{"palettes": [...]}`, la forme sur
+disque de `palettes.json`) — un seul fichier listant plusieurs palettes, pas un fichier par
+palette (à la différence de `Scene`/`GuideSequence`) : il n'y en a jamais qu'une poignée, et
+en choisir une est un choix ponctuel, pas un document qu'on éditerait en continu depuis l'app.
+`ColorPalette.builtInDefaults` (3 palettes : Default — couleurs échantillonnées à la main
+depuis `Sources/Colors/Colors.PNG`, la roue physique photographiée, projet racine ; couleurs
+de texte choisies à la main par l'utilisateur (blanc partout sauf La/Mi/Si, en noir) —
+Contraste, Pastel, couleurs de texte calculées/choisies) est écrit dans `palettes.json` la
+première fois qu'il n'existe pas encore (`ImprovSession.loadOrCreateColorPalettes`), puis
+chargé normalement.
+
+`textColors` existe pour la lisibilité : un fond clair a besoin d'un texte sombre et
+inversement, et ce n'est délibérément **pas** une formule pure — `Default` a ses 3
+exceptions (La/Mi/Si) choisies à l'œil par l'utilisateur, pas dérivées d'un calcul de
+luminosité (voir le commentaire de `ColorPalette.textColors`). `textColors` est
+`decodeIfPresent` dans `init(from:)` : une palette ajoutée à la main dans `palettes.json`
+sans ce champ (ou un `palettes.json` antérieur à son introduction) retombe sur
+`ColorPalette.legibleTextColors(for:)` — seuil de luminosité perçue (formule YIQ) — plutôt que
+d'échouer au chargement.
+
+`ImprovSession.activeColorPaletteIndex` est **volontairement jamais persisté** : seules les
+palettes *disponibles* vivent dans `palettes.json`, pas celle *active* — chaque relance
+repart sur la première du fichier. `activeColorPalette.colors`/`.textColors` sont envoyés
+dans `WebConsoleState.palette`/`.paletteTextColors` et `VirtualKeyboardStateResponse.palette`/
+`.paletteTextColors` à chaque `GET /state`, donc un changement de palette (`use-palette`/menu
+JamShack) se répercute dans n'importe quel onglet déjà ouvert au prochain sondage (~150-250ms),
+sans recharger la page — `app.js`/`vk.js` réaffectent leurs `PITCH_CLASS_COLORS`/
+`PITCH_CLASS_TEXT_COLORS` (passés de `const` à `let` pour l'occasion) depuis `state.palette`/
+`state.paletteTextColors` à chaque `refresh()`, au lieu de les garder figés au chargement.
 
 Une seule classe, `@Observable`, `@unchecked Sendable`, qui détient tout l'état de
 l'application et toute la logique — indépendante de toute présentation. Le CLI ne fait que
@@ -694,11 +732,11 @@ Barre de menu façon interface DOS graphique, sept catégories (`menuCategories`
 
 | Menu (mnémonique) | Contenu |
 |---|---|
-| **JamShack (S)** | Menu principal, ouvert par défaut. Groupes séparés par des traits : infos/aide ; choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/connexions LLM/**composition IA**) ; choisir une connexion LLM (isolée dans son propre groupe) ; mode MIDI fusionné/individuel ; démarrer/arrêter la console web (§WebConsole) ; quitter. Point d'entrée unique pour toute la configuration de session — aucun autre menu ne propose de choisir un dossier ou une connexion. |
+| **JamShack (S)** | Menu principal, ouvert par défaut. Groupes séparés par des traits : infos/aide ; choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/connexions LLM/**composition IA**) ; choisir une connexion LLM (isolée dans son propre groupe) ; choisir la palette de couleur (`ColorPalette`, voir plus bas) ; mode MIDI fusionné/individuel ; démarrer/arrêter la console web et le clavier virtuel (§WebConsole) ; quitter. Point d'entrée unique pour toute la configuration de session — aucun autre menu ne propose de choisir un dossier ou une connexion. |
 | **Scene (n)** | Lister/activer/arrêter les pistes d'entrée, *séparateur*, activer/désactiver leur son, *séparateur*, choisir un son, *séparateur*, sauvegarder/charger une scène (configuration d'instruments : actif, son actif, quel son). Les actions qui demandent une piste et la sélection d'instrument dans "Choisir un son..." présentent `session.tracks` numérotée (`printNumberedTracks()`) — le choix accepte un numéro ou l'id littéral (`resolvedTrackIDText(_:)`, même convention que `resolvedSampleName`). |
-| **Morceaux (M)** | 4 groupes : écouter/voir le morceau ; choisir le son de lecture, d'une piste, ou des accords d'une section (`pieceDetailLines()` numérote visuellement chaque section — `"Section 1: A"` — et chaque piste — `"piste 1 '...'"` — pour que l'utilisateur sache directement quel numéro saisir) ; charger la démo/un morceau, sauvegarder ; `MenuItem.header("Assistant IA")` — sous-section réservée, sans item pour l'instant, en attente d'une future fonction de modification par dialogue applicable à n'importe quel morceau. |
 | **Guide Musicaux (G)** | Voir l'écran Guide Musical, *séparateur*, créer un nouveau guide musical (boucle "ajouter un mode" jusqu'à tonique vide) / ajouter un mode au guide musical en cours, *séparateur*, charger/sauvegarder(-sous) un guide musical, *séparateur*, démarrer/arrêter le guide musical (aussi accessible par la barre d'espace sur l'écran Guide Musical). |
 | **Enregistrement (E)** | Démarrer/arrêter/voir/jouer un enregistrement, *séparateur*, charger/sauvegarder, *séparateur*, composer un morceau à partir de l'enregistrement, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser les indications de style, *séparateur*, voir/exporter le prompt de composition. Ordre — cadrage puis indications avant le prompt — délibéré (voir §LLMEngine/§AppCore). |
+| **Morceaux (M)** | 4 groupes : écouter/voir le morceau ; choisir le son de lecture, d'une piste, ou des accords d'une section (`pieceDetailLines()` numérote visuellement chaque section — `"Section 1: A"` — et chaque piste — `"piste 1 '...'"` — pour que l'utilisateur sache directement quel numéro saisir) ; charger la démo/un morceau, sauvegarder ; `MenuItem.header("Assistant IA")` — sous-section réservée, sans item pour l'instant, en attente d'une future fonction de modification par dialogue applicable à n'importe quel morceau. |
 | **Composition (C)** | Décrire le morceau (assistant titre → description → indications → composition), composer à partir de la description, voir la description, *séparateur*, charger/sauvegarder(-sous) une description, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/exporter le prompt de composition. |
 | **Jam Session (J)** | Démarrer/arrêter une jam session, rejoindre, trouver (découverte), quitter — session collaborative. Les trois premiers items appellent `promptForPseudo()` avant de continuer. |
 
@@ -767,7 +805,7 @@ Exécutable qui rejoue à la main chaque cas de test des vrais fichiers `XCTest`
 (`check`/`checkNil`), pour compenser l'absence d'Xcode. **Toujours mettre à jour ce fichier
 en même temps que tout nouveau test** — c'est le seul moyen de vérifier que le code
 fonctionne dans cet environnement. Se lance avec `swift run SanityChecks` depuis
-`MusicTheoryKit/`. Compteur de vérifications à jour : **309 checks, 0 échec**, stable sur
+`MusicTheoryKit/`. Compteur de vérifications à jour : **515 checks, 0 échec**, stable sur
 plusieurs exécutions répétées.
 
 ## Vérification/tests
@@ -785,7 +823,9 @@ swift run JamShack         # lance l'application
   transcription d'accords. Fonctionne bien sur un accord clair ; peut se tromper sur des
   textures denses ou des timbres riches en harmoniques.
 - **Micro : macOS uniquement.** Portage iOS/iPadOS à faire (configuration `AVAudioSession`).
-- **Piste clavier sans vrai maintien** : limite du terminal, pas du code.
+- **Piste `clavier` (terminal) sans vrai maintien** : limite du terminal (aucun événement de
+  relâchement), pas du code — le clavier virtuel du navigateur (§WebConsole), lui, reçoit un
+  vrai `keyup` et tient réellement la note.
 - **Aucune interface graphique** : tout passe par le CLI ; la couche `AppCore` est conçue
   pour qu'une interface SwiftUI puisse s'y brancher sans réécriture, mais cette étape n'a
   pas encore été commencée (bloquée par l'absence d'Xcode sur cette machine).
@@ -796,6 +836,10 @@ swift run JamShack         # lance l'application
   pour la même raison (HTTP en clair, aucun contrôle d'accès) — voir §WebConsole/§AppCore.
   Lecture seule cela dit (aucune action possible depuis le navigateur), donc un risque plus
   limité que la session collaborative.
+- **Clavier virtuel sans authentification ni chiffrement, et sans limite de connexions** :
+  même mise en garde, mais celui-ci N'EST PAS en lecture seule — n'importe qui atteignant le
+  port peut jouer/relâcher des notes sur une piste de son choix (`?client=<id>` n'est pas un
+  secret, juste un identifiant d'appareil).
 - **`localClientID` ne survit pas à un relance** (UUID en mémoire, non persisté — voir §AppCore
   pour la vraie raison, un bug de collision trouvé en testant).
 - **Découverte Bonjour dépendante du réseau local et de la permission macOS** :

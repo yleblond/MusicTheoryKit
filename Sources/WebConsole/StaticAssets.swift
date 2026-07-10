@@ -43,14 +43,28 @@
 ///     "isActive": true, "steps": [{"label": "D Dorian", "isCurrent": true}],
 ///     "currentStepIndex": 0 | null, "currentModeTones": [2, 4, 5, 7, 9, 11, 0],
 ///     "heldPitches": [...]
-///   } | null
+///   } | null,
+///   "palette": ["#DB2A52", "#0AAD9A", ..., "#ABD144"],
+///   "paletteTextColors": ["#ffffff", "#ffffff", ..., "#111111"]
 /// }
 /// ```
 /// `wheel` is always present (not gated behind an active guide) — see
 /// `ImprovSession.wheelReferenceTonic()`/`buildWebConsoleWheelState()` for how its reference
 /// key is chosen, and each cell's `trackLabels` for the multi-instrument "who's playing this
-/// function right now" view. The palette (which chord is at which column/ring) never
+/// function right now" view. The chord grid (which chord is at which column/ring) never
 /// changes; only `isDiatonic`/`modeName`/`relativeDegree` are relative to `tonic`.
+///
+/// `palette` (not to be confused with the wheel's own fixed chord grid above — an unrelated,
+/// pre-existing use of the word) is the 12 hex colors of whichever `ColorPalette` is currently
+/// active (`ImprovSession.activeColorPalette`, `AppCore/ColorPalette.swift`), index 0 = C ...
+/// 11 = B — sent on every poll, not just once, so switching palettes from the menu updates
+/// any already-open browser tab within one refresh cycle. `app.js` overwrites its own
+/// `PITCH_CLASS_COLORS` from this on every `refresh()` — see there.
+///
+/// `paletteTextColors` is the same active `ColorPalette`'s `textColors` — the legible text
+/// color to paint OVER each note's own background color (`ColorPalette.textColors`'s doc
+/// comment explains why this is a hand-picked/computed field of its own, not derived from
+/// `palette` client-side). `app.js` mirrors it into `PITCH_CLASS_TEXT_COLORS` the same way.
 public let webConsoleIndexHTML = """
 <!doctype html>
 <html lang="fr">
@@ -75,7 +89,7 @@ public let webConsoleIndexHTML = """
   .degree-badge {
     position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
     width: 14px; height: 14px; border-radius: 50%;
-    font-size: 9px; line-height: 14px; text-align: center; color: #111; font-weight: bold;
+    font-size: 9px; line-height: 14px; text-align: center; font-weight: bold;
   }
   .empty { color: #666; font-style: italic; }
   .wheel { margin: 0.5rem 0 1rem; display: block; width: 100%; max-width: 820px; height: auto; }
@@ -84,8 +98,10 @@ public let webConsoleIndexHTML = """
   .wheel-cell-shape { stroke: #333; stroke-width: 1; }
   .wheel-cell-outline { fill: none; stroke-width: 3; }
   .wheel-diatonic-boundary { fill: none; stroke: #1a3a6b; stroke-width: 5; stroke-linejoin: round; }
-  .wheel-cell-symbol { font-size: 8px; font-weight: bold; text-anchor: middle; fill: #111; pointer-events: none; }
-  .wheel-cell-degree { font-size: 6.5px; font-family: Georgia, 'Times New Roman', serif; text-anchor: middle; fill: #111; pointer-events: none; opacity: 0.75; }
+  /* No `fill` here (unlike most rules) — the palette's per-note text color is set inline,
+     since it varies by pitch class (`PITCH_CLASS_TEXT_COLORS[cell.pitchClass]`), not fixed. */
+  .wheel-cell-symbol { font-size: 8px; font-weight: bold; text-anchor: middle; pointer-events: none; }
+  .wheel-cell-degree { font-size: 6.5px; font-family: Georgia, 'Times New Roman', serif; text-anchor: middle; pointer-events: none; opacity: 0.75; }
   .wheel-mode-name { fill: #555; font-size: 11px; text-anchor: middle; dominant-baseline: middle; }
   .wheel-mode-name.active { fill: #b36b00; font-weight: bold; }
   .instrument-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.4em; }
@@ -105,13 +121,22 @@ public let webConsoleAppJS = """
 const MIN_MIDI = 48; // C3, same range as the terminal's per-track keyboard
 const MAX_MIDI = 83; // B5
 
-// Fixed color per chromatic pitch class (index 0 = C ... 11 = B), "mycolormusic"-style: a
-// note keeps the same color no matter which mode/key it's functioning in. Hand-mirrors
-// `MusicTheoryKit.PitchClassPalette.hex` — see this module's JSON-contract comment above for
-// the "no compiler-enforced contract, kept in sync by hand" convention this follows.
-const PITCH_CLASS_COLORS = [
-  '#e6194B', '#f58231', '#ffe119', '#bfef45', '#3cb44b', '#42d4f4',
-  '#4363d8', '#911eb4', '#f032e6', '#fabed4', '#469990', '#9A6324',
+// One color per chromatic pitch class (index 0 = C ... 11 = B), "mycolormusic"-style: a note
+// keeps the same color no matter which mode/key it's functioning in. `let`, not `const` —
+// this starting array (hand-mirroring `MusicTheoryKit.PitchClassPalette.hex`) is only the
+// fallback shown before the first `GET /state` response arrives; `refresh()` below overwrites
+// it with `state.palette` every poll, so switching the active palette (menu JamShack >
+// Choisir palette de couleur) updates any already-open tab within one refresh cycle.
+let PITCH_CLASS_COLORS = [
+  '#DB2A52', '#0AAD9A', '#F7872D', '#4169B7', '#F2DE18', '#AE2F93',
+  '#44B853', '#F15830', '#249CD7', '#FEBC20', '#884A9C', '#ABD144',
+];
+// Same indexing as `PITCH_CLASS_COLORS`, same "fallback until the first /state, then
+// overwritten every poll from `state.paletteTextColors`" convention — the legible text color
+// to paint OVER each note's own background (degree badges, wheel cell symbols/degrees).
+let PITCH_CLASS_TEXT_COLORS = [
+  '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#111111', '#ffffff',
+  '#ffffff', '#ffffff', '#ffffff', '#111111', '#ffffff', '#111111',
 ];
 
 // One accent color per track, assigned by its position in `state.tracks` (not by anything
@@ -130,9 +155,10 @@ const BLACK_AFTER_WHITE_SLOT = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };
 function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones) {
   const held = new Set(heldPitches || []);
   const tones = new Set(chordTones || []);
-  // pitch class -> {degree, color} — `modeTones` is degree-ordered (index 0 = degree 1).
+  // pitch class -> {degree, color, textColor} — `modeTones` is degree-ordered (index 0 =
+  // degree 1).
   const roles = {};
-  (modeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc] }; });
+  (modeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc], textColor: PITCH_CLASS_TEXT_COLORS[pc] }; });
 
   const octaveCount = Math.ceil((MAX_MIDI - MIN_MIDI + 1) / 12);
   const totalWidth = octaveCount * 7 * WHITE_KEY_WIDTH;
@@ -142,7 +168,7 @@ function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones) {
     const pc = ((pitch % 12) + 12) % 12;
     const octave = Math.floor((pitch - MIN_MIDI) / 12);
     const role = roles[pc];
-    const badge = role ? `<span class="degree-badge" style="background:${role.color}">${role.degree}</span>` : '';
+    const badge = role ? `<span class="degree-badge" style="background:${role.color};color:${role.textColor}">${role.degree}</span>` : '';
     let cls = '';
     if (held.has(pitch)) {
       if (chordRoot !== null && chordRoot !== undefined && pc === chordRoot) cls = 'root';
@@ -303,6 +329,7 @@ function renderWheel(wheel, tracks) {
       const r = WHEEL_RING_RADIUS[cell.quality];
       const pos = polarPoint(cx, cy, r, index, count);
       const color = PITCH_CLASS_COLORS[cell.pitchClass];
+      const textColor = PITCH_CLASS_TEXT_COLORS[cell.pitchClass];
       const size = 18;
       const rotateDeg = (360 * index) / count;
       if (cell.shape === 'square') {
@@ -315,8 +342,8 @@ function renderWheel(wheel, tracks) {
         svg += `<circle class="wheel-cell-shape" cx="${pos.x}" cy="${pos.y}" r="${size}" fill="${color}" />`;
       }
       const symbol = NOTE_NAMES[cell.pitchClass] + CHORD_SUFFIX[cell.quality];
-      svg += `<text class="wheel-cell-symbol" x="${pos.x}" y="${pos.y + 1}">${symbol}</text>`;
-      svg += `<text class="wheel-cell-degree" x="${pos.x}" y="${pos.y + 9}">${degreeSVGMarkup(cell.relativeDegree)}</text>`;
+      svg += `<text class="wheel-cell-symbol" x="${pos.x}" y="${pos.y + 1}" fill="${textColor}">${symbol}</text>`;
+      svg += `<text class="wheel-cell-degree" x="${pos.x}" y="${pos.y + 9}" fill="${textColor}">${degreeSVGMarkup(cell.relativeDegree)}</text>`;
 
       // One extra unfilled outline per occupying track, nested outward in that track's own
       // accent color — distinguishes which instrument(s) are sounding this exact chord
@@ -399,6 +426,8 @@ async function refresh() {
     document.getElementById('app').innerHTML = '<p class="empty">(connexion perdue — l\\'application est-elle toujours lancee ?)</p>';
     return;
   }
+  if (state.palette && state.palette.length === 12) PITCH_CLASS_COLORS = state.palette;
+  if (state.paletteTextColors && state.paletteTextColors.length === 12) PITCH_CLASS_TEXT_COLORS = state.paletteTextColors;
   const tracks = state.tracks || [];
   const tracksHTML = tracks.length
     ? tracks.map(renderTrack).join('')

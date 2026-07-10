@@ -38,6 +38,12 @@ nécessaire pour utiliser l'application — seulement pour lancer `swift test`, 
   d'accords (triades + septièmes), toutes dérivées algorithmiquement — jamais saisies à la main.
 - **Clavier ASCII coloré en direct** dans le terminal (fondamentale, notes de l'accord, notes
   hors accord, notes du mode) pour chaque piste en écoute.
+- **Guide musical** : construire une séquence de modes à parcourir en jouant (flèches
+  gauche/droite ou barre d'espace pour démarrer/arrêter), avec un écran dédié affichant le
+  clavier du mode courant et ses voisins sur le cycle des quintes.
+- **Cercle des quintes visuel** (console web) : les 12 tonalités, 3 anneaux d'accords
+  (majeur/mineur/diminué), le contour des 7 accords diatoniques de la tonalité active, et le
+  nom du mode en cours — recalculé automatiquement selon la piste/le morceau/le guide actif.
 
 ### Morceaux et lecture
 
@@ -76,14 +82,24 @@ nécessaire pour utiliser l'application — seulement pour lancer `swift test`, 
   une décision locale — jamais forcé par le réseau.
 - **Console Web** : un miroir en lecture seule de l'activité musicale, dans un navigateur —
   utile pour l'afficher sur un second écran, via un petit serveur HTTP fait main (aucune
-  dépendance tierce).
+  dépendance tierce). Mise en page adaptative (deux colonnes, profite de l'espace sur un grand
+  écran, repasse en une colonne sur un écran étroit).
+- **Clavier virtuel** : un piano interactif dans le navigateur (souris, tactile — vraiment
+  multi-touch —, ou clavier de l'ordinateur avec un vrai maintien de note), serveur HTTP
+  distinct de la console web. Plusieurs navigateurs peuvent s'y connecter à la fois, chacun
+  avec sa propre piste et son propre nom affiché.
+- **Palettes de couleur** : une couleur par note (et une couleur de texte assortie, pour
+  rester lisible sur chaque fond), plusieurs jeux au choix (`palettes.json`, modifiable à la
+  main), propre à chaque instance lancée — s'applique à la console web et au clavier virtuel
+  de cette même instance, sans recharger la page.
 
 ### Interface en ligne de commande
 
-- **Menus déroulants façon interface DOS** (mnémoniques, navigation aux flèches), et deux
-  écrans figés redessinés en direct : `run` (activité musicale en cours) et `config`
-  (configuration de session et détail du morceau actif) — bascule instantanée entre les deux
-  sans repasser par le mode commande.
+- **Menus déroulants façon interface DOS** (mnémoniques, navigation aux flèches), et trois
+  écrans figés redessinés en direct — `run` (activité musicale en cours), `config`
+  (configuration de session et détail du morceau actif), `guide` (le guide musical, voir
+  plus haut) — bascule instantanée entre les trois (Tab) sans repasser par le mode commande.
+  Lancement direct sur `run` après le choix éventuel d'une scène au démarrage.
 
 ## Architecture
 
@@ -101,7 +117,7 @@ MIDIEngine        entrée MIDI (parsing pur + wrapper CoreMIDI)
 AudioEngine        lecture Piece/SoundTrack, écoute micro (FFT)
 LLMEngine          composition assistée par IA (3 fournisseurs), validation stricte
 NetEngine          transport réseau de la session collaborative (TCP fait main)
-WebConsole         serveur HTTP fait main pour la console web
+WebConsole         serveur HTTP fait main pour la console web et le clavier virtuel
 AppCore            ImprovSession — tout l'état et la logique applicative
 JamShack          l'exécutable : REPL + écrans figés + menus
 SanityChecks       exécutable de test de secours (voir ci-dessous)
@@ -124,7 +140,7 @@ Pour le détail complet (modules, concurrence, points de conception), voir
 ```sh
 cd MusicTheoryKit
 swift build                 # compile tout
-swift run SanityChecks      # exécute tous les checks (309 a ce jour, 0 echec)
+swift run SanityChecks      # exécute tous les checks (515 a ce jour, 0 echec)
 ```
 
 Cette machine de développement n'a que les Command Line Tools (pas Xcode complet), donc
@@ -137,8 +153,8 @@ et reste le seul moyen de vérifier la logique dans cet environnement.
 - Détection polyphonique au micro : heuristique de pics spectraux, pas une vraie transcription
   d'accords — fonctionne bien sur un accord clair.
 - Microphone : macOS uniquement (portage iOS/iPadOS non fait).
-- Session collaborative et console web sans authentification ni chiffrement — à réserver à un
-  réseau de confiance (LAN/VPN), jamais exposées directement sur Internet.
+- Session collaborative, console web et clavier virtuel sans authentification ni chiffrement —
+  à réserver à un réseau de confiance (LAN/VPN), jamais exposés directement sur Internet.
 - Aucune interface graphique à ce jour — tout passe par la ligne de commande.
 
 Détail complet dans [`Docs/ARCHITECTURE.md`](Docs/ARCHITECTURE.md#limites-connues).

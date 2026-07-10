@@ -89,6 +89,14 @@ public final class ImprovSession: @unchecked Sendable {
     /// ongoing document to keep editing.
     public private(set) var sceneFolder: String?
     public private(set) var sceneFiles: [String] = []
+    /// Every palette loaded from `palettes.json` (see `loadColorPalettes`) — always at least
+    /// one entry (`MusicTheoryKit.PitchClassPalette.hex` as "Default" until a real file loads).
+    public private(set) var colorPalettes: [ColorPalette] = [ColorPalette.builtInDefaults[0]]
+    /// Which of `colorPalettes` is active — per-instance only, never written back to
+    /// `palettes.json` (that file lists what's *available*, not what's currently selected);
+    /// resets to the first palette every time a fresh file loads.
+    public private(set) var activeColorPaletteIndex: Int = 0
+    public var activeColorPalette: ColorPalette { colorPalettes[activeColorPaletteIndex] }
     /// The folder last listed with `listCompositionFiles`, and the `.json` composition
     /// descriptions found in it — mirrors `pieceFolder`/`pieceFiles`, but for a
     /// `CompositionDescription` (title/text/indications) rather than a composed `Piece`.
@@ -279,6 +287,8 @@ public final class ImprovSession: @unchecked Sendable {
         case noSceneFolderListed
         case invalidSceneIndex
         case virtualKeyboardAlreadyActive
+        case invalidColorPaletteIndex
+        case emptyColorPaletteFile
         public var description: String {
             switch self {
             case .noPieceLoaded: return "no piece loaded — try 'load-demo' or 'load <path>'"
@@ -322,6 +332,8 @@ public final class ImprovSession: @unchecked Sendable {
             case .noSceneFolderListed: return "no scene folder listed yet — try 'scenes <folder>' first"
             case .invalidSceneIndex: return "no scene at that index"
             case .virtualKeyboardAlreadyActive: return "virtual keyboard already running — stop it first"
+            case .invalidColorPaletteIndex: return "no color palette at that index"
+            case .emptyColorPaletteFile: return "that file has no palettes in it"
             }
         }
     }
@@ -1019,6 +1031,50 @@ public final class ImprovSession: @unchecked Sendable {
         try loadScene(named: sceneFiles[index])
     }
 
+    // MARK: - Color palettes (per-instance, shared by the web console and virtual keyboard)
+
+    /// Replaces `colorPalettes` wholesale from `palettes.json` — unlike `Scene`/`GuideSequence`
+    /// (one document per file, loaded/edited/saved back), this file is a flat *list* meant to
+    /// be hand-edited outside the app to add/tweak palettes; the app only ever reads it and
+    /// picks one. Resets `activeColorPaletteIndex` to 0 (the first palette in the file) —
+    /// which palette was active is never persisted, by design (see `activeColorPaletteIndex`'s
+    /// doc comment).
+    public func loadColorPalettes(fromJSONFile path: String) throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let file = try JSONDecoder().decode(ColorPaletteFile.self, from: data)
+        guard !file.palettes.isEmpty else { throw SessionError.emptyColorPaletteFile }
+        colorPalettes = file.palettes
+        activeColorPaletteIndex = 0
+    }
+
+    /// Writes `ColorPalette.builtInDefaults` to `path` first if nothing is there yet (mirrors
+    /// `setPromptsFolder`'s "creates its fixed subfolders if absent" convenience), then loads
+    /// it either way — the one call `JamShack/main.swift` needs at startup, without it having
+    /// to know `palettes.json`'s on-disk shape itself.
+    public func loadOrCreateColorPalettes(fromJSONFile path: String) throws {
+        if !FileManager.default.fileExists(atPath: path) {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(ColorPaletteFile(palettes: ColorPalette.builtInDefaults))
+            try data.write(to: URL(fileURLWithPath: path))
+        }
+        try loadColorPalettes(fromJSONFile: path)
+    }
+
+    public func selectColorPalette(named name: String) throws {
+        guard let index = colorPalettes.firstIndex(where: { $0.name == name }) else { throw SessionError.invalidColorPaletteIndex }
+        try selectColorPalette(atIndex: index)
+    }
+
+    /// The one place `activeColorPaletteIndex` actually changes — `selectColorPalette(named:)`
+    /// delegates here (not the reverse) since going index-first avoids re-deriving an index
+    /// from a name that isn't guaranteed unique (unlike e.g. `llmConnections`' file names).
+    public func selectColorPalette(atIndex index: Int) throws {
+        guard colorPalettes.indices.contains(index) else { throw SessionError.invalidColorPaletteIndex }
+        activeColorPaletteIndex = index
+        append("Using color palette: \(activeColorPalette.name)")
+    }
+
     /// Sets one melodic track's instrument (a sample file name, resolved against
     /// `sampleFolder` at play time — see `resolvedInstrumentURLs`) within the current
     /// piece's `sectionIndex`-th section. Pass `nil`/empty to revert to the default sound.
@@ -1597,7 +1653,8 @@ public final class ImprovSession: @unchecked Sendable {
         return WebConsoleState(
             lastEvent: lastEvent, tracks: trackStates, playback: playback, soundTrackPlayback: soundTrackPlayback,
             wheel: buildWebConsoleWheelState(listeningTracks: listeningTracks),
-            guide: buildWebConsoleGuideState()
+            guide: buildWebConsoleGuideState(),
+            palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors
         )
     }
 
@@ -1665,7 +1722,7 @@ public final class ImprovSession: @unchecked Sendable {
                 let listeningTracks: [TrackInfo] = liveInputQueue.sync { tracks.filter(\.isListening) }
                 wheelState = buildWebConsoleWheelState(listeningTracks: listeningTracks)
             }
-            let response = VirtualKeyboardStateResponse(track: info.map(Self.webConsoleTrackState), guide: isGuideActive ? guideState : nil, wheel: wheelState)
+            let response = VirtualKeyboardStateResponse(track: info.map(Self.webConsoleTrackState), guide: isGuideActive ? guideState : nil, wheel: wheelState, palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors)
             guard let data = try? JSONEncoder().encode(response) else { return .notFound() }
             return HTTPResponse(contentType: "application/json", body: data)
         case "/note-on":

@@ -28,12 +28,18 @@
 ///  "guide": {"isActive": true, "steps": [{"label": "A Lydian", "isCurrent": true}],
 ///            "currentStepIndex": 0, "currentModeTones": [9, 11, 1, 3, 4, 6, 8],
 ///            "heldPitches": [...]},
-///  "wheel": { ...same shape as the web console's own "wheel" field... }}
+///  "wheel": { ...same shape as the web console's own "wheel" field... },
+///  "palette": ["#DB2A52", "#0AAD9A", ..., "#ABD144"],
+///  "paletteTextColors": ["#ffffff", "#ffffff", ..., "#111111"]}
 /// ```
 /// `guide`/`wheel` (a `nil` `Optional` under Swift's synthesized `Encodable`) are OMITTED
 /// from the JSON entirely while no guide is running, not present as an explicit `null` —
 /// `app.js` only ever checks `state.guide && state.guide.isActive`, which is `undefined`-safe
-/// either way.
+/// either way. `palette`/`paletteTextColors` are always present, unlike those two — the 12 hex
+/// colors (and matching legible text colors, see `ColorPalette.textColors`'s doc comment) of
+/// whichever `ColorPalette` is currently active (`ImprovSession.activeColorPalette`), index 0
+/// = C ... 11 = B, sent on every poll so switching palettes from the menu updates this page
+/// within one refresh cycle — see `app.js`'s own `PITCH_CLASS_COLORS`/`PITCH_CLASS_TEXT_COLORS`.
 ///
 /// `GET /note-on?pitch=<midi>&client=...&name=...` / `GET /note-off?pitch=<midi>&client=
 /// ...&name=...` / `GET /release-all?client=...&name=...` are the only ways this page
@@ -61,8 +67,10 @@ public let virtualKeyboardIndexHTML = """
   .wheel-grid-line { stroke: #000; stroke-width: 1; }
   .wheel-cell-shape { stroke: #333; stroke-width: 1; }
   .wheel-diatonic-boundary { fill: none; stroke: #1a3a6b; stroke-width: 5; stroke-linejoin: round; }
-  .wheel-cell-symbol { font-size: 8px; font-weight: bold; text-anchor: middle; fill: #111; pointer-events: none; }
-  .wheel-cell-degree { font-size: 6.5px; font-family: Georgia, 'Times New Roman', serif; text-anchor: middle; fill: #111; pointer-events: none; opacity: 0.75; }
+  /* No `fill` here (unlike most rules) — the palette's per-note text color is set inline,
+     since it varies by pitch class (`PITCH_CLASS_TEXT_COLORS[cell.pitchClass]`), not fixed. */
+  .wheel-cell-symbol { font-size: 8px; font-weight: bold; text-anchor: middle; pointer-events: none; }
+  .wheel-cell-degree { font-size: 6.5px; font-family: Georgia, 'Times New Roman', serif; text-anchor: middle; pointer-events: none; opacity: 0.75; }
   .wheel-mode-name { fill: #555; font-size: 11px; text-anchor: middle; dominant-baseline: middle; }
   .wheel-mode-name.active { fill: #b36b00; font-weight: bold; }
   .keyboard { position: relative; margin: 2.5rem 0 0.8rem; user-select: none; -webkit-user-select: none; touch-action: none; }
@@ -77,7 +85,7 @@ public let virtualKeyboardIndexHTML = """
   .degree-badge {
     position: absolute; top: -32px; left: 50%; transform: translateX(-50%);
     width: 28px; height: 28px; border-radius: 50%;
-    font-size: 15px; line-height: 28px; text-align: center; color: #111; font-weight: bold;
+    font-size: 15px; line-height: 28px; text-align: center; font-weight: bold;
     pointer-events: none;
   }
 </style>
@@ -207,6 +215,7 @@ function renderWheel(wheel) {
       const r = WHEEL_RING_RADIUS[cell.quality];
       const pos = polarPoint(cx, cy, r, index, count);
       const color = PITCH_CLASS_COLORS[cell.pitchClass];
+      const textColor = PITCH_CLASS_TEXT_COLORS[cell.pitchClass];
       const size = 18;
       const rotateDeg = (360 * index) / count;
       if (cell.shape === 'square') {
@@ -215,8 +224,8 @@ function renderWheel(wheel) {
         svg += `<circle class="wheel-cell-shape" cx="${pos.x}" cy="${pos.y}" r="${size}" fill="${color}" />`;
       }
       const symbol = NOTE_NAMES[cell.pitchClass] + CHORD_SUFFIX[cell.quality];
-      svg += `<text class="wheel-cell-symbol" x="${pos.x}" y="${pos.y + 1}">${symbol}</text>`;
-      svg += `<text class="wheel-cell-degree" x="${pos.x}" y="${pos.y + 9}">${degreeSVGMarkup(cell.relativeDegree)}</text>`;
+      svg += `<text class="wheel-cell-symbol" x="${pos.x}" y="${pos.y + 1}" fill="${textColor}">${symbol}</text>`;
+      svg += `<text class="wheel-cell-degree" x="${pos.x}" y="${pos.y + 9}" fill="${textColor}">${degreeSVGMarkup(cell.relativeDegree)}</text>`;
     });
   });
   svg += `<path class="wheel-diatonic-boundary" d="${diatonicBoundaryPath(wheel, cx, cy)}" />`;
@@ -224,11 +233,20 @@ function renderWheel(wheel) {
   return svg;
 }
 
-// Hand-mirrors `MusicTheoryKit.PitchClassPalette.hex` — see this module's JSON-contract
-// comment above for the "no compiler-enforced contract, kept in sync by hand" convention.
-const PITCH_CLASS_COLORS = [
-  '#e6194B', '#f58231', '#ffe119', '#bfef45', '#3cb44b', '#42d4f4',
-  '#4363d8', '#911eb4', '#f032e6', '#fabed4', '#469990', '#9A6324',
+// `let`, not `const` — this starting array (hand-mirroring `MusicTheoryKit.PitchClassPalette.hex`)
+// is only the fallback shown before the first `GET /state` response arrives; `refresh()`
+// below overwrites it with `state.palette` every poll, so switching the active palette (menu
+// JamShack > Choisir palette de couleur) updates this page within one refresh cycle.
+let PITCH_CLASS_COLORS = [
+  '#DB2A52', '#0AAD9A', '#F7872D', '#4169B7', '#F2DE18', '#AE2F93',
+  '#44B853', '#F15830', '#249CD7', '#FEBC20', '#884A9C', '#ABD144',
+];
+// Same indexing as `PITCH_CLASS_COLORS`, same "fallback until the first /state, then
+// overwritten every poll from `state.paletteTextColors`" convention — the legible text color
+// to paint OVER each note's own background (degree badges, wheel cell symbols/degrees).
+let PITCH_CLASS_TEXT_COLORS = [
+  '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#111111', '#ffffff',
+  '#ffffff', '#ffffff', '#ffffff', '#111111', '#ffffff', '#111111',
 ];
 
 // Real-piano geometry, matching `StaticAssets.swift`'s own `keyboardHTML` (see there for the
@@ -249,7 +267,7 @@ const COMPUTER_KEY_MAP = {
   y: 68, h: 69, u: 70, j: 71, k: 72, o: 73, l: 74, p: 75, ';': 76,
 };
 
-let roles = {};          // pitch class -> {degree, color}, from the last /state poll
+let roles = {};          // pitch class -> {degree, color, textColor}, from the last /state poll
 let heldPitches = new Set();
 let chordRoot = null;
 let chordTones = new Set();
@@ -385,6 +403,7 @@ function updateKeyVisuals() {
     if (role) {
       badge.style.display = '';
       badge.style.background = role.color;
+      badge.style.color = role.textColor;
       badge.textContent = role.degree;
     } else {
       badge.style.display = 'none';
@@ -480,13 +499,15 @@ async function refresh() {
   try {
     const response = await fetch('/state?' + identityQuery(), { cache: 'no-store' });
     const state = await response.json();
+    if (state.palette && state.palette.length === 12) PITCH_CLASS_COLORS = state.palette;
+    if (state.paletteTextColors && state.paletteTextColors.length === 12) PITCH_CLASS_TEXT_COLORS = state.paletteTextColors;
     const track = state.track;
     if (track) {
       heldPitches = new Set(track.heldPitches || []);
       chordRoot = track.chordRoot;
       chordTones = new Set(track.chordTones || []);
       roles = {};
-      (track.modeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc] }; });
+      (track.modeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc], textColor: PITCH_CLASS_TEXT_COLORS[pc] }; });
       infoLine = track.chordLabel
         ? `${track.chordLabel}${track.modesLabel ? ' — ' + track.modesLabel : ''}`
         : (track.modesLabel || '<span class="empty">(aucune note)</span>');
@@ -501,7 +522,7 @@ async function refresh() {
     // is active (see `ImprovSession.handleVirtualKeyboardRequest`'s doc comment).
     if (state.guide && state.guide.isActive) {
       roles = {};
-      (state.guide.currentModeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc] }; });
+      (state.guide.currentModeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc], textColor: PITCH_CLASS_TEXT_COLORS[pc] }; });
       const steps = (state.guide.steps || []).map(step => step.isCurrent ? `<b>[${step.label}]</b>` : step.label).join(' ');
       guideHTML = '<h2>Guide</h2>' + `<div class="field">${steps}</div>` + renderWheel(state.wheel);
     } else {

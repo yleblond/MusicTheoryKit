@@ -36,6 +36,7 @@ try? session.listGuideFiles(in: projectRoot.appendingPathComponent("Sequences").
 try? FileManager.default.createDirectory(at: projectRoot.appendingPathComponent("Scenes"), withIntermediateDirectories: true)
 try? session.listSceneFiles(in: projectRoot.appendingPathComponent("Scenes").path)
 try? session.setPromptsFolder(projectRoot.appendingPathComponent("Composition IA").path) // creates its fixed subfolders if absent
+try? session.loadOrCreateColorPalettes(fromJSONFile: projectRoot.appendingPathComponent("palettes.json").path)
 
 // If any scenes are already sitting in the default folder, offer to load one right away —
 // picking up a known instrument setup (e.g. "piano solo") shouldn't require knowing the
@@ -73,6 +74,7 @@ func printHelp() {
       web-console stop           arrete la console web
       virtual-keyboard [port]    demarre le clavier virtuel (piano interactif souris/tactile/clavier dans un navigateur, piste 'clavier-web', defaut port 8081)
       virtual-keyboard stop      arrete le clavier virtuel
+      use-palette <n ou nom>     choisit la palette de couleur active (console web + clavier virtuel, propre a cette instance)
       quit                       quitte
 
     Morceaux (Piece Model — mesures/accords)
@@ -453,6 +455,7 @@ func printStatus() {
     print(TextStyle.field("Playing (soundtrack)", TextStyle.flag(session.isPlayingSoundTrack)))
     print(TextStyle.field("Console Web", webConsoleStatusText()))
     print(TextStyle.field("Clavier virtuel", virtualKeyboardStatusText()))
+    print(TextStyle.field("Palette de couleur", session.activeColorPalette.name))
     print()
     printTracks()
     print()
@@ -699,6 +702,7 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
         line(TextStyle.field("Reseau", networkRoleText()))
         line(TextStyle.field("Console Web", webConsoleStatusText()))
         line(TextStyle.field("Clavier virtuel", virtualKeyboardStatusText()))
+        line(TextStyle.field("Palette de couleur", session.activeColorPalette.name))
         line(TextStyle.field("Mode MIDI", session.midiFusionMode == .merged ? "fusionne" : "individuel"))
         line()
         line(TextStyle.heading("Detail du morceau actif:"))
@@ -1115,6 +1119,13 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         } else {
             try session.useLLMConnection(named: arg)
         }
+    case "use-palette":
+        guard let arg = args.first else { print("usage: use-palette <numero ou nom>"); break }
+        if let index = Int(arg) {
+            try session.selectColorPalette(atIndex: index - 1)
+        } else {
+            try session.selectColorPalette(named: arg)
+        }
     case "compose":
         try session.composeFromText(title: args.isEmpty ? nil : args.joined(separator: " "))
     case "show-piece":
@@ -1384,6 +1395,15 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             for (index, name) in session.llmConnections.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Utiliser quelle connexion (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-llm", [choice])
+        },
+        MenuItem.separator,
+        MenuItem(label: "Choisir palette de couleur...") {
+            for (index, palette) in session.colorPalettes.enumerated() {
+                let marker = index == session.activeColorPaletteIndex ? " (active)" : ""
+                print("  \(index + 1). \(palette.name)\(marker)")
+            }
+            guard let choice = promptLine("Utiliser quelle palette (numero ou nom): "), !choice.isEmpty else { return }
+            try executeCommand("use-palette", [choice])
         },
         MenuItem.separator,
         MenuItem(label: "Mode MIDI: fusionne") { try executeCommand("midi-mode", ["fusionne"]) },

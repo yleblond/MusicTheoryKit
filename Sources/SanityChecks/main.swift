@@ -2419,6 +2419,212 @@ func testLoadSceneLeavesTracksNotMentionedUntouched() {
     }
 }
 
+func testColorPaletteFileRoundTrips() {
+    let file = ColorPaletteFile(palettes: ColorPalette.builtInDefaults)
+    do {
+        let data = try JSONEncoder().encode(file)
+        let decoded = try JSONDecoder().decode(ColorPaletteFile.self, from: data)
+        check(decoded.palettes, ColorPalette.builtInDefaults, "ColorPaletteFile round-trips through JSON unchanged")
+    } catch {
+        failures += 1
+        print("FAIL [ColorPaletteFile round trip]: threw \(error)")
+    }
+}
+testColorPaletteFileRoundTrips()
+
+func testBuiltInDefaultPalettesAreThreeDistinctFullPalettes() {
+    check(ColorPalette.builtInDefaults.count, 3, "builtInDefaults has 3 palettes")
+    check(Set(ColorPalette.builtInDefaults.map(\.name)).count, 3, "builtInDefaults palette names are distinct")
+    for palette in ColorPalette.builtInDefaults {
+        check(palette.colors.count, 12, "\(palette.name) has 12 colors")
+        check(Set(palette.colors).count, 12, "\(palette.name)'s 12 colors are distinct")
+        check(palette.textColors.count, 12, "\(palette.name) has 12 text colors")
+        for textColor in palette.textColors {
+            check(textColor == "#ffffff" || textColor == "#111111", true, "\(palette.name)'s text colors are all either white or black")
+        }
+    }
+}
+testBuiltInDefaultPalettesAreThreeDistinctFullPalettes()
+
+// The user hand-specified this exact pattern (white for every note except A/E/B, which get
+// black) — not something `legibleTextColors(for:)` is expected to reproduce on its own, so
+// this is pinned literally rather than re-derived from `PitchClassPalette.hex`.
+func testDefaultPaletteTextColorsMatchHandSpecifiedPattern() {
+    let palette = ColorPalette.builtInDefaults[0]
+    check(palette.name, "Default", "builtInDefaults[0] is Default")
+    // index: 0=C 1=Db 2=D 3=Eb 4=E 5=F 6=F# 7=G 8=Ab 9=A 10=Bb 11=B
+    let expected = [
+        "#ffffff", "#ffffff", "#ffffff", "#ffffff", "#111111", "#ffffff",
+        "#ffffff", "#ffffff", "#ffffff", "#111111", "#ffffff", "#111111",
+    ]
+    check(palette.textColors, expected, "Default's text colors are white except A(9)/E(4)/B(11), which are black")
+}
+testDefaultPaletteTextColorsMatchHandSpecifiedPattern()
+
+func testLegibleTextColorsUsesYIQBrightnessThreshold() {
+    let textColors = ColorPalette.legibleTextColors(for: ["#ffffff", "#000000", "#ffe119"])
+    check(textColors, ["#111111", "#ffffff", "#111111"], "legibleTextColors picks black for bright colors, white for dark ones")
+}
+testLegibleTextColorsUsesYIQBrightnessThreshold()
+
+func testSessionStartsWithDefaultPaletteMatchingPitchClassPalette() {
+    let session = ImprovSession()
+    check(session.colorPalettes.count, 1, "a fresh session starts with exactly one (fallback) palette")
+    check(session.activeColorPalette.name, "Default", "the fallback palette is named Default")
+    check(session.activeColorPalette.colors, PitchClassPalette.hex, "the fallback palette's colors mirror PitchClassPalette.hex")
+}
+testSessionStartsWithDefaultPaletteMatchingPitchClassPalette()
+
+func testLoadOrCreateColorPalettesWritesBuiltInDefaultsOnFirstRunThenLoadsThem() {
+    do {
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        check(FileManager.default.fileExists(atPath: tempFile.path), false, "the file doesn't exist yet")
+
+        let session = ImprovSession()
+        try session.loadOrCreateColorPalettes(fromJSONFile: tempFile.path)
+        check(FileManager.default.fileExists(atPath: tempFile.path), true, "loadOrCreateColorPalettes creates the file")
+        check(session.colorPalettes, ColorPalette.builtInDefaults, "loadOrCreateColorPalettes loads the freshly-written built-in defaults")
+        check(session.activeColorPalette.name, "Default", "the first palette in the file is active after loading")
+
+        // A second session pointed at the SAME (now-existing) file must not overwrite it —
+        // only ever create it once.
+        try session.selectColorPalette(named: "Pastel")
+        let reloaded = ImprovSession()
+        try reloaded.loadOrCreateColorPalettes(fromJSONFile: tempFile.path)
+        check(reloaded.colorPalettes, ColorPalette.builtInDefaults, "loadOrCreateColorPalettes doesn't overwrite an existing file")
+    } catch {
+        failures += 1
+        print("FAIL [loadOrCreateColorPalettes]: threw \(error)")
+    }
+}
+testLoadOrCreateColorPalettesWritesBuiltInDefaultsOnFirstRunThenLoadsThem()
+
+func testSelectColorPaletteByNameAndIndexAndRejectsInvalid() {
+    do {
+        let session = ImprovSession()
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.loadOrCreateColorPalettes(fromJSONFile: tempFile.path)
+
+        try session.selectColorPalette(named: "Contraste")
+        check(session.activeColorPalette.name, "Contraste", "selectColorPalette(named:) switches the active palette")
+
+        try session.selectColorPalette(atIndex: 2)
+        check(session.activeColorPalette.name, "Pastel", "selectColorPalette(atIndex:) switches the active palette (0-based)")
+
+        do {
+            try session.selectColorPalette(named: "Not A Real Palette")
+            failures += 1
+            print("FAIL [selectColorPalette invalid name]: did not throw")
+        } catch ImprovSession.SessionError.invalidColorPaletteIndex {
+            // expected
+        } catch {
+            failures += 1
+            print("FAIL [selectColorPalette invalid name]: wrong error \(error)")
+        }
+
+        do {
+            try session.selectColorPalette(atIndex: 99)
+            failures += 1
+            print("FAIL [selectColorPalette invalid index]: did not throw")
+        } catch ImprovSession.SessionError.invalidColorPaletteIndex {
+            // expected
+        } catch {
+            failures += 1
+            print("FAIL [selectColorPalette invalid index]: wrong error \(error)")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [selectColorPalette]: setup threw \(error)")
+    }
+}
+testSelectColorPaletteByNameAndIndexAndRejectsInvalid()
+
+func testLoadColorPalettesThrowsOnEmptyPalettesFile() {
+    do {
+        let session = ImprovSession()
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try JSONEncoder().encode(ColorPaletteFile(palettes: [])).write(to: tempFile)
+        do {
+            try session.loadColorPalettes(fromJSONFile: tempFile.path)
+            failures += 1
+            print("FAIL [loadColorPalettes empty file]: did not throw")
+        } catch ImprovSession.SessionError.emptyColorPaletteFile {
+            // expected
+        } catch {
+            failures += 1
+            print("FAIL [loadColorPalettes empty file]: wrong error \(error)")
+        }
+        // And the previous (fallback) palette must still be there — a failed load shouldn't
+        // have cleared anything.
+        check(session.colorPalettes.count, 1, "a failed load leaves the existing palettes untouched")
+    } catch {
+        failures += 1
+        print("FAIL [loadColorPalettes empty file]: setup threw \(error)")
+    }
+}
+testLoadColorPalettesThrowsOnEmptyPalettesFile()
+
+// Real HTTP round trip: the active palette's colors must appear in BOTH the web console's
+// and the virtual keyboard's `/state`, and switching palettes must be reflected on the very
+// next poll — no page reload, no server restart.
+func testActiveColorPaletteIsReflectedInWebConsoleAndVirtualKeyboardState() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.start()
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.loadOrCreateColorPalettes(fromJSONFile: tempFile.path)
+
+        try session.startWebConsole(port: 18400)
+        try session.startVirtualKeyboard(port: 18401)
+        Thread.sleep(forTimeInterval: 0.3)
+
+        if let consoleState = syncGET("http://127.0.0.1:18400/state") {
+            check(consoleState.body.contains("\"palette\":[\"#DB2A52\""), true, "web console /state reflects the Default palette's first color")
+            check(consoleState.body.contains("\"paletteTextColors\":[\"#ffffff\""), true, "web console /state reflects the Default palette's first text color")
+        } else {
+            failures += 1
+            print("FAIL [palette in web console state]: no response")
+        }
+        if let vkState = syncGET("http://127.0.0.1:18401/state?client=palette-test&name=Test") {
+            check(vkState.body.contains("\"palette\":[\"#DB2A52\""), true, "virtual keyboard /state reflects the Default palette's first color")
+            check(vkState.body.contains("\"paletteTextColors\":[\"#ffffff\""), true, "virtual keyboard /state reflects the Default palette's first text color")
+        } else {
+            failures += 1
+            print("FAIL [palette in virtual keyboard state]: no response")
+        }
+
+        try session.selectColorPalette(named: "Pastel")
+        Thread.sleep(forTimeInterval: 0.3)
+
+        if let consoleState = syncGET("http://127.0.0.1:18400/state") {
+            check(consoleState.body.contains("\"palette\":[\"#FFADAD\""), true, "web console /state reflects the switch to Pastel on the next poll")
+            check(consoleState.body.contains("\"paletteTextColors\":[\"#111111\""), true, "web console /state reflects Pastel's all-black text colors on the next poll")
+        } else {
+            failures += 1
+            print("FAIL [palette switch in web console state]: no response")
+        }
+        if let vkState = syncGET("http://127.0.0.1:18401/state?client=palette-test&name=Test") {
+            check(vkState.body.contains("\"palette\":[\"#FFADAD\""), true, "virtual keyboard /state reflects the switch to Pastel on the next poll")
+            check(vkState.body.contains("\"paletteTextColors\":[\"#111111\""), true, "virtual keyboard /state reflects Pastel's all-black text colors on the next poll")
+        } else {
+            failures += 1
+            print("FAIL [palette switch in virtual keyboard state]: no response")
+        }
+
+        session.stopWebConsole()
+        session.stopVirtualKeyboard()
+    } catch {
+        failures += 1
+        print("FAIL [palette in HTTP state]: threw \(error)")
+    }
+}
+testActiveColorPaletteIsReflectedInWebConsoleAndVirtualKeyboardState()
+
 func testGuideSequenceSaveAndLoadRoundTrips() {
     do {
         let session = ImprovSession()

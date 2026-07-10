@@ -21,6 +21,15 @@ struct WebConsoleState: Codable {
     /// Always present (not gated behind an active guide) — see `WebConsoleWheelState`.
     var wheel: WebConsoleWheelState
     var guide: WebConsoleGuideState?
+    /// The active `ColorPalette`'s 12 hex colors (index 0 = C ... 11 = B) — see
+    /// `ImprovSession.activeColorPalette`. Sent on every poll (not just once) so switching
+    /// palettes via the menu updates any already-open browser tab within one refresh cycle,
+    /// no reload needed.
+    var palette: [String]
+    /// Same indexing as `palette` — the legible text color to paint OVER each note's own
+    /// background color (a light background needs dark text and vice versa; see
+    /// `ColorPalette.textColors`'s doc comment for why this isn't purely formulaic).
+    var paletteTextColors: [String]
 }
 
 struct WebConsoleTrackState: Codable {
@@ -140,4 +149,9 @@ struct VirtualKeyboardStateResponse: Codable {
     var track: WebConsoleTrackState?
     var guide: WebConsoleGuideState?
     var wheel: WebConsoleWheelState?
+    /// Always present (unlike `guide`/`wheel`) — the degree badges need it whether or not a
+    /// guide is running. See `WebConsoleState.palette`'s doc comment.
+    var palette: [String]
+    /// See `WebConsoleState.paletteTextColors`'s doc comment.
+    var paletteTextColors: [String]
 }

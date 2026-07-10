@@ -414,11 +414,11 @@ Menus disponibles :
 
 | Menu | Contenu |
 |---|---|
-| **JamShack** | Menu principal (premier de la barre, s'ouvre par défaut) : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/connexions LLM/**composition IA**) ; (3) choisir une connexion LLM, isolée dans son propre groupe ; (4) mode MIDI fusionné/individuel ; (5) démarrer/arrêter la console web (voir §11) ; (6) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
+| **JamShack** | Menu principal (premier de la barre, s'ouvre par défaut) : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/connexions LLM/**composition IA**) ; (3) choisir une connexion LLM, isolée dans son propre groupe ; (3bis) choisir la palette de couleur (voir §13) ; (4) mode MIDI fusionné/individuel ; (5) démarrer/arrêter la console web (voir §11) et le clavier virtuel (voir §12) ; (6) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
 | **Scene** | Lister les instruments, activer/arrêter un instrument, *séparateur*, activer/désactiver le son d'un instrument, *séparateur*, choisir un son pour un instrument, *séparateur*, sauvegarder/charger une scène (la configuration complète des instruments : actif, son actif, quel son). Les actions qui demandent de choisir un instrument présentent la liste numérotée (voir §3) — répondre par le numéro évite d'avoir à retaper `midi:1`/`clavier`/etc. |
-| **Morceaux** | Quatre groupes, séparés par des traits : (1) écouter/voir le morceau ; (2) choisir le son par défaut de lecture, ou le son d'une piste/des accords d'une section (voir §7 — la structure affichée numérote les sections et les pistes, pour savoir directement quel numéro saisir) ; (3) charger la démo, charger un morceau, sauvegarder le morceau, sauvegarder le morceau sous ; (4) **Assistant IA** — pour l'instant un intitulé de sous-section réservé, sans action, en attente d'une future fonction de modification par dialogue (« plus vite », « moins vite »…) applicable à n'importe quel morceau. |
 | **Guide Musicaux** | Voir l'écran Guide Musical, *séparateur*, créer un nouveau guide musical (propose d'ajouter un mode en boucle jusqu'à laisser la tonique vide) / ajouter un mode au guide musical en cours, *séparateur*, charger un guide musical / sauvegarder le guide musical (sous...), *séparateur*, démarrer/arrêter le guide musical — aussi accessible directement par la barre d'espace une fois sur l'écran Guide Musical. |
 | **Enregistrement** | Démarrer/arrêter un enregistrement, voir l'enregistrement, jouer l'enregistrement, *séparateur*, charger/sauvegarder l'enregistrement, *séparateur*, composer un morceau à partir de l'enregistrement en le nommant (voir §10), *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser les indications de style, *séparateur*, voir/exporter le prompt de composition (voir §6). |
+| **Morceaux** | Quatre groupes, séparés par des traits : (1) écouter/voir le morceau ; (2) choisir le son par défaut de lecture, ou le son d'une piste/des accords d'une section (voir §7 — la structure affichée numérote les sections et les pistes, pour savoir directement quel numéro saisir) ; (3) charger la démo, charger un morceau, sauvegarder le morceau, sauvegarder le morceau sous ; (4) **Assistant IA** — pour l'instant un intitulé de sous-section réservé, sans action, en attente d'une future fonction de modification par dialogue (« plus vite », « moins vite »…) applicable à n'importe quel morceau. |
 | **Composition** | Décrire le morceau (assistant titre → description → indications → composition, voir §6), composer à partir de la description, voir la description, *séparateur*, charger une description/sauvegarder la description (sous...), *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/exporter le prompt de composition. |
 | **Jam Session** | Démarrer/arrêter une jam session, rejoindre une jam session, trouver une jam session (découverte), quitter la jam session — session collaborative (voir §9). Les trois premiers items demandent le pseudo à afficher aux autres avant de continuer. |
 
@@ -634,6 +634,12 @@ clavier du mode" — celui du guide musical s'il est en cours (menu **Guide Musi
 celui du morceau/de l'enregistrement en cours de lecture — puis chaque piste active, la
 sienne. Cette disposition est désormais la même que le guide soit actif ou non.
 
+**Largeur adaptative** : la page s'élargit pour profiter de l'espace disponible sur un grand
+écran (cercle des quintes agrandi, largeur totale plafonnée pour rester lisible plutôt que de
+s'étirer à l'infini), et repasse en une seule colonne sur un écran étroit ; chaque clavier,
+de largeur fixe par nature, défile horizontalement dans son propre espace au lieu de casser
+la page si la fenêtre est plus étroite que lui.
+
 **Fonctionnement interne** (pour comprendre ce qu'on voit) : l'état affiché est recalculé côté
 application environ toutes les 150ms et mis en cache — chaque `GET /state` du navigateur
 renvoie juste ce dernier instantané, sans jamais recalculer quoi que ce soit à la demande.
@@ -700,6 +706,36 @@ indépendantes (pas de garantie d'ordre entre elles) — une frappe très rapide
 laisser une note affichée comme tenue alors qu'elle a bien été relâchée. **Échap** relâche
 alors tout le clavier virtuel d'un coup (interroge la session elle-même sur ce qu'elle tient
 encore, pas la mémoire locale du navigateur qui pourrait aussi être fausse).
+
+## 13. Palette de couleur — une couleur par note, dans la console web et le clavier virtuel
+
+Chaque note (chacun des 12 demi-tons) a sa propre couleur, utilisée pour les pastilles de
+degré au-dessus des claviers et pour les accords du cercle des quintes — la même couleur
+partout où cette note apparaît, quel que soit le mode/l'accord. Chaque note a aussi sa propre
+**couleur de texte**, choisie pour rester lisible sur son propre fond (le chiffre du degré
+dans sa pastille, le nom/degré affiché dans chaque case du cercle des quintes) : dans la
+palette **Default**, tout le texte est blanc sauf sur les notes La, Mi et Si (les 3 fonds les
+plus clairs de cette palette), en noir ; les deux autres palettes ont leur propre choix.
+Plusieurs jeux de couleurs possibles, listés dans `palettes.json` (créé automatiquement au
+premier lancement, à côté de `Pieces/`/`Scenes/`, avec trois palettes de départ : **Default**
+— extraite de la roue physique photographiée dans `Sources/Colors/Colors.PNG` —, **Contraste**
+et **Pastel**) ; le modifier à la main pour ajouter ses propres palettes. Une palette
+ajoutée à la main sans préciser `textColors` reçoit automatiquement une couleur de texte
+calculée (blanc ou noir selon la luminosité perçue du fond) plutôt que d'échouer au
+chargement.
+
+```
+use-palette 2          # palette active par numero (voir menu JamShack pour la liste)
+use-palette Pastel     # ou par nom
+```
+
+Menu **JamShack > Choisir palette de couleur...** fait la même chose, avec la liste
+numérotée et la palette active repérée. Le choix est **propre à cette instance de
+l'application** — jamais écrit dans `palettes.json` (qui ne liste que ce qui est
+*disponible*, pas ce qui est *actif*) — et repasse sur la première palette du fichier à
+chaque relance. S'applique aussitôt à la console web et au clavier virtuel de cette même
+instance, sans recharger la page (le changement apparaît dans les ~250ms du prochain
+sondage).
 
 ## Liste complète des commandes
 
@@ -777,6 +813,7 @@ web-console [port]      demarre la console web (miroir de 'run' dans un navigate
 web-console stop        arrete la console web
 virtual-keyboard [port] demarre le clavier virtuel (piano interactif dans un navigateur, piste 'clavier-web', defaut port 8081)
 virtual-keyboard stop   arrete le clavier virtuel
+use-palette <n ou nom>  choisit la palette de couleur active (console web + clavier virtuel, propre a cette instance)
 quit                    quitte
 ```
 
