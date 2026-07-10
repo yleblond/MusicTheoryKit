@@ -2,17 +2,33 @@
 /// /app.js`) — see `ImprovSession.startVirtualKeyboard`. Deliberately a separate page/module
 /// concern from `StaticAssets.swift`'s read-only web console: this one is interactive (typed
 /// keys, mouse clicks, touches all play notes — including clicking/tapping a circle-of-fifths
-/// wheel cell, while a guide is active, to play that chord's triad), so keeping it in its own
-/// file/route means the always-on console page never has to reason about input handling at
-/// all — its own `renderWheel` has no click handling, deliberately.
+/// wheel cell, always shown now (not just while a guide is active), to play that chord's
+/// triad), so keeping it in its own file/route means the always-on console page never has to
+/// reason about input handling at all — its own `renderWheel` has no click handling,
+/// deliberately.
+///
+/// **Layout**: two columns (`.layout-columns`, same responsive pattern as the console's own —
+/// wraps to one column on a narrow screen) — left is identity/settings + the guide's own
+/// info (title/steps, while active) + the wheel; right is the detected-chord line, the
+/// octave overview + arrows, and the actual playable piano, so "what you're about to play"
+/// and "what you're actually playing" read side by side.
 ///
 /// **Computer keyboard**: two overlaid row-pairs (`KEY_MAP`) cover ~2.3 octaves at once
-/// (bass: number row + `qwertyuiop`; treble, continuing right above it: `asdfgh` + the bottom
-/// letter row), mapped by physical position (`KeyboardEvent.code`) rather than by character —
-/// stays correct on a QWERTZ/AZERTY/etc. keyboard, not just the US layout the letters are
-/// named after. `shiftOctave()` (the on-screen Octave -/+ buttons) slides this whole window
-/// by a full octave at a time across `OCTAVE_STOPS` (C0..C6), rebuilding the on-screen piano
-/// to match every time — see `ensureKeyboardBuilt`/`recomputeKeyRange`.
+/// (bass: number row + `qwertyuiop`; treble, continuing right above it: `S D G H J` + the
+/// bottom letter row), mapped by physical position (`KeyboardEvent.code`) rather than by
+/// character — stays correct on a QWERTZ/AZERTY/etc. keyboard, not just the US layout the
+/// letters are named after. `shiftOctave()`/`applyOctaveIndex()` (the ◂/▸ arrows flanking the
+/// mini-piano overview, `ArrowLeft`/`ArrowRight`, or `<`/`-` next to Shift on an ISO keyboard)
+/// slide this whole window by a full octave at a time across `OCTAVE_STOPS` (C0..C6),
+/// rebuilding the on-screen piano to match every time — see
+/// `ensureKeyboardBuilt`/`recomputeKeyRange`. Clicking/tapping anywhere on the mini-piano
+/// overview jumps straight to whichever octave stop's window best covers that spot
+/// (`jumpOctaveFromMiniPianoClick`/`jumpToNearestOctaveFor`), still snapping to one of the
+/// same fixed stops rather than an arbitrary pixel-perfect note.
+///
+/// **Guide navigation**: while a guide is running, `Tab`/`Shift+Tab` advance/go back one
+/// step (`GET /guide-advance?delta=`) — a GLOBAL action (the same guide everyone sees, not
+/// per-client), mirroring the terminal's own left/right arrows on its `.guide` screen.
 ///
 /// **Multi-client**: every route below `/`/`/app.js` requires `?client=<uuid>` — a random id
 /// this page generates once and keeps in `localStorage`, so the SAME browser/device keeps
@@ -26,10 +42,10 @@
 /// **JSON contract with `AppCore.ImprovSession`**: `GET /state?client=...` returns a
 /// `VirtualKeyboardStateResponse` (`AppCore/WebConsoleState.swift`) — `track` scoped to just
 /// this one client's own track (same shape as one entry of the web console's `tracks` array,
-/// see `StaticAssets.swift`'s own contract comment), `guide`/`wheel` only while a guide is
-/// actually running (see `ImprovSession.handleVirtualKeyboardRequest`'s doc comment) — the
-/// role-line (degree badges) switches to the guide's own mode while active, but held/chord/
-/// root coloring stays this client's own personal feedback either way:
+/// see `StaticAssets.swift`'s own contract comment), `guide` only while a guide is actually
+/// running (see `ImprovSession.handleVirtualKeyboardRequest`'s doc comment) — the role-line
+/// (degree badges) switches to the guide's own mode while active, but held/chord/root coloring
+/// stays this client's own personal feedback either way:
 /// ```json
 /// {"track": {"id": "clavier-web:<uuid>", "label": "Alice", "owner": null,
 ///            "heldPitches": [60, 64, 67], "chordRoot": 0, "chordTones": [0, 4, 7],
@@ -42,20 +58,28 @@
 ///  "palette": ["#DB2A52", "#0AAD9A", ..., "#ABD144"],
 ///  "paletteTextColors": ["#ffffff", "#ffffff", ..., "#111111"]}
 /// ```
-/// `guide`/`wheel` (a `nil` `Optional` under Swift's synthesized `Encodable`) are OMITTED
-/// from the JSON entirely while no guide is running, not present as an explicit `null` —
-/// `app.js` only ever checks `state.guide && state.guide.isActive`, which is `undefined`-safe
-/// either way. `palette`/`paletteTextColors` are always present, unlike those two — the 12 hex
-/// colors (and matching legible text colors, see `ColorPalette.textColors`'s doc comment) of
-/// whichever `ColorPalette` is currently active (`ImprovSession.activeColorPalette`), index 0
-/// = C ... 11 = B, sent on every poll so switching palettes from the menu updates this page
-/// within one refresh cycle — see `app.js`'s own `PITCH_CLASS_COLORS`/`PITCH_CLASS_TEXT_COLORS`.
+/// `guide` (a `nil` `Optional` under Swift's synthesized `Encodable`) is OMITTED from the
+/// JSON entirely while no guide is running, not present as an explicit `null` — `app.js`
+/// only ever checks `state.guide && state.guide.isActive`, which is `undefined`-safe either
+/// way. `wheel`/`palette`/`paletteTextColors` are always present, unlike `guide` — `wheel`'s
+/// mode-relative parts (diatonic boundary, roman numerals, active mode name) are still only
+/// MEANINGFUL while a guide is running, but that's a client-side rendering choice
+/// (`renderWheel`'s `showModeContext` argument), not a server-side omission, since the wheel
+/// itself (which chord sits where, its own color) stays clickable either way.
+/// `palette`/`paletteTextColors` are the 12 hex colors (and matching legible text colors, see
+/// `ColorPalette.textColors`'s doc comment) of whichever `ColorPalette` is currently active
+/// (`ImprovSession.activeColorPalette`), index 0 = C ... 11 = B, sent on every poll so
+/// switching palettes from the menu updates this page within one refresh cycle — see
+/// `app.js`'s own `PITCH_CLASS_COLORS`/`PITCH_CLASS_TEXT_COLORS`.
 ///
 /// `GET /note-on?pitch=<midi>&client=...&name=...` / `GET /note-off?pitch=<midi>&client=
-/// ...&name=...` / `GET /release-all?client=...&name=...` are the only ways this page
-/// *changes* anything — plain `GET`s with everything in the query string (not a POST body):
-/// `WebConsole`'s hand-rolled HTTP server only ever parses a request line, never a body (see
-/// `HTTPWireFormat`'s doc comment), and a one-off query string is simpler than teaching it to.
+/// ...&name=...` / `GET /release-all?client=...&name=...` / `GET /guide-advance?delta=
+/// <±1>&client=...&name=...` are the only ways this page *changes* anything — plain `GET`s
+/// with everything in the query string (not a POST body): `WebConsole`'s hand-rolled HTTP
+/// server only ever parses a request line, never a body (see `HTTPWireFormat`'s doc comment),
+/// and a one-off query string is simpler than teaching it to. `/guide-advance` ignores
+/// `client`/`name` (still required, like every other route here) — it moves the session's one
+/// shared guide, not anything scoped to this client's own track.
 public let virtualKeyboardIndexHTML = """
 <!doctype html>
 <html lang="fr">
@@ -64,7 +88,7 @@ public let virtualKeyboardIndexHTML = """
 <title>JamShack — Clavier virtuel</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <style>
-  body { background: #111; color: #ddd; font-family: -apple-system, sans-serif; margin: 1.5rem; }
+  body { background: #111; color: #ddd; font-family: -apple-system, sans-serif; box-sizing: border-box; margin: 1.5rem auto; max-width: 1600px; padding: 0 1.5rem; }
   h1 { font-size: 1.1rem; color: #888; font-weight: normal; }
   .field { color: #888; }
   .field b { color: #ddd; }
@@ -72,19 +96,45 @@ public let virtualKeyboardIndexHTML = """
   .hint { color: #666; font-size: 0.85rem; margin-top: 0.3rem; }
   .identity { color: #666; font-size: 0.85rem; }
   .identity a { color: #6cf; cursor: pointer; text-decoration: underline; }
-  .octave-controls { color: #888; font-size: 0.85rem; margin: 0.4rem 0; }
-  .octave-controls b { color: #ddd; }
-  .octave-controls button {
-    background: #333; color: #ddd; border: 1px solid #555; border-radius: 4px;
-    width: 1.7rem; height: 1.7rem; font-size: 1rem; line-height: 1; cursor: pointer;
+  .layout-columns { display: flex; flex-wrap: wrap; gap: 2rem; align-items: flex-start; }
+  .layout-col-left, .layout-col-right { flex: 1 1 380px; min-width: 0; }
+  /* Centers the mini-piano group ABOVE the real piano ("centrer la representation du clavier
+     global au dessus du clavier actif") regardless of which of the two is wider — a column
+     flex box with `align-items: center` centers each row relative to the widest one, unlike
+     centering `.octave-controls` alone within the FULL column width (the earlier approach):
+     that lined it up with the COLUMN's center, not the piano's own, whenever the piano itself
+     was narrower than the column and sat left-aligned inside it. */
+  .keyboard-align-wrapper { display: flex; flex-direction: column; align-items: center; }
+  .octave-controls {
+    color: #888; font-size: 0.85rem; margin: 0.4rem 0; display: flex; align-items: center;
+    gap: 0.5rem;
   }
-  .octave-controls button:hover { background: #444; }
+  .octave-controls b { color: #ddd; }
+  .octave-arrow {
+    cursor: pointer; user-select: none; font-size: 1.3rem; line-height: 1; color: #ddd;
+    padding: 0 0.2rem;
+  }
+  .octave-arrow:hover { color: #fff; }
+  .mini-piano { display: block; flex: 0 0 auto; cursor: pointer; }
+  .mini-key-white { fill: #f5f5f5; stroke: #555; stroke-width: 0.5; }
+  .mini-key-black { fill: #1a1a1a; }
+  /* Outline only ("entourer"), no fill — sits on top of the mini keyboard's own keys to mark
+     which slice of the full range [MIN_MIDI, MAX_MIDI] is currently played below. */
+  .mini-piano-active { fill: none; stroke: #e91e63; stroke-width: 1.5; }
+  /* Lets the real piano scroll horizontally within its own column instead of overflowing the
+     whole page when it's wider than the column (common once the layout is 2 columns instead
+     of the full page width) — same convention as the console's own `.keyboard-scroll`. */
+  .keyboard-scroll { overflow-x: auto; max-width: 100%; }
   .wheel { margin: 0.5rem 0 1rem; display: block; width: 100%; max-width: 520px; height: auto; }
   .wheel-disk { fill: #fff; }
   .wheel-grid-line { stroke: #000; stroke-width: 1; }
   .wheel-cell-shape { stroke: #333; stroke-width: 1; cursor: pointer; }
   .wheel-cell-shape.pressed { filter: brightness(0.7); }
   .wheel-diatonic-boundary { fill: none; stroke: #1a3a6b; stroke-width: 5; stroke-linejoin: round; }
+  /* Ring around whichever cell matches this track's OWN currently-detected chord (see
+     `detectedChordFrom`/`renderWheel`'s `detectedChord` argument) — same magenta as `.pkey.root`
+     elsewhere in the app, for "this is the fundamental/the chord you're playing" consistency. */
+  .wheel-cell-detected { fill: none; stroke: #e91e63; stroke-width: 3; pointer-events: none; }
   /* No `fill` here (unlike most rules) — the palette's per-note text color is set inline,
      since it varies by pitch class (`PITCH_CLASS_TEXT_COLORS[cell.pitchClass]`), not fixed. */
   .wheel-cell-symbol { font-size: 8px; font-weight: bold; text-anchor: middle; pointer-events: none; }
@@ -231,19 +281,35 @@ if (!localStorage.getItem('vkKeyboardLayout') && navigator.keyboard && navigator
   }).catch(() => {}); // unsupported or permission denied — keep the QWERTY default
 }
 
-// Slides the whole bass+treble window up/down by one of the `OCTAVE_STOPS`, then rebuilds the
-// on-screen piano to match — "ajuster la zone affichee en fonction de la zone jouable au
-// clavier". Releases everything first: the visible range is about to change entirely, so
-// whatever was held may not even have an on-screen key left afterward.
-function shiftOctave(delta) {
-  const nextIndex = octaveIndex + delta;
-  if (nextIndex < 0 || nextIndex >= OCTAVE_STOPS.length) return;
+// Jumps straight to `newIndex` (any of `OCTAVE_STOPS`), then rebuilds the on-screen piano to
+// match — "ajuster la zone affichee en fonction de la zone jouable au clavier". Releases
+// everything first: the visible range is about to change entirely, so whatever was held may
+// not even have an on-screen key left afterward. Shared by `shiftOctave()` (±1 step, from the
+// ◂/▸ arrows or a keyboard shortcut) and `jumpToNearestOctaveFor()` (a direct jump, from
+// clicking/tapping the mini-piano overview) — same effect, different way of picking the target.
+function applyOctaveIndex(newIndex) {
+  if (newIndex < 0 || newIndex >= OCTAVE_STOPS.length || newIndex === octaveIndex) return;
   clearAllLocalPressState();
   sendNoteEvent('/release-all');
-  octaveIndex = nextIndex;
+  octaveIndex = newIndex;
   recomputeKeyRange();
   keyboardBuilt = false;
   renderKeyboard();
+}
+function shiftOctave(delta) {
+  applyOctaveIndex(octaveIndex + delta);
+}
+// Picks whichever `OCTAVE_STOPS` window's own center ends up closest to `pitch` — "toujours en
+// respectant la logique de positionnement correcte des touches": always one of the same fixed
+// stops, never an arbitrary pixel-perfect note, so the result is exactly the same window
+// `shiftOctave()` could have landed on by stepping.
+function jumpToNearestOctaveFor(pitch) {
+  let best = 0, bestDistance = Infinity;
+  OCTAVE_STOPS.forEach((root, i) => {
+    const distance = Math.abs(pitch - (root + 9)); // root+9 = this stop's own window center
+    if (distance < bestDistance) { bestDistance = distance; best = i; }
+  });
+  applyOctaveIndex(best);
 }
 
 // This browser's persistent identity — generated once, kept in `localStorage` so reloading
@@ -358,7 +424,28 @@ function diatonicBoundaryPath(wheel, cx, cy) {
   return 'M' + points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L') + ' Z';
 }
 
-function renderWheel(wheel) {
+// `showModeContext` gates everything that's only MEANINGFUL relative to an active guide's
+// tonic/mode (mode-name labels, roman-numeral degrees, the diatonic-boundary outline) — the
+// wheel is now always shown (guide or not), but without a guide there's no reference tonic to
+// hang those on; showing them anyway (derived from whatever arbitrary fallback tonic the
+// server picks — see `ImprovSession.wheelReferenceMode`'s doc comment) would just be
+// misleading. The chord grid itself (shape/color/name, and clicking it) stays fully usable
+// either way — only these mode-relative extras disappear.
+// This client's own currently-detected chord, if any — `{pitchClass, quality}` matching a
+// wheel cell's own shape, or `null`. Not gated by `showModeContext`: which chord you're
+// personally playing right now isn't relative to any reference tonic, unlike the mode-name/
+// roman-numeral/diatonic-boundary parts, so it stays shown whether or not a guide is running.
+function detectedChordFrom(track) {
+  if (!track || track.chordRoot === null || track.chordRoot === undefined) return null;
+  const intervals = new Set((track.chordTones || []).map(t => ((t - track.chordRoot) % 12 + 12) % 12));
+  let quality = null;
+  if (intervals.has(4) && intervals.has(7)) quality = 'major';
+  else if (intervals.has(3) && intervals.has(7)) quality = 'minor';
+  else if (intervals.has(3) && intervals.has(6)) quality = 'diminished';
+  return quality ? { pitchClass: track.chordRoot, quality } : null;
+}
+
+function renderWheel(wheel, showModeContext, detectedChord) {
   if (!wheel) return '';
   const cx = 270, cy = 270;
   const count = wheel.columns.length;
@@ -374,7 +461,7 @@ function renderWheel(wheel) {
     svg += `<line class="wheel-grid-line" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
   }
   wheel.columns.forEach((column, index) => {
-    if (column.modeName) {
+    if (showModeContext && column.modeName) {
       const pos = polarPoint(cx, cy, WHEEL_MODE_NAME_RADIUS, index, count);
       const cls = column.modeName === wheel.activeModeName ? 'wheel-mode-name active' : 'wheel-mode-name';
       const rotate = circularLabelRotation(index, count);
@@ -397,12 +484,26 @@ function renderWheel(wheel) {
       } else {
         svg += `<circle ${cellAttrs} cx="${pos.x}" cy="${pos.y}" r="${size}" fill="${color}" />`;
       }
+      if (detectedChord && cell.pitchClass === detectedChord.pitchClass && cell.quality === detectedChord.quality) {
+        const ringSize = size + 4;
+        if (cell.shape === 'square') {
+          svg += `<g transform="rotate(${rotateDeg} ${pos.x} ${pos.y})"><rect class="wheel-cell-detected" x="${pos.x - ringSize}" y="${pos.y - ringSize}" width="${ringSize * 2}" height="${ringSize * 2}" /></g>`;
+        } else {
+          svg += `<circle class="wheel-cell-detected" cx="${pos.x}" cy="${pos.y}" r="${ringSize}" />`;
+        }
+      }
+      // The chord's own name (e.g. "Cm") — always shown, unlike the roman numeral below: it's
+      // a property of the chord itself, not of any reference tonic.
       const symbol = NOTE_NAMES[cell.pitchClass] + CHORD_SUFFIX[cell.quality];
       svg += `<text class="wheel-cell-symbol" x="${pos.x}" y="${pos.y + 1}" fill="${textColor}">${symbol}</text>`;
-      svg += `<text class="wheel-cell-degree" x="${pos.x}" y="${pos.y + 9}" fill="${textColor}">${degreeSVGMarkup(cell.relativeDegree)}</text>`;
+      if (showModeContext) {
+        svg += `<text class="wheel-cell-degree" x="${pos.x}" y="${pos.y + 9}" fill="${textColor}">${degreeSVGMarkup(cell.relativeDegree)}</text>`;
+      }
     });
   });
-  svg += `<path class="wheel-diatonic-boundary" d="${diatonicBoundaryPath(wheel, cx, cy)}" />`;
+  if (showModeContext) {
+    svg += `<path class="wheel-diatonic-boundary" d="${diatonicBoundaryPath(wheel, cx, cy)}" />`;
+  }
   svg += '</svg>';
   return svg;
 }
@@ -431,6 +532,66 @@ const WHITE_KEY_WIDTH = 44, WHITE_KEY_HEIGHT = 144, BLACK_KEY_WIDTH = 26, BLACK_
 const WHITE_SLOT_BY_SEMITONE = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
 const BLACK_AFTER_WHITE_SLOT = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };
 
+// --- Mini full-piano overview, above the real keyboard — a tiny "you are here" strip
+// spanning C-1..C8 (comfortably past every extreme `OCTAVE_STOPS`/`BASS_WHITE_OFFSETS` can
+// reach), with an outline marking exactly which slice ([MIN_MIDI, MAX_MIDI]) is played below.
+const MINI_PIANO_MIN = 0, MINI_PIANO_MAX = 108;
+const MINI_WHITE_WIDTH = 5, MINI_WHITE_HEIGHT = 22, MINI_BLACK_WIDTH = 3, MINI_BLACK_HEIGHT = 14;
+// Same "absolute octave, not relative to some arbitrary start pitch" fix as
+// `ensureKeyboardBuilt()`'s own `octaveBase` — `MINI_PIANO_MIN` is 0 (a C) here, so this is
+// actually a no-op today, but computing it the same way keeps both pieces of code obviously
+// consistent rather than relying on that coincidence.
+const MINI_OCTAVE_BASE = Math.floor(MINI_PIANO_MIN / 12);
+function miniWhiteSlot(pitch) {
+  const pc = ((pitch % 12) + 12) % 12;
+  const octave = Math.floor(pitch / 12) - MINI_OCTAVE_BASE;
+  return octave * 7 + WHITE_SLOT_BY_SEMITONE[pc];
+}
+function renderMiniPianoOverview() {
+  const octaveCount = Math.ceil((MINI_PIANO_MAX - MINI_PIANO_MIN + 1) / 12);
+  const width = octaveCount * 7 * MINI_WHITE_WIDTH;
+  let svg = `<svg class="mini-piano" width="${width}" height="${MINI_WHITE_HEIGHT}" viewBox="0 0 ${width} ${MINI_WHITE_HEIGHT}">`;
+  for (let pitch = MINI_PIANO_MIN; pitch <= MINI_PIANO_MAX; pitch++) {
+    const pc = ((pitch % 12) + 12) % 12;
+    if (WHITE_SLOT_BY_SEMITONE[pc] === undefined) continue;
+    const x = miniWhiteSlot(pitch) * MINI_WHITE_WIDTH;
+    svg += `<rect class="mini-key-white" x="${x}" y="0" width="${MINI_WHITE_WIDTH}" height="${MINI_WHITE_HEIGHT}" />`;
+  }
+  for (let pitch = MINI_PIANO_MIN; pitch <= MINI_PIANO_MAX; pitch++) {
+    const pc = ((pitch % 12) + 12) % 12;
+    if (WHITE_SLOT_BY_SEMITONE[pc] !== undefined) continue;
+    const octave = Math.floor(pitch / 12) - MINI_OCTAVE_BASE;
+    const slot = octave * 7 + BLACK_AFTER_WHITE_SLOT[pc] + 1;
+    const x = slot * MINI_WHITE_WIDTH - MINI_BLACK_WIDTH / 2;
+    svg += `<rect class="mini-key-black" x="${x}" y="0" width="${MINI_BLACK_WIDTH}" height="${MINI_BLACK_HEIGHT}" />`;
+  }
+  // Both always land on a white key (G and B respectively — see `BASS_WHITE_OFFSETS`/
+  // `TREBLE_WHITE_OFFSETS`), so a plain white-key-slot lookup is enough for both edges.
+  const highlightX1 = miniWhiteSlot(MIN_MIDI) * MINI_WHITE_WIDTH;
+  const highlightX2 = (miniWhiteSlot(MAX_MIDI) + 1) * MINI_WHITE_WIDTH;
+  svg += `<rect class="mini-piano-active" x="${highlightX1}" y="0" width="${highlightX2 - highlightX1}" height="${MINI_WHITE_HEIGHT}" />`;
+  svg += '</svg>';
+  return svg;
+}
+
+// Inverse of `WHITE_SLOT_BY_SEMITONE` (slot 0..6 within an octave -> pitch class) — needed to
+// go from "which white-key slot did the click land in" back to an actual pitch, for
+// `jumpOctaveFromMiniPianoClick()` below.
+const SEMITONE_BY_WHITE_SLOT = [0, 2, 4, 5, 7, 9, 11];
+// Touch/click anywhere on the mini overview jumps the playable window straight there — "si on
+// touche dans le plan de clavier, on decale la zone active sur cela". Only ever needs an
+// APPROXIMATE pitch (`jumpToNearestOctaveFor` immediately snaps it to the nearest real stop
+// anyway), so this doesn't bother distinguishing white/black — closest white slot is enough.
+function jumpOctaveFromMiniPianoClick(svg, clientX) {
+  const rect = svg.getBoundingClientRect();
+  if (rect.width === 0) return;
+  const xInSvg = ((clientX - rect.left) / rect.width) * svg.viewBox.baseVal.width;
+  const slot = Math.max(0, Math.floor(xInSvg / MINI_WHITE_WIDTH));
+  const octaveRel = Math.floor(slot / 7);
+  const pc = SEMITONE_BY_WHITE_SLOT[Math.min(slot - octaveRel * 7, 6)];
+  jumpToNearestOctaveFor((octaveRel + MINI_OCTAVE_BASE) * 12 + pc);
+}
+
 // C/F have a black key ONLY on their right (nothing between B-C or E-F), E/B have one ONLY
 // on their left — so the visually "exposed" top portion of those 4 white keys (the part not
 // covered by an adjacent black key) isn't centered on the key's own full width like it is for
@@ -446,7 +607,14 @@ let heldPitches = new Set();
 let chordRoot = null;
 let chordTones = new Set();
 let infoLine = '<span class="empty">(aucune note)</span>';
-let guideHTML = '';   // guide title/steps + wheel, only while a guide is active — see refresh()
+let guideIsActive = false;
+let guideInfoHTML = '';  // guide title + steps, only while a guide is active — see refresh()
+let wheelHTML = '';      // always rendered, mode-relative parts gated by `guideIsActive`
+// Global, not scoped to this client's own track — see `ImprovSession.handleVirtualKeyboardRequest`'s
+// doc comment on `/guide-advance`.
+function sendGuideAdvance(delta) {
+  fetch('/guide-advance?delta=' + delta + '&' + identityQuery()).catch(() => {});
+}
 
 // How many wheel-cell presses (mouse + every active touch) are currently in flight — while
 // this is > 0, `renderKeyboard()` skips rebuilding `#guide-container` (see there): the wheel
@@ -554,18 +722,30 @@ function ensureKeyboardBuilt() {
   // see `wheelChordActiveCount`'s doc comment for why that distinction matters) — safe to
   // drop whatever the previous range's keyboard div was.
   document.getElementById('keyboard-container').innerHTML = '';
-  const octaveCount = Math.ceil((MAX_MIDI - MIN_MIDI + 1) / 12);
-  const totalWidth = octaveCount * 7 * WHITE_KEY_WIDTH;
-  const keyboardEl = document.createElement('div');
-  keyboardEl.className = 'keyboard';
-  keyboardEl.style.width = totalWidth + 'px';
-  keyboardEl.style.height = WHITE_KEY_HEIGHT + 'px';
   // Octave number relative to a fixed reference (pitch 0), not to `MIN_MIDI` itself — `MIN_MIDI`
   // is no longer always a C (the bass register now starts on a G, see `BASS_WHITE_OFFSETS`),
   // and computing `octave` from `pitch - MIN_MIDI` silently assumed it was: G2 would land in
   // "octave 0" while the very next C landed in "octave 1", pushing it 7 white-key slots to the
   // RIGHT of where it belongs and scrambling the whole keyboard's left-to-right order.
   const octaveBase = Math.floor(MIN_MIDI / 12);
+  function whiteSlotFor(pitch) {
+    const pc = ((pitch % 12) + 12) % 12;
+    return (Math.floor(pitch / 12) - octaveBase) * 7 + WHITE_SLOT_BY_SEMITONE[pc];
+  }
+  // MIN_MIDI/MAX_MIDI are always white (G and B respectively — see `BASS_WHITE_OFFSETS`/
+  // `TREBLE_WHITE_OFFSETS`), so both ends have a well-defined white-key slot. Subtracting
+  // `leftWhiteSlotOffset` from every position below (instead of just starting the slot count
+  // at whatever `octaveBase*7` happens to land on) is what makes MIN_MIDI's own key start
+  // exactly at `left: 0` — without it, the `.keyboard` div's box was wider than its own visible
+  // keys (extra blank space on one side, however much `MIN_MIDI` sits into its own octave),
+  // which threw off `.keyboard-align-wrapper`'s centering: it centers each row on its
+  // rendered BOX width, not on where the visible keys happen to sit inside that box.
+  const leftWhiteSlotOffset = whiteSlotFor(MIN_MIDI);
+  const totalWidth = (whiteSlotFor(MAX_MIDI) - leftWhiteSlotOffset + 1) * WHITE_KEY_WIDTH;
+  const keyboardEl = document.createElement('div');
+  keyboardEl.className = 'keyboard';
+  keyboardEl.style.width = totalWidth + 'px';
+  keyboardEl.style.height = WHITE_KEY_HEIGHT + 'px';
   for (let pitch = MIN_MIDI; pitch <= MAX_MIDI; pitch++) {
     const pc = ((pitch % 12) + 12) % 12;
     const octave = Math.floor(pitch / 12) - octaveBase;
@@ -576,13 +756,13 @@ function ensureKeyboardBuilt() {
     // nothing and every key would silently stay unstyled until some later, unrelated DOM
     // change happened to touch it.
     if (WHITE_SLOT_BY_SEMITONE[pc] !== undefined) {
-      const slot = octave * 7 + WHITE_SLOT_BY_SEMITONE[pc];
+      const slot = octave * 7 + WHITE_SLOT_BY_SEMITONE[pc] - leftWhiteSlotOffset;
       el.className = 'pkey white';
       el.style.left = (slot * WHITE_KEY_WIDTH) + 'px';
       el.style.width = WHITE_KEY_WIDTH + 'px';
       el.style.height = WHITE_KEY_HEIGHT + 'px';
     } else {
-      const slot = octave * 7 + BLACK_AFTER_WHITE_SLOT[pc] + 1;
+      const slot = octave * 7 + BLACK_AFTER_WHITE_SLOT[pc] + 1 - leftWhiteSlotOffset;
       el.className = 'pkey black';
       el.style.left = (slot * WHITE_KEY_WIDTH - BLACK_KEY_WIDTH / 2) + 'px';
       el.style.width = BLACK_KEY_WIDTH + 'px';
@@ -617,9 +797,24 @@ function ensureKeyboardBuilt() {
     }
     keyboardEl.appendChild(el);
   }
-  document.getElementById('keyboard-container').appendChild(keyboardEl);
+  // Scrollable wrapper — once the page is 2 columns instead of the full page width (see
+  // `.layout-columns`), the piano is commonly wider than its own column; this lets it scroll
+  // horizontally within that column instead of overflowing the whole layout.
+  const scrollWrap = document.createElement('div');
+  scrollWrap.className = 'keyboard-scroll';
+  scrollWrap.appendChild(keyboardEl);
+  document.getElementById('keyboard-container').appendChild(scrollWrap);
   keyboardBuilt = true;
   refreshKeyLetterLabels();
+  // The mini overview + its flanking range labels only ever change alongside the real piano
+  // (both driven by MIN_MIDI/MAX_MIDI) — refreshed here, not in `renderKeyboard()`'s own
+  // per-poll body, for the exact same reason this whole function only runs on a deliberate
+  // octave change rather than every ~200ms tick: a click/tap on the mini-piano's own SVG must
+  // survive until its (synchronous, same-tick) handling finishes, same principle as the piano
+  // keys above even though this SVG doesn't track a held gesture across ticks like they do.
+  document.getElementById('mini-piano-container').innerHTML = renderMiniPianoOverview();
+  document.getElementById('octave-min-label').textContent = noteLabel(MIN_MIDI);
+  document.getElementById('octave-max-label').textContent = noteLabel(MAX_MIDI);
 }
 
 function refreshKeyLetterLabels() {
@@ -658,27 +853,46 @@ function updateKeyVisuals() {
 
 function renderKeyboard() {
   if (!document.getElementById('keyboard-container')) {
+    // Left: identity/settings, the guide's own info (while active), the wheel. Right, the
+    // octave overview + arrows and the actual piano (wrapped together so their centers line
+    // up — see `.keyboard-align-wrapper`), then the detected-chord line right below the
+    // keyboard — "le plan de clavier et le clavier actif" together, "l'accord detecte" right
+    // underneath, next to "the guide/wheel" on the other side.
     document.getElementById('app').innerHTML =
+      '<div class="layout-columns">' +
+      '<div class="layout-col-left">' +
       '<div id="identity-container"></div>' +
       '<div id="guide-container"></div>' +
-      '<div id="info-container"></div>' +
-      '<div id="octave-container" class="octave-controls">Octave : ' +
-      '<button onclick="shiftOctave(-1)">-</button> <b id="octave-range-label"></b> ' +
-      '<button onclick="shiftOctave(1)">+</button></div>' +
+      '<div id="wheel-container"></div>' +
+      '</div>' +
+      '<div class="layout-col-right">' +
+      '<div id="keyboard-align-wrapper" class="keyboard-align-wrapper">' +
+      '<div id="octave-container" class="octave-controls">' +
+      '<b id="octave-min-label"></b>' +
+      '<a class="octave-arrow" onclick="shiftOctave(-1)">◂</a>' +
+      '<span id="mini-piano-container"></span>' +
+      '<a class="octave-arrow" onclick="shiftOctave(1)">▸</a>' +
+      '<b id="octave-max-label"></b>' +
+      '</div>' +
       '<div id="keyboard-container"></div>' +
-      '<div class="hint">Lettres affichees sur les touches (positionnelles — fonctionne quel que soit ton agencement clavier). Octave -/+ : glisse la zone jouable. Echap : relache tout.</div>';
+      '</div>' +
+      '<div id="info-container"></div>' +
+      '</div>' +
+      '</div>' +
+      '<div class="hint">Lettres affichees sur les touches (positionnelles — fonctionne quel que soit ton agencement clavier). Fleches, touches &lt; et - (pres du Shift), ou clic/tap sur le petit clavier : glisse la zone jouable. Tab/Maj+Tab : navigue le guide (si actif). Echap : relache tout.</div>';
   }
   ensureKeyboardBuilt();
   const layoutLabel = keyboardLayout === 'qwertz' ? 'QWERTZ' : 'QWERTY';
   document.getElementById('identity-container').innerHTML =
     `<div class="identity">Vous : <b>${alias}</b> — <a onclick="renameIdentity()">changer</a>` +
     ` · Disposition clavier : <b>${layoutLabel}</b> — <a onclick="toggleKeyboardLayout()">changer</a></div>`;
-  document.getElementById('octave-range-label').textContent = noteLabel(MIN_MIDI) + ' – ' + noteLabel(MAX_MIDI);
   // Skipped entirely (not just "kept identical") while a wheel-cell press is in flight — see
-  // `wheelChordActiveCount`'s doc comment.
+  // `wheelChordActiveCount`'s doc comment. `guide-container` has no such touch/click state of
+  // its own (just text), so it's always safe to update every poll.
   if (wheelChordActiveCount === 0) {
-    document.getElementById('guide-container').innerHTML = guideHTML;
+    document.getElementById('wheel-container').innerHTML = wheelHTML;
   }
+  document.getElementById('guide-container').innerHTML = guideInfoHTML;
   document.getElementById('info-container').innerHTML = `<div class="field">Accord: <b>${infoLine}</b></div>`;
   updateKeyVisuals();
 }
@@ -705,13 +919,19 @@ document.addEventListener('mousedown', e => {
     return;
   }
   const cell = wheelCellFromTarget(e.target);
-  if (cell === null) return;
-  e.preventDefault();
-  mouseHeldWheelPitches = cell.pitches;
-  mouseHeldWheelEl = cell.el;
-  wheelChordActiveCount++;
-  cell.el.classList.add('pressed');
-  cell.pitches.forEach(noteOn);
+  if (cell !== null) {
+    e.preventDefault();
+    mouseHeldWheelPitches = cell.pitches;
+    mouseHeldWheelEl = cell.el;
+    wheelChordActiveCount++;
+    cell.el.classList.add('pressed');
+    cell.pitches.forEach(noteOn);
+    return;
+  }
+  // A single fire-and-forget jump, not a held gesture — no mouseup counterpart needed, unlike
+  // the two cases above.
+  const miniSvg = e.target.closest ? e.target.closest('svg.mini-piano') : null;
+  if (miniSvg) jumpOctaveFromMiniPianoClick(miniSvg, e.clientX);
 });
 document.addEventListener('mouseup', () => {
   if (mouseHeldPitch !== null) { noteOff(mouseHeldPitch); mouseHeldPitch = null; }
@@ -741,11 +961,15 @@ document.addEventListener('touchstart', e => {
       continue;
     }
     const cell = wheelCellFromTarget(touch.target);
-    if (cell === null) continue;
-    activeWheelTouches.set(touch.identifier, cell);
-    wheelChordActiveCount++;
-    cell.el.classList.add('pressed');
-    cell.pitches.forEach(noteOn);
+    if (cell !== null) {
+      activeWheelTouches.set(touch.identifier, cell);
+      wheelChordActiveCount++;
+      cell.el.classList.add('pressed');
+      cell.pitches.forEach(noteOn);
+      continue;
+    }
+    const miniSvg = touch.target.closest ? touch.target.closest('svg.mini-piano') : null;
+    if (miniSvg) jumpOctaveFromMiniPianoClick(miniSvg, touch.clientX);
   }
 }, { passive: false });
 function endTouch(e) {
@@ -773,8 +997,42 @@ document.addEventListener('touchcancel', endTouch, { passive: false });
 // Keyed by `e.code` (physical position), not `e.key` (produced character) — see `KEY_MAP`'s
 // own doc comment for why.
 const downCodes = new Set();
+// `<`/`-`/`ArrowLeft`/`ArrowRight` shortcuts for `shiftOctave()`, mirroring the ◂/▸ arrows —
+// `IntlBackslash` is the ISO "102nd key" immediately left of the bottom-row's first letter
+// (Z, printed "Y" on a QWERTZ keycap — this is genuinely absent on US ANSI keyboards, which
+// have no key there at all, so this particular shortcut just won't fire on one; the ◂ arrow
+// and `ArrowLeft` always still work). `Slash` is the key right before the right Shift,
+// present on every layout (produces "/" on QWERTY, "-" on QWERTZ) — both are fixed PHYSICAL
+// positions, independent of the `keyboardLayout` Y/Z toggle above, so no branching needed here.
+const OCTAVE_SHORTCUT_DELTA = { IntlBackslash: -1, Slash: 1, ArrowLeft: -1, ArrowRight: 1 };
+// Deliberately a SEPARATE set from `downCodes`, not a shared one: `shiftOctave()` calls
+// `clearAllLocalPressState()`, which clears `downCodes` (correctly — the whole visible range
+// is about to change, so any note key logically "un-presses"). If this guard shared that same
+// set, `shiftOctave()` would wipe out its own just-added entry on every call, and a held
+// shortcut key would auto-repeat through every octave stop (or guide step) in one fast burst
+// instead of moving one step per physical keydown. Also guards `Tab`/`Shift+Tab` below, for
+// the same reason (advancing the guide, like `shiftOctave()`, is a one-per-keydown action).
+const downActionCodes = new Set();
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { releaseAll(); return; }
+  if (OCTAVE_SHORTCUT_DELTA[e.code] !== undefined) {
+    if (downActionCodes.has(e.code)) return;
+    downActionCodes.add(e.code);
+    e.preventDefault();
+    shiftOctave(OCTAVE_SHORTCUT_DELTA[e.code]);
+    return;
+  }
+  // Guide navigation — only while a guide is actually running (see `refresh()`'s own
+  // `guideIsActive`); otherwise `Tab` keeps its normal browser behavior (cycling focus).
+  // Global, like `shiftOctave()` isn't: this moves the ONE shared guide every client sees,
+  // mirroring the terminal's own left/right arrows on its `.guide` screen.
+  if (e.code === 'Tab' && guideIsActive) {
+    if (downActionCodes.has(e.code)) return;
+    downActionCodes.add(e.code);
+    e.preventDefault();
+    sendGuideAdvance(e.shiftKey ? -1 : 1);
+    return;
+  }
   const pitch = KEY_MAP[e.code];
   if (pitch === undefined) return;
   if (downCodes.has(e.code)) return;
@@ -783,6 +1041,7 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('keyup', e => {
   downCodes.delete(e.code);
+  downActionCodes.delete(e.code);
   const pitch = KEY_MAP[e.code];
   if (pitch === undefined) return;
   noteOff(pitch);
@@ -811,16 +1070,19 @@ async function refresh() {
     // While a guide is running, the role-line (degree badges) switches to ITS mode's notes
     // instead of this track's own recognized mode — "présente le clavier avec les notes du
     // mode [du guide]" — but held/chord/root coloring above stays this track's own, personal
-    // feedback either way. `state.guide`/`state.wheel` are only present at all while a guide
-    // is active (see `ImprovSession.handleVirtualKeyboardRequest`'s doc comment).
-    if (state.guide && state.guide.isActive) {
+    // feedback either way. `state.guide` is only present at all while a guide is active (see
+    // `ImprovSession.handleVirtualKeyboardRequest`'s doc comment); `state.wheel` is always
+    // present now, but its mode-relative parts only render while `guideIsActive`.
+    guideIsActive = !!(state.guide && state.guide.isActive);
+    if (guideIsActive) {
       roles = {};
       (state.guide.currentModeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc], textColor: PITCH_CLASS_TEXT_COLORS[pc] }; });
       const steps = (state.guide.steps || []).map(step => step.isCurrent ? `<b>[${step.label}]</b>` : step.label).join(' ');
-      guideHTML = '<h2>Guide</h2>' + `<div class="field">${steps}</div>` + renderWheel(state.wheel);
+      guideInfoHTML = '<h2>Guide</h2>' + `<div class="field">${steps}</div>`;
     } else {
-      guideHTML = '';
+      guideInfoHTML = '';
     }
+    wheelHTML = renderWheel(state.wheel, guideIsActive, detectedChordFrom(track));
   } catch {
     infoLine = '<span class="empty">(connexion perdue — l\\'application est-elle toujours lancee ?)</span>';
   }

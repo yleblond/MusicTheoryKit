@@ -86,11 +86,13 @@ nécessaire pour utiliser l'application — seulement pour lancer `swift test`, 
   écran, repasse en une colonne sur un écran étroit).
 - **Clavier virtuel** : un piano interactif dans le navigateur (souris, tactile — vraiment
   multi-touch —, clavier de l'ordinateur avec un vrai maintien de note, ou directement le
-  cercle des quintes pendant un guide musical), serveur HTTP distinct de la console web.
-  Plusieurs navigateurs peuvent s'y connecter à la fois, chacun avec sa propre piste et son
-  propre nom affiché. Le clavier de l'ordinateur couvre ~2,3 octaves par une disposition à
-  deux rangées superposées, mappée par position physique (correcte sur QWERTZ/AZERTY, pas
-  seulement QWERTY), avec glissement d'octave (C0 à C6) pour couvrir tout un piano.
+  cercle des quintes — toujours affiché, pas seulement pendant un guide musical), serveur HTTP
+  distinct de la console web, mise en page à deux colonnes. Plusieurs navigateurs peuvent s'y
+  connecter à la fois, chacun avec sa propre piste et son propre nom affiché. Le clavier de
+  l'ordinateur couvre ~2,3 octaves par une disposition à deux rangées superposées, mappée par
+  position physique (correcte sur QWERTZ/AZERTY, pas seulement QWERTY), avec glissement
+  d'octave (C0 à C6, flèches/clic sur une vue d'ensemble miniature/raccourcis clavier) pour
+  couvrir tout un piano. Pendant un guide musical, Tab/Maj+Tab avancent/reculent d'une étape.
 - **Palettes de couleur** : une couleur par note (et une couleur de texte assortie, pour
   rester lisible sur chaque fond), plusieurs jeux au choix (`palettes.json`, modifiable à la
   main), propre à chaque instance lancée — s'applique à la console web et au clavier virtuel
@@ -143,7 +145,7 @@ Pour le détail complet (modules, concurrence, points de conception), voir
 ```sh
 cd MusicTheoryKit
 swift build                 # compile tout
-swift run SanityChecks      # exécute tous les checks (515 a ce jour, 0 echec)
+swift run SanityChecks      # exécute tous les checks (521 a ce jour, 0 echec)
 ```
 
 Cette machine de développement n'a que les Command Line Tools (pas Xcode complet), donc

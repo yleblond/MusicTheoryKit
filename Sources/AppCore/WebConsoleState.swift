@@ -142,9 +142,12 @@ struct WebConsoleWheelCellState: Codable {
 /// `GET /state?client=...`'s response shape for the virtual keyboard (see
 /// `ImprovSession.handleVirtualKeyboardRequest`) — deliberately a small wrapper rather than
 /// reusing `WebConsoleState` wholesale: this page only ever needs ONE client's own track
-/// (never the whole session's `tracks` array), and `guide`/`wheel` are only included while a
-/// guide is actually running (unlike the read-only console, where the wheel is always
-/// present) — a plain "just play" keyboard the rest of the time.
+/// (never the whole session's `tracks` array). `wheel` is always present, like the read-only
+/// console's own — the virtual keyboard page shows it (and lets you click cells to play
+/// chords) whether or not a guide is running; only `guide` itself is omitted while no guide
+/// is active, since there's no step list/title to show. See `app.js`'s own `renderWheel` for
+/// how it hides the mode-relative parts (diatonic boundary, roman numerals, active mode name)
+/// while no guide is running, without needing a second server-side shape for that case.
 struct VirtualKeyboardStateResponse: Codable {
     var track: WebConsoleTrackState?
     var guide: WebConsoleGuideState?

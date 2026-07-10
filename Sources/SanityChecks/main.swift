@@ -1481,7 +1481,7 @@ func testVirtualKeyboardServesPageAndAcceptsNoteOnOff() {
 }
 testVirtualKeyboardServesPageAndAcceptsNoteOnOff()
 
-func testVirtualKeyboardStateIncludesGuideAndWheelOnlyWhileGuideIsActive() {
+func testVirtualKeyboardStateAlwaysIncludesWheelButOnlyGuideWhileActive() {
     checks += 1
     do {
         let session = ImprovSession()
@@ -1494,7 +1494,10 @@ func testVirtualKeyboardStateIncludesGuideAndWheelOnlyWhileGuideIsActive() {
             // properties — a `nil` field is OMITTED from the JSON entirely, not written as
             // an explicit `null`, so the absence check is on the key itself.
             check(noGuide.body.contains("\"guide\""), false, "no guide running — guide key is omitted")
-            check(noGuide.body.contains("\"wheel\""), false, "no guide running — wheel key is also omitted")
+            // `wheel` is now always present (like the read-only console's own) — the virtual
+            // keyboard page shows it, and lets you click chords on it, whether or not a guide
+            // is running; only rendering the mode-relative parts is gated client-side.
+            check(noGuide.body.contains("\"wheel\""), true, "no guide running — wheel key is still present")
         } else {
             failures += 1
             print("FAIL [virtual keyboard no guide]: no response")
@@ -1519,7 +1522,45 @@ func testVirtualKeyboardStateIncludesGuideAndWheelOnlyWhileGuideIsActive() {
         print("FAIL [virtual keyboard guide/wheel]: threw \(error)")
     }
 }
-testVirtualKeyboardStateIncludesGuideAndWheelOnlyWhileGuideIsActive()
+testVirtualKeyboardStateAlwaysIncludesWheelButOnlyGuideWhileActive()
+
+func testVirtualKeyboardGuideAdvanceMovesTheSharedGuideStep() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.start()
+        try session.startVirtualKeyboard(port: 18410)
+        let client = "&client=advance-client&name=Advancer"
+
+        session.newGuideSequence(title: "Advance Test")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        try session.addGuideStep(ModeReference(tonic: 7, scaleID: "mixolydian"))
+        try session.startGuide()
+        check(session.currentGuideStepIndex, 0, "guide starts at step 0")
+
+        if let advanced = syncGET("http://127.0.0.1:18410/guide-advance?delta=1" + client) {
+            check(advanced.status, 200, "GET /guide-advance?delta=1 succeeds")
+        } else {
+            failures += 1
+            print("FAIL [guide-advance forward]: no response")
+        }
+        check(session.currentGuideStepIndex, 1, "GET /guide-advance?delta=1 moves the shared guide forward")
+
+        if let back = syncGET("http://127.0.0.1:18410/guide-advance?delta=-1" + client) {
+            check(back.status, 200, "GET /guide-advance?delta=-1 succeeds")
+        } else {
+            failures += 1
+            print("FAIL [guide-advance backward]: no response")
+        }
+        check(session.currentGuideStepIndex, 0, "GET /guide-advance?delta=-1 moves the shared guide backward")
+
+        session.stopVirtualKeyboard()
+    } catch {
+        failures += 1
+        print("FAIL [virtual keyboard guide-advance]: threw \(error)")
+    }
+}
+testVirtualKeyboardGuideAdvanceMovesTheSharedGuideStep()
 
 func testReleaseAllKeysClearsHeldPitchesForOneTrackOnly() {
     let session = ImprovSession()

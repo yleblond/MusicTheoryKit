@@ -679,13 +679,26 @@ autre (`track clavier-web:<id> son on`, `record start clavier-web:<id>`...), l'i
 exact se copiant depuis `tracks`. Arrêter le clavier virtuel supprime toutes les pistes
 connectées d'un coup.
 
-**Quatre façons de jouer, en même temps si besoin** :
+**Mise en page** : deux colonnes (repasse en une colonne sur un écran étroit, comme la console
+web) — à gauche ton nom/réglages, l'info du guide musical (s'il est en cours) et le cercle des
+quintes ; à droite, en vis-à-vis, la vue d'ensemble du clavier (voir « Glissement d'octave »
+plus bas), le piano interactif lui-même, puis l'accord détecté juste en-dessous. La vue
+d'ensemble et le piano sont alignés (centrés l'un sur l'autre), quel que soit lequel des deux
+est le plus large à ce moment.
+
+**Cinq façons de jouer, en même temps si besoin** :
 - **Souris/tactile** : clique ou touche directement une touche du piano affiché.
   Vraiment multi-tactile — sur un iPad/écran tactile, plusieurs doigts sur plusieurs touches
   jouent un accord, chaque doigt suivi indépendamment.
-- **Cercle des quintes** (si un guide musical est en cours, voir plus bas) : clique/touche une
-  case pour jouer l'accord (majeur/mineur/diminué) qu'elle représente — la case et les touches
-  du piano concernées s'allument tant que la pression est maintenue.
+- **Cercle des quintes**, toujours affiché (guide en cours ou non) : clique/touche une case
+  pour jouer l'accord (majeur/mineur/diminué) qu'elle représente — la case et les touches du
+  piano concernées s'allument tant que la pression est maintenue. Sans guide en cours, la
+  roue reste jouable mais s'affiche « nue » (juste la grille de 36 accords colorés) — pas de
+  contour des 7 accords diatoniques, pas de nom de mode actif ni de chiffre romain, puisqu'il
+  n'y a alors pas de tonalité de référence à laquelle les rattacher. Dès que l'accord de TA
+  piste (celui joué au piano/clavier, affiché en dessous — voir plus loin) est reconnu, la
+  case correspondante s'entoure d'un anneau magenta dans la roue — que le guide soit actif ou
+  non.
 - **Clavier de l'ordinateur** : deux paires de rangées superposées couvrant environ 2,3
   octaves — la rangée de chiffres + `qwertyuiop` pour le registre grave (de Sol à Si, `Q` à
   `P`), `S D G H J` + la rangée du bas (`zxcvbnm`) pour le registre aigu qui suit juste
@@ -702,10 +715,18 @@ connectées d'un coup.
   (Chrome/Edge, et seulement si la page est ouverte en HTTPS ou en `http://localhost` — pas
   depuis l'adresse réseau d'un autre appareil), sinon QWERTY par défaut : à corriger à la main
   une fois avec ce lien si besoin, ça reste ensuite.
-- **Glissement d'octave** : les boutons **Octave -/+**, juste au-dessus du piano, déplacent
-  toute la zone jouable par pas d'une octave, de C0 à C6 — le piano affiché s'ajuste pour montrer
-  exactement la zone jouable au clavier de l'ordinateur à cet instant. Change d'octave relâche
-  d'abord toutes les notes en cours (comme Échap), la zone affichée changeant entièrement.
+- **Glissement d'octave** : juste au-dessus du piano, une petite vue d'ensemble du clavier
+  complet (Do-1 à Do8, en tout petit) entoure d'un cadre rouge la tranche actuellement jouable,
+  flanquée à gauche de la note la plus grave et à droite de la plus aiguë, avec une flèche
+  **◂/▸** de chaque côté. Pour déplacer toute la zone jouable par pas d'une octave (de C0 à
+  C6) : clique une flèche, appuie sur **flèche gauche/droite** au clavier, ou — sur un clavier
+  ISO — les touches **<** et **-** juste à côté du Shift (absentes sur certains claviers US ;
+  les flèches et fléches-clavier restent le moyen universel). Clique ou touche directement un
+  point de la petite vue d'ensemble pour y sauter d'un coup plutôt que pas à pas — elle se cale
+  toujours sur l'un des mêmes crans fixes (C0..C6), jamais sur une note arbitraire au pixel
+  près. Le piano affiché juste en-dessous s'ajuste pour montrer exactement la tranche jouable
+  au clavier de l'ordinateur à cet instant. Changer d'octave relâche d'abord toutes les notes
+  en cours (comme Échap), la zone affichée changeant entièrement.
 
 **Différence importante avec la piste `clavier` du terminal** : un terminal ne voit jamais le
 relâchement d'une touche (§3.2), donc chaque frappe y déclenche une note "pincée" de ~300ms.
@@ -716,10 +737,14 @@ clavier virtuel **tient vraiment** la note jusqu'au relâchement, comme un vrai 
 fondamentale, jaune les autres notes de l'accord, vert une note tenue hors accord — voir §5),
 plus la ligne de degrés au-dessus du clavier et le libellé accord/mode détecté au-dessus.
 
-**Si un guide musical est en cours** : la page affiche aussi le cercle des quintes et le titre
-du guide, et la ligne de degrés au-dessus du clavier bascule sur les notes du **mode du
-guide** plutôt que sur l'accord détecté de cette piste (qui reste, lui, personnel — chacun
-voit son propre accord détecté, mais tout le monde voit les mêmes degrés de référence).
+**Si un guide musical est en cours** : son titre et la liste de ses étapes s'affichent (à
+gauche), et le cercle des quintes (voir plus haut) retrouve son contour des 7 accords
+diatoniques et son nom de mode actif, calculés sur la tonalité du **guide**. La ligne de
+degrés au-dessus du clavier bascule elle aussi sur les notes du mode du guide plutôt que sur
+l'accord détecté de cette piste (qui reste, lui, personnel — chacun voit son propre accord
+détecté, mais tout le monde voit les mêmes degrés de référence et le même guide). **Tab**
+avance d'une étape, **Maj+Tab** recule — une action globale (le même guide pour tout le
+monde), comme les flèches gauche/droite de l'écran `.guide` du terminal.
 
 **Touche non relâchée** : `GET /note-on`/`GET /note-off` sont deux connexions HTTP
 indépendantes (pas de garantie d'ordre entre elles) — une frappe très rapide peut, rarement,

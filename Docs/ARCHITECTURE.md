@@ -419,14 +419,87 @@ dès que la page est ouverte en `http://<adresse-LAN>:port` depuis un second app
 d'usage normal de cette page (voir "Multi-clavier" plus haut), laissant l'inversion Y/Z non
 corrigée malgré un `KEY_MAP` déjà correct. Elle reste utilisée, mais seulement comme
 pré-remplissage au tout premier chargement (si `localStorage` n'a encore aucune préférence
-ET que l'API répond) — jamais pour écraser un choix déjà fait via le lien. `shiftOctave(delta)` change `octaveIndex`, relance
-`recomputeKeyRange()`, puis force un rebuild complet du piano affiché (`keyboardBuilt = false`
-avant `renderKeyboard()`) — un rebuild déclenché par une action utilisateur ponctuelle
-(bouton Octave -/+), jamais par le sondage périodique (`refresh()`, ~200ms) — c'est cette
-distinction qui compte : un rebuild déclenché par le sondage périodique pendant qu'un doigt
-est encore posé sur une touche est ce qui a causé le bug de relâchement tactile décrit dans
-`ensureKeyboardBuilt`/`wheelChordActiveCount` (`VirtualKeyboardAssets.swift`), pas le rebuild
-en lui-même.
+ET que l'API répond) — jamais pour écraser un choix déjà fait via le lien.
+
+`applyOctaveIndex(newIndex)` change `octaveIndex`, relance `recomputeKeyRange()`, puis force
+un rebuild complet du piano affiché (`keyboardBuilt = false` avant `renderKeyboard()`) — un
+rebuild déclenché par une action utilisateur ponctuelle (flèches ◂/▸, `ArrowLeft`/`ArrowRight`,
+`<`/`-` sur un clavier ISO, ou un clic/tap sur l'aperçu miniature — voir plus bas), jamais par
+le sondage périodique (`refresh()`, ~200ms) — c'est cette distinction qui compte : un rebuild
+déclenché par le sondage périodique pendant qu'un doigt est encore posé sur une touche est ce
+qui a causé le bug de relâchement tactile décrit dans `ensureKeyboardBuilt`/
+`wheelChordActiveCount` (`VirtualKeyboardAssets.swift`), pas le rebuild en lui-même.
+`shiftOctave(delta)` (±1, depuis les flèches/raccourcis) et `jumpToNearestOctaveFor(pitch)`
+(saut direct, depuis l'aperçu miniature — trouve le `OCTAVE_STOPS` dont le centre de fenêtre
+est le plus proche) délèguent tous deux à `applyOctaveIndex`. `OCTAVE_SHORTCUT_DELTA` (objet
+`code -> delta`, couvrant `IntlBackslash`/`Slash`/`ArrowLeft`/`ArrowRight`) et le raccourci
+`Tab`/`Maj+Tab` du guide (voir plus bas) utilisent un `Set` de garde anti-répétition
+**séparé** de `downCodes` (`downActionCodes`) — `downCodes` est vidé par
+`clearAllLocalPressState()`, que `shiftOctave()`/`applyOctaveIndex()` appellent eux-mêmes à
+chaque déclenchement ; le partager aurait fait perdre sa propre garde à chaque appel, laissant
+une touche maintenue défiler plusieurs octaves (ou étapes de guide) d'un coup au lieu d'une
+seule.
+
+**Aperçu miniature** (`renderMiniPianoOverview()`) : un mini-piano complet Do-1..Do8
+(`MINI_PIANO_MIN`/`MAX`), redessiné en SVG uniquement quand l'octave change (même déclencheur
+que le piano réel, dans `ensureKeyboardBuilt()` — jamais à chaque sondage, pour la même raison
+que ci-dessus), avec un rectangle (`.mini-piano-active`, contour seul, pas de remplissage)
+entourant la tranche `[MIN_MIDI, MAX_MIDI]`, flanqué des étiquettes `octave-min-label`/
+`octave-max-label` (la note la plus grave/aiguë jouable, une de chaque côté des flèches ◂/▸)
+et centré dans sa colonne (`.octave-controls { justify-content: center }`) pour s'aligner
+au-dessus du piano réel. `miniWhiteSlot()` réutilise le même correctif "octave absolue, pas
+relative au début de la plage" que `ensureKeyboardBuilt()` (voir plus haut) mais n'en a en
+pratique pas besoin aujourd'hui, `MINI_PIANO_MIN` étant déjà un Do. Cliquer/toucher l'aperçu
+(`jumpOctaveFromMiniPianoClick`) convertit la position en pitch approximatif (`SEMITONE_BY_WHITE_SLOT`,
+l'inverse de `WHITE_SLOT_BY_SEMITONE`) puis appelle `jumpToNearestOctaveFor` — un simple clic
+fire-and-forget, pas un geste tenu, donc sans le même besoin de préserver l'identité du nœud
+DOM entre deux sondages que les touches du piano ou de la roue.
+
+**Mise en page à deux colonnes** (`.layout-columns`, même motif responsive que la console) :
+colonne gauche = identité/réglages + info du guide (si actif) + roue ; colonne droite,
+en vis-à-vis = `#keyboard-align-wrapper` (aperçu/flèches d'octave, puis piano réel) suivi de
+l'accord détecté juste en dessous. `#keyboard-align-wrapper` est un `flex-direction: column`
+avec `align-items: center` — centre chaque rangée sur la plus large des deux plutôt que sur
+toute la largeur de la colonne (l'approche précédente, qui les désalignait dès que le piano
+était plus étroit que la colonne et restait collé à gauche dedans). Ça ne suffisait pas tout
+seul : `ensureKeyboardBuilt()` calculait la largeur du `.keyboard` par
+`Math.ceil((MAX_MIDI-MIN_MIDI+1)/12)*7*WHITE_KEY_WIDTH` — une approximation qui réserve un
+nombre ENTIER d'octaves de touches blanches, laissant une marge invisible d'un côté de la
+boîte dès que `MIN_MIDI` ne tombe pas exactement sur un Do (le cas courant, `MIN_MIDI` étant
+un Sol — voir `BASS_WHITE_OFFSETS`) ; `align-items: center` centre sur la BOÎTE rendue, pas
+sur les touches visibles à l'intérieur, donc cette marge invisible décalait quand même
+l'alignement. Corrigé en calculant la largeur exacte à partir du slot de touche blanche de
+`MIN_MIDI`/`MAX_MIDI` (`whiteSlotFor`, `leftWhiteSlotOffset`) et en décalant chaque touche de
+`leftWhiteSlotOffset` — la boîte du clavier correspond désormais pile à ses propres touches
+visibles, sans marge d'aucun côté. Le piano réel reste enveloppé dans `.keyboard-scroll`
+(`overflow-x: auto`) pour défiler dans sa colonne plutôt que déborder toute la page une fois
+celle-ci scindée en deux.
+
+**Roue toujours affichée, avec ou sans guide** : `ImprovSession.handleVirtualKeyboardRequest`
+calcule désormais `wheel` à chaque `/state` sans condition (avant : seulement si un guide
+tournait) — `buildWebConsoleWheelState` a déjà son propre repli (guide, puis morceau en
+lecture, puis piste en écoute, puis Do ionien) qui garantit toujours un résultat. Côté client,
+`renderWheel(wheel, showModeContext, detectedChord)` — `showModeContext = guideIsActive` —
+n'omet QUE les parties relatives à une tonalité de référence (noms de mode, chiffres romains,
+contour diatonique) quand aucun guide ne tourne ; la grille d'accords elle-même (forme/
+couleur/nom, et le clic pour jouer) reste toujours affichée et cliquable — décision prise avec
+l'utilisateur : plutôt qu'un sélecteur local de tonique/mode (option écartée), la roue hors
+guide reste volontairement "nue". `detectedChord` (indépendant de `showModeContext` — savoir
+QUEL accord tu joues n'est relatif à aucune tonalité de référence) entoure d'un anneau
+(`.wheel-cell-detected`, même magenta que `.pkey.root`) la case dont `pitchClass`/`quality`
+correspondent au `chordRoot`/`chordTones` actuels de CETTE piste — `detectedChordFrom(track)`
+déduit la qualité (majeur/mineur/diminué) des intervalles présents par rapport à la
+fondamentale, entièrement côté client, sans nouveau champ serveur (le calcul équivalent existe
+déjà côté serveur pour peupler `trackLabels`, mais celui-ci liste TOUTES les pistes en écoute
+correspondantes, pas seulement la piste de ce client — pas ce qu'on veut ici).
+
+**Navigation du guide** (`Tab`/`Maj+Tab`, uniquement si un guide tourne) : `sendGuideAdvance(delta)`
+appelle `GET /guide-advance?delta=±1` — une nouvelle route dans
+`ImprovSession.handleVirtualKeyboardRequest`, qui appelle directement `advanceGuideStep(by:)`
+(la même méthode que les flèches gauche/droite de l'écran `.guide` du terminal). Action
+**globale** (pas scopée à `track`/`clientID`, même si `?client=...` reste exigé par
+convention comme sur chaque route) : n'importe quel client qui appuie sur Tab avance LE MÊME
+guide pour tout le monde qui regarde.
 
 ### Palettes de couleur (`AppCore/ColorPalette.swift`)
 
@@ -839,7 +912,7 @@ Exécutable qui rejoue à la main chaque cas de test des vrais fichiers `XCTest`
 (`check`/`checkNil`), pour compenser l'absence d'Xcode. **Toujours mettre à jour ce fichier
 en même temps que tout nouveau test** — c'est le seul moyen de vérifier que le code
 fonctionne dans cet environnement. Se lance avec `swift run SanityChecks` depuis
-`MusicTheoryKit/`. Compteur de vérifications à jour : **515 checks, 0 échec**, stable sur
+`MusicTheoryKit/`. Compteur de vérifications à jour : **521 checks, 0 échec**, stable sur
 plusieurs exécutions répétées.
 
 ## Vérification/tests

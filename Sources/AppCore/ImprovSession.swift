@@ -1711,17 +1711,18 @@ public final class ImprovSession: @unchecked Sendable {
         switch path {
         case "/state":
             let info: TrackInfo? = liveInputQueue.sync { tracks.first { $0.id == track } }
-            // The wheel/guide info is only included while a guide is actually running (see
-            // the caller's doc comment) — unlike the read-only console, where the wheel is
-            // always present; this page is meant to stay a plain "just play" keyboard the
-            // rest of the time.
+            // `guide` is only included while a guide is actually running (unlike `wheel`,
+            // below, which is now always present, mirroring the read-only console) — the
+            // guide's own step list/title has no meaning at all when there's no guide.
             let guideState = buildWebConsoleGuideState()
             let isGuideActive = guideState?.isActive == true
-            var wheelState: WebConsoleWheelState?
-            if isGuideActive {
-                let listeningTracks: [TrackInfo] = liveInputQueue.sync { tracks.filter(\.isListening) }
-                wheelState = buildWebConsoleWheelState(listeningTracks: listeningTracks)
-            }
+            // Always computed now, guide or not — `buildWebConsoleWheelState` already falls
+            // back through piece/track/C-Ionian on its own (see its doc comment) so this
+            // never fails to produce something to click chords on. Rendering still hides the
+            // mode-relative parts (diatonic boundary, active mode name, roman numerals)
+            // client-side while no guide is running — see `app.js`'s own `renderWheel`.
+            let listeningTracks: [TrackInfo] = liveInputQueue.sync { tracks.filter(\.isListening) }
+            let wheelState = buildWebConsoleWheelState(listeningTracks: listeningTracks)
             let response = VirtualKeyboardStateResponse(track: info.map(Self.webConsoleTrackState), guide: isGuideActive ? guideState : nil, wheel: wheelState, palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors)
             guard let data = try? JSONEncoder().encode(response) else { return .notFound() }
             return HTTPResponse(contentType: "application/json", body: data)
@@ -1735,6 +1736,14 @@ public final class ImprovSession: @unchecked Sendable {
             return .text("", contentType: "text/plain")
         case "/release-all":
             releaseAllKeys(track: track)
+            return .text("", contentType: "text/plain")
+        case "/guide-advance":
+            // Global session state, not scoped to `track`/`clientID` (any client's `Tab`/
+            // `Shift+Tab` moves the SAME guide for everyone watching, exactly like the
+            // terminal's own left/right arrow keys on the `.guide` screen) — `?client=...` is
+            // still required (see this function's own doc comment) but unused here.
+            guard let delta = query["delta"].flatMap(Int.init) else { return .text("bad delta", contentType: "text/plain", status: 400) }
+            advanceGuideStep(by: delta)
             return .text("", contentType: "text/plain")
         default: return .notFound()
         }
