@@ -785,165 +785,181 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
     }
     line()
 
-    switch mode {
-    case .config:
-        line(TextStyle.field("Piece", session.piece.map { $0.title } ?? TextStyle.placeholder("(aucun)")))
-        line(TextStyle.field("Fichier", session.currentPieceFilePath ?? TextStyle.placeholder("(jamais sauvegarde)")))
-        line(TextStyle.field("Playing", TextStyle.flag(session.isPlaying)))
-        line(TextStyle.field("Recording", TextStyle.flag(session.isRecording)))
-        line(TextStyle.field("Soundtrack", session.currentSoundTrack.map { $0.title } ?? TextStyle.placeholder("(aucune)")))
-        line(TextStyle.field("Reseau", networkRoleText()))
-        line(TextStyle.field("Console Web", webConsoleStatusText()))
-        line(TextStyle.field("Clavier virtuel", virtualKeyboardStatusText()))
-        line(TextStyle.field("Palette de couleur", session.activeColorPalette.name))
-        line(TextStyle.field("Mode MIDI", session.midiFusionMode == .merged ? "fusionne" : "individuel"))
-        line()
-        line(TextStyle.heading("Detail du morceau actif:"))
-        for row in pieceDetailLines() { line(row) }
-
-    case .run:
-        let lastEventText = session.lastMIDIEvent.map { "\($0.kind == .noteOn ? "on " : "off")pitch=\($0.pitch) vel=\($0.velocity)" } ?? "-"
-        line(TextStyle.field("Dernier evt", lastEventText))
-
-        let listeningTracks = session.tracks.filter { $0.isListening }
-        if listeningTracks.isEmpty {
+    // While a menu is open, the screen-mode content below is entirely hidden rather than just
+    // pushed down by the dropdown — with many connected instruments/tracks that content can run
+    // long, and having it shift and peek out under an open dropdown is uncomfortable to read; it
+    // reappears as soon as the menu closes (see `renderDropdown`'s own doc comment: the dropdown
+    // itself is never an absolute-position overlay, so this is the only way to keep it from
+    // sharing the screen with stale content).
+    if openMenuIndex == nil {
+        switch mode {
+        case .config:
+            line(TextStyle.field("Piece", session.piece.map { $0.title } ?? TextStyle.placeholder("(aucun)")))
+            line(TextStyle.field("Fichier", session.currentPieceFilePath ?? TextStyle.placeholder("(jamais sauvegarde)")))
+            line(TextStyle.field("Playing", TextStyle.flag(session.isPlaying)))
+            line(TextStyle.field("Recording", TextStyle.flag(session.isRecording)))
+            line(TextStyle.field("Soundtrack", session.currentSoundTrack.map { $0.title } ?? TextStyle.placeholder("(aucune)")))
+            line(TextStyle.field("Reseau", networkRoleText()))
+            line(TextStyle.field("Console Web", webConsoleStatusText()))
+            line(TextStyle.field("Clavier virtuel", virtualKeyboardStatusText()))
+            line(TextStyle.field("Palette de couleur", session.activeColorPalette.name))
+            line(TextStyle.field("Mode MIDI", session.midiFusionMode == .merged ? "fusionne" : "individuel"))
             line()
-            line(TextStyle.placeholder("(aucune piste en ecoute — menu Scene pour en activer une)"))
-        }
-        for track in listeningTracks {
-            line()
-            line(TextStyle.heading("[\(trackIDText(track.id))] \(track.label)\(ownerSuffix(track))"))
-            if track.id == .microphone {
-                line(TextStyle.field("Micro", microphoneStatusText(track)))
-            } else if track.canHaveSound {
-                let soundText = TextStyle.flag(track.soundEnabled) + (track.instrumentName.map { " (\($0))" } ?? "")
-                line(TextStyle.field("Son", soundText))
+            line(TextStyle.heading("Detail du morceau actif:"))
+            for row in pieceDetailLines() { line(row) }
+    
+        case .run:
+            let lastEventText = session.lastMIDIEvent.map { "\($0.kind == .noteOn ? "on " : "off")pitch=\($0.pitch) vel=\($0.velocity)" } ?? "-"
+            line(TextStyle.field("Dernier evt", lastEventText))
+    
+            let listeningTracks = session.tracks.filter { $0.isListening }
+            if listeningTracks.isEmpty {
+                line()
+                line(TextStyle.placeholder("(aucune piste en ecoute — menu Scene pour en activer une)"))
             }
-            line(TextStyle.field("Chord", chordDisplayText(track)))
-            line(TextStyle.field("Modes", modesDisplayText(track)))
-            for row in renderTrackKeyboard(track) { line(row) }
-        }
-
-        // Playback position + a keyboard for "what the composition is playing right now" —
-        // only shown while actually playing, mirroring how each track's own fields/keyboard
-        // above only appear while that track is listening.
-        if session.isPlaying {
-            let timeline = session.playbackTimeline
-            let currentIndex = session.playbackCurrentChordIndex
-            let currentSegment = currentIndex.flatMap { timeline.indices.contains($0) ? timeline[$0] : nil }
-
-            line()
-            line(TextStyle.heading("Deroule de la composition:"))
-            if timeline.isEmpty {
-                line(TextStyle.placeholder("(pas d'accord dans ce morceau)"))
+            for track in listeningTracks {
+                line()
+                line(TextStyle.heading("[\(trackIDText(track.id))] \(track.label)\(ownerSuffix(track))"))
+                if track.id == .microphone {
+                    line(TextStyle.field("Micro", microphoneStatusText(track)))
+                } else if track.canHaveSound {
+                    let soundText = TextStyle.flag(track.soundEnabled) + (track.instrumentName.map { " (\($0))" } ?? "")
+                    line(TextStyle.field("Son", soundText))
+                }
+                line(TextStyle.field("Chord", chordDisplayText(track)))
+                line(TextStyle.field("Modes", modesDisplayText(track)))
+                for row in renderTrackKeyboard(track) { line(row) }
+            }
+    
+            // Playback position + a keyboard for "what the composition is playing right now" —
+            // only shown while actually playing, mirroring how each track's own fields/keyboard
+            // above only appear while that track is listening.
+            if session.isPlaying {
+                let timeline = session.playbackTimeline
+                let currentIndex = session.playbackCurrentChordIndex
+                let currentSegment = currentIndex.flatMap { timeline.indices.contains($0) ? timeline[$0] : nil }
+    
+                line()
+                line(TextStyle.heading("Deroule de la composition:"))
+                if timeline.isEmpty {
+                    line(TextStyle.placeholder("(pas d'accord dans ce morceau)"))
+                } else {
+                    let items = timeline.enumerated().map { index, event -> (display: String, plainWidth: Int) in
+                        let name = "\(PitchClass(event.chord.root).name())\(event.chord.chordTemplateID)"
+                        if index == currentIndex {
+                            return ("\(KeyboardColor.chordRoot)[\(name)]\(KeyboardColor.reset)", name.count + 2)
+                        }
+                        return (name, name.count)
+                    }
+                    for wrapped in wrapItems(items) { line(wrapped) }
+                }
+    
+                let playbackChordPitchClasses: Set<Int>? = currentSegment.map { segment in
+                    guard let template = ChordVocabulary.byID(segment.chord.chordTemplateID) else { return [] }
+                    return Set(template.intervalsFromRoot.map { (segment.chord.root + $0) % 12 })
+                }
+                let playbackMode: Mode? = currentSegment.flatMap { segment in
+                    ScaleLibrary.byID(segment.mode.scaleID).map { scale in Mode(tonic: PitchClass(segment.mode.tonic), scale: scale) }
+                }
+                let playbackHeld = session.playbackHeldPitches
+    
+                line()
+                line(TextStyle.heading("Clavier compose, en cours de jeu (C3-B5):"))
+                for row in renderKeyboard(
+                    startMIDI: 48,
+                    octaveCount: 3,
+                    blackZoneRows: 2,
+                    whiteZoneRows: 1,
+                    modeMarker: degreeMarker(for: playbackMode),
+                    colorFor: { pitch in
+                        guard playbackHeld.contains(pitch) else { return nil }
+                        guard let currentSegment, let playbackChordPitchClasses else { return KeyboardColor.heldNoChord }
+                        let pitchClass = ((pitch % 12) + 12) % 12
+                        if pitchClass == currentSegment.chord.root { return KeyboardColor.chordRoot }
+                        return playbackChordPitchClasses.contains(pitchClass) ? KeyboardColor.chordTone : KeyboardColor.heldOutsideChord
+                    }
+                ) { line(row) }
+            }
+    
+            // Soundtrack playback (temporal, purely evenementiel mode) — a third, independent
+            // keyboard, only shown while playing back a recording. No chord/mode analysis here:
+            // a SoundTrack is raw events, not a theory-modeled Piece, so held notes are shown
+            // plain (no root/tone coloring) rather than inventing an analysis that wasn't asked for.
+            if session.isPlayingSoundTrack {
+                let soundTrackHeld = session.soundTrackHeldPitches
+                line()
+                line(TextStyle.heading("Clavier soundtrack, en cours de jeu (C3-B5):"))
+                for row in renderKeyboard(
+                    startMIDI: 48, octaveCount: 3, blackZoneRows: 2, whiteZoneRows: 1,
+                    colorFor: { pitch in soundTrackHeld.contains(pitch) ? KeyboardColor.heldNoChord : nil }
+                ) { line(row) }
+            }
+    
+        case .guide:
+            guard let currentGuide = session.currentGuide else {
+                line(TextStyle.placeholder("(aucune sequence de guide — menu Guide Musicaux)"))
+                break
+            }
+            line(TextStyle.heading("Sequence: \(currentGuide.title)"))
+            if currentGuide.steps.isEmpty {
+                line(TextStyle.placeholder("(sequence vide — menu Guide Musicaux > Ajouter un mode au guide musical)"))
             } else {
-                let items = timeline.enumerated().map { index, event -> (display: String, plainWidth: Int) in
-                    let name = "\(PitchClass(event.chord.root).name())\(event.chord.chordTemplateID)"
-                    if index == currentIndex {
+                let items = currentGuide.steps.enumerated().map { index, step -> (display: String, plainWidth: Int) in
+                    let name = step.mode.resolve()?.displayName ?? "?"
+                    if index == session.currentGuideStepIndex {
                         return ("\(KeyboardColor.chordRoot)[\(name)]\(KeyboardColor.reset)", name.count + 2)
                     }
                     return (name, name.count)
                 }
                 for wrapped in wrapItems(items) { line(wrapped) }
             }
-
-            let playbackChordPitchClasses: Set<Int>? = currentSegment.map { segment in
-                guard let template = ChordVocabulary.byID(segment.chord.chordTemplateID) else { return [] }
-                return Set(template.intervalsFromRoot.map { (segment.chord.root + $0) % 12 })
+            if let currentIndex = session.currentGuideStepIndex,
+               currentGuide.steps.indices.contains(currentIndex),
+               let progression = currentGuide.steps[currentIndex].chordProgression,
+               !progression.isEmpty {
+                let name = currentGuide.steps[currentIndex].chordProgressionName
+                let chords = progression.map { $0.resolve()?.displayName ?? "?" }.joined(separator: " - ")
+                line(TextStyle.field(name.map { "Suite d'accords (\($0))" } ?? "Suite d'accords", chords))
             }
-            let playbackMode: Mode? = currentSegment.flatMap { segment in
-                ScaleLibrary.byID(segment.mode.scaleID).map { scale in Mode(tonic: PitchClass(segment.mode.tonic), scale: scale) }
-            }
-            let playbackHeld = session.playbackHeldPitches
-
             line()
-            line(TextStyle.heading("Clavier compose, en cours de jeu (C3-B5):"))
-            for row in renderKeyboard(
-                startMIDI: 48,
-                octaveCount: 3,
-                blackZoneRows: 2,
-                whiteZoneRows: 1,
-                modeMarker: degreeMarker(for: playbackMode),
-                colorFor: { pitch in
-                    guard playbackHeld.contains(pitch) else { return nil }
-                    guard let currentSegment, let playbackChordPitchClasses else { return KeyboardColor.heldNoChord }
-                    let pitchClass = ((pitch % 12) + 12) % 12
-                    if pitchClass == currentSegment.chord.root { return KeyboardColor.chordRoot }
-                    return playbackChordPitchClasses.contains(pitchClass) ? KeyboardColor.chordTone : KeyboardColor.heldOutsideChord
+            guard let guideMode = session.currentGuideStepMode() else {
+                // Distinguish "not started yet" from "started, but this step's mode reference
+                // doesn't resolve" (shouldn't happen for a step added via `addGuideStep` since
+                // it now validates up front, but a hand-edited or older save file could still
+                // have one) — the two used to show the same misleading "not started" message.
+                if session.currentGuideStepIndex != nil {
+                    line(TextStyle.placeholder("(l'etape courante ne resout pas — tonique/gamme invalide dans le fichier)"))
+                } else {
+                    line(TextStyle.placeholder("(guide non demarre — barre d'espace, ou menu Guide Musicaux > Demarrer le guide musical)"))
                 }
-            ) { line(row) }
-        }
-
-        // Soundtrack playback (temporal, purely evenementiel mode) — a third, independent
-        // keyboard, only shown while playing back a recording. No chord/mode analysis here:
-        // a SoundTrack is raw events, not a theory-modeled Piece, so held notes are shown
-        // plain (no root/tone coloring) rather than inventing an analysis that wasn't asked for.
-        if session.isPlayingSoundTrack {
-            let soundTrackHeld = session.soundTrackHeldPitches
+                break
+            }
+            if let parentTonic = CircleOfFifths.parentTonic(for: guideMode) {
+                let wheel = CircleOfFifths.wheel(tonic: parentTonic)
+                // Ordered by "brightness" (Lydian...Locrian), not by the wheel's physical fifths
+                // order — the two happen to coincide for 5 of the 7 modes, but wrapping the
+                // physical array would make Lydian and Locrian (the two extremes, not actually
+                // adjacent) look like each other's neighbor.
+                let brightnessOffsets = [5, 0, 7, 2, 9, 4, 11] // Lydian,Ionian,Mixolydian,Dorian,Aeolian,Phrygian,Locrian
+                let orderedColumns = brightnessOffsets.map { offset in
+                    wheel.columns.first { ($0.pitchClass.value - parentTonic.value + 12) % 12 == offset }!
+                }
+                let activeIndex = orderedColumns.firstIndex { $0.pitchClass == guideMode.tonic } ?? 0
+                let previous = activeIndex > 0 ? orderedColumns[activeIndex - 1].modeName : nil
+                let next = activeIndex < orderedColumns.count - 1 ? orderedColumns[activeIndex + 1].modeName : nil
+                line("\u{25C2} \(previous ?? "—") — [\(orderedColumns[activeIndex].modeName ?? "?")] — \(next ?? "—") \u{25B8}")
+            } else {
+                line(TextStyle.placeholder("(roue non disponible pour cette famille de gamme)"))
+            }
             line()
-            line(TextStyle.heading("Clavier soundtrack, en cours de jeu (C3-B5):"))
+            line(TextStyle.heading("Clavier (fleches gauche/droite: etape precedente/suivante):"))
+            let guideHeldPitches = Set(session.tracks.filter(\.isListening).flatMap(\.heldPitches))
             for row in renderKeyboard(
                 startMIDI: 48, octaveCount: 3, blackZoneRows: 2, whiteZoneRows: 1,
-                colorFor: { pitch in soundTrackHeld.contains(pitch) ? KeyboardColor.heldNoChord : nil }
+                modeMarker: degreeMarker(for: guideMode),
+                colorFor: { pitch in guideHeldPitches.contains(pitch) ? KeyboardColor.heldNoChord : nil }
             ) { line(row) }
         }
-
-    case .guide:
-        guard let currentGuide = session.currentGuide else {
-            line(TextStyle.placeholder("(aucune sequence de guide — menu Guide Musicaux)"))
-            break
-        }
-        line(TextStyle.heading("Sequence: \(currentGuide.title)"))
-        if currentGuide.steps.isEmpty {
-            line(TextStyle.placeholder("(sequence vide — menu Guide Musicaux > Ajouter un mode au guide musical)"))
-        } else {
-            let items = currentGuide.steps.enumerated().map { index, step -> (display: String, plainWidth: Int) in
-                let name = step.mode.resolve()?.displayName ?? "?"
-                if index == session.currentGuideStepIndex {
-                    return ("\(KeyboardColor.chordRoot)[\(name)]\(KeyboardColor.reset)", name.count + 2)
-                }
-                return (name, name.count)
-            }
-            for wrapped in wrapItems(items) { line(wrapped) }
-        }
-        line()
-        guard let guideMode = session.currentGuideStepMode() else {
-            // Distinguish "not started yet" from "started, but this step's mode reference
-            // doesn't resolve" (shouldn't happen for a step added via `addGuideStep` since
-            // it now validates up front, but a hand-edited or older save file could still
-            // have one) — the two used to show the same misleading "not started" message.
-            if session.currentGuideStepIndex != nil {
-                line(TextStyle.placeholder("(l'etape courante ne resout pas — tonique/gamme invalide dans le fichier)"))
-            } else {
-                line(TextStyle.placeholder("(guide non demarre — barre d'espace, ou menu Guide Musicaux > Demarrer le guide musical)"))
-            }
-            break
-        }
-        if let parentTonic = CircleOfFifths.parentTonic(for: guideMode) {
-            let wheel = CircleOfFifths.wheel(tonic: parentTonic)
-            // Ordered by "brightness" (Lydian...Locrian), not by the wheel's physical fifths
-            // order — the two happen to coincide for 5 of the 7 modes, but wrapping the
-            // physical array would make Lydian and Locrian (the two extremes, not actually
-            // adjacent) look like each other's neighbor.
-            let brightnessOffsets = [5, 0, 7, 2, 9, 4, 11] // Lydian,Ionian,Mixolydian,Dorian,Aeolian,Phrygian,Locrian
-            let orderedColumns = brightnessOffsets.map { offset in
-                wheel.columns.first { ($0.pitchClass.value - parentTonic.value + 12) % 12 == offset }!
-            }
-            let activeIndex = orderedColumns.firstIndex { $0.pitchClass == guideMode.tonic } ?? 0
-            let previous = activeIndex > 0 ? orderedColumns[activeIndex - 1].modeName : nil
-            let next = activeIndex < orderedColumns.count - 1 ? orderedColumns[activeIndex + 1].modeName : nil
-            line("\u{25C2} \(previous ?? "—") — [\(orderedColumns[activeIndex].modeName ?? "?")] — \(next ?? "—") \u{25B8}")
-        } else {
-            line(TextStyle.placeholder("(roue non disponible pour cette famille de gamme)"))
-        }
-        line()
-        line(TextStyle.heading("Clavier (fleches gauche/droite: etape precedente/suivante):"))
-        let guideHeldPitches = Set(session.tracks.filter(\.isListening).flatMap(\.heldPitches))
-        for row in renderKeyboard(
-            startMIDI: 48, octaveCount: 3, blackZoneRows: 2, whiteZoneRows: 1,
-            modeMarker: degreeMarker(for: guideMode),
-            colorFor: { pitch in guideHeldPitches.contains(pitch) ? KeyboardColor.heldNoChord : nil }
-        ) { line(row) }
     }
 
     output += "\u{1B}[J" // erase any leftover lines below from a previous, taller frame

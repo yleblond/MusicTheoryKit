@@ -258,9 +258,10 @@ const WHEEL_RING_BOUNDARIES = [
   (WHEEL_RING_RADIUS.minor + WHEEL_RING_RADIUS.diminished) / 2,
 ];
 
-function renderWheelSection(wheel, tracks) {
+function renderWheelSection(wheel, tracks, guide) {
   if (!wheel) return '';
-  return '<h2>Cercle des quintes</h2>' + renderWheel(wheel, tracks);
+  const progressionChords = (guide && guide.isActive) ? (guide.currentChordProgression || []).filter(c => c.quality) : [];
+  return '<h2>Cercle des quintes</h2>' + renderWheel(wheel, tracks, progressionChords);
 }
 
 // The 7 diatonic cells of `wheel.tonic` always occupy exactly 3 adjacent columns — the tonic
@@ -310,7 +311,7 @@ function diatonicBoundaryPath(wheel, cx, cy) {
   return 'M' + points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L') + ' Z';
 }
 
-function renderWheel(wheel, tracks) {
+function renderWheel(wheel, tracks, progressionChords) {
   if (!wheel) return '';
   const cx = 270, cy = 270;
   const count = wheel.columns.length;
@@ -382,6 +383,15 @@ function renderWheel(wheel, tracks) {
             : `<circle class="wheel-cell-outline" cx="${pos.x}" cy="${pos.y}" r="${outlineSize}" stroke="${outlineColor}" />`;
         });
       }
+      // Bold outline for every cell whose (root, quality) is part of the active guide step's
+      // attached chord progression — a fixed color, unrelated to any track, stacked outward
+      // past any track outlines above so both remain visible on the same cell.
+      if ((progressionChords || []).some(c => c.root === cell.pitchClass && c.quality === cell.quality)) {
+        const outlineSize = size + 6 + (cell.trackLabels || []).length * 6;
+        svg += cell.shape === 'square'
+          ? `<g transform="rotate(${rotateDeg} ${pos.x} ${pos.y})"><rect class="wheel-cell-outline" x="${pos.x - outlineSize}" y="${pos.y - outlineSize}" width="${outlineSize * 2}" height="${outlineSize * 2}" stroke="#ffb300" /></g>`
+          : `<circle class="wheel-cell-outline" cx="${pos.x}" cy="${pos.y}" r="${outlineSize}" stroke="#ffb300" />`;
+      }
     });
   });
 
@@ -409,6 +419,10 @@ function renderGuide(guide) {
   html += '<div class="field">' + (guide.steps || []).map(
     step => step.isCurrent ? `<b>[${step.label}]</b>` : step.label
   ).join(' ') + '</div>';
+  const progression = guide.currentChordProgression || [];
+  if (progression.length) {
+    html += `<div class="field">Suite d'accords${guide.currentChordProgressionName ? ' (' + guide.currentChordProgressionName + ')' : ''}: ${progression.map(c => c.label).join(' - ')}</div>`;
+  }
   html += keyboardHTML(guide.heldPitches, null, [], guide.currentModeTones);
   return html;
 }
@@ -454,7 +468,7 @@ function renderRunTab(state) {
   // active instrument's own keyboard below that. Reading "the mode" and "who's playing what"
   // side by side is the point, whether or not a guide happens to be active.
   const modeHTML = renderGuide(state.guide) + renderPlayback(state.playback) + renderSoundTrackPlayback(state.soundTrackPlayback);
-  const left = renderWheelSection(state.wheel, tracks);
+  const left = renderWheelSection(state.wheel, tracks, state.guide);
   const right = modeHTML + tracksHTML;
   html += `<div class="layout-columns"><div class="layout-col-left">${left}</div><div class="layout-col-right">${right}</div></div>`;
   return html;

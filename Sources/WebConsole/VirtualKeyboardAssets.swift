@@ -135,6 +135,11 @@ public let virtualKeyboardIndexHTML = """
      `detectedChordFrom`/`renderWheel`'s `detectedChord` argument) — same magenta as `.pkey.root`
      elsewhere in the app, for "this is the fundamental/the chord you're playing" consistency. */
   .wheel-cell-detected { fill: none; stroke: #e91e63; stroke-width: 3; pointer-events: none; }
+  /* Bold outline around every cell whose (root, quality) appears in the active guide step's
+     attached chord progression (see `WebConsoleGuideState.currentChordProgression`) — a
+     distinct color from `.wheel-cell-detected` (this track's own live chord) so both can be
+     visible on the same cell at once without being confused for one another. */
+  .wheel-cell-progression { fill: none; stroke: #ffb300; stroke-width: 3; pointer-events: none; }
   /* No `fill` here (unlike most rules) — the palette's per-note text color is set inline,
      since it varies by pitch class (`PITCH_CLASS_TEXT_COLORS[cell.pitchClass]`), not fixed. */
   .wheel-cell-symbol { font-size: 8px; font-weight: bold; text-anchor: middle; pointer-events: none; }
@@ -456,7 +461,7 @@ function detectedChordFrom(track) {
   return quality ? { pitchClass: track.chordRoot, quality } : null;
 }
 
-function renderWheel(wheel, showModeContext, detectedChord) {
+function renderWheel(wheel, showModeContext, detectedChord, progressionChords) {
   if (!wheel) return '';
   const cx = 270, cy = 270;
   const count = wheel.columns.length;
@@ -501,6 +506,14 @@ function renderWheel(wheel, showModeContext, detectedChord) {
           svg += `<g transform="rotate(${rotateDeg} ${pos.x} ${pos.y})"><rect class="wheel-cell-detected" x="${pos.x - ringSize}" y="${pos.y - ringSize}" width="${ringSize * 2}" height="${ringSize * 2}" /></g>`;
         } else {
           svg += `<circle class="wheel-cell-detected" cx="${pos.x}" cy="${pos.y}" r="${ringSize}" />`;
+        }
+      }
+      if ((progressionChords || []).some(c => c.root === cell.pitchClass && c.quality === cell.quality)) {
+        const ringSize = size + 8;
+        if (cell.shape === 'square') {
+          svg += `<g transform="rotate(${rotateDeg} ${pos.x} ${pos.y})"><rect class="wheel-cell-progression" x="${pos.x - ringSize}" y="${pos.y - ringSize}" width="${ringSize * 2}" height="${ringSize * 2}" /></g>`;
+        } else {
+          svg += `<circle class="wheel-cell-progression" cx="${pos.x}" cy="${pos.y}" r="${ringSize}" />`;
         }
       }
       // The chord's own name (e.g. "Cm") — always shown, unlike the roman numeral below: it's
@@ -1089,11 +1102,16 @@ async function refresh() {
       roles = {};
       (state.guide.currentModeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc], textColor: PITCH_CLASS_TEXT_COLORS[pc] }; });
       const steps = (state.guide.steps || []).map(step => step.isCurrent ? `<b>[${step.label}]</b>` : step.label).join(' ');
-      guideInfoHTML = '<h2>Guide</h2>' + `<div class="field">${steps}</div>`;
+      const progression = state.guide.currentChordProgression || [];
+      const progressionHTML = progression.length
+        ? `<div class="field">Suite d'accords${state.guide.currentChordProgressionName ? ' (' + state.guide.currentChordProgressionName + ')' : ''}: ${progression.map(c => c.label).join(' - ')}</div>`
+        : '';
+      guideInfoHTML = '<h2>Guide</h2>' + `<div class="field">${steps}</div>` + progressionHTML;
     } else {
       guideInfoHTML = '';
     }
-    wheelHTML = renderWheel(state.wheel, guideIsActive, detectedChordFrom(track));
+    const progressionChords = guideIsActive ? (state.guide.currentChordProgression || []).filter(c => c.quality) : [];
+    wheelHTML = renderWheel(state.wheel, guideIsActive, detectedChordFrom(track), progressionChords);
   } catch {
     infoLine = '<span class="empty">(connexion perdue — l\\'application est-elle toujours lancee ?)</span>';
   }

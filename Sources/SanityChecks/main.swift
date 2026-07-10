@@ -1562,6 +1562,43 @@ func testVirtualKeyboardGuideAdvanceMovesTheSharedGuideStep() {
 }
 testVirtualKeyboardGuideAdvanceMovesTheSharedGuideStep()
 
+func testVirtualKeyboardStateExposesCurrentStepChordProgression() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.start()
+        try session.startVirtualKeyboard(port: 18411)
+        let client = "&client=progression-client&name=Progressor"
+
+        session.newGuideSequence(title: "Progression Test")
+        // C Ionian + "ii-V-I (jazz)" resolves to Dmi, GMa, CMa (see `RomanNumeralChord` —
+        // roman-numeral case IS the quality, taken literally as a plain triad; no 7ths):
+        // exercises both the label formatting and the major/minor quality mapping.
+        let progression = ChordProgressionTemplate(name: "ii-V-I (jazz)", degrees: ["ii", "V", "I"])
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"), chordProgression: progression)
+        try session.startGuide()
+        Thread.sleep(forTimeInterval: 0.1)
+
+        if let withProgression = syncGET("http://127.0.0.1:18411/state?dummy=1" + client) {
+            check(withProgression.body.contains("\"currentChordProgressionName\":\"ii-V-I (jazz)\""), true, "guide state exposes the attached progression's name")
+            check(withProgression.body.contains("\"label\":\"Dmi\""), true, "progression entry 0 (ii) resolves to Dmi")
+            check(withProgression.body.contains("\"label\":\"GMa\""), true, "progression entry 1 (V) resolves to GMa")
+            check(withProgression.body.contains("\"label\":\"CMa\""), true, "progression entry 2 (I) resolves to CMa")
+            check(withProgression.body.contains("\"quality\":\"minor\""), true, "Dmi entry carries quality \"minor\" for wheel matching")
+            check(withProgression.body.contains("\"quality\":\"major\""), true, "G7/CMa entries carry quality \"major\" for wheel matching")
+        } else {
+            failures += 1
+            print("FAIL [virtual keyboard chord progression]: no response")
+        }
+
+        session.stopVirtualKeyboard()
+    } catch {
+        failures += 1
+        print("FAIL [virtual keyboard chord progression]: threw \(error)")
+    }
+}
+testVirtualKeyboardStateExposesCurrentStepChordProgression()
+
 func testReleaseAllKeysClearsHeldPitchesForOneTrackOnly() {
     let session = ImprovSession()
     checks += 1

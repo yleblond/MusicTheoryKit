@@ -2018,7 +2018,13 @@ public final class ImprovSession: @unchecked Sendable {
             isActive: true, steps: steps, currentStepIndex: currentGuideStepIndex,
             currentModeTones: mode.pitchClasses.map(\.value), heldPitches: heldPitches,
             currentChordProgressionName: currentStep?.chordProgressionName,
-            currentChordProgression: (currentStep?.chordProgression ?? []).map { "\(PitchClass($0.root).name())\($0.chordTemplateID)" }
+            currentChordProgression: (currentStep?.chordProgression ?? []).map {
+                WebConsoleChordProgressionEntry(
+                    label: $0.resolve()?.displayName ?? "?",
+                    root: $0.root,
+                    quality: Self.chordQuality(templateID: $0.chordTemplateID)?.rawValue
+                )
+            }
         )
     }
 

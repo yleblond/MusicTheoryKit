@@ -117,10 +117,20 @@ struct WebConsoleGuideState: Codable {
     /// `nil`/empty otherwise. Display-only: just enough to show "this step has a X
     /// progression attached" under the guide's title; there's no playback of it yet.
     var currentChordProgressionName: String?
-    /// Pre-formatted chord labels (e.g. "CMa", "Dmi", "Bdim"), in progression order — same
-    /// "server already formatted it, client just shows the string" convention as
-    /// `WebConsoleTrackState.chordLabel`.
-    var currentChordProgression: [String]
+    /// In progression order — same "server already formatted it, client just shows the
+    /// string" convention as `WebConsoleTrackState.chordLabel`, plus `root`/`quality` so the
+    /// client can also mark matching wheel cells (same shape as the `trackLabels` match in
+    /// `WebConsoleWheelCellState`).
+    var currentChordProgression: [WebConsoleChordProgressionEntry]
+}
+
+struct WebConsoleChordProgressionEntry: Codable {
+    /// Pre-formatted chord label, e.g. "CMa7", "Dmi", "Bdim".
+    var label: String
+    var root: Int
+    /// "major" | "minor" | "diminished", nil if the chord's template has no recognizable
+    /// triad quality (e.g. augmented) — still shown in text, just not markable on the wheel.
+    var quality: String?
 }
 
 struct WebConsoleGuideStepState: Codable {
