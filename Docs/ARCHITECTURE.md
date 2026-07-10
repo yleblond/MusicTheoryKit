@@ -1,7 +1,7 @@
 # Documentation technique — Music Improv Assistant
 
 Documentation du code généré dans ce package Swift. Reflète l'état du code à la fin de la
-session du 2026-07-07. Pour l'historique détaillé des décisions/itérations, voir la mémoire
+session du 2026-07-10. Pour l'historique détaillé des décisions/itérations, voir la mémoire
 `project_improv_app_roadmap.md` ; pour la définition des termes ambigus/récurrents
 (« piste », « prompt de composition », les trois écrans...), voir `Docs/GLOSSAIRE.md`.
 
@@ -538,6 +538,78 @@ Une seule classe, `@Observable`, `@unchecked Sendable`, qui détient tout l'éta
 l'application et toute la logique — indépendante de toute présentation. Le CLI ne fait que
 l'appeler et lire son état ; une future interface SwiftUI pourrait s'y brancher directement.
 
+### Dossiers de travail : Settings / User / Library
+
+Trois racines, à côté de `MusicTheoryKit/`, chacune couvrant un seul type de contenu :
+`Settings/` (réglages **de l'installation**, pas d'une pièce donnée — `palettes.json`,
+`chordprogressions.json`, `LLMConnections/`), `User/` (matière musicale de l'utilisateur —
+`Pieces/`, `Scenes/`, `Sequences/` (guides), `SoundTracks/`, `Composition IA/`), `Library/`
+(ressources réutilisables indépendantes de toute pièce — `SoundFonts/`).
+
+`ImprovSession.setSettingsFolder(_:)` (mêmes gabarits que `setPromptsFolder` — un seul dossier
+choisi, plusieurs sous-chemins fixes créés dessous si absents) est le seul point d'entrée pour
+`Settings/` : elle charge `palettes.json` (`loadOrCreateColorPalettes`), `chordprogressions.json`
+(`loadOrCreateChordProgressionTemplates`) et liste `LLMConnections/` (`listLLMConnections`) en
+un seul appel — il n'existe plus de commande/menu pour rediriger `LLMConnections` seul. Les
+dossiers de `User/`/`Library/` restent chacun redirectable indépendamment, exactement comme
+avant (`listPieceFiles`, `listSampleFiles`, `listSoundTrackFiles`, `listGuideFiles`,
+`listSceneFiles`, `setPromptsFolder`) — seule leur valeur par défaut au démarrage
+(`Sources/JamShack/main.swift`) a changé de chemin.
+
+### Progressions d'accords (`MusicTheoryKit/RomanNumeralChord.swift`, `AppCore/ChordProgressionTemplate.swift`)
+
+`RomanNumeralChord.parse(_:)` (MusicTheoryKit, théorie pure, aucune dépendance à `PieceModel`)
+transforme un token en chiffre romain ("I", "vi", "vii°") en `(degree: Int, quality:
+ChordQuality)` — **la casse du texte EST la qualité, prise littéralement** (majuscule =
+majeur, minuscule = mineur, "°" final = diminué), jamais dérivée de l'harmonie propre du mode
+appliqué : "I-IV-V" désigne toujours trois triades majeures, quel que soit le mode/tonique sur
+lequel on l'applique — comme dans un livre de blues/jazz. `RomanNumeralChord.rootAndQuality(for:in:)`
+résout un token contre un `Mode` réel via `Mode.degree(_:)` (1-based, déjà existant).
+
+`ChordProgressionTemplate` (AppCore, `name` + `degrees: [String]`) suit la même convention
+« fichier plat, plusieurs templates, pas un fichier par template » que `ColorPalette` (pas
+celle de `Scene`/`GuideSequence`) — `ChordProgressionTemplateFile` sur disque dans
+`chordprogressions.json`, sous `Settings/`. `ChordProgressionTemplate.builtInDefaults` (blues
+12 mesures, ii-V-I, pop I-V-vi-IV, cadence andalouse…) est écrit au premier lancement s'il
+n'existe pas encore, comme `ColorPalette.builtInDefaults`. `ImprovSession.resolveChordProgression(_:in:)`
+convertit chaque degré en `ChordReference` (root + `chordTemplateID` "Ma"/"mi"/"dim") — cette
+conversion vit dans `AppCore`, pas `MusicTheoryKit`, puisque `ChordReference` appartient à
+`PieceModel` : `MusicTheoryKit` reste sans dépendance montante.
+
+`PieceModel.GuideStep` (remplace l'ancien `steps: [ModeReference]` de `GuideSequence` par
+`steps: [GuideStep]`) associe un `mode: ModeReference` à une progression optionnelle
+(`chordProgressionName: String?` + `chordProgression: [ChordReference]?`, déjà résolue au
+moment de l'ajout, jamais recalculée au chargement — le nom du template reste pour affichage
+même si la bibliothèque change ensuite). `GuideStep.init(from:)` accepte aussi l'ancien format
+(l'objet JSON entier EST un `ModeReference` nu, sans clé `"mode"`) — même convention
+`decodeIfPresent` + repli que `ColorPalette.textColors` — pour que tout guide sauvegardé avant
+cette fonctionnalité continue de se charger. `ImprovSession.addGuideStep(_:chordProgression:)`
+est le nouveau point d'entrée (l'ancien `addGuideStep(_:)` reste une façade qui l'appelle avec
+`nil`).
+
+### Plan de scène (arbre app/instruments/clients)
+
+`ImprovSession.connectedClients()` expose `clientIDToClientName` (jusque-là privé) — chaque
+participant connecté en mode serveur, même sans instrument encore annoncé (contrairement à un
+simple filtrage de `tracks` sur `.remote`, qui ne montre que les participants ayant déjà
+annoncé au moins une piste). Ce détour a révélé un bug latent dans `refreshTracks()` : elle
+reconstruit `tracks` à chaque appel et ne préservait explicitement que les pistes
+`.webKeyboard` à travers cette reconstruction — les pistes `.remote` (appartenant à la couche
+réseau, jamais recréées ici) étaient silencieusement perdues à chaque appel (`tracks`,
+`scene-tree`, `midi-mode`…) jusqu'à ce que leur propriétaire rejoue une note ou réannonce sa
+piste. Corrigé en étendant le filtre de préservation à `.webKeyboard` **et** `.remote`.
+
+Deux rendus de la même donnée : `Sources/JamShack/main.swift`'s `printSceneTree()` (ASCII,
+`printTreeLine` — box-drawing `├─`/`└─`/`│` maison, aucun helper de ce genre n'existait avant)
+pour le terminal (`scene-tree`), et `AppCore.WebConsoleSceneState`/`WebConsoleSceneClientState`
+(`ImprovSession.buildWebConsoleSceneState()`, un champ `scene` de plus dans `WebConsoleState`,
+toujours présent comme `wheel`/`palette`) pour la console web — un nouvel onglet `Scene` à
+côté de `Run` (`activeTab`/`renderTabBar()`/`setTab()` en JS, `renderSceneTree()` en HTML
+imbriqué plutôt qu'en box-drawing, plus naturel dans un navigateur). `WebConsoleTrackState` a
+gagné `isListening`/`canHaveSound`/`soundEnabled`/`instrumentName` pour cet usage — inutiles
+pour l'onglet `Run` (qui ne reçoit déjà que des pistes en écoute), nécessaires pour l'arbre de
+scène, qui liste toute piste qu'elle écoute ou non.
+
 ### Groupes de fonctionnalités
 
 - **Morceau** : `piece`, chargement/sauvegarde (`loadPiece`, `savePiece`/`savePiece(as:)`),
@@ -839,9 +911,9 @@ Barre de menu façon interface DOS graphique, sept catégories (`menuCategories`
 
 | Menu (mnémonique) | Contenu |
 |---|---|
-| **JamShack (S)** | Menu principal, ouvert par défaut. Groupes séparés par des traits : infos/aide ; choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/connexions LLM/**composition IA**) ; choisir une connexion LLM (isolée dans son propre groupe) ; choisir la palette de couleur (`ColorPalette`, voir plus bas) ; mode MIDI fusionné/individuel ; démarrer/arrêter la console web et le clavier virtuel (§WebConsole) ; quitter. Point d'entrée unique pour toute la configuration de session — aucun autre menu ne propose de choisir un dossier ou une connexion. |
+| **JamShack (S)** | Menu principal, ouvert par défaut. Groupes séparés par des traits : infos/aide ; choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/**composition IA**/**réglages** — ce dernier remplace l'ancien choix indépendant de dossier de connexions LLM, toujours dans `Settings/` désormais) ; choisir une connexion LLM (isolée dans son propre groupe) ; choisir la palette de couleur (`ColorPalette`, voir plus bas) ; mode MIDI fusionné/individuel ; démarrer/arrêter la console web et le clavier virtuel (§WebConsole) ; quitter. Point d'entrée unique pour toute la configuration de session — aucun autre menu ne propose de choisir un dossier ou une connexion. |
 | **Scene (n)** | Lister/activer/arrêter les pistes d'entrée, *séparateur*, activer/désactiver leur son, *séparateur*, choisir un son, *séparateur*, sauvegarder/charger une scène (configuration d'instruments : actif, son actif, quel son). Les actions qui demandent une piste et la sélection d'instrument dans "Choisir un son..." présentent `session.tracks` numérotée (`printNumberedTracks()`) — le choix accepte un numéro ou l'id littéral (`resolvedTrackIDText(_:)`, même convention que `resolvedSampleName`). |
-| **Guide Musicaux (G)** | Voir l'écran Guide Musical, *séparateur*, créer un nouveau guide musical (boucle "ajouter un mode" jusqu'à tonique vide) / ajouter un mode au guide musical en cours, *séparateur*, charger/sauvegarder(-sous) un guide musical, *séparateur*, démarrer/arrêter le guide musical (aussi accessible par la barre d'espace sur l'écran Guide Musical). |
+| **Guide Musicaux (G)** | Voir l'écran Guide Musical, *séparateur*, créer un nouveau guide musical (boucle "ajouter un mode" jusqu'à tonique vide) / ajouter un mode au guide musical en cours — chaque ajout propose aussi une progression d'accords optionnelle prise dans `chordprogressions.json` (voir §Progressions d'accords), *séparateur*, charger/sauvegarder(-sous) un guide musical, *séparateur*, démarrer/arrêter le guide musical (aussi accessible par la barre d'espace sur l'écran Guide Musical). |
 | **Enregistrement (E)** | Démarrer/arrêter/voir/jouer un enregistrement, *séparateur*, charger/sauvegarder, *séparateur*, composer un morceau à partir de l'enregistrement, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser les indications de style, *séparateur*, voir/exporter le prompt de composition. Ordre — cadrage puis indications avant le prompt — délibéré (voir §LLMEngine/§AppCore). |
 | **Morceaux (M)** | 4 groupes : écouter/voir le morceau ; choisir le son de lecture, d'une piste, ou des accords d'une section (`pieceDetailLines()` numérote visuellement chaque section — `"Section 1: A"` — et chaque piste — `"piste 1 '...'"` — pour que l'utilisateur sache directement quel numéro saisir) ; charger la démo/un morceau, sauvegarder ; `MenuItem.header("Assistant IA")` — sous-section réservée, sans item pour l'instant, en attente d'une future fonction de modification par dialogue applicable à n'importe quel morceau. |
 | **Composition (C)** | Décrire le morceau (assistant titre → description → indications → composition), composer à partir de la description, voir la description, *séparateur*, charger/sauvegarder(-sous) une description, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/exporter le prompt de composition. |
@@ -912,7 +984,7 @@ Exécutable qui rejoue à la main chaque cas de test des vrais fichiers `XCTest`
 (`check`/`checkNil`), pour compenser l'absence d'Xcode. **Toujours mettre à jour ce fichier
 en même temps que tout nouveau test** — c'est le seul moyen de vérifier que le code
 fonctionne dans cet environnement. Se lance avec `swift run SanityChecks` depuis
-`MusicTheoryKit/`. Compteur de vérifications à jour : **521 checks, 0 échec**, stable sur
+`MusicTheoryKit/`. Compteur de vérifications à jour : **540 checks, 0 échec**, stable sur
 plusieurs exécutions répétées.
 
 ## Vérification/tests

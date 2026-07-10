@@ -14,29 +14,36 @@ setvbuf(stdout, nil, _IONBF, 0)
 let session = ImprovSession()
 try session.start()
 
-// Default working folders, so `pieces`/`samples`/`llm-connections` don't need to be
-// re-typed on every launch. Derived from this source file's own path (baked in at compile
-// time via `#filePath`) rather than assumed from the current working directory, so it
-// still resolves correctly no matter where `swift run` is invoked from — `Sources/JamShack/
-// main.swift` is 4 levels below the project root that holds `Pieces`/`SoundFonts`/
-// `LLMConnections` as siblings of `MusicTheoryKit/`. `try?`: silently skipped if a folder
-// doesn't exist (e.g. a different checkout) rather than failing startup.
+// Default working folders, so `pieces`/`samples`/`guides` don't need to be re-typed on every
+// launch. Derived from this source file's own path (baked in at compile time via `#filePath`)
+// rather than assumed from the current working directory, so it still resolves correctly no
+// matter where `swift run` is invoked from — `Sources/JamShack/main.swift` is 4 levels below
+// the project root that holds `Settings`/`User`/`Library` as siblings of `MusicTheoryKit/`.
+// Three top-level buckets, not one flat pile of folders: `Settings` (palettes, chord
+// progression templates, LLM connections — one unit, see `setSettingsFolder`'s doc comment),
+// `User` (the user's own musical material — pieces, scenes, guide sequences, soundtracks,
+// AI-composition folders — each still independently redirectable, exactly as before, just a
+// new default location), `Library` (reusable assets not tied to any particular piece — for
+// now just SoundFonts). `try?`: silently skipped if a folder doesn't exist (e.g. a different
+// checkout) rather than failing startup.
 let projectRoot = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent() // JamShack
     .deletingLastPathComponent() // Sources
     .deletingLastPathComponent() // MusicTheoryKit
     .deletingLastPathComponent() // Music
-try? session.listPieceFiles(in: projectRoot.appendingPathComponent("Pieces").path)
-try? session.listSampleFiles(in: projectRoot.appendingPathComponent("SoundFonts").path)
-try? session.listLLMConnections(in: projectRoot.appendingPathComponent("LLMConnections").path)
-try? FileManager.default.createDirectory(at: projectRoot.appendingPathComponent("SoundTracks"), withIntermediateDirectories: true)
-try? session.listSoundTrackFiles(in: projectRoot.appendingPathComponent("SoundTracks").path)
-try? FileManager.default.createDirectory(at: projectRoot.appendingPathComponent("Sequences"), withIntermediateDirectories: true)
-try? session.listGuideFiles(in: projectRoot.appendingPathComponent("Sequences").path)
-try? FileManager.default.createDirectory(at: projectRoot.appendingPathComponent("Scenes"), withIntermediateDirectories: true)
-try? session.listSceneFiles(in: projectRoot.appendingPathComponent("Scenes").path)
-try? session.setPromptsFolder(projectRoot.appendingPathComponent("Composition IA").path) // creates its fixed subfolders if absent
-try? session.loadOrCreateColorPalettes(fromJSONFile: projectRoot.appendingPathComponent("palettes.json").path)
+let settingsFolder = projectRoot.appendingPathComponent("Settings")
+let userFolder = projectRoot.appendingPathComponent("User")
+let libraryFolder = projectRoot.appendingPathComponent("Library")
+try? session.setSettingsFolder(settingsFolder.path) // palettes.json, chordprogressions.json, LLMConnections/ — creates them if absent
+try? session.listPieceFiles(in: userFolder.appendingPathComponent("Pieces").path)
+try? session.listSampleFiles(in: libraryFolder.appendingPathComponent("SoundFonts").path)
+try? FileManager.default.createDirectory(at: userFolder.appendingPathComponent("SoundTracks"), withIntermediateDirectories: true)
+try? session.listSoundTrackFiles(in: userFolder.appendingPathComponent("SoundTracks").path)
+try? FileManager.default.createDirectory(at: userFolder.appendingPathComponent("Sequences"), withIntermediateDirectories: true)
+try? session.listGuideFiles(in: userFolder.appendingPathComponent("Sequences").path)
+try? FileManager.default.createDirectory(at: userFolder.appendingPathComponent("Scenes"), withIntermediateDirectories: true)
+try? session.listSceneFiles(in: userFolder.appendingPathComponent("Scenes").path)
+try? session.setPromptsFolder(userFolder.appendingPathComponent("Composition IA").path) // creates its fixed subfolders if absent
 
 // If any scenes are already sitting in the default folder, offer to load one right away —
 // picking up a known instrument setup (e.g. "piano solo") shouldn't require knowing the
@@ -90,6 +97,7 @@ func printHelp() {
 
     Pistes d'entree
       tracks                     liste les pistes d'entree (MIDI/clavier/micro) et leur etat
+      scene-tree                 plan de scene en arbre (instruments, consoles, clients connectes)
       midi-mode <fusionne|individuel>  MIDI en une piste fusionnee, ou une piste par port
       track <id> on|off          demarre/arrete l'ecoute d'une piste (id: midi, midi:<n>, clavier, micro)
       track <id> son on|off      active/desactive le son d'une piste (impossible pour 'micro')
@@ -120,7 +128,7 @@ func printHelp() {
       title [texte]              titre du morceau a composer (vide efface); voir 'show-description'
       indications [texte]        indications de style additionnelles (vide efface); voir aussi le menu Composition
       show-description           affiche le titre, la description et les indications en cours
-      llm-connections <dir>      liste les connexions LLM (.json) du dossier
+      settings <dir>             pointe le dossier de reglages (palettes, progressions d'accords, connexions LLM)
       use-llm <n ou nom>         choisit une connexion LLM
       compose [titre]            demande a l'IA de composer a partir de la description, nomme <titre> s'il est donne
       prompts <dossier>          pointe le dossier de composition IA (sous-dossiers crees si absents), liste chacun
@@ -142,7 +150,7 @@ func printHelp() {
 
     Guide Musicaux (sequence de modes a parcourir en jouant)
       guide-new <titre>          demarre une sequence de guide vierge
-      guide-add-mode <tonique> <id-gamme>  ajoute une etape (ex: guide-add-mode D dorian)
+      guide-add-mode <tonique> <id-gamme> [progression]  ajoute une etape, avec une progression d'accords optionnelle (ex: guide-add-mode D dorian, ou guide-add-mode C ionian "Blues 12 mesures")
       guides <dossier>           liste les fichiers .json (sequences de guide) du dossier
       use-guide <n ou nom>       charge une sequence (numero de la liste ou nom de fichier)
       save-guide                 resauvegarde la sequence courante
@@ -403,6 +411,74 @@ func printNumberedTracks() {
     }
 }
 
+/// One line of a box-drawn tree (see `printSceneTree`) — `ancestorIsLast[i]` says whether the
+/// i-th ancestor level was itself the LAST child at its own level (draws a blank continuation
+/// there instead of "│", the standard box-drawing-tree convention), `isLast` decides THIS
+/// line's own connector ("└─" vs "├─").
+func printTreeLine(_ text: String, ancestorIsLast: [Bool], isLast: Bool) {
+    let prefix = ancestorIsLast.map { $0 ? "   " : "│  " }.joined()
+    print(prefix + (isLast ? "└─ " : "├─ ") + text)
+}
+
+/// "Le menu Scene qui fait lister les instruments... l'etendre pour representer l'appli et
+/// tous les instruments connectes, ainsi que la console si elle est active [...] en mode
+/// serveur, la liste des clients, et pour chaque client la liste des instruments" — a fuller
+/// picture than `printTracks`' flat list: local instruments, the two HTTP servers' own
+/// active/inactive state, and (only while hosting) every connected participant with their own
+/// instruments nested underneath, even a participant who hasn't announced any track yet (see
+/// `ImprovSession.connectedClients()`'s doc comment for why that needs its own accessor rather
+/// than just scanning `tracks` for `.remote` entries).
+func printSceneTree() {
+    let isServer: Bool
+    if case .server = session.networkRole { isServer = true } else { isServer = false }
+    print("JamShack — mode: \(networkRoleText())")
+
+    let localTracks = session.tracks.filter { track -> Bool in
+        if case .remote = track.id { return false }
+        return true
+    }
+    printTreeLine("Instruments locaux", ancestorIsLast: [], isLast: false)
+    if localTracks.isEmpty {
+        printTreeLine(TextStyle.placeholder("(aucun)"), ancestorIsLast: [false], isLast: true)
+    } else {
+        for (index, track) in localTracks.enumerated() {
+            var line = "[\(trackIDText(track.id))] \(track.label) — ecoute: \(TextStyle.flag(track.isListening))"
+            if track.canHaveSound {
+                line += ", son: \(TextStyle.flag(track.soundEnabled))"
+                if let instrument = track.instrumentName { line += " (\(instrument))" }
+            }
+            printTreeLine(line, ancestorIsLast: [false], isLast: index == localTracks.count - 1)
+        }
+    }
+
+    printTreeLine("Console web: \(webConsoleStatusText())", ancestorIsLast: [], isLast: false)
+    printTreeLine("Clavier virtuel: \(virtualKeyboardStatusText())", ancestorIsLast: [], isLast: !isServer)
+
+    guard isServer else { return }
+    let clients = session.connectedClients()
+    printTreeLine("Clients connectes (\(clients.count))", ancestorIsLast: [], isLast: true)
+    if clients.isEmpty {
+        printTreeLine(TextStyle.placeholder("(aucun)"), ancestorIsLast: [true], isLast: true)
+        return
+    }
+    for (index, client) in clients.enumerated() {
+        let clientIsLast = index == clients.count - 1
+        printTreeLine(client.name, ancestorIsLast: [true], isLast: clientIsLast)
+        let clientTracks = session.tracks.filter { track -> Bool in
+            if case .remote(let clientID, _) = track.id { return clientID == client.clientID }
+            return false
+        }
+        if clientTracks.isEmpty {
+            printTreeLine(TextStyle.placeholder("(aucun instrument encore)"), ancestorIsLast: [true, clientIsLast], isLast: true)
+        } else {
+            for (trackIndex, track) in clientTracks.enumerated() {
+                let line = "[\(trackIDText(track.id))] \(track.label) — ecoute: \(TextStyle.flag(track.isListening))"
+                printTreeLine(line, ancestorIsLast: [true, clientIsLast], isLast: trackIndex == clientTracks.count - 1)
+            }
+        }
+    }
+}
+
 /// The 7 classic "Major Modes" (family 1), in degree order — the common case for a guide
 /// step, and the only family the circle-of-fifths wheel understands (see
 /// `CircleOfFifths.parentTonic(for:)`). Printed as a numbered pick-list before prompting for
@@ -424,6 +500,23 @@ func resolvedScaleID(_ text: String) -> String {
         return familyOne[index - 1].id
     }
     return text
+}
+
+func printNumberedChordProgressionTemplates() {
+    for (index, template) in session.chordProgressionTemplates.enumerated() {
+        print("  \(index + 1). \(template.name) (\(template.degrees.joined(separator: "-")))")
+    }
+}
+
+/// Resolves a "<n|nom>" argument against `session.chordProgressionTemplates` — a number
+/// picks by 1-based position (mirrors `resolvedScaleID`'s convention), anything else matches
+/// by name, case-insensitively. `nil` for a blank/unmatched argument (no progression).
+func resolvedChordProgressionTemplate(_ text: String) -> ChordProgressionTemplate? {
+    guard !text.isEmpty else { return nil }
+    if let index = Int(text), session.chordProgressionTemplates.indices.contains(index - 1) {
+        return session.chordProgressionTemplates[index - 1]
+    }
+    return session.chordProgressionTemplates.first { $0.name.lowercased() == text.lowercased() }
 }
 
 /// Resolves a "<n|id>" argument against `session.tracks` — a number picks by 1-based
@@ -804,8 +897,8 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
         if currentGuide.steps.isEmpty {
             line(TextStyle.placeholder("(sequence vide — menu Guide Musicaux > Ajouter un mode au guide musical)"))
         } else {
-            let items = currentGuide.steps.enumerated().map { index, reference -> (display: String, plainWidth: Int) in
-                let name = reference.resolve()?.displayName ?? "?"
+            let items = currentGuide.steps.enumerated().map { index, step -> (display: String, plainWidth: Int) in
+                let name = step.mode.resolve()?.displayName ?? "?"
                 if index == session.currentGuideStepIndex {
                     return ("\(KeyboardColor.chordRoot)[\(name)]\(KeyboardColor.reset)", name.count + 2)
                 }
@@ -978,6 +1071,9 @@ func executeCommand(_ command: String, _ args: [String]) throws {
     case "tracks":
         session.refreshTracks()
         printTracks()
+    case "scene-tree":
+        session.refreshTracks()
+        printSceneTree()
     case "midi-mode":
         guard let arg = args.first?.lowercased() else { print("usage: midi-mode fusionne|individuel"); break }
         switch arg {
@@ -1107,11 +1203,16 @@ func executeCommand(_ command: String, _ args: [String]) throws {
     case "save-description-as":
         guard let name = args.first else { print("usage: save-description-as <nom>"); break }
         try session.saveCompositionDescription(as: name)
-    case "llm-connections":
-        guard let folder = args.first else { print("usage: llm-connections <dossier>"); break }
-        try session.listLLMConnections(in: folder)
-        drainLog() // flush "Found N LLM connection(s)..." before the numbered list
+    case "settings":
+        guard let folder = args.first else { print("usage: settings <dossier>"); break }
+        try session.setSettingsFolder(folder)
+        drainLog() // flush "Dossier de reglages: ..." before the numbered lists
+        print("Connexions LLM:")
         for (index, name) in session.llmConnections.enumerated() { print("  \(index + 1). \(name)") }
+        print("Palettes de couleur:")
+        for (index, palette) in session.colorPalettes.enumerated() { print("  \(index + 1). \(palette.name)") }
+        print("Progressions d'accords:")
+        for (index, template) in session.chordProgressionTemplates.enumerated() { print("  \(index + 1). \(template.name)") }
     case "use-llm":
         guard let arg = args.first else { print("usage: use-llm <numero ou nom de fichier>"); break }
         if let index = Int(arg) {
@@ -1290,9 +1391,11 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         session.newGuideSequence(title: title)
     case "guide-add-mode":
         guard args.count >= 2, let tonic = parseTonicPitchClass(args[0]) else {
-            print("usage: guide-add-mode <tonique> <id-gamme>"); break
+            print("usage: guide-add-mode <tonique> <id-gamme> [progression d'accords: n ou nom]"); break
         }
-        try session.addGuideStep(ModeReference(tonic: tonic.value, scaleID: args[1]))
+        let reference = ModeReference(tonic: tonic.value, scaleID: args[1])
+        let progression = args.count >= 3 ? resolvedChordProgressionTemplate(args[2]) : nil
+        try session.addGuideStep(reference, chordProgression: progression)
     case "use-guide":
         guard let arg = args.first else { print("usage: use-guide <numero ou nom de fichier>"); break }
         if let index = Int(arg) {
@@ -1381,9 +1484,9 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             guard let folder = promptLine("Dossier de scenes: "), !folder.isEmpty else { return }
             try executeCommand("scenes", [folder])
         },
-        MenuItem(label: "Choisir dossier de connexions LLM...") {
-            guard let folder = promptLine("Dossier de connexions LLM: "), !folder.isEmpty else { return }
-            try executeCommand("llm-connections", [folder])
+        MenuItem(label: "Choisir dossier de reglages...") {
+            guard let folder = promptLine("Dossier de reglages (palettes, progressions d'accords, connexions LLM): "), !folder.isEmpty else { return }
+            try executeCommand("settings", [folder])
         },
         MenuItem(label: "Choisir dossier de composition IA...") {
             guard let folder = promptLine("Dossier de composition IA (sous-dossiers crees si absents): "), !folder.isEmpty else { return }
@@ -1391,7 +1494,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         },
         MenuItem.separator,
         MenuItem(label: "Choisir une connexion LLM...") {
-            guard !session.llmConnections.isEmpty else { print("Choisis d'abord un dossier de connexions LLM."); return }
+            guard !session.llmConnections.isEmpty else { print("Choisis d'abord un dossier de reglages (menu JamShack)."); return }
             for (index, name) in session.llmConnections.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Utiliser quelle connexion (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-llm", [choice])
@@ -1424,7 +1527,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
         MenuItem(label: "Quitter") { try executeCommand("quit", []) },
     ]),
     MenuCategory(mnemonic: "n", title: "Scene", items: [
-        MenuItem(label: "Lister les instruments") { try executeCommand("tracks", []) },
+        MenuItem(label: "Lister les instruments") { try executeCommand("scene-tree", []) },
         MenuItem(label: "Activer un instrument...") {
             printNumberedTracks()
             guard let choice = promptLine("Activer quel instrument (numero ou id): "), !choice.isEmpty else { return }
@@ -1483,8 +1586,10 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
                 guard let tonicText = promptLine("Tonique (ex: D, F#, Bb ; vide pour terminer): "), !tonicText.isEmpty else { break }
                 printNumberedScales()
                 guard let scaleText = promptLine("Id de gamme (numero ci-dessus, ou id ecrit, ex: ionian): "), !scaleText.isEmpty else { break }
+                printNumberedChordProgressionTemplates()
+                let progressionText = promptLine("Progression d'accords (numero, ou vide pour aucune): ") ?? ""
                 do {
-                    try executeCommand("guide-add-mode", [tonicText, resolvedScaleID(scaleText)])
+                    try executeCommand("guide-add-mode", [tonicText, resolvedScaleID(scaleText), progressionText])
                 } catch {
                     print("Erreur: \(error)")
                 }
@@ -1494,7 +1599,9 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             guard let tonicText = promptLine("Tonique (ex: D, F#, Bb): "), !tonicText.isEmpty else { return }
             printNumberedScales()
             guard let scaleText = promptLine("Id de gamme (numero ci-dessus, ou id ecrit, ex: ionian): "), !scaleText.isEmpty else { return }
-            try executeCommand("guide-add-mode", [tonicText, resolvedScaleID(scaleText)])
+            printNumberedChordProgressionTemplates()
+            let progressionText = promptLine("Progression d'accords (numero, ou vide pour aucune): ") ?? ""
+            try executeCommand("guide-add-mode", [tonicText, resolvedScaleID(scaleText), progressionText])
         },
         MenuItem.separator,
         MenuItem(label: "Charger un guide musical...") {

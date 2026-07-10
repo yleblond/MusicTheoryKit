@@ -115,10 +115,17 @@ public final class ImprovSession: @unchecked Sendable {
     /// composition ended up with.
     public private(set) var compositionTitle: String?
     /// The folder last listed with `listLLMConnections`, and the `.json` connection
-    /// descriptors found in it — mirrors `sampleFolder`/`sampleFiles`.
+    /// descriptors found in it — mirrors `sampleFolder`/`sampleFiles`. Only ever set via
+    /// `setSettingsFolder` now (always `<settingsFolder>/LLMConnections`) — there is no
+    /// independent "choisir dossier de connexions LLM" entry point anymore.
     public private(set) var llmConnectionsFolder: String?
     public private(set) var llmConnections: [String] = []
     public private(set) var currentLLMConnection: LLMConnection?
+    /// Root folder for settings that are per-INSTALL, not per-PIECE (see `setSettingsFolder`)
+    /// — `palettes.json`, `chordprogressions.json`, and the `LLMConnections` subfolder all
+    /// live under here as one unit, unlike `pieceFolder`/`sampleFolder`/etc., which each stay
+    /// independently choosable.
+    public private(set) var settingsFolder: String?
     /// Root folder for the whole "Composition IA" toolkit (see `setPromptsFolder`) — the
     /// prompt sent to the LLM is *always* recomposed from three independently-managed parts
     /// (never loaded/replaced as one opaque blob — see `currentTextCompositionPrompt()`):
@@ -289,6 +296,7 @@ public final class ImprovSession: @unchecked Sendable {
         case virtualKeyboardAlreadyActive
         case invalidColorPaletteIndex
         case emptyColorPaletteFile
+        case emptyChordProgressionTemplateFile
         public var description: String {
             switch self {
             case .noPieceLoaded: return "no piece loaded — try 'load-demo' or 'load <path>'"
@@ -334,6 +342,7 @@ public final class ImprovSession: @unchecked Sendable {
             case .virtualKeyboardAlreadyActive: return "virtual keyboard already running — stop it first"
             case .invalidColorPaletteIndex: return "no color palette at that index"
             case .emptyColorPaletteFile: return "that file has no palettes in it"
+            case .emptyChordProgressionTemplateFile: return "that file has no chord progression templates in it"
             }
         }
     }
@@ -585,6 +594,26 @@ public final class ImprovSession: @unchecked Sendable {
         append("Dossier de composition IA: \(folderPath) (\(textFramingFiles.count) cadrage texte, \(soundTrackFramingFiles.count) cadrage soundtrack, \(compositionFiles.count) descriptions, \(soundTrackInstructionsFiles.count) indications soundtrack).")
     }
 
+    // MARK: - Settings folder (palettes, chord progression templates, LLM connections)
+
+    /// Points at the root folder for install-wide settings, creating/loading its fixed
+    /// contents — mirrors `setPromptsFolder`'s "one chosen folder, several fixed sub-paths"
+    /// shape: `LLMConnections/` (via `listLLMConnections`, which no longer has its own
+    /// independent "choisir dossier" entry point — it's always `<folderPath>/LLMConnections`
+    /// now), `palettes.json` (`loadOrCreateColorPalettes`), `chordprogressions.json`
+    /// (`loadOrCreateChordProgressionTemplates`). Unlike `pieceFolder`/`sampleFolder`/etc.
+    /// (each independently redirectable), these three always move together as one unit.
+    public func setSettingsFolder(_ folderPath: String) throws {
+        try FileManager.default.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
+        let llmFolder = (folderPath as NSString).appendingPathComponent("LLMConnections")
+        try FileManager.default.createDirectory(atPath: llmFolder, withIntermediateDirectories: true)
+        try listLLMConnections(in: llmFolder)
+        try loadOrCreateColorPalettes(fromJSONFile: (folderPath as NSString).appendingPathComponent("palettes.json"))
+        try loadOrCreateChordProgressionTemplates(fromJSONFile: (folderPath as NSString).appendingPathComponent("chordprogressions.json"))
+        settingsFolder = folderPath
+        append("Dossier de reglages: \(folderPath).")
+    }
+
     /// Saves `currentTextFramingSentence()` (the active override, or the default if none) as
     /// a new file under the `Cadrage Composition Descriptive` subfolder.
     public func saveTextFramingSentence(as name: String) throws {
@@ -828,15 +857,25 @@ public final class ImprovSession: @unchecked Sendable {
     }
 
     public func addGuideStep(_ reference: ModeReference) throws {
+        try addGuideStep(reference, chordProgression: nil)
+    }
+
+    /// Same as `addGuideStep(_:)`, additionally attaching `template` (resolved against
+    /// `reference`'s mode right now, via `resolveChordProgression` — see `GuideStep`'s doc
+    /// comment for why the resolved chords, not just the template name, are what gets
+    /// stored) — `nil` behaves exactly like the plain overload above.
+    public func addGuideStep(_ reference: ModeReference, chordProgression template: ChordProgressionTemplate?) throws {
         guard var currentGuide else { throw SessionError.noGuideSequence }
         // Rejected here (the one place every caller — CLI command, menu — goes through)
         // rather than silently stored: an unresolvable reference (typo'd/unknown scaleID)
         // used to end up saved as a step that could never resolve, showing "?" everywhere
         // and making the guide screen wrongly claim "not started" even after `startGuide`.
-        guard reference.resolve() != nil else { throw SessionError.invalidModeReference }
-        currentGuide.steps.append(reference)
+        guard let mode = reference.resolve() else { throw SessionError.invalidModeReference }
+        let resolvedProgression = template.map { resolveChordProgression($0, in: mode) }
+        currentGuide.steps.append(GuideStep(mode: reference, chordProgressionName: template?.name, chordProgression: resolvedProgression))
         self.currentGuide = currentGuide
-        append("Added step to guide sequence '\(currentGuide.title)': \(reference.resolve()?.displayName ?? reference.scaleID).")
+        let progressionSuffix = template.map { " + \($0.name)" } ?? ""
+        append("Added step to guide sequence '\(currentGuide.title)': \(mode.displayName)\(progressionSuffix).")
     }
 
     public func removeGuideStep(atIndex index: Int) throws {
@@ -943,7 +982,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// or the step's `ModeReference` doesn't resolve (unknown `scaleID`).
     public func currentGuideStepMode() -> Mode? {
         guard let currentGuide, let currentGuideStepIndex, currentGuide.steps.indices.contains(currentGuideStepIndex) else { return nil }
-        return currentGuide.steps[currentGuideStepIndex].resolve()
+        return currentGuide.steps[currentGuideStepIndex].mode.resolve()
     }
 
     // MARK: - Scenes (saved instrument configurations — which tracks listen, with what sound)
@@ -1073,6 +1112,50 @@ public final class ImprovSession: @unchecked Sendable {
         guard colorPalettes.indices.contains(index) else { throw SessionError.invalidColorPaletteIndex }
         activeColorPaletteIndex = index
         append("Using color palette: \(activeColorPalette.name)")
+    }
+
+    // MARK: - Chord progression templates (roman-numeral libraries, see `RomanNumeralChord`)
+
+    /// Every template loaded from `chordprogressions.json` — same "flat list, hand-edited
+    /// outside the app" convention as `colorPalettes`/`palettes.json`, not a one-document-
+    /// per-file model like `Scene`/`GuideSequence`.
+    public private(set) var chordProgressionTemplates: [ChordProgressionTemplate] = [ChordProgressionTemplate.builtInDefaults[0]]
+
+    /// Mirrors `loadColorPalettes(fromJSONFile:)`.
+    public func loadChordProgressionTemplates(fromJSONFile path: String) throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let file = try JSONDecoder().decode(ChordProgressionTemplateFile.self, from: data)
+        guard !file.progressions.isEmpty else { throw SessionError.emptyChordProgressionTemplateFile }
+        chordProgressionTemplates = file.progressions
+    }
+
+    /// Mirrors `loadOrCreateColorPalettes(fromJSONFile:)`.
+    public func loadOrCreateChordProgressionTemplates(fromJSONFile path: String) throws {
+        if !FileManager.default.fileExists(atPath: path) {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(ChordProgressionTemplateFile(progressions: ChordProgressionTemplate.builtInDefaults))
+            try data.write(to: URL(fileURLWithPath: path))
+        }
+        try loadChordProgressionTemplates(fromJSONFile: path)
+    }
+
+    /// Resolves every degree token in `template` against `mode` (see
+    /// `RomanNumeralChord.rootAndQuality`) into a concrete `ChordReference` — tokens that
+    /// fail to parse are silently skipped rather than failing the whole progression, since a
+    /// hand-edited `chordprogressions.json` might contain a typo in one template without that
+    /// making every OTHER template in the file unusable.
+    public func resolveChordProgression(_ template: ChordProgressionTemplate, in mode: Mode) -> [ChordReference] {
+        template.degrees.compactMap { token in
+            guard let (root, quality) = RomanNumeralChord.rootAndQuality(for: token, in: mode) else { return nil }
+            let templateID: String
+            switch quality {
+            case .major: templateID = "Ma"
+            case .minor: templateID = "mi"
+            case .diminished: templateID = "dim"
+            }
+            return ChordReference(root: root.value, chordTemplateID: templateID)
+        }
     }
 
     /// Sets one melodic track's instrument (a sample file name, resolved against
@@ -1208,8 +1291,18 @@ public final class ImprovSession: @unchecked Sendable {
         // they're dynamic and per-browser (see `ensureWebKeyboardTrack`), so this would
         // either need a fixed clientID (defeating the point) or drop every connected
         // browser's track on every `refreshTracks()` call (e.g. after `midi-mode`). Existing
-        // ones are preserved below, just never freshly created here.
-        updated.append(contentsOf: tracks.filter { if case .webKeyboard = $0.id { return true }; return false })
+        // ones are preserved below, just never freshly created here. `.remote` tracks get the
+        // exact same treatment, for the exact same reason — they're owned by the network
+        // layer (`addOrUpdateRemoteTrack`/`mergeRemoteSnapshot`), not by this function; before
+        // this line existed, calling `refreshTracks()` (e.g. via the `tracks`/`scene-tree`
+        // commands, or `midi-mode`) silently wiped every OTHER participant's known
+        // instruments until they next announced a track or played a note.
+        updated.append(contentsOf: tracks.filter { track in
+            switch track.id {
+            case .webKeyboard, .remote: return true
+            default: return false
+            }
+        })
         updated.append(preservedOrNewTrack(.microphone, label: "Microphone", canHaveSound: false))
         tracks = updated
     }
@@ -1537,6 +1630,17 @@ public final class ImprovSession: @unchecked Sendable {
         append("Serveur demarre sur le port \(port).")
     }
 
+    /// Every participant currently connected while hosting (`networkRole == .server`), even
+    /// one with no active/announced track yet — unlike scanning `tracks` for `.remote`
+    /// entries (which only ever shows participants who've *announced* at least one
+    /// instrument), this reads `clientIDToClientName` directly, populated as soon as a
+    /// connection's `hello` message arrives. Empty (not an error) outside server mode — see
+    /// `Sources/JamShack/main.swift`'s scene-tree renderer for the main consumer.
+    public func connectedClients() -> [(clientID: String, name: String)] {
+        guard case .server = networkRole else { return [] }
+        return liveInputQueue.sync { clientIDToClientName.map { (clientID: $0.key, name: $0.value) } }
+    }
+
     /// Searches the local network for servers advertising themselves (see `startServer`)
     /// for up to `timeout` seconds and returns whatever was found — empty if none, which
     /// isn't an error (Bonjour visibility depends on both sides being on the same network
@@ -1654,7 +1758,37 @@ public final class ImprovSession: @unchecked Sendable {
             lastEvent: lastEvent, tracks: trackStates, playback: playback, soundTrackPlayback: soundTrackPlayback,
             wheel: buildWebConsoleWheelState(listeningTracks: listeningTracks),
             guide: buildWebConsoleGuideState(),
-            palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors
+            palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors,
+            scene: buildWebConsoleSceneState()
+        )
+    }
+
+    /// See `WebConsoleSceneState`'s doc comment — mirrors `Sources/JamShack/main.swift`'s
+    /// `printSceneTree()` exactly, just producing a JSON-friendly shape instead of ASCII
+    /// box-drawing.
+    private func buildWebConsoleSceneState() -> WebConsoleSceneState {
+        let networkRoleText: String
+        switch networkRole {
+        case .standalone: networkRoleText = "solo"
+        case .server(let port): networkRoleText = "serveur sur le port \(port)"
+        case .client(let description): networkRoleText = "connecte a \(description)"
+        }
+
+        let allTracks = liveInputQueue.sync { tracks }
+        let localInstruments = allTracks
+            .filter { if case .remote = $0.id { return false }; return true }
+            .map(Self.webConsoleTrackState)
+
+        let clients = connectedClients().map { client in
+            let instruments = allTracks
+                .filter { if case .remote(let clientID, _) = $0.id { return clientID == client.clientID }; return false }
+                .map(Self.webConsoleTrackState)
+            return WebConsoleSceneClientState(clientID: client.clientID, name: client.name, instruments: instruments)
+        }
+
+        return WebConsoleSceneState(
+            networkRoleText: networkRoleText, webConsolePort: webConsolePort, virtualKeyboardPort: virtualKeyboardPort,
+            localInstruments: localInstruments, clients: clients
         )
     }
 
@@ -1869,16 +2003,22 @@ public final class ImprovSession: @unchecked Sendable {
     /// present at the top level of `WebConsoleState`.
     private func buildWebConsoleGuideState() -> WebConsoleGuideState? {
         guard let currentGuide else { return nil }
-        let steps = currentGuide.steps.enumerated().map { index, reference in
-            WebConsoleGuideStepState(label: reference.resolve()?.displayName ?? "?", isCurrent: index == currentGuideStepIndex)
+        let steps = currentGuide.steps.enumerated().map { index, step in
+            WebConsoleGuideStepState(label: step.mode.resolve()?.displayName ?? "?", isCurrent: index == currentGuideStepIndex)
         }
+        let currentStep = currentGuideStepIndex.flatMap { currentGuide.steps.indices.contains($0) ? currentGuide.steps[$0] : nil }
         guard let mode = currentGuideStepMode() else {
-            return WebConsoleGuideState(isActive: false, steps: steps, currentStepIndex: nil, currentModeTones: [], heldPitches: [])
+            return WebConsoleGuideState(
+                isActive: false, steps: steps, currentStepIndex: nil, currentModeTones: [], heldPitches: [],
+                currentChordProgressionName: nil, currentChordProgression: []
+            )
         }
         let heldPitches = liveInputQueue.sync { Array(Set(tracks.filter(\.isListening).flatMap(\.heldPitches))) }
         return WebConsoleGuideState(
             isActive: true, steps: steps, currentStepIndex: currentGuideStepIndex,
-            currentModeTones: mode.pitchClasses.map(\.value), heldPitches: heldPitches
+            currentModeTones: mode.pitchClasses.map(\.value), heldPitches: heldPitches,
+            currentChordProgressionName: currentStep?.chordProgressionName,
+            currentChordProgression: (currentStep?.chordProgression ?? []).map { "\(PitchClass($0.root).name())\($0.chordTemplateID)" }
         )
     }
 
@@ -1895,6 +2035,8 @@ public final class ImprovSession: @unchecked Sendable {
         let modesLabel = !track.recognizedModes.isEmpty ? track.recognizedModes.map(describe).joined(separator: ", ") : track.remoteModesDisplay
         return WebConsoleTrackState(
             id: webConsoleTrackIDText(track.id), label: track.label, owner: track.ownerName,
+            isListening: track.isListening, canHaveSound: track.canHaveSound, soundEnabled: track.soundEnabled,
+            instrumentName: track.instrumentName,
             heldPitches: Array(track.heldPitches),
             chordRoot: track.recognizedChord?.root.value, chordTones: chordTones, modeTones: modeTones,
             chordLabel: chordLabel, modesLabel: modesLabel,

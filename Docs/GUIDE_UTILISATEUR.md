@@ -1,7 +1,7 @@
 # Guide utilisateur — Music Improv Assistant
 
 Manuel d'utilisation de l'application en ligne de commande, dans son état à la fin de la
-session du 2026-07-07. Un terme ambigu ou peu clair ? Voir `Docs/GLOSSAIRE.md`.
+session du 2026-07-10. Un terme ambigu ou peu clair ? Voir `Docs/GLOSSAIRE.md`.
 
 ## Lancer l'application
 
@@ -11,9 +11,12 @@ Depuis le dossier `MusicTheoryKit/` :
 swift run JamShack
 ```
 
-Au démarrage, l'application charge automatiquement les dossiers de travail par défaut
-(`Pieces/`, `SoundFonts/`, `LLMConnections/`, situés à côté de `MusicTheoryKit/`) — pas
-besoin de les indiquer à chaque lancement.
+Au démarrage, l'application charge automatiquement les dossiers de travail par défaut, situés
+à côté de `MusicTheoryKit/` et organisés en trois racines : `Settings/` (palettes de couleur,
+progressions d'accords, connexions LLM — voir §13/§6/menu **JamShack > Choisir dossier de
+réglages...**), `User/` (morceaux `Pieces/`, scènes `Scenes/`, guides musicaux `Sequences/`,
+soundtracks `SoundTracks/`, composition IA `Composition IA/`), `Library/` (`SoundFonts/`) —
+pas besoin de les indiquer à chaque lancement.
 
 Trois modes d'utilisation (voir §8) :
 - **Le mode `Command`** : tape une commande, appuie sur Entrée, lis le résultat. C'est le
@@ -213,7 +216,7 @@ relancer **Composition > Composer à partir de la description**.
 | 1. Titre du morceau, facultatif | `title <texte>` (vide efface) |
 | 2. Coller la description (poème, paroles…) | `paste-text` (terminer par une ligne vide) |
 | 3. Indications de style, facultatif | `indications <texte>` (vide efface) |
-| 4. Choisir un dossier de connexions LLM | `llm-connections <dossier>` (par défaut : `LLMConnections/` ; menu **JamShack**) |
+| 4. Choisir un dossier de réglages (connexions LLM, entre autres) | `settings <dossier>` (par défaut : `Settings/` ; menu **JamShack**) |
 | 5. Choisir une connexion | `use-llm <numéro ou nom>` (menu **JamShack**) |
 | 6. Voir ce qui sera envoyé | `show-description` (titre/description/indications) |
 | 7. Composer | `compose [titre]` (le titre, s'il est donné, remplace celui que l'IA aurait choisi) |
@@ -248,7 +251,7 @@ texte + indications), à ne pas confondre avec un morceau composé (`.json` auss
 dossier `Pieces/`, structuré en mesures/accords). Pas d'équivalent pour la soundtrack — c'est
 un enregistrement déjà sauvegardé en tant que tel (§10), pas un texte à décrire.
 
-Trois connexions d'exemple sont fournies dans `LLMConnections/` :
+Trois connexions d'exemple sont fournies dans `Settings/LLMConnections/` :
 - `ollama-local.json` — un serveur Ollama local, pas de clé.
 - `openai-compatible.json` — OpenAI ou tout serveur compatible (LM Studio, llama.cpp…),
   nécessite `OPENAI_API_KEY` dans l'environnement.
@@ -328,7 +331,7 @@ Tous ces éléments (phrases de cadrage, descriptions, indications soundtrack, e
 sous un même dossier racine :
 
 ```
-prompts <dossier>   # pointe le dossier de composition IA (par defaut "Composition IA/"), cree ses sous-dossiers si absents
+prompts <dossier>   # pointe le dossier de composition IA (par defaut "User/Composition IA/"), cree ses sous-dossiers si absents
 ```
 
 Menu **JamShack > Choisir dossier de composition IA...** fait la même chose. Sous-dossiers
@@ -414,9 +417,9 @@ Menus disponibles :
 
 | Menu | Contenu |
 |---|---|
-| **JamShack** | Menu principal (premier de la barre, s'ouvre par défaut) : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/connexions LLM/**composition IA**) ; (3) choisir une connexion LLM, isolée dans son propre groupe ; (3bis) choisir la palette de couleur (voir §13) ; (4) mode MIDI fusionné/individuel ; (5) démarrer/arrêter la console web (voir §11) et le clavier virtuel (voir §12) ; (6) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
-| **Scene** | Lister les instruments, activer/arrêter un instrument, *séparateur*, activer/désactiver le son d'un instrument, *séparateur*, choisir un son pour un instrument, *séparateur*, sauvegarder/charger une scène (la configuration complète des instruments : actif, son actif, quel son). Les actions qui demandent de choisir un instrument présentent la liste numérotée (voir §3) — répondre par le numéro évite d'avoir à retaper `midi:1`/`clavier`/etc. |
-| **Guide Musicaux** | Voir l'écran Guide Musical, *séparateur*, créer un nouveau guide musical (propose d'ajouter un mode en boucle jusqu'à laisser la tonique vide) / ajouter un mode au guide musical en cours, *séparateur*, charger un guide musical / sauvegarder le guide musical (sous...), *séparateur*, démarrer/arrêter le guide musical — aussi accessible directement par la barre d'espace une fois sur l'écran Guide Musical. |
+| **JamShack** | Menu principal (premier de la barre, s'ouvre par défaut) : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/**composition IA**/**réglages** — ce dernier remplace l'ancien choix indépendant de dossier de connexions LLM ; palettes de couleur, progressions d'accords et connexions LLM vivent tous sous ce même dossier de réglages, par défaut `Settings/`) ; (3) choisir une connexion LLM, isolée dans son propre groupe ; (3bis) choisir la palette de couleur (voir §13) ; (4) mode MIDI fusionné/individuel ; (5) démarrer/arrêter la console web (voir §11) et le clavier virtuel (voir §12) ; (6) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
+| **Scene** | Voir le plan de scène en arbre (`scene-tree`) — l'application, ses instruments locaux, l'état de la console web et du clavier virtuel, et en mode serveur la liste des clients connectés avec leurs propres instruments (voir §9) —, activer/arrêter un instrument, *séparateur*, activer/désactiver le son d'un instrument, *séparateur*, choisir un son pour un instrument, *séparateur*, sauvegarder/charger une scène (la configuration complète des instruments : actif, son actif, quel son). Les actions qui demandent de choisir un instrument présentent la liste numérotée (voir §3) — répondre par le numéro évite d'avoir à retaper `midi:1`/`clavier`/etc. |
+| **Guide Musicaux** | Voir l'écran Guide Musical, *séparateur*, créer un nouveau guide musical (propose d'ajouter un mode en boucle jusqu'à laisser la tonique vide) / ajouter un mode au guide musical en cours — chaque ajout propose ensuite une liste numérotée de progressions d'accords (blues, ii-V-I, cadence andalouse…, tirée de `chordprogressions.json` dans le dossier de réglages) à attacher à cette étape, ou de laisser vide pour n'en attacher aucune, *séparateur*, charger un guide musical / sauvegarder le guide musical (sous...), *séparateur*, démarrer/arrêter le guide musical — aussi accessible directement par la barre d'espace une fois sur l'écran Guide Musical. |
 | **Enregistrement** | Démarrer/arrêter un enregistrement, voir l'enregistrement, jouer l'enregistrement, *séparateur*, charger/sauvegarder l'enregistrement, *séparateur*, composer un morceau à partir de l'enregistrement en le nommant (voir §10), *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser les indications de style, *séparateur*, voir/exporter le prompt de composition (voir §6). |
 | **Morceaux** | Quatre groupes, séparés par des traits : (1) écouter/voir le morceau ; (2) choisir le son par défaut de lecture, ou le son d'une piste/des accords d'une section (voir §7 — la structure affichée numérote les sections et les pistes, pour savoir directement quel numéro saisir) ; (3) charger la démo, charger un morceau, sauvegarder le morceau, sauvegarder le morceau sous ; (4) **Assistant IA** — pour l'instant un intitulé de sous-section réservé, sans action, en attente d'une future fonction de modification par dialogue (« plus vite », « moins vite »…) applicable à n'importe quel morceau. |
 | **Composition** | Décrire le morceau (assistant titre → description → indications → composition, voir §6), composer à partir de la description, voir la description, *séparateur*, charger une description/sauvegarder la description (sous...), *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/exporter le prompt de composition. |
@@ -634,6 +637,12 @@ clavier du mode" — celui du guide musical s'il est en cours (menu **Guide Musi
 celui du morceau/de l'enregistrement en cours de lecture — puis chaque piste active, la
 sienne. Cette disposition est désormais la même que le guide soit actif ou non.
 
+**Deux onglets** : `Run` (ce qui précède — l'activité musicale en cours) et `Scene` — le même
+plan de scène qu'affiche `scene-tree` dans le terminal (voir §9), mais en liste imbriquée
+plutôt qu'en dessin ASCII : l'application, ses instruments locaux, l'état de la console web et
+du clavier virtuel, et en mode serveur la liste des clients connectés avec leurs propres
+instruments. Basculer d'un onglet à l'autre ne recharge pas la page.
+
 **Largeur adaptative** : la page s'élargit pour profiter de l'espace disponible sur un grand
 écran (cercle des quintes agrandi, largeur totale plafonnée pour rester lisible plutôt que de
 s'étirer à l'infini), et repasse en une seule colonne sur un écran étroit ; chaque clavier,
@@ -699,9 +708,9 @@ est le plus large à ce moment.
   piste (celui joué au piano/clavier, affiché en dessous — voir plus loin) est reconnu, la
   case correspondante s'entoure d'un anneau magenta dans la roue — que le guide soit actif ou
   non.
-- **Clavier de l'ordinateur** : deux paires de rangées superposées couvrant environ 2,3
-  octaves — la rangée de chiffres + `qwertyuiop` pour le registre grave (de Sol à Si, `Q` à
-  `P`), `S D G H J` + la rangée du bas (`zxcvbnm`) pour le registre aigu qui suit juste
+- **Clavier de l'ordinateur** : deux paires de rangées superposées couvrant environ 2,5
+  octaves — la touche `` ` `` + la rangée de chiffres + `qwertyuiop` pour le registre grave (de
+  Fa à Si, `` ` `` à `P`), `S D G H J` + la rangée du bas (`zxcvbnm`) pour le registre aigu qui suit juste
   au-dessus (de Do à Si, `Z` à `M`, directement à la suite du Si grave). La lettre qui joue chaque
   note est affichée directement sur la touche (majuscule, blanc sur les touches noires, noir
   sur les blanches, bien centrée sur la partie visible des touches Do/Fa/Mi/Si) ; le nom de la
@@ -761,8 +770,8 @@ partout où cette note apparaît, quel que soit le mode/l'accord. Chaque note a 
 dans sa pastille, le nom/degré affiché dans chaque case du cercle des quintes) : dans la
 palette **Default**, tout le texte est blanc sauf sur les notes La, Mi et Si (les 3 fonds les
 plus clairs de cette palette), en noir ; les deux autres palettes ont leur propre choix.
-Plusieurs jeux de couleurs possibles, listés dans `palettes.json` (créé automatiquement au
-premier lancement, à côté de `Pieces/`/`Scenes/`, avec trois palettes de départ : **Default**
+Plusieurs jeux de couleurs possibles, listés dans `Settings/palettes.json` (créé
+automatiquement au premier lancement, avec trois palettes de départ : **Default**
 — extraite de la roue physique photographiée dans `Sources/Colors/Colors.PNG` —, **Contraste**
 et **Pastel**) ; le modifier à la main pour ajouter ses propres palettes. Une palette
 ajoutée à la main sans préciser `textColors` reçoit automatiquement une couleur de texte
@@ -781,6 +790,23 @@ l'application** — jamais écrit dans `palettes.json` (qui ne liste que ce qui 
 chaque relance. S'applique aussitôt à la console web et au clavier virtuel de cette même
 instance, sans recharger la page (le changement apparaît dans les ~250ms du prochain
 sondage).
+
+## 14. Progressions d'accords — bibliothèque pour le guide musical
+
+En ajoutant un mode au guide musical (menu **Guide Musicaux**, voir §8), on peut lui attacher
+une **progression d'accords** prise dans une bibliothèque de templates, écrite en notation
+relative (chiffres romains) : `I` = accord majeur sur le 1er degré, `vi` = accord mineur sur
+le 6e, `vii°` = accord diminué sur le 7e — la casse indique la qualité (majuscule = majeur,
+minuscule = mineur), appliquée telle quelle quel que soit le mode choisi pour l'étape
+(exactement comme dans un livre de blues/jazz : "I-IV-V" désigne toujours trois accords
+majeurs). Une étape avec une progression attachée devient presque un mini-morceau (mode +
+suite d'accords), à ceci près qu'il manque encore les lignes mélodiques.
+
+Ces templates vivent dans `Settings/chordprogressions.json` (créé automatiquement au premier
+lancement avec une bibliothèque de départ : Blues 12 mesures, ii-V-I, Pop I-V-vi-IV, Années 50,
+Canon, Cadence andalouse, Progression circulaire, Rock mineur) — modifiable à la main pour en
+ajouter d'autres, même convention que `palettes.json` (un seul fichier listant plusieurs
+templates).
 
 ## Liste complète des commandes
 
@@ -801,6 +827,7 @@ save                    resauvegarde le morceau courant
 save-as <nom>           sauvegarde sous un nouveau nom
 play                    joue le morceau courant
 tracks                  liste les pistes d'entrée (MIDI/clavier/micro) et leur état
+scene-tree              plan de scène en arbre (instruments, consoles, clients connectés — voir §9)
 midi-mode <fusionne|individuel>  MIDI en une piste fusionnée, ou une piste par port
 track <id> on|off       démarre/arrête l'écoute d'une piste (id: midi, midi:<n>, clavier, micro)
 track <id> son on|off   active/désactive le son d'une piste (impossible pour 'micro')
@@ -834,7 +861,7 @@ show-description        affiche le titre, la description et les indications en c
 use-description <n|nom> charge une description sauvegardee (remplace titre/description/indications)
 save-description-as <nom>  sauvegarde titre+description+indications sous ce nom
 save-description        resauvegarde sous le meme nom
-llm-connections <dir>   liste les connexions LLM (.json) du dossier
+settings <dossier>      pointe le dossier de réglages (palettes, progressions d'accords, connexions LLM — voir §13/§14)
 use-llm <n|nom>         choisit une connexion LLM
 compose [titre]         demande à l'IA de composer à partir de la description, nomme <titre> s'il est donné
 prompts <dossier>       pointe le dossier de composition IA (sous-dossiers crees si absents)

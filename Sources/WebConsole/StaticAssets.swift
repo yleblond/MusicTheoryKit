@@ -45,7 +45,13 @@
 ///     "heldPitches": [...]
 ///   } | null,
 ///   "palette": ["#DB2A52", "#0AAD9A", ..., "#ABD144"],
-///   "paletteTextColors": ["#ffffff", "#ffffff", ..., "#111111"]
+///   "paletteTextColors": ["#ffffff", "#ffffff", ..., "#111111"],
+///   "scene": {
+///     "networkRoleText": "solo" | "serveur sur le port 5050" | "connecte a host:port",
+///     "webConsolePort": 8080 | null, "virtualKeyboardPort": 8081 | null,
+///     "localInstruments": [{"id": "midi", "label": "...", "isListening": true, ...}],
+///     "clients": [{"clientID": "ab12", "name": "Bob", "instruments": [...]}]
+///   }
 /// }
 /// ```
 /// `wheel` is always present (not gated behind an active guide) — see
@@ -107,6 +113,12 @@ public let webConsoleIndexHTML = """
   .instrument-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.4em; }
   .layout-columns { display: flex; flex-wrap: wrap; gap: 2rem; align-items: flex-start; }
   .layout-col-left, .layout-col-right { flex: 1 1 380px; min-width: 0; }
+  .tab-bar { display: flex; gap: 1.2rem; border-bottom: 1px solid #333; margin-bottom: 1rem; }
+  .tab { color: #888; cursor: pointer; padding: 0.3rem 0; user-select: none; }
+  .tab.active { color: #fff; border-bottom: 2px solid #6cf; }
+  .scene-tree, .scene-tree ul { list-style: none; margin: 0; padding-left: 1.3rem; }
+  .scene-tree { padding-left: 0; }
+  .scene-tree li { margin: 0.15rem 0; }
 </style>
 </head>
 <body>
@@ -429,17 +441,7 @@ function renderSoundTrackPlayback(playback) {
   return '<h2>Enregistrement en cours de lecture</h2>' + keyboardHTML(playback.heldPitches, null, [], []);
 }
 
-async function refresh() {
-  let state;
-  try {
-    const response = await fetch('/state', { cache: 'no-store' });
-    state = await response.json();
-  } catch (error) {
-    document.getElementById('app').innerHTML = '<p class="empty">(connexion perdue — l\\'application est-elle toujours lancee ?)</p>';
-    return;
-  }
-  if (state.palette && state.palette.length === 12) PITCH_CLASS_COLORS = state.palette;
-  if (state.paletteTextColors && state.paletteTextColors.length === 12) PITCH_CLASS_TEXT_COLORS = state.paletteTextColors;
+function renderRunTab(state) {
   const tracks = state.tracks || [];
   const tracksHTML = tracks.length
     ? tracks.map(renderTrack).join('')
@@ -455,7 +457,85 @@ async function refresh() {
   const left = renderWheelSection(state.wheel, tracks);
   const right = modeHTML + tracksHTML;
   html += `<div class="layout-columns"><div class="layout-col-left">${left}</div><div class="layout-col-right">${right}</div></div>`;
-  document.getElementById('app').innerHTML = html;
+  return html;
+}
+
+// One line of the Scene tab's tree (see `renderSceneTree`) — mirrors the terminal's own
+// `printSceneTree`/`trackIDText` line format, just as an `<li>` instead of ASCII box-drawing.
+function sceneTrackLineHTML(track) {
+  let line = `[${track.id}] ${track.label}`;
+  if (track.owner) line += ` — ${track.owner}`;
+  line += ` — ecoute: <b>${track.isListening ? 'oui' : 'non'}</b>`;
+  if (track.canHaveSound) {
+    line += `, son: <b>${track.soundEnabled ? 'oui' : 'non'}</b>`;
+    if (track.instrumentName) line += ` (${track.instrumentName})`;
+  }
+  return line;
+}
+
+// The "plan de scene" tree — app + local instruments + web console/virtual keyboard status,
+// and (server mode only) every connected jam-session participant with their own instruments
+// nested underneath, exactly like the terminal's `scene-tree` command, but as a nested HTML
+// list instead of ASCII box-drawing (more natural to read in a browser).
+function renderSceneTree(scene) {
+  if (!scene) return '';
+  const isServer = scene.networkRoleText.indexOf('serveur') === 0;
+  let html = `<div class="field">Mode: <b>${scene.networkRoleText}</b></div>`;
+  html += '<ul class="scene-tree">';
+
+  const localInstruments = scene.localInstruments || [];
+  html += '<li>Instruments locaux' + (
+    localInstruments.length
+      ? '<ul>' + localInstruments.map(t => `<li>${sceneTrackLineHTML(t)}</li>`).join('') + '</ul>'
+      : ' <span class="empty">(aucun)</span>'
+  ) + '</li>';
+
+  html += `<li>Console web: <b>${scene.webConsolePort ? 'http://localhost:' + scene.webConsolePort : '(inactive)'}</b></li>`;
+  html += `<li>Clavier virtuel: <b>${scene.virtualKeyboardPort ? 'http://localhost:' + scene.virtualKeyboardPort : '(inactif)'}</b></li>`;
+
+  if (isServer) {
+    const clients = scene.clients || [];
+    html += `<li>Clients connectes (${clients.length})`;
+    if (clients.length) {
+      html += '<ul>' + clients.map(client => {
+        const instruments = client.instruments || [];
+        const inner = instruments.length
+          ? '<ul>' + instruments.map(t => `<li>${sceneTrackLineHTML(t)}</li>`).join('') + '</ul>'
+          : ' <span class="empty">(aucun instrument encore)</span>';
+        return `<li>${client.name}${inner}</li>`;
+      }).join('') + '</ul>';
+    } else {
+      html += ' <span class="empty">(aucun)</span>';
+    }
+    html += '</li>';
+  }
+
+  html += '</ul>';
+  return html;
+}
+
+let activeTab = 'run'; // 'run' | 'scene'
+function renderTabBar() {
+  return '<div class="tab-bar">' +
+    `<a class="tab${activeTab === 'run' ? ' active' : ''}" onclick="setTab('run')">Run</a>` +
+    `<a class="tab${activeTab === 'scene' ? ' active' : ''}" onclick="setTab('scene')">Scene</a>` +
+    '</div>';
+}
+function setTab(tab) { activeTab = tab; refresh(); }
+
+async function refresh() {
+  let state;
+  try {
+    const response = await fetch('/state', { cache: 'no-store' });
+    state = await response.json();
+  } catch (error) {
+    document.getElementById('app').innerHTML = '<p class="empty">(connexion perdue — l\\'application est-elle toujours lancee ?)</p>';
+    return;
+  }
+  if (state.palette && state.palette.length === 12) PITCH_CLASS_COLORS = state.palette;
+  if (state.paletteTextColors && state.paletteTextColors.length === 12) PITCH_CLASS_TEXT_COLORS = state.paletteTextColors;
+  const tabHTML = activeTab === 'run' ? renderRunTab(state) : renderSceneTree(state.scene);
+  document.getElementById('app').innerHTML = renderTabBar() + tabHTML;
 }
 
 refresh();

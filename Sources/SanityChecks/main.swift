@@ -2687,6 +2687,66 @@ func testGuideSequenceSaveAndLoadRoundTrips() {
     }
 }
 
+func testGuideStepWithChordProgressionRoundTripsThroughJSON() {
+    do {
+        let session = ImprovSession()
+        session.newGuideSequence(title: "With Progression")
+        let blues = ChordProgressionTemplate.builtInDefaults[0] // "Blues 12 mesures"
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"), chordProgression: blues)
+
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.saveGuideSequence(toJSONFile: tempFile.path)
+
+        let reloaded = ImprovSession()
+        try reloaded.loadGuideSequence(fromJSONFile: tempFile.path)
+        check(reloaded.currentGuide?.steps.first?.chordProgressionName, "Blues 12 mesures", "chord progression name round-trips")
+        check(reloaded.currentGuide?.steps.first?.chordProgression?.count, 12, "chord progression round-trips with all 12 chords")
+    } catch {
+        failures += 1
+        print("FAIL [guide step chord progression round trip]: threw \(error)")
+    }
+}
+
+/// Every guide file saved before chord progressions existed stores each step as a bare
+/// `ModeReference` (no "mode" key) — `GuideStep.init(from:)` must still load these.
+func testGuideStepDecodesOldBareModeReferenceFormat() {
+    let json = #"{"title":"Old Format","steps":[{"scaleID":"dorian","tonic":2}]}"#.data(using: .utf8)!
+    do {
+        let decoded = try JSONDecoder().decode(GuideSequence.self, from: json)
+        check(decoded.steps.count, 1, "old-format guide file decodes its one step")
+        check(decoded.steps.first?.mode, ModeReference(tonic: 2, scaleID: "dorian"), "old-format step's bare ModeReference becomes GuideStep.mode")
+        checkNil(decoded.steps.first?.chordProgressionName, "old-format step has no chord progression name")
+        checkNil(decoded.steps.first?.chordProgression, "old-format step has no chord progression")
+    } catch {
+        failures += 1
+        print("FAIL [old-format guide step decode]: threw \(error)")
+    }
+}
+
+func testRomanNumeralChordParseHandlesUpperLowerAndDiminished() {
+    check(RomanNumeralChord.parse("I")?.quality, .major, "I is major")
+    check(RomanNumeralChord.parse("I")?.degree, 1, "I is degree 1")
+    check(RomanNumeralChord.parse("vi")?.quality, .minor, "vi is minor")
+    check(RomanNumeralChord.parse("vi")?.degree, 6, "vi is degree 6")
+    check(RomanNumeralChord.parse("vii°")?.quality, .diminished, "vii° is diminished")
+    check(RomanNumeralChord.parse("vii°")?.degree, 7, "vii° is degree 7")
+    checkNil(RomanNumeralChord.parse("VIII"), "VIII is not a valid roman numeral (out of range)")
+    checkNil(RomanNumeralChord.parse("xyz"), "garbage text does not parse")
+}
+
+func testResolveChordProgressionAppliesLiteralCaseAsQualityInCIonian() {
+    let session = ImprovSession()
+    let mode = Mode(tonic: PitchClass(0), scale: ScaleLibrary.byID("ionian")!)
+    let blues = ChordProgressionTemplate.builtInDefaults[0] // I I I I IV IV I I V IV I I
+    let resolved = session.resolveChordProgression(blues, in: mode)
+    check(resolved.count, 12, "blues progression resolves to 12 chords")
+    check(resolved.first?.root, 0, "first chord (I) is rooted on C")
+    check(resolved.first?.chordTemplateID, "Ma", "I is taken literally as major")
+    check(resolved[4].root, 5, "5th chord (IV) is rooted on F")
+    check(resolved[8].root, 7, "9th chord (V) is rooted on G")
+}
+
 // MARK: - RecognitionEngineTests (mirrors Tests/RecognitionEngineTests/RecognitionEngineTests.swift)
 
 func testRecognizesBareMajorTriadAsATriadNotA7thChord() {
@@ -2999,6 +3059,10 @@ testNewGuideSequenceThenAddStepsThenStartAndAdvance()
 testAddGuideStepWithoutASequenceThrows()
 testAddGuideStepWithUnknownScaleIDThrowsAndDoesNotAppendAStep()
 testGuideSequenceSaveAndLoadRoundTrips()
+testGuideStepWithChordProgressionRoundTripsThroughJSON()
+testGuideStepDecodesOldBareModeReferenceFormat()
+testRomanNumeralChordParseHandlesUpperLowerAndDiminished()
+testResolveChordProgressionAppliesLiteralCaseAsQualityInCIonian()
 testTrackIDWireIDTextRoundTrips()
 testSceneSaveAndLoadRoundTripsTrackListeningAndSound()
 testLoadSceneLeavesTracksNotMentionedUntouched()

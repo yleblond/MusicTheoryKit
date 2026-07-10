@@ -15,10 +15,11 @@ cd MusicTheoryKit
 swift run JamShack
 ```
 
-Au lancement, l'application écoute automatiquement ses dossiers de travail par défaut
-(morceaux, sons, connexions LLM, soundtracks, composition IA), situés à côté de
-`MusicTheoryKit/`. Tape `help` pour la liste des commandes, ou utilise les menus (`run`/
-`config`, voir plus bas).
+Au lancement, l'application écoute automatiquement ses dossiers de travail par défaut, situés
+à côté de `MusicTheoryKit/` et organisés en trois dossiers racine : `Settings/` (palettes de
+couleur, progressions d'accords, connexions LLM), `User/` (morceaux, scènes, guides musicaux,
+soundtracks, composition IA), `Library/` (SoundFonts). Tape `help` pour la liste des commandes,
+ou utilise les menus (`run`/`config`, voir plus bas).
 
 **Environnement requis** : macOS, les Command Line Tools suffisent (Xcode complet non
 nécessaire pour utiliser l'application — seulement pour lancer `swift test`, voir plus bas).
@@ -40,7 +41,11 @@ nécessaire pour utiliser l'application — seulement pour lancer `swift test`, 
   hors accord, notes du mode) pour chaque piste en écoute.
 - **Guide musical** : construire une séquence de modes à parcourir en jouant (flèches
   gauche/droite ou barre d'espace pour démarrer/arrêter), avec un écran dédié affichant le
-  clavier du mode courant et ses voisins sur le cycle des quintes.
+  clavier du mode courant et ses voisins sur le cycle des quintes. Chaque étape peut aussi
+  recevoir une **progression d'accords** choisie dans une bibliothèque de templates en
+  notation relative (chiffres romains — blues, ii-V-I, cadence andalouse…), résolue contre le
+  mode de l'étape — presque un mini-morceau, à ceci près qu'il manque encore les lignes
+  mélodiques.
 - **Cercle des quintes visuel** (console web) : les 12 tonalités, 3 anneaux d'accords
   (majeur/mineur/diminué), le contour des 7 accords diatoniques de la tonalité active, et le
   nom du mode en cours — recalculé automatiquement selon la piste/le morceau/le guide actif.
@@ -80,6 +85,11 @@ nécessaire pour utiliser l'application — seulement pour lancer `swift test`, 
   automatique via Bonjour), chaque participant voit apparaître les pistes de tout le monde,
   avec reconnaissance d'accord/mode calculée une seule fois côté serveur. Le son reste toujours
   une décision locale — jamais forcé par le réseau.
+- **Plan de scène** : une vue arborescente de qui est connecté et avec quels instruments —
+  l'application, ses instruments locaux, l'état de la console web et du clavier virtuel, et en
+  mode serveur la liste des clients connectés avec leurs propres instruments. Disponible en
+  ASCII dans le terminal (`scene-tree`) et dans un onglet dédié de la console web, à côté de
+  l'onglet `Run`.
 - **Console Web** : un miroir en lecture seule de l'activité musicale, dans un navigateur —
   utile pour l'afficher sur un second écran, via un petit serveur HTTP fait main (aucune
   dépendance tierce). Mise en page adaptative (deux colonnes, profite de l'espace sur un grand
@@ -89,8 +99,8 @@ nécessaire pour utiliser l'application — seulement pour lancer `swift test`, 
   cercle des quintes — toujours affiché, pas seulement pendant un guide musical), serveur HTTP
   distinct de la console web, mise en page à deux colonnes. Plusieurs navigateurs peuvent s'y
   connecter à la fois, chacun avec sa propre piste et son propre nom affiché. Le clavier de
-  l'ordinateur couvre ~2,3 octaves par une disposition à deux rangées superposées, mappée par
-  position physique (correcte sur QWERTZ/AZERTY, pas seulement QWERTY), avec glissement
+  l'ordinateur couvre ~2,5 octaves (de Fa à Si) par une disposition à deux rangées superposées,
+  mappée par position physique (correcte sur QWERTZ/AZERTY, pas seulement QWERTY), avec glissement
   d'octave (C0 à C6, flèches/clic sur une vue d'ensemble miniature/raccourcis clavier) pour
   couvrir tout un piano. Pendant un guide musical, Tab/Maj+Tab avancent/reculent d'une étape.
 - **Palettes de couleur** : une couleur par note (et une couleur de texte assortie, pour
@@ -145,7 +155,7 @@ Pour le détail complet (modules, concurrence, points de conception), voir
 ```sh
 cd MusicTheoryKit
 swift build                 # compile tout
-swift run SanityChecks      # exécute tous les checks (521 a ce jour, 0 echec)
+swift run SanityChecks      # exécute tous les checks (540 a ce jour, 0 echec)
 ```
 
 Cette machine de développement n'a que les Command Line Tools (pas Xcode complet), donc

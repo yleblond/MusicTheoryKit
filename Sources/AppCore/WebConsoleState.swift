@@ -30,6 +30,32 @@ struct WebConsoleState: Codable {
     /// background color (a light background needs dark text and vice versa; see
     /// `ColorPalette.textColors`'s doc comment for why this isn't purely formulaic).
     var paletteTextColors: [String]
+    /// The scene tree — same information the terminal's `scene-tree` command renders as
+    /// ASCII box-drawing, see `ImprovSession.buildWebConsoleSceneState()`. Always present
+    /// (not gated behind server mode), like every other top-level field here — `clients` is
+    /// just empty outside `.server`.
+    var scene: WebConsoleSceneState
+}
+
+/// See `WebConsoleState.scene`'s doc comment.
+struct WebConsoleSceneState: Codable {
+    /// "solo" | "serveur sur le port N" | "connecte a <description>" — same text as the
+    /// terminal's `networkRoleText()`.
+    var networkRoleText: String
+    var webConsolePort: Int?
+    var virtualKeyboardPort: Int?
+    /// Every non-`.remote` track (mirrors `printSceneTree`'s "Instruments locaux" section) —
+    /// reuses `WebConsoleTrackState`, the same shape `tracks` already sends.
+    var localInstruments: [WebConsoleTrackState]
+    /// Every currently-connected jam-session participant and their announced instruments —
+    /// always empty outside `.server` (see `ImprovSession.connectedClients()`).
+    var clients: [WebConsoleSceneClientState]
+}
+
+struct WebConsoleSceneClientState: Codable {
+    var clientID: String
+    var name: String
+    var instruments: [WebConsoleTrackState]
 }
 
 struct WebConsoleTrackState: Codable {
@@ -39,6 +65,14 @@ struct WebConsoleTrackState: Codable {
     /// for every local track — same "no need to label your own tracks with your own name"
     /// convention as the terminal's `ownerSuffix(_:)`.
     var owner: String?
+    /// Unused by the Run tab (`state.tracks` only ever contains listening tracks already),
+    /// but needed by the Scene tab's tree (`WebConsoleSceneState`), which lists every
+    /// instrument regardless of listening state — mirrors the terminal scene tree's own
+    /// "ecoute: oui/non, son: oui/non" line.
+    var isListening: Bool
+    var canHaveSound: Bool
+    var soundEnabled: Bool
+    var instrumentName: String?
     var heldPitches: [Int]
     var chordRoot: Int?
     var chordTones: [Int]
@@ -79,6 +113,14 @@ struct WebConsoleGuideState: Codable {
     /// Aggregated held pitches across every listening track, for the Guide panel's own
     /// keyboard — the guide has no chord of its own, so there's no root/tone coloring here.
     var heldPitches: [Int]
+    /// The current step's attached chord progression (see `PieceModel.GuideStep`), if any —
+    /// `nil`/empty otherwise. Display-only: just enough to show "this step has a X
+    /// progression attached" under the guide's title; there's no playback of it yet.
+    var currentChordProgressionName: String?
+    /// Pre-formatted chord labels (e.g. "CMa", "Dmi", "Bdim"), in progression order — same
+    /// "server already formatted it, client just shows the string" convention as
+    /// `WebConsoleTrackState.chordLabel`.
+    var currentChordProgression: [String]
 }
 
 struct WebConsoleGuideStepState: Codable {

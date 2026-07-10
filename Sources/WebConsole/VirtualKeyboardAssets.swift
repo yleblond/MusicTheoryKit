@@ -13,9 +13,9 @@
 /// octave overview + arrows, and the actual playable piano, so "what you're about to play"
 /// and "what you're actually playing" read side by side.
 ///
-/// **Computer keyboard**: two overlaid row-pairs (`KEY_MAP`) cover ~2.3 octaves at once
-/// (bass: number row + `qwertyuiop`; treble, continuing right above it: `S D G H J` + the
-/// bottom letter row), mapped by physical position (`KeyboardEvent.code`) rather than by
+/// **Computer keyboard**: two overlaid row-pairs (`KEY_MAP`) cover ~2.5 octaves at once
+/// (bass: number row + `` ` `` + `qwertyuiop`; treble, continuing right above it: `S D G H J`
+/// + the bottom letter row), mapped by physical position (`KeyboardEvent.code`) rather than by
 /// character — stays correct on a QWERTZ/AZERTY/etc. keyboard, not just the US layout the
 /// letters are named after. `shiftOctave()`/`applyOctaveIndex()` (the ◂/▸ arrows flanking the
 /// mini-piano overview, `ArrowLeft`/`ArrowRight`, or `<`/`-` next to Shift on an ISO keyboard)
@@ -190,14 +190,24 @@ public let virtualKeyboardAppJS = """
 // produces there, so this mapping stays positionally correct on a QWERTZ keyboard (which
 // swaps the Y/Z labels but not their physical slots), AZERTY, etc. — only the on-screen
 // LABEL (`codeLabels` below) needs to know what the visitor's layout actually prints.
-const BASS_WHITE_CODES = ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP'];
-// G A B C D E F G A B, relative to the octave anchor (`root`, below) — ends on a B so the
+// `Backquote` (the `` ` ``/`~` key, top-left corner) extends the white row one note further
+// left than `KeyQ` alone would reach — starting the bass register on a G read as ambiguous at
+// a glance ("on peut penser que ca commence sur un Do"), so it now starts two semitones lower,
+// on F, matching a real piano's own F-to-B landmark rather than an arbitrary cutoff.
+// `Backquote` exists on every keyboard (ANSI and ISO alike), unlike `IntlBackslash` (used
+// for the octave-shift shortcut elsewhere) — a safe choice for a mapping that needs to work
+// everywhere.
+const BASS_WHITE_CODES = ['Backquote', 'KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP'];
+// F G A B C D E F G A B, relative to the octave anchor (`root`, below) — ends on a B so the
 // treble register can start clean on the very next natural note, a C (see TREBLE_WHITE_OFFSETS).
-const BASS_WHITE_OFFSETS = [-5, -3, -1, 0, 2, 4, 5, 7, 9, 11];
-const BASS_BLACK_CODES = ['Digit2', 'Digit3', 'Digit5', 'Digit6', 'Digit8', 'Digit9', 'Digit0'];
-// Digit1/4/7 are skipped (no key maps to them) — Digit1 sits above the Q-side edge, Digit4/7
-// sit above the two "natural" gaps (B-C, E-F) that have no black key at all.
-const BASS_BLACK_OFFSETS = [-4, -2, 1, 3, 6, 8, 10];
+const BASS_WHITE_OFFSETS = [-7, -5, -3, -1, 0, 2, 4, 5, 7, 9, 11];
+// `Digit1` now sits exactly above the new Backquote-Q gap (F-G) — the same physical-row-offset
+// convention already used for every other digit here, so Digit2..Digit0's own offsets below
+// are completely unchanged from before this key was added.
+const BASS_BLACK_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit5', 'Digit6', 'Digit8', 'Digit9', 'Digit0'];
+// Digit4/7 are skipped (no key maps to them) — they sit above the two "natural" gaps (B-C,
+// E-F) that have no black key at all.
+const BASS_BLACK_OFFSETS = [-6, -4, -2, 1, 3, 6, 8, 10];
 const TREBLE_WHITE_CODES = ['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM'];
 const TREBLE_WHITE_OFFSETS = [12, 14, 16, 17, 19, 21, 23]; // C D E F G A B, straight after the bass register's last B
 // Shifted one key right of the naive "same shape as the bass row" alignment (KeyA/KeyD would
@@ -209,16 +219,16 @@ const TREBLE_BLACK_OFFSETS = [13, 15, 18, 20, 22];
 
 // C0..C6 (MIDI 12..84, scientific pitch notation — same convention as the old fixed
 // `MIN_MIDI`/`MAX_MIDI` this replaces) — anchor points `shiftOctave()` steps through, so the
-// ~2.3-octave window the two row-pairs above cover can slide across a real 88-key piano's
+// ~2.5-octave window the two row-pairs above cover can slide across a real 88-key piano's
 // full range instead of being stuck wherever it started. `root` is the reference C landmark
-// (`KeyR`, the bass register's 4th white key) — NOT the window's own lowest note, which sits
-// 5 semitones below it (see `BASS_WHITE_OFFSETS`).
+// (`KeyR`, the bass register's 5th white key) — NOT the window's own lowest note, which sits
+// 7 semitones below it (see `BASS_WHITE_OFFSETS`).
 const OCTAVE_STOPS = [12, 24, 36, 48, 60, 72, 84];
 let octaveIndex = 3; // C3 — close to the old fixed layout's own MIN_MIDI, kept as the default
 let MIN_MIDI, MAX_MIDI, KEY_MAP, pitchToCode;
 function recomputeKeyRange() {
   const root = OCTAVE_STOPS[octaveIndex];
-  MIN_MIDI = root - 5; // the bass register's own lowest note (a G)
+  MIN_MIDI = root - 7; // the bass register's own lowest note (an F)
   MAX_MIDI = root + 23; // the treble register's last white key (KeyM, a B)
   KEY_MAP = {};
   BASS_WHITE_CODES.forEach((code, i) => { KEY_MAP[code] = root + BASS_WHITE_OFFSETS[i]; });
@@ -237,6 +247,7 @@ recomputeKeyRange();
 // always for every code except KeyY/KeyZ (see `applyKeyboardLayout` below). Uppercase
 // already, per "en majuscule".
 const CODE_QWERTY_LABEL = {
+  Backquote: '`',
   KeyQ: 'Q', KeyW: 'W', KeyE: 'E', KeyR: 'R', KeyT: 'T', KeyY: 'Y', KeyU: 'U', KeyI: 'I', KeyO: 'O', KeyP: 'P',
   KeyA: 'A', KeyS: 'S', KeyD: 'D', KeyF: 'F', KeyG: 'G', KeyH: 'H', KeyJ: 'J',
   KeyZ: 'Z', KeyX: 'X', KeyC: 'C', KeyV: 'V', KeyB: 'B', KeyN: 'N', KeyM: 'M',
@@ -565,7 +576,7 @@ function renderMiniPianoOverview() {
     const x = slot * MINI_WHITE_WIDTH - MINI_BLACK_WIDTH / 2;
     svg += `<rect class="mini-key-black" x="${x}" y="0" width="${MINI_BLACK_WIDTH}" height="${MINI_BLACK_HEIGHT}" />`;
   }
-  // Both always land on a white key (G and B respectively — see `BASS_WHITE_OFFSETS`/
+  // Both always land on a white key (F and B respectively — see `BASS_WHITE_OFFSETS`/
   // `TREBLE_WHITE_OFFSETS`), so a plain white-key-slot lookup is enough for both edges.
   const highlightX1 = miniWhiteSlot(MIN_MIDI) * MINI_WHITE_WIDTH;
   const highlightX2 = (miniWhiteSlot(MAX_MIDI) + 1) * MINI_WHITE_WIDTH;
@@ -723,8 +734,8 @@ function ensureKeyboardBuilt() {
   // drop whatever the previous range's keyboard div was.
   document.getElementById('keyboard-container').innerHTML = '';
   // Octave number relative to a fixed reference (pitch 0), not to `MIN_MIDI` itself — `MIN_MIDI`
-  // is no longer always a C (the bass register now starts on a G, see `BASS_WHITE_OFFSETS`),
-  // and computing `octave` from `pitch - MIN_MIDI` silently assumed it was: G2 would land in
+  // is no longer always a C (the bass register now starts on an F, see `BASS_WHITE_OFFSETS`),
+  // and computing `octave` from `pitch - MIN_MIDI` silently assumed it was: F2 would land in
   // "octave 0" while the very next C landed in "octave 1", pushing it 7 white-key slots to the
   // RIGHT of where it belongs and scrambling the whole keyboard's left-to-right order.
   const octaveBase = Math.floor(MIN_MIDI / 12);
@@ -732,7 +743,7 @@ function ensureKeyboardBuilt() {
     const pc = ((pitch % 12) + 12) % 12;
     return (Math.floor(pitch / 12) - octaveBase) * 7 + WHITE_SLOT_BY_SEMITONE[pc];
   }
-  // MIN_MIDI/MAX_MIDI are always white (G and B respectively — see `BASS_WHITE_OFFSETS`/
+  // MIN_MIDI/MAX_MIDI are always white (F and B respectively — see `BASS_WHITE_OFFSETS`/
   // `TREBLE_WHITE_OFFSETS`), so both ends have a well-defined white-key slot. Subtracting
   // `leftWhiteSlotOffset` from every position below (instead of just starting the slot count
   // at whatever `octaveBase*7` happens to land on) is what makes MIN_MIDI's own key start

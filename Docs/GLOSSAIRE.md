@@ -193,6 +193,36 @@ environnement précis : toute nouvelle fonctionnalité doit gagner un cas dans l
 (le vrai test `XCTest`, prêt pour le jour où Xcode sera installé, **et** son miroir dans
 `SanityChecks`, seul moyen actuel de le vérifier réellement).
 
+## « Scène » — deux concepts sans rapport, malgré le nom
+
+- **`AppCore.Scene`** (menu **Scene** > sauvegarder/charger une scène, commandes
+  `save-scene`/`use-scene`) — une **configuration d'instruments sauvegardée** (quelles pistes
+  écoutent, avec quel son) : un instantané rechargeable, sans aucun rapport avec le réseau.
+- **« Plan de scène »** (commande `scene-tree`, onglet **Scene** de la console web — voir
+  `ARCHITECTURE.md` §"Plan de scène") — une **vue en arbre de qui est connecté et avec quels
+  instruments**, en direct : l'application, ses instruments locaux, l'état de la console
+  web/du clavier virtuel, et en mode serveur les clients de la Jam Session avec leurs propres
+  pistes. Rien à sauvegarder ici — c'est un affichage, pas une configuration.
+
+Les deux vivent dans le même menu **Scene** (par coïncidence de nom), mais ne partagent aucun
+code ni aucune donnée.
+
+## « Progression d'accords » — deux notations, deux granularités
+
+- **`Section.chords: [ChordEvent]`** (module `PieceModel`) — une progression **absolue et
+  chronométrée** : chaque accord porte sa position exacte (mesure/temps/durée), son inversion,
+  sa basse alternative, son style de jeu — la progression réelle d'un `Piece` composé/joué.
+- **`ChordProgressionTemplate.degrees: [String]`** (module `AppCore`, fichier
+  `chordprogressions.json`) — une progression **relative et sans timing**, en chiffres romains
+  ("I", "vi", "vii°" — voir `MusicTheoryKit.RomanNumeralChord`), applicable à n'importe quel
+  mode/tonique. Résolue en `[ChordReference]` (accords concrets, toujours sans timing) au
+  moment où on l'attache à une étape du guide musical (`GuideStep.chordProgression`) — jamais
+  stockée sous sa forme relative une fois attachée.
+
+Le second n'est jamais qu'une bibliothèque de *templates* pour produire, une fois résolu
+contre un mode, quelque chose qui ressemble au premier sans timing — les deux ne se
+convertissent pas automatiquement l'un vers l'autre.
+
 ## Candidat (`compose-piece-from-soundtrack`)
 
 Quand `compose-piece-from-soundtrack <n>` est appelé avec `n > 1`, l'IA produit `n` tentatives
