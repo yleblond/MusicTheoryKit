@@ -13,9 +13,11 @@ import Foundation
 /// `WebConsoleGuideState.currentModeTones`) is degree-ordered, not an arbitrary set order:
 /// index 0 is scale degree 1, index 1 is degree 2, etc. — this is what lets the role-line
 /// badges show each note's degree number, not just "in the mode or not".
-struct WebConsoleState: Codable {
+public struct WebConsoleState: Codable {
     var lastEvent: String?
-    var tracks: [WebConsoleTrackState]
+    /// `public` (unlike most fields here) so `Tests/AppCoreTests`/`SanityChecks` can read
+    /// `recentChordEvents` off a track without standing up the HTTP layer just to unit-test it.
+    public var tracks: [WebConsoleTrackState]
     var playback: WebConsolePlaybackState?
     var soundTrackPlayback: WebConsoleSoundTrackPlaybackState?
     /// Always present (not gated behind an active guide) — see `WebConsoleWheelState`.
@@ -58,8 +60,9 @@ struct WebConsoleSceneClientState: Codable {
     var instruments: [WebConsoleTrackState]
 }
 
-struct WebConsoleTrackState: Codable {
-    var id: String
+public struct WebConsoleTrackState: Codable {
+    /// `public` (see `WebConsoleState.tracks`'s own doc comment for why).
+    public var id: String
     var label: String
     /// The owning participant's pseudo for a `.remote` track (`TrackInfo.ownerName`), `nil`
     /// for every local track — same "no need to label your own tracks with your own name"
@@ -80,6 +83,28 @@ struct WebConsoleTrackState: Codable {
     var chordLabel: String?
     var modesLabel: String?
     var microphoneLevel: Float?
+    /// A rolling log of this track's last ~20 distinct held-pitches/chord snapshots, oldest
+    /// first — appended server-side the instant the recognized state actually changes
+    /// (`ImprovSession.refreshRecognition`), NOT sampled by however often a browser happens to
+    /// poll `GET /state`. Exists so the web console's/virtual keyboard's staff history can't
+    /// silently miss a chord that was played and released faster than the ~150-250ms poll
+    /// interval — a real, reported bug when the staff instead tried to reconstruct this history
+    /// client-side by diffing successive polls (see `StaticAssets.swift`/
+    /// `VirtualKeyboardAssets.swift`'s own history-rendering code, which just draws this array
+    /// now instead of building its own). `public` (see `WebConsoleState.tracks`'s own doc
+    /// comment for why).
+    public var recentChordEvents: [WebConsoleChordEvent]
+}
+
+/// One entry in `WebConsoleTrackState.recentChordEvents` — deliberately the same shape as the
+/// staff's own per-event JS object (`{pitches, chordRoot, chordTones}`) so the client can just
+/// draw this array with no reshaping. `public` (see `WebConsoleState.tracks`'s own doc comment
+/// for why) — read-only from outside `AppCore`, constructed only via the internal memberwise
+/// init `ImprovSession` itself uses, no public initializer needed.
+public struct WebConsoleChordEvent: Codable {
+    public var pitches: [Int]
+    public var chordRoot: Int?
+    public var chordTones: [Int]
 }
 
 struct WebConsoleTimelineSegment: Codable {

@@ -188,6 +188,12 @@ public final class ImprovSession: @unchecked Sendable {
     /// new (need a note-on) and which dropped out (need a note-off) on the next detection
     /// round, instead of resending the same held notes every ~93ms.
     private var lastDetectedMIDIPitches: [TrackID: Set<Int>] = [:]
+    /// One rolling event log per track, appended in `refreshRecognition` the instant the
+    /// held-pitches/chord actually changes — see `WebConsoleTrackState.recentChordEvents`'s
+    /// own doc comment for why this lives here (server-side, change-triggered) rather than
+    /// being reconstructed client-side by diffing successive `GET /state` polls.
+    private var recentChordEvents: [TrackID: [WebConsoleChordEvent]] = [:]
+    private static let maxRecentChordEvents = 20
     /// Serializes every track's recognition-state mutation regardless of which thread calls
     /// in. It used to run wherever the caller happened to be — fine while callers were
     /// effectively serial in practice. The computer-keyboard track's auto-release timers
@@ -1392,6 +1398,7 @@ public final class ImprovSession: @unchecked Sendable {
             tracks[index].microphoneInputLevel = 0
         }
         lastDetectedMIDIPitches[id] = nil
+        recentChordEvents[id] = nil
         tracks[index].isListening = false
         append("Piste '\(tracks[index].label)' : ecoute arretee.")
         unannounceTrackToServerIfClient(id)
@@ -1592,6 +1599,33 @@ public final class ImprovSession: @unchecked Sendable {
                 append("\(label) - Mode candidates: " + modes.map(Self.describe).joined(separator: ", "))
             }
         }
+
+        recordChordEventIfChanged(track: track, heldPitches: tracks[index].heldPitches, chord: chord)
+    }
+
+    /// Appends to this track's `recentChordEvents` the instant the held-pitches/chord actually
+    /// changes — called on every single note on/off, same as `refreshRecognition` itself, so a
+    /// chord that's played and released faster than a browser's poll interval still lands in
+    /// the log exactly once, instead of possibly never being observed at all (the bug this
+    /// replaces: the staff history used to be reconstructed client-side by diffing successive
+    /// `GET /state` polls, which could miss anything faster than ~150-250ms). A full release
+    /// (empty `heldPitches`) is never appended — same "last-played event stays visible, no
+    /// blank rest entries" convention the client-side version already established.
+    private func recordChordEventIfChanged(track: TrackID, heldPitches: Set<Int>, chord: RecognizedChord?) {
+        guard !heldPitches.isEmpty else { return }
+        let (chordTones, _) = Self.pitchClassSets(
+            forChordRoot: chord?.root.value, chordTemplateID: chord?.chordTemplateID, modeTonic: nil, scaleID: nil
+        )
+        let event = WebConsoleChordEvent(
+            pitches: heldPitches.sorted(), chordRoot: chord?.root.value, chordTones: chordTones.sorted()
+        )
+        var log = recentChordEvents[track] ?? []
+        if let last = log.last, last.pitches == event.pitches, last.chordRoot == event.chordRoot, last.chordTones == event.chordTones {
+            return
+        }
+        log.append(event)
+        if log.count > Self.maxRecentChordEvents { log.removeFirst() }
+        recentChordEvents[track] = log
     }
 
     private static func describe(_ chord: RecognizedChord) -> String {
@@ -1727,11 +1761,15 @@ public final class ImprovSession: @unchecked Sendable {
         webConsoleStateQueue.sync { webConsoleStateCache = data }
     }
 
-    private func buildWebConsoleState() -> WebConsoleState {
+    /// `public` (not `private`) so `Tests/AppCoreTests` AND `SanityChecks` (a genuinely
+    /// different module — no `@testable import` there, so `internal` wouldn't be visible to
+    /// it) can exercise `recentChordEvents` directly, without standing up the HTTP layer just
+    /// to unit-test the event log.
+    public func buildWebConsoleState() -> WebConsoleState {
         let lastEvent = lastMIDIEvent.map { "\($0.kind == .noteOn ? "on " : "off")pitch=\($0.pitch) vel=\($0.velocity)" }
 
         let listeningTracks: [TrackInfo] = liveInputQueue.sync { tracks.filter { $0.isListening } }
-        let trackStates = listeningTracks.map(Self.webConsoleTrackState)
+        let trackStates = listeningTracks.map(self.webConsoleTrackState)
 
         let playback: WebConsolePlaybackState? = playbackStateQueue.sync {
             guard isPlaying else { return nil }
@@ -1777,12 +1815,12 @@ public final class ImprovSession: @unchecked Sendable {
         let allTracks = liveInputQueue.sync { tracks }
         let localInstruments = allTracks
             .filter { if case .remote = $0.id { return false }; return true }
-            .map(Self.webConsoleTrackState)
+            .map(self.webConsoleTrackState)
 
         let clients = connectedClients().map { client in
             let instruments = allTracks
                 .filter { if case .remote(let clientID, _) = $0.id { return clientID == client.clientID }; return false }
-                .map(Self.webConsoleTrackState)
+                .map(self.webConsoleTrackState)
             return WebConsoleSceneClientState(clientID: client.clientID, name: client.name, instruments: instruments)
         }
 
@@ -1857,7 +1895,7 @@ public final class ImprovSession: @unchecked Sendable {
             // client-side while no guide is running — see `app.js`'s own `renderWheel`.
             let listeningTracks: [TrackInfo] = liveInputQueue.sync { tracks.filter(\.isListening) }
             let wheelState = buildWebConsoleWheelState(listeningTracks: listeningTracks)
-            let response = VirtualKeyboardStateResponse(track: info.map(Self.webConsoleTrackState), guide: isGuideActive ? guideState : nil, wheel: wheelState, palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors)
+            let response = VirtualKeyboardStateResponse(track: info.map(self.webConsoleTrackState), guide: isGuideActive ? guideState : nil, wheel: wheelState, palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors)
             guard let data = try? JSONEncoder().encode(response) else { return .notFound() }
             return HTTPResponse(contentType: "application/json", body: data)
         case "/note-on":
@@ -2032,21 +2070,22 @@ public final class ImprovSession: @unchecked Sendable {
     /// the flat pitch-class sets/labels the browser needs — same computation
     /// `renderTrackKeyboard`/`chordDisplayText`/`modesDisplayText` do in `JamShack/main.swift`
     /// for the terminal's own keyboard, just producing data instead of ANSI text.
-    private static func webConsoleTrackState(_ track: TrackInfo) -> WebConsoleTrackState {
-        let (chordTones, modeTones) = pitchClassSets(
+    private func webConsoleTrackState(_ track: TrackInfo) -> WebConsoleTrackState {
+        let (chordTones, modeTones) = Self.pitchClassSets(
             forChordRoot: track.recognizedChord?.root.value, chordTemplateID: track.recognizedChord?.chordTemplateID,
             modeTonic: track.recognizedModes.first?.tonic.value, scaleID: track.recognizedModes.first?.scaleID
         )
-        let chordLabel = track.recognizedChord.map(describe) ?? (track.remoteChordDisplay)
-        let modesLabel = !track.recognizedModes.isEmpty ? track.recognizedModes.map(describe).joined(separator: ", ") : track.remoteModesDisplay
+        let chordLabel = track.recognizedChord.map(Self.describe) ?? (track.remoteChordDisplay)
+        let modesLabel = !track.recognizedModes.isEmpty ? track.recognizedModes.map(Self.describe).joined(separator: ", ") : track.remoteModesDisplay
         return WebConsoleTrackState(
-            id: webConsoleTrackIDText(track.id), label: track.label, owner: track.ownerName,
+            id: Self.webConsoleTrackIDText(track.id), label: track.label, owner: track.ownerName,
             isListening: track.isListening, canHaveSound: track.canHaveSound, soundEnabled: track.soundEnabled,
             instrumentName: track.instrumentName,
             heldPitches: Array(track.heldPitches),
             chordRoot: track.recognizedChord?.root.value, chordTones: chordTones, modeTones: modeTones,
             chordLabel: chordLabel, modesLabel: modesLabel,
-            microphoneLevel: track.id == .microphone ? track.microphoneInputLevel : nil
+            microphoneLevel: track.id == .microphone ? track.microphoneInputLevel : nil,
+            recentChordEvents: recentChordEvents[track.id] ?? []
         )
     }
 

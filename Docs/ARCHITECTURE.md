@@ -448,18 +448,39 @@ correction doit être répercutée dans les deux.
   SVG (donc peintes par-dessus), continuent de bien apparaître au premier plan.
 - **Historique d'événements, pas un instantané** (`STAFF_HISTORY_LENGTH = 20`, initialement 12
   puis agrandi — "il y a assez de place") : `renderStaffSVG`
-  prend désormais un tableau d'événements `{ pitches, chordRoot, chordTones }` (un événement =
-  une colonne, la plus ancienne à gauche) plutôt que les seules notes tenues à l'instant présent
-  — chaque piste/clavier virtuel garde son propre historique roulant (`updateStaffHistory`
-  côté console, indexé par id de piste ; `staffHistory`, un simple tableau, côté clavier virtuel
-  qui n'a qu'une seule piste). `pushStaffEvent` n'ajoute une colonne que si l'instantané courant
-  diffère du dernier événement enregistré ET qu'il y a au moins une note tenue — un relâchement
-  complet ne pousse pas d'événement "silence" (le dernier accord/note joué reste affiché tel
-  quel), et une note seule tenue sans accord reconnu est un événement à part entière (gris),
-  au même titre qu'un accord. La largeur du SVG grandit avec le nombre de colonnes ; `.staff`
-  passe donc de `width: <fixe>` à `width: auto` (hauteur fixe, ratio préservé) pour que
+  prend un tableau d'événements `{ pitches, chordRoot, chordTones }` (un événement = une
+  colonne, la plus ancienne à gauche) plutôt que les seules notes tenues à l'instant présent.
+  Une note seule tenue sans accord reconnu est un événement à part entière (gris), au même
+  titre qu'un accord. La largeur du SVG grandit avec le nombre de colonnes ; `.staff` passe
+  donc de `width: <fixe>` à `width: auto` (hauteur fixe, ratio préservé) pour que
   l'élargissement du contenu élargisse vraiment l'affichage au lieu d'être écrasé dans une
   boîte de taille fixe.
+  **Le tableau est désormais construit côté serveur, pas côté client** (`AppCore/ImprovSession.
+  swift`, `recordChordEventIfChanged` + `recentChordEvents: [TrackID: [WebConsoleChordEvent]]`,
+  servi via `WebConsoleTrackState.recentChordEvents` dans le JSON de `GET /state`). Avant ce
+  correctif, l'historique était construit côté JS : chaque page maintenait son propre tableau
+  roulant (`updateStaffHistory` côté console, indexé par id de piste ; `staffHistory` côté
+  clavier virtuel) et lui poussait une colonne (`pushStaffEvent`) à chaque fois qu'elle recevait
+  un nouvel état via son polling de `GET /state`. Ça créait un vrai trou : le polling a une
+  période fixe, donc tout accord joué ET relâché plus vite que cette période n'était tout
+  simplement jamais vu par le client — l'historique côté navigateur ne pouvait pousser que ce
+  qu'il recevait, pas ce qui s'était réellement passé entre deux requêtes. C'est la cause du
+  signalement utilisateur "des notes/accords se perdent parfois". Corrigé en déplaçant la
+  construction de l'historique à l'endroit où l'état change réellement : `recordChordEventIfChanged`
+  est appelée depuis `refreshRecognition` (donc dans le même chemin protégé par
+  `liveInputQueue.sync` qui traite chaque événement MIDI), et n'ajoute une colonne que si
+  l'instantané courant (pitches/chordRoot/chordTones) diffère du dernier événement enregistré
+  ET qu'il y a au moins une note tenue — même règle qu'avant pour "pas de colonne silence sur
+  un relâchement complet", mais appliquée à la source plutôt qu'à la réception. Les deux pages
+  (`StaticAssets.swift`, `VirtualKeyboardAssets.swift`) se contentent maintenant de lire
+  `track.recentChordEvents` tel quel et de le passer à `renderStaffSVG` — `pushStaffEvent`,
+  `staffHistory`/`staffHistories` et la boucle de purge associée dans `renderRunTab()` ont été
+  supprimés des deux fichiers. Couvert par
+  `testRecentChordEventsLogsChangesAndSkipsRestsOnFullRelease` et
+  `testRecentChordEventsCapsAtTwentyEntries` (`Tests/AppCoreTests/ImprovSessionTests.swift`,
+  mirroré dans `SanityChecks`) — possible maintenant que la logique vit dans `AppCore` (Swift)
+  plutôt que dans le JS embarqué, contrairement au reste de cette section sur la portée qui
+  reste non testable par XCTest/`SanityChecks` (voir plus bas).
 - **Décalage en zigzag pour les secondes tenues ensemble** (`shiftByRow`), par colonne : notes
   triées du grave à l'aigu, une note n'est décalée que si son voisin immédiatement au-dessus
   existe ET n'a pas lui-même déjà été décalé — reproduit le zigzag habituel de gravure plutôt
@@ -644,6 +665,17 @@ retrait des deux bords (pas alignées sur les touches du piano). Implémentation
   l'axe principal, indépendamment de la largeur étirée de la rangée qui les contient) plus les
   `gap` entre eux, mesurés avec `#mini-piano-container` encore vide (texte des étiquettes déjà
   posé, SVG pas encore inséré).
+
+**Flèches `◂`/`▸` recentrées verticalement** (`.octave-arrow`) : `align-items: center` sur
+`.octave-controls` centre correctement la BOÎTE de chaque flèche par rapport au SVG voisin
+(confirmé par `getBoundingClientRect()` — même centre vertical à 0.01px près) — mais l'ENCRE
+visible du glyphe `◂`/`▸` lui-même ne remplit pas symétriquement sa propre boîte de caractère
+(vérifié en l'isolant seul contre une ligne de repère à mi-hauteur dans une capture headless) :
+elle est décalée vers le haut, avec plus de vide en dessous qu'au-dessus — un décalage de police,
+pas un bug de mise en page. D'où le signalement "pas bien centré" malgré un alignement CSS
+techniquement correct. Corrigé par un simple `position: relative; top: 0.12em` sur `.octave-arrow`
+pour compenser ce décalage propre au glyphe, retrouvé par la même méthode que les ajustements de
+clé de portée (rendu du caractère seul contre une grille/ligne de repère, pas une supposition).
 
 **Taille adaptative — tenir sur un MacBook 13"/iPad 11", grandir sur un plus grand écran**
 (`applyResponsiveScale()`) : toute la mise en page à deux colonnes (`#layout-columns`) est mise

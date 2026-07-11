@@ -147,6 +147,11 @@ public let virtualKeyboardIndexHTML = """
   .octave-arrow {
     cursor: pointer; user-select: none; font-size: 1.3rem; line-height: 1; color: #ddd;
     padding: 0 0.2rem;
+    /* `◂`/`▸`'s own ink sits noticeably above center within its glyph box (confirmed by
+       rendering the character alone against a mid-height guide line) — `align-items: center`
+       on `.octave-controls` correctly centers the BOX against the mini-piano next to it, but
+       the visible triangle still reads as sitting too high. Nudged down to compensate. */
+    position: relative; top: 0.12em;
   }
   .octave-arrow:hover { color: #fff; }
   .mini-piano { display: block; flex: 0 0 auto; cursor: pointer; }
@@ -416,15 +421,16 @@ const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 
 const CHORD_SUFFIX = { major: '', minor: 'm', diminished: '°' };
 
 // --- Grand staff (treble + bass) — ported verbatim from `StaticAssets.swift`'s own
-// `renderStaffSVG`/`pushStaffEvent` (see there for the full reasoning behind the row/ledger-
-// line math, the alternating-seconds offset, the clef font-size/offset tuning, and the
-// history/event model); this page has just the one track (its own), so there's a single
-// `staffHistory` array rather than a `Map` keyed by track id.
+// `renderStaffSVG` (see there for the full reasoning behind the row/ledger-line math, the
+// alternating-seconds offset, and the clef font-size/offset tuning). The history it draws
+// (`track.recentChordEvents`) comes straight from the server now, not built/deduped
+// client-side — see that field's own doc comment in `WebConsoleState.swift` for why: a
+// client-side version built by diffing successive `GET /state` polls could silently miss any
+// chord played and released faster than the poll interval, a real reported bug.
 const STAFF_MIN_MIDI = 43; // G2
 const STAFF_MAX_MIDI = 84; // C6
 const STAFF_LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const STAFF_LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-const STAFF_HISTORY_LENGTH = 20;
 
 const STAFF_ROWS = (() => {
   const naturals = [];
@@ -542,19 +548,6 @@ function renderStaffSVG(history, minWidthPx) {
   return `<div class="staff-scroll">${svg}</div>`;
 }
 
-function pushStaffEvent(history, pitches, chordRoot, chordTones) {
-  if (!pitches || !pitches.length) return history;
-  const sortedPitches = [...pitches].sort((a, b) => a - b);
-  const sortedTones = [...(chordTones || [])].sort((a, b) => a - b);
-  const sig = JSON.stringify(sortedPitches) + '|' + (chordRoot ?? 'null') + '|' + JSON.stringify(sortedTones);
-  const last = history[history.length - 1];
-  if (last && last.sig === sig) return history;
-  history.push({ pitches: sortedPitches, chordRoot: chordRoot ?? null, chordTones: sortedTones, sig });
-  if (history.length > STAFF_HISTORY_LENGTH) history.shift();
-  return history;
-}
-
-const staffHistory = [];
 // Plain triads (root/third/fifth), rooted at a fixed C4-based octave regardless of
 // `shiftOctave()` — lights up real on-screen keys as long as the current octave window
 // happens to overlap C4..G5, same as before this page could slide its own visible range;
@@ -1394,12 +1387,12 @@ async function refresh() {
       (track.modeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc], textColor: PITCH_CLASS_TEXT_COLORS[pc] }; });
       chordLine = track.chordLabel || '<span class="empty">(aucun accord)</span>';
       modeLine = track.modesLabel || '';
-      staffHTML = renderStaffSVG(pushStaffEvent(staffHistory, track.heldPitches, track.chordRoot, track.chordTones), keyboardPixelWidth);
+      staffHTML = renderStaffSVG(track.recentChordEvents || [], keyboardPixelWidth);
     } else {
       heldPitches = new Set(); chordRoot = null; chordTones = new Set(); roles = {};
       chordLine = '<span class="empty">(piste non initialisee)</span>';
       modeLine = '';
-      staffHTML = renderStaffSVG(staffHistory, keyboardPixelWidth);
+      staffHTML = renderStaffSVG([], keyboardPixelWidth);
     }
     // While a guide is running, the role-line (degree badges) switches to ITS mode's notes
     // instead of this track's own recognized mode — "présente le clavier avec les notes du

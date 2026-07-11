@@ -274,6 +274,65 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertNil(session.tracks.first { $0.id == .midiMerged }?.recognizedChord)
     }
 
+    /// `recentChordEvents` is appended server-side the instant the recognized state changes
+    /// (`ImprovSession.recordChordEventIfChanged`), NOT reconstructed by a client polling
+    /// `GET /state` — this exercises that log directly through `buildWebConsoleState()` (made
+    /// `public` for exactly this), independent of any HTTP/polling layer. Deliberately uses
+    /// single notes throughout (not a 3-note chord built one pitch at a time) to keep the
+    /// expected event count unambiguous — playing a chord note by note legitimately produces
+    /// one event per intermediate held-pitches snapshot (1 note, then 2, then 3), which is the
+    /// whole point of this feature (nothing in between gets skipped), not something to work
+    /// around here.
+    func testRecentChordEventsLogsChangesAndSkipsRestsOnFullRelease() throws {
+        let session = ImprovSession()
+        try session.startTrack(.midiMerged)
+        func events() -> [WebConsoleChordEvent] {
+            session.buildWebConsoleState().tracks.first { $0.id == "midi" }?.recentChordEvents ?? []
+        }
+
+        XCTAssertEqual(events().count, 0)
+
+        session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: 60, velocity: 100, channel: 0), track: .midiMerged)
+        XCTAssertEqual(events().count, 1)
+        XCTAssertEqual(events().last?.pitches, [60])
+
+        // A full release must NOT append a blank "rest" entry — the pitch-60 event stays last.
+        session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOff, pitch: 60, velocity: 0, channel: 0), track: .midiMerged)
+        XCTAssertEqual(events().count, 1)
+
+        // A different note is a genuinely new, distinct event.
+        session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: 62, velocity: 100, channel: 0), track: .midiMerged)
+        XCTAssertEqual(events().count, 2)
+        XCTAssertEqual(events().last?.pitches, [62])
+
+        // Repeated note-on for an already-held pitch (e.g. a hardware retrigger) is the exact
+        // same snapshot again — must not append a duplicate.
+        session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: 62, velocity: 100, channel: 0), track: .midiMerged)
+        XCTAssertEqual(events().count, 2)
+
+        session.stopTrack(.midiMerged)
+        XCTAssertEqual(events().count, 0)
+    }
+
+    func testRecentChordEventsCapsAtTwentyEntries() throws {
+        let session = ImprovSession()
+        try session.startTrack(.midiMerged)
+        func events() -> [WebConsoleChordEvent] {
+            session.buildWebConsoleState().tracks.first { $0.id == "midi" }?.recentChordEvents ?? []
+        }
+        // 25 distinct single-note "events" (each pitch on, then off before the next) — well
+        // past the 20-entry cap.
+        for pitch in 60..<85 {
+            session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: pitch, velocity: 100, channel: 0), track: .midiMerged)
+            session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOff, pitch: pitch, velocity: 0, channel: 0), track: .midiMerged)
+        }
+        XCTAssertEqual(events().count, 20)
+        // Oldest entries evicted first — the log should end on the last pitch played (84),
+        // not wrap around or drop the most recent one.
+        XCTAssertEqual(events().last?.pitches, [84])
+        XCTAssertEqual(events().first?.pitches, [65]) // 84 - 20 + 1
+    }
+
     func testStartTrackOnAnUnlistedMIDIPortThrows() {
         let session = ImprovSession()
         // Default fusion mode is `.merged`, so `.midiSource(0)` isn't one of `tracks` yet.

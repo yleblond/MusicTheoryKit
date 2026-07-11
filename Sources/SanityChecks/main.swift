@@ -3166,6 +3166,87 @@ func testHandlingIncomingMIDIEventsDetectsChordPerTrack() {
 }
 testHandlingIncomingMIDIEventsDetectsChordPerTrack()
 
+// Deliberately single notes throughout (not a 3-note chord built one pitch at a time) to keep
+// the expected event count unambiguous — playing a chord note by note legitimately produces
+// one event per intermediate held-pitches snapshot (1 note, then 2, then 3), the whole point of
+// this feature (nothing in between gets skipped), not something to work around here.
+func testRecentChordEventsLogsChangesAndSkipsRestsOnFullRelease() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.startTrack(.midiMerged)
+        func events() -> [WebConsoleChordEvent] {
+            session.buildWebConsoleState().tracks.first { $0.id == "midi" }?.recentChordEvents ?? []
+        }
+
+        if events().count != 0 {
+            failures += 1
+            print("FAIL [recentChordEvents starts empty]: \(events().count)")
+        }
+
+        session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: 60, velocity: 100, channel: 0), track: .midiMerged)
+        if events().count != 1 || events().last?.pitches != [60] {
+            failures += 1
+            print("FAIL [recentChordEvents records first note]: \(events())")
+        }
+
+        // A full release must NOT append a blank "rest" entry — the pitch-60 event stays last.
+        session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOff, pitch: 60, velocity: 0, channel: 0), track: .midiMerged)
+        if events().count != 1 {
+            failures += 1
+            print("FAIL [recentChordEvents skips a blank rest entry on full release]: \(events())")
+        }
+
+        // A different note is a genuinely new, distinct event.
+        session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: 62, velocity: 100, channel: 0), track: .midiMerged)
+        if events().count != 2 || events().last?.pitches != [62] {
+            failures += 1
+            print("FAIL [recentChordEvents records a second distinct note]: \(events())")
+        }
+
+        // Repeated note-on for an already-held pitch (e.g. a hardware retrigger) is the exact
+        // same snapshot again — must not append a duplicate.
+        session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: 62, velocity: 100, channel: 0), track: .midiMerged)
+        if events().count != 2 {
+            failures += 1
+            print("FAIL [recentChordEvents skips a duplicate of the unchanged snapshot]: \(events())")
+        }
+
+        session.stopTrack(.midiMerged)
+        if events().count != 0 {
+            failures += 1
+            print("FAIL [recentChordEvents clears on stopTrack]: \(events())")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [recentChordEvents]: threw \(error)")
+    }
+}
+testRecentChordEventsLogsChangesAndSkipsRestsOnFullRelease()
+
+func testRecentChordEventsCapsAtTwentyEntries() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.startTrack(.midiMerged)
+        func events() -> [WebConsoleChordEvent] {
+            session.buildWebConsoleState().tracks.first { $0.id == "midi" }?.recentChordEvents ?? []
+        }
+        for pitch in 60..<85 {
+            session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: pitch, velocity: 100, channel: 0), track: .midiMerged)
+            session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOff, pitch: pitch, velocity: 0, channel: 0), track: .midiMerged)
+        }
+        if events().count != 20 || events().last?.pitches != [84] || events().first?.pitches != [65] {
+            failures += 1
+            print("FAIL [recentChordEvents caps at 20 entries]: count=\(events().count) first=\(String(describing: events().first?.pitches)) last=\(String(describing: events().last?.pitches))")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [recentChordEvents caps at 20 entries]: threw \(error)")
+    }
+}
+testRecentChordEventsCapsAtTwentyEntries()
+
 func testNewPieceStartsBlank() {
     let session = ImprovSession()
     session.newPiece(title: "My Poem Piece")

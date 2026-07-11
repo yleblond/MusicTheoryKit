@@ -9,7 +9,12 @@
 /// convention, not the compiler — keep both in sync by hand. `modeTones` (everywhere it
 /// appears below) is degree-ordered, not an arbitrary set order: index 0 is scale degree 1,
 /// index 1 is degree 2, etc. — `app.js`'s `keyboardHTML` relies on this to show each note's
-/// degree number, not just "in the mode or not":
+/// degree number, not just "in the mode or not". `recentChordEvents` is a per-track rolling
+/// log appended server-side (`ImprovSession.recordChordEventIfChanged`) the instant the
+/// held-pitches/chord actually changes — `app.js`'s `renderStaffSVG` just draws this array
+/// directly, no client-side history-building/deduping (an earlier version did that by diffing
+/// successive polls, which could silently miss a chord played and released faster than the
+/// poll interval):
 /// ```json
 /// {
 ///   "lastEvent": "on pitch=60 vel=100" | null,
@@ -18,7 +23,8 @@
 ///     "heldPitches": [60, 64, 67],
 ///     "chordRoot": 0 | null, "chordTones": [0, 4, 7], "modeTones": [0, 2, 4, 5, 7, 9, 11],
 ///     "chordLabel": "Cmaj" | null, "modesLabel": "C ionian" | null,
-///     "microphoneLevel": 0.0123 | null
+///     "microphoneLevel": 0.0123 | null,
+///     "recentChordEvents": [{"pitches": [60], "chordRoot": null, "chordTones": []}, ...]
 ///   }],
 ///   "playback": { "timeline": [{"label": "Dm7", "isCurrent": true}], "heldPitches": [...],
 ///                 "chordRoot": 2 | null, "chordTones": [...], "modeTones": [...] } | null,
@@ -234,12 +240,15 @@ function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones) {
 // Shows a short *history* of recent chord/note events (left = oldest, right = most recent/
 // still sounding), not just the current instant — deliberately without any real timing/
 // duration for now (a future pass, possibly LLM-assisted, may retroprocess that): each column
-// is one discrete "what was held" snapshot, not a duration-weighted note. See `pushStaffEvent`.
+// is one discrete "what was held" snapshot, not a duration-weighted note. Built server-side now
+// (`track.recentChordEvents`, see that field's own doc comment in `WebConsoleState.swift`), not
+// reconstructed here by diffing successive `GET /state` polls — a client-side version could
+// silently miss any chord played and released faster than the poll interval, a real reported
+// bug ("des notes/accords se perdent parfois").
 const STAFF_MIN_MIDI = 43; // G2
 const STAFF_MAX_MIDI = 84; // C6
 const STAFF_LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const STAFF_LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-const STAFF_HISTORY_LENGTH = 20;
 
 // One entry per natural note in [STAFF_MIN_MIDI, STAFF_MAX_MIDI], row 0 = highest pitch
 // (descending), each carrying whether it's a staff LINE or a space. Lines/spaces strictly
@@ -322,7 +331,8 @@ const STAFF_NOTE_RX = 9, STAFF_NOTE_RY = 7.5; // near-full interline height (int
 const STAFF_DISPLAY_HEIGHT_PX = 130;
 
 // `history`: array of { pitches: number[], chordRoot: number|null, chordTones: number[] },
-// oldest first, most recent (currently live) last — see `pushStaffEvent`. Each column is drawn
+// oldest first, most recent (currently live) last — straight off the server now
+// (`track.recentChordEvents`), no client-side building/deduping. Each column is drawn
 // independently with its OWN root/tones, so e.g. a single held note with no chord (grey) sits
 // right next to an earlier recognized chord's colored notes without either affecting the other.
 // `minWidthPx`: the staff's on-screen width is never narrower than this — every call site here
@@ -387,34 +397,6 @@ function renderStaffSVG(history, minWidthPx) {
 
   svg += '</svg>';
   return `<div class="staff-scroll">${svg}</div>`;
-}
-
-// Appends a new event to `history` (mutated in place, capped at STAFF_HISTORY_LENGTH) only
-// when the current live snapshot differs from the last recorded event and there is at least
-// one held pitch — a full release just leaves the last-played event as-is (no "rest" entries),
-// so a momentary silence between chords doesn't spam the history with blanks. A single held
-// note with no recognized chord (`chordRoot === null`) is still pushed as its own grey event,
-// same as any chord — nothing here treats "just one note" as not worth recording.
-function pushStaffEvent(history, pitches, chordRoot, chordTones) {
-  if (!pitches || !pitches.length) return history;
-  const sortedPitches = [...pitches].sort((a, b) => a - b);
-  const sortedTones = [...(chordTones || [])].sort((a, b) => a - b);
-  const sig = JSON.stringify(sortedPitches) + '|' + (chordRoot ?? 'null') + '|' + JSON.stringify(sortedTones);
-  const last = history[history.length - 1];
-  if (last && last.sig === sig) return history;
-  history.push({ pitches: sortedPitches, chordRoot: chordRoot ?? null, chordTones: sortedTones, sig });
-  if (history.length > STAFF_HISTORY_LENGTH) history.shift();
-  return history;
-}
-
-// One rolling history per staff instance, keyed by track id ("guide"/"playback"/"soundtrack"
-// for the single-instance ones) — persists across polls since it's module-level state, exactly
-// like `PITCH_CLASS_COLORS` above. `updateStaffHistory` is the only way callers touch it, so
-// the push-only-on-change/no-rest-events rules in `pushStaffEvent` are never bypassed.
-const staffHistories = new Map();
-function updateStaffHistory(key, pitches, chordRoot, chordTones) {
-  if (!staffHistories.has(key)) staffHistories.set(key, []);
-  return pushStaffEvent(staffHistories.get(key), pitches, chordRoot, chordTones);
 }
 
 // Point at angle `2*PI*index/columnCount - PI/2` (column 0 at 12 o'clock, clockwise — matches
@@ -653,7 +635,7 @@ function renderTrack(track, index) {
     html += `<div class="field">Micro: <b>${track.microphoneLevel.toFixed(4)}</b></div>`;
   }
   html += keyboardHTML(track.heldPitches, track.chordRoot, track.chordTones, track.modeTones);
-  html += renderStaffSVG(updateStaffHistory(track.id, track.heldPitches, track.chordRoot, track.chordTones), KEYBOARD_TOTAL_WIDTH);
+  html += renderStaffSVG(track.recentChordEvents || [], KEYBOARD_TOTAL_WIDTH);
   html += `<div class="field">Accord: <b>${track.chordLabel || '-'}</b></div>`;
   html += `<div class="field">Modes: <b>${track.modesLabel || '-'}</b></div>`;
   return html;
@@ -679,12 +661,8 @@ function renderSoundTrackPlayback(playback) {
 
 function renderRunTab(state) {
   const tracks = state.tracks || [];
-  // Drop any track's staff history once it disappears from state (e.g. a web-keyboard tab
-  // closes) — otherwise `staffHistories` would grow forever across a long-running session.
-  const liveIDs = new Set(tracks.map(t => t.id));
-  for (const key of staffHistories.keys()) {
-    if (key !== 'guide' && key !== 'playback' && key !== 'soundtrack' && !liveIDs.has(key)) staffHistories.delete(key);
-  }
+  // No client-side staff-history bookkeeping to prune anymore (see `renderStaffSVG`'s own
+  // comment) — a track's `recentChordEvents` just comes and goes with the track itself, server-side.
   const tracksHTML = tracks.length
     ? tracks.map(renderTrack).join('')
     : '<p class="empty">(aucune piste en ecoute)</p>';
