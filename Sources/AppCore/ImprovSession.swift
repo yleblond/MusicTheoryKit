@@ -1732,10 +1732,13 @@ public final class ImprovSession: @unchecked Sendable {
     }
 
     private func handleWebConsoleRequest(_ request: HTTPRequest) -> HTTPResponse {
-        switch request.path {
+        let (path, query) = Self.splitQuery(request.path)
+        switch path {
         case "/": return .text(webConsoleIndexHTML, contentType: "text/html; charset=utf-8")
         case "/app.js": return .text(webConsoleAppJS, contentType: "application/javascript")
         case "/state": return HTTPResponse(contentType: "application/json", body: webConsoleStateQueue.sync { webConsoleStateCache })
+        case "/menu-lists": return handleMenuListsRequest()
+        case "/menu-action": return handleMenuAction(query)
         default: return .notFound()
         }
     }
@@ -1830,6 +1833,254 @@ public final class ImprovSession: @unchecked Sendable {
         )
     }
 
+    // MARK: - Web console remote menu (mirrors the terminal's own pull-down menu)
+    //
+    // `Sources/JamShack/main.swift`'s `menuCategories` (the DOS-style pull-down menu) and the
+    // plain-text REPL both funnel into one shared `executeCommand(_:_:)` switch so the two
+    // never duplicate business logic — see that file's own doc comment. This section is the
+    // same idea extended to the web console's new "Menu" tab: a thin HTTP-reachable dispatcher
+    // over the exact same `ImprovSession` public methods `executeCommand` already calls, not a
+    // second copy of any actual behavior. It's a NEW, separate switch (not literally
+    // `executeCommand` itself) because that one is wired to blocking terminal I/O
+    // (`print`/`readLine` for follow-up prompts) that has no meaning over HTTP — a browser
+    // form collects every field in one submission instead of prompting step by step, so a
+    // menu item that CLI-side chains several prompts (e.g. "Nouveau guide musical..."'s
+    // repeating tonic/scale/progression loop) is exposed here as its underlying atomic
+    // commands instead (`guide-new`, `guide-add-mode`) — same effect, reached by submitting
+    // the form more than once instead of being walked through prompts. Pure read-only
+    // displays (`status`, `run`, `scene-tree`, `show-*`) are deliberately NOT mirrored here —
+    // the user only asked for the action items ("ajouter, activer, lister, creer..."), and
+    // those displays already exist elsewhere (Run/Scene/Infos tabs) or are just a `GET /state`
+    // read away.
+
+    private struct WebConsoleMenuTrack: Codable { var id: String; var label: String }
+    private struct WebConsoleMenuScale: Codable { var id: String; var name: String }
+    private struct WebConsoleMenuLists: Codable {
+        var tracks: [WebConsoleMenuTrack]
+        var pieceFiles: [String]
+        var sampleFiles: [String]
+        var soundTrackFiles: [String]
+        var guideFiles: [String]
+        var sceneFiles: [String]
+        var compositionFiles: [String]
+        var textFramingFiles: [String]
+        var soundTrackFramingFiles: [String]
+        var soundTrackInstructionsFiles: [String]
+        var llmConnections: [String]
+        var colorPalettes: [String]
+        var chordProgressionTemplates: [String]
+        var scales: [WebConsoleMenuScale]
+        var midiFusionMode: String
+        /// Only non-empty right after a "Rechercher" (`jam-discover`) action — see that
+        /// case's own comment in `performMenuAction`.
+        var discoveredJamSessions: [String]
+    }
+
+    private func handleMenuListsRequest() -> HTTPResponse {
+        // Local tracks only (`wireIDText != nil`) — `.remote` tracks aren't something this
+        // machine can start/stop/reassign, same restriction `executeCommand`'s own `track`
+        // command has (its `parseTrackID` never produces a `.remote` id either).
+        let localTracks = tracks.compactMap { track -> WebConsoleMenuTrack? in
+            guard let idText = track.id.wireIDText else { return nil }
+            return WebConsoleMenuTrack(id: idText, label: track.label)
+        }
+        let lists = WebConsoleMenuLists(
+            tracks: localTracks, pieceFiles: pieceFiles, sampleFiles: sampleFiles,
+            soundTrackFiles: soundTrackFiles, guideFiles: guideFiles, sceneFiles: sceneFiles,
+            compositionFiles: compositionFiles, textFramingFiles: textFramingFiles,
+            soundTrackFramingFiles: soundTrackFramingFiles, soundTrackInstructionsFiles: soundTrackInstructionsFiles,
+            llmConnections: llmConnections, colorPalettes: colorPalettes.map(\.name),
+            chordProgressionTemplates: chordProgressionTemplates.map(\.name),
+            scales: ScaleLibrary.all.map { WebConsoleMenuScale(id: $0.id, name: $0.popularName) },
+            midiFusionMode: midiFusionMode == .merged ? "fusionne" : "individuel",
+            discoveredJamSessions: lastDiscoveredServers.map(\.name)
+        )
+        guard let data = try? JSONEncoder().encode(lists) else { return .notFound() }
+        return HTTPResponse(contentType: "application/json", body: data)
+    }
+
+    private enum MenuActionError: Error, CustomStringConvertible {
+        case unknownAction(String)
+        case invalidTrack
+        case invalidValue
+        var description: String {
+            switch self {
+            case .unknownAction(let name): return "action inconnue : \(name)"
+            case .invalidTrack: return "piste inconnue ou manquante"
+            case .invalidValue: return "valeur manquante ou invalide"
+            }
+        }
+    }
+
+    private struct MenuActionResult: Codable {
+        var ok: Bool
+        var message: String
+        var items: [String]?
+    }
+
+    /// Cache for whichever jam-session discovery scan the "Menu" tab's own "Rechercher" action
+    /// last triggered, mirrored back out via `WebConsoleMenuLists.discoveredJamSessions` —
+    /// same "numbered list from the last scan/listing" convention as `pieceFiles`/
+    /// `sampleFiles`/etc., even though a `DiscoveredServer` itself isn't nameable/storable any
+    /// other way (its `endpoint` is an opaque `NWEndpoint`, not `Codable`).
+    private var lastDiscoveredServers: [DiscoveredServer] = []
+
+    private func handleMenuAction(_ query: [String: String]) -> HTTPResponse {
+        let action = query["action"] ?? ""
+        let value = query["value"] ?? ""
+        let result: MenuActionResult
+        do {
+            result = try performMenuAction(action, query: query, value: value)
+        } catch {
+            result = MenuActionResult(ok: false, message: "\(error)")
+        }
+        guard let data = try? JSONEncoder().encode(result) else { return .notFound() }
+        return HTTPResponse(contentType: "application/json", body: data)
+    }
+
+    // swiftlint-friendly length aside, this mirrors `executeCommand`'s own single big switch
+    // (one case per command) — same shape, just dispatching to the same `ImprovSession`
+    // methods from HTTP query parameters instead of parsed REPL argument tokens.
+    private func performMenuAction(_ action: String, query: [String: String], value: String) throws -> MenuActionResult {
+        func ok(_ message: String) -> MenuActionResult { MenuActionResult(ok: true, message: message) }
+        switch action {
+        // --- JamShack ---
+        case "folder-pieces": try listPieceFiles(in: value); return ok("\(pieceFiles.count) morceau(x) trouve(s).")
+        case "folder-samples": try listSampleFiles(in: value); return ok("\(sampleFiles.count) son(s) trouve(s).")
+        case "folder-soundtracks": try listSoundTrackFiles(in: value); return ok("\(soundTrackFiles.count) enregistrement(s) trouve(s).")
+        case "folder-guides": try listGuideFiles(in: value); return ok("\(guideFiles.count) guide(s) trouve(s).")
+        case "folder-scenes": try listSceneFiles(in: value); return ok("\(sceneFiles.count) scene(s) trouvee(s).")
+        case "folder-settings": try setSettingsFolder(value); return ok("Dossier de reglages defini.")
+        case "folder-prompts": try setPromptsFolder(value); return ok("Dossier de composition IA defini.")
+        case "use-llm": try useLLMConnection(named: value); return ok("Connexion LLM active : \(value)")
+        case "use-palette": try selectColorPalette(named: value); return ok("Palette active : \(value)")
+        case "midi-mode-merged": setMIDIFusionMode(.merged); return ok("Mode MIDI : fusionne.")
+        case "midi-mode-individual": setMIDIFusionMode(.individual); return ok("Mode MIDI : individuel.")
+        case "web-console-start": try startWebConsole(port: Int(value) ?? 8080); return ok("Console web demarree.")
+        case "web-console-stop": stopWebConsole(); return ok("Console web arretee.")
+        case "vk-start": try startVirtualKeyboard(port: Int(value) ?? 8081); return ok("Clavier virtuel demarre.")
+        case "vk-stop": stopVirtualKeyboard(); return ok("Clavier virtuel arrete.")
+
+        // --- Scene ---
+        case "track-on":
+            guard let id = TrackID(wireIDText: value) else { throw MenuActionError.invalidTrack }
+            try startTrack(id); return ok("Piste demarree.")
+        case "track-off":
+            guard let id = TrackID(wireIDText: value) else { throw MenuActionError.invalidTrack }
+            stopTrack(id); return ok("Piste arretee.")
+        case "track-sound-on":
+            guard let id = TrackID(wireIDText: value) else { throw MenuActionError.invalidTrack }
+            try setSoundEnabled(true, for: id); return ok("Son active.")
+        case "track-sound-off":
+            guard let id = TrackID(wireIDText: value) else { throw MenuActionError.invalidTrack }
+            try setSoundEnabled(false, for: id); return ok("Son desactive.")
+        case "track-instrument":
+            guard let id = TrackID(wireIDText: query["track"] ?? "") else { throw MenuActionError.invalidTrack }
+            try setInstrument(named: value, for: id); return ok("Instrument choisi : \(value)")
+        case "scene-save": try saveScene(title: value, as: value); return ok("Scene sauvegardee : \(value)")
+        case "scene-load": try loadScene(named: value); return ok("Scene chargee : \(value)")
+
+        // --- Guide Musicaux ---
+        case "guide-new": newGuideSequence(title: value); return ok("Nouveau guide : \(value)")
+        case "guide-add-mode":
+            guard let tonic = Int(query["tonic"] ?? "") else { throw MenuActionError.invalidValue }
+            guard let scaleID = query["scale"], !scaleID.isEmpty else { throw MenuActionError.invalidValue }
+            let progressionName = query["progression"] ?? ""
+            let progression = progressionName.isEmpty ? nil :
+                chordProgressionTemplates.first { $0.name.lowercased() == progressionName.lowercased() }
+            try addGuideStep(ModeReference(tonic: tonic, scaleID: scaleID), chordProgression: progression)
+            return ok("Etape ajoutee au guide.")
+        case "guide-load": try loadGuideSequence(named: value); return ok("Guide charge : \(value)")
+        case "guide-save": try saveGuideSequence(); return ok("Guide sauvegarde.")
+        case "guide-save-as": try saveGuideSequence(as: value); return ok("Guide sauvegarde : \(value)")
+        case "guide-start": try startGuide(atStepIndex: 0); return ok("Guide demarre.")
+        case "guide-stop": stopGuide(); return ok("Guide arrete.")
+
+        // --- Enregistrement ---
+        case "record-start":
+            let ids = Set(value.split(separator: " ").compactMap { TrackID(wireIDText: String($0)) })
+            try startRecording(title: "Enregistrement", tracks: ids); return ok("Enregistrement demarre.")
+        case "record-stop":
+            let soundTrack = try stopRecording()
+            return ok("Enregistrement termine : \(soundTrack.events.count) evenement(s).")
+        case "soundtrack-play": try playSoundTrack(); return ok("Lecture de l'enregistrement demarree.")
+        case "soundtrack-load": try loadSoundTrack(named: value); return ok("Enregistrement charge : \(value)")
+        case "soundtrack-save": try saveSoundTrack(); return ok("Enregistrement sauvegarde.")
+        case "soundtrack-save-as": try saveSoundTrack(as: value); return ok("Enregistrement sauvegarde : \(value)")
+        case "soundtrack-compose":
+            let count = Int(query["count"] ?? "") ?? 1
+            let paths = try composeSoundTrackToPieces(candidateCount: count, title: value.isEmpty ? nil : value)
+            return ok("Morceau(x) compose(s) : \(paths.joined(separator: ", "))")
+        case "soundtrack-framing-set": setSoundTrackFramingSentence(value); return ok("Phrase de cadrage modifiee.")
+        case "soundtrack-framing-save": try saveSoundTrackFramingSentence(as: value); return ok("Phrase de cadrage sauvegardee : \(value)")
+        case "soundtrack-framing-load": try useSoundTrackFramingSentence(named: value); return ok("Phrase de cadrage chargee : \(value)")
+        case "soundtrack-framing-reset": resetSoundTrackFramingSentence(); return ok("Phrase de cadrage reinitialisee.")
+        case "soundtrack-instructions-set": setSoundTrackCompositionInstructions(value.isEmpty ? nil : value); return ok("Indications de style modifiees.")
+        case "soundtrack-instructions-save": try saveSoundTrackCompositionInstructions(as: value); return ok("Indications sauvegardees : \(value)")
+        case "soundtrack-instructions-load": try useSoundTrackCompositionInstructions(named: value); return ok("Indications chargees : \(value)")
+        case "soundtrack-instructions-reset": resetSoundTrackCompositionInstructions(); return ok("Indications reinitialisees.")
+        case "soundtrack-prompt-export": try exportSoundTrackCompositionPrompt(as: value); return ok("Prompt exporte : \(value)")
+
+        // --- Morceaux ---
+        case "piece-play": try play(); return ok("Lecture demarree.")
+        case "piece-sample": try loadSample(named: value); return ok("Son de lecture choisi : \(value)")
+        case "piece-track-instrument":
+            guard let section = Int(query["section"] ?? ""), let track = Int(query["track"] ?? "") else { throw MenuActionError.invalidValue }
+            try setPieceTrackInstrument(sectionIndex: section - 1, trackIndex: track - 1, instrumentName: value.isEmpty ? nil : value)
+            return ok("Instrument de piste modifie.")
+        case "piece-chord-instrument":
+            guard let section = Int(query["section"] ?? "") else { throw MenuActionError.invalidValue }
+            try setPieceChordInstrument(sectionIndex: section - 1, instrumentName: value.isEmpty ? nil : value)
+            return ok("Instrument d'accords modifie.")
+        case "piece-load-demo": loadDemoPiece(); return ok("Morceau demo charge.")
+        case "piece-load": try loadPiece(named: value); return ok("Morceau charge : \(value)")
+        case "piece-save": try savePiece(); return ok("Morceau sauvegarde.")
+        case "piece-save-as": try savePiece(as: value); return ok("Morceau sauvegarde : \(value)")
+
+        // --- Composition ---
+        case "composition-describe":
+            setCompositionTitle(query["title"]?.isEmpty == false ? query["title"] : nil)
+            setSourceText(value)
+            setAdditionalCompositionInstructions(query["instructions"]?.isEmpty == false ? query["instructions"] : nil)
+            return ok("Description mise a jour.")
+        case "composition-compose": try composeFromText(title: nil); return ok("Composition lancee.")
+        case "composition-load": try loadCompositionDescription(named: value); return ok("Description chargee : \(value)")
+        case "composition-save-as": try saveCompositionDescription(as: value); return ok("Description sauvegardee : \(value)")
+        case "composition-save": try saveCompositionDescription(); return ok("Description sauvegardee.")
+        case "text-framing-set": setTextFramingSentence(value); return ok("Phrase de cadrage modifiee.")
+        case "text-framing-save": try saveTextFramingSentence(as: value); return ok("Phrase de cadrage sauvegardee : \(value)")
+        case "text-framing-load": try useTextFramingSentence(named: value); return ok("Phrase de cadrage chargee : \(value)")
+        case "text-framing-reset": resetTextFramingSentence(); return ok("Phrase de cadrage reinitialisee.")
+        case "text-prompt-export": try exportTextCompositionPrompt(as: value); return ok("Prompt exporte : \(value)")
+
+        // --- Jam Session ---
+        case "jam-start":
+            if let pseudo = query["pseudo"], !pseudo.isEmpty { localClientName = pseudo }
+            try startServer(port: Int(value) ?? 7777); return ok("Jam session demarree.")
+        case "jam-stop": stopServer(); return ok("Jam session arretee.")
+        case "jam-join":
+            if let pseudo = query["pseudo"], !pseudo.isEmpty { localClientName = pseudo }
+            guard let host = query["host"], !host.isEmpty else { throw MenuActionError.invalidValue }
+            try connectToServer(host: host, port: Int(query["port"] ?? "") ?? 7777)
+            return ok("Connecte.")
+        case "jam-discover":
+            lastDiscoveredServers = discoverServers()
+            return MenuActionResult(
+                ok: true, message: "\(lastDiscoveredServers.count) session(s) trouvee(s).",
+                items: lastDiscoveredServers.map(\.name)
+            )
+        case "jam-connect-discovered":
+            guard let index = Int(value), lastDiscoveredServers.indices.contains(index) else { throw MenuActionError.invalidValue }
+            if let pseudo = query["pseudo"], !pseudo.isEmpty { localClientName = pseudo }
+            try connectToServer(discovered: lastDiscoveredServers[index])
+            return ok("Connecte a \(lastDiscoveredServers[index].name).")
+        case "jam-leave": disconnectFromServer(); return ok("Deconnecte.")
+
+        default:
+            throw MenuActionError.unknownAction(action)
+        }
+    }
+
     // MARK: - Virtual keyboard (interactive browser piano — keydown/keyup + mouse/touch)
 
     /// Starts a small hand-rolled HTTP server serving an interactive piano keyboard page.
@@ -1921,9 +2172,11 @@ public final class ImprovSession: @unchecked Sendable {
         }
     }
 
-    /// This server only ever needs a few flat query parameters (`pitch`, `client`, `name`) —
-    /// no need for `HTTPRequest` itself to grow general query-string support for that, so
-    /// this stays a small local helper rather than a change to `WebConsole`'s wire format.
+    /// This server only ever needs flat query parameters (`pitch`, `client`, `name`, and — since
+    /// the web console's "Menu" tab — `action`/`value`/whatever named fields each menu action
+    /// takes, see `performMenuAction`) — no need for `HTTPRequest` itself to grow general
+    /// query-string support for that, so this stays a small local helper rather than a change
+    /// to `WebConsole`'s wire format.
     private static func splitQuery(_ path: String) -> (path: String, query: [String: String]) {
         guard let qIndex = path.firstIndex(of: "?") else { return (path, [:]) }
         let base = String(path[..<qIndex])

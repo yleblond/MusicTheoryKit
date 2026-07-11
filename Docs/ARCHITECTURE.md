@@ -387,6 +387,63 @@ wrapper avant que ce callback n'ait eu la moindre chance de s'exécuter :
   seule — même discipline que la leçon `feedback-debug-verify-dont-theorize` déjà retenue pour
   le bug de scintillement du terminal.
 
+### Onglet "Menu" — l'interface distante des menus du terminal
+
+Quatrième onglet de la console web (`Run`/`Scene`/`Menu`/`Infos`), demandé comme "une remote
+interface" pour piloter l'appli depuis un navigateur sans reproduire les écrans en direct
+(déjà couverts par `Run`/`Scene`/`Infos`) — seulement les actions du menu déroulant du
+terminal (`Sources/JamShack/main.swift`'s `menuCategories`) qui ajoutent/activent/chargent/
+sauvegardent quelque chose. Deux nouvelles routes `GET` dans `handleWebConsoleRequest`
+(`ImprovSession.swift`) :
+
+- **`GET /menu-lists`** : un instantané JSON de tout ce qu'un `<select>` de l'onglet a besoin
+  d'afficher (`pieceFiles`, `sampleFiles`, `soundTrackFiles`, `guideFiles`, `sceneFiles`,
+  `compositionFiles`, les listes de phrases de cadrage/indications, `llmConnections`,
+  `colorPalettes`, `chordProgressionTemplates`, les 33 gammes (`id`+`popularName`), les pistes
+  locales (`wireIDText`+`label`, `.remote` exclues — pas pilotables depuis cette machine), le
+  mode MIDI courant, et `discoveredJamSessions` (voir plus bas).
+- **`GET /menu-action?action=...&value=...&<autres champs>`** : dispatché par
+  `ImprovSession.performMenuAction`, un switch avec un `case` par action (~60), chacun
+  appelant directement la même méthode publique d'`ImprovSession` que `executeCommand`
+  appelle déjà pour la commande terminal équivalente — **PAS** une deuxième copie du
+  comportement (celui-ci reste dans `ImprovSession`, seule source de vérité), juste un
+  deuxième adaptateur fin à côté de celui du terminal, exactement comme `executeCommand`
+  lui-même est déjà l'adaptateur fin partagé entre le REPL texte et le menu déroulant — voir
+  le commentaire de ce fichier. Répond `{"ok": bool, "message": "...", "items": [...]?}`
+  (`items` seulement pour `jam-discover`, voir plus bas). Volontairement **PAS** la même
+  fonction que `executeCommand` : celle-ci est câblée à des E/S terminal bloquantes
+  (`print`/`readLine` pour les invites de suivi), qui n'ont aucun sens en HTTP — un formulaire
+  web recueille tous les champs en une seule soumission au lieu de les demander un par un, donc
+  un item de menu qui enchaîne plusieurs invites côté CLI (ex. la boucle tonique/gamme/
+  progression de "Nouveau guide musical...") est exposé ici comme ses commandes atomiques
+  sous-jacentes (`guide-new` puis `guide-add-mode`), soumises séparément plutôt qu'au travers
+  d'invites enchaînées — même résultat, la page peut juste soumettre le formulaire plusieurs
+  fois plutôt que d'être guidée pas à pas.
+- **Recherche de jam session** (`jam-discover`/`jam-connect-discovered`) : `discoverServers()`
+  est synchrone (bloque jusqu'à 2s) et retourne des `DiscoveredServer` non `Codable` (leur
+  `endpoint` est un `NWEndpoint` opaque) — `jam-discover` mémorise le dernier résultat dans
+  `lastDiscoveredServers` (même convention que `pieceFiles`/`sampleFiles` : une liste
+  numérotée issue du dernier scan/listing) et le renvoie aussi dans la réponse elle-même
+  (`items`) ; `jam-connect-discovered` reprend juste un INDEX dans cette même liste plutôt
+  qu'un nom (un `DiscoveredServer` n'a pas d'autre clé stable).
+- **Construit une seule fois par visite de l'onglet, jamais réécrit ensuite** (`menuBuilt`,
+  `buildMenuTab()`) — vraie différence avec les trois autres onglets : `refresh()` (le poll
+  `/state` toutes les ~250ms) remplace tout le contenu de l'onglet actif par un nouveau
+  `innerHTML` à chaque tick, ce qui est sans risque pour `Run`/`Scene`/`Infos` (aucun élément
+  interactif à état, juste des lectures) mais effacerait instantanément tout texte en cours de
+  frappe dans un champ du Menu — corrigé en sortant tôt de `refresh()` quand `activeTab ===
+  'menu'` et `menuBuilt` est déjà vrai, sans jamais retoucher le DOM de l'onglet. Les listes
+  des `<select>` (qui, elles, doivent rester à jour — un `save-as` peut ajouter un nouveau
+  fichier à la liste) sont rafraîchies séparément par `refreshMenuLists()`, appelée une fois à
+  la construction puis après chaque action, qui ne réécrit QUE les `<option>` de chaque
+  `<select>` marqué `data-list="..."` (en préservant sa sélection courante si elle existe
+  toujours) — jamais les champs texte/textarea voisins.
+- **`MENU_ACTIONS`** (`StaticAssets.swift`) : un tableau de données décrivant les 7 catégories
+  et leurs items (action/label/champs), rendu génériquement — pas une fonction à la main par
+  item. Chaque champ a un `kind` (`text`, `textarea`, `select` piloté par une des listes
+  ci-dessus ou par des `options` fixes comme les 12 noms de note pour la tonique d'un guide,
+  ou `select-track` toujours piloté par `tracks`).
+
 ### Portée musicale (`renderStaffSVG`, dupliquée dans les deux assets)
 
 Sous chaque clavier ASCII/HTML (console web et clavier virtuel), une portée à deux clés (sol
@@ -676,6 +733,26 @@ pas un bug de mise en page. D'où le signalement "pas bien centré" malgré un a
 techniquement correct. Corrigé par un simple `position: relative; top: 0.12em` sur `.octave-arrow`
 pour compenser ce décalage propre au glyphe, retrouvé par la même méthode que les ajustements de
 clé de portée (rendu du caractère seul contre une grille/ligne de repère, pas une supposition).
+
+**Suite — le dessin du mini-clavier lui-même toujours pas centré entre les flèches, après le
+correctif ci-dessus** : l'utilisateur a signalé que le problème persistait. Cette fois ce n'est
+ni un décalage de glyphe ni un bug de mise en page CSS — mesuré via `getBoundingClientRect()` sur
+chaque élément de la rangée (étiquette/flèche/SVG), la boîte du SVG `.mini-piano` est en fait déjà
+parfaitement calée contre la flèche `▸` (écart mesuré : le `gap` normal de la rangée, rien de
+plus). Le vrai bug est À L'INTÉRIEUR du SVG : `renderMiniPianoOverview`'s `naturalWidth` (l'espace
+de coordonnées du `viewBox`) se calculait comme `Math.ceil((MINI_PIANO_MAX - MINI_PIANO_MIN + 1)
+/ 12) * 7 * MINI_WHITE_WIDTH` — un nombre ROND d'octaves (10, arrondi au-dessus) — alors que
+`MINI_PIANO_MIN..MINI_PIANO_MAX` (C-1..C8) ne couvre que 9 octaves pleines plus une seule touche
+blanche en plus, pas 10 pleines. Résultat : ~59px de fond SVG transparent après la dernière touche
+réellement dessinée, à l'intérieur même de la boîte du SVG — les touches du mini-clavier
+s'arrêtaient donc visiblement avant d'atteindre le bord droit de leur propre SVG (qui, lui,
+touchait bien la flèche), ce qui se lit comme "le dessin n'est pas centré" alors que c'est un
+espace mort invisible, pas un défaut d'alignement. Corrigé en dérivant `naturalWidth` de la
+dernière touche blanche RÉELLEMENT dessinée (`(miniWhiteSlot(MINI_PIANO_MAX) + 1) *
+MINI_WHITE_WIDTH`) plutôt que d'un compte d'octaves arrondi — l'espace de coordonnées du SVG
+correspond désormais exactement à son contenu, sans marge possible d'aucun côté. Vérifié par
+capture headless avant/après : les touches remplissent maintenant toute la largeur du SVG, flush
+contre les deux flèches.
 
 **Taille adaptative — tenir sur un MacBook 13"/iPad 11", grandir sur un plus grand écran**
 (`applyResponsiveScale()`) : toute la mise en page à deux colonnes (`#layout-columns`) est mise

@@ -139,6 +139,21 @@ public let webConsoleIndexHTML = """
   .scene-tree, .scene-tree ul { list-style: none; margin: 0; padding-left: 1.3rem; }
   .scene-tree { padding-left: 0; }
   .scene-tree li { margin: 0.15rem 0; }
+  /* "Menu" tab — a remote-control mirror of the terminal's own pull-down menu (see
+     `renderMenuTab`'s own doc comment). Built once per visit to the tab and never
+     wholesale-replaced afterward, unlike every other tab, so in-progress typing/dropdown
+     choices survive the page's own ~250ms `/state` poll — see `refresh()`. */
+  .menu-category { margin-bottom: 1.6rem; }
+  .menu-category h2 { color: #ddd; border-bottom: 1px solid #333; padding-bottom: 0.2rem; }
+  .menu-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.4rem 0; flex-wrap: wrap; }
+  .menu-row label { color: #aaa; min-width: 220px; }
+  .menu-row input[type="text"], .menu-row select { background: #1a1a1a; color: #ddd; border: 1px solid #444; border-radius: 3px; padding: 0.3rem 0.4rem; }
+  .menu-row textarea { background: #1a1a1a; color: #ddd; border: 1px solid #444; border-radius: 3px; padding: 0.3rem 0.4rem; width: 100%; max-width: 480px; }
+  .menu-row button { background: #234; color: #cde; border: 1px solid #456; border-radius: 3px; padding: 0.3rem 0.7rem; cursor: pointer; }
+  .menu-row button:hover { background: #345; }
+  #menu-result { position: sticky; top: 0; background: #111; padding: 0.5rem 0; margin-bottom: 0.5rem; z-index: 1; min-height: 1.2em; }
+  #menu-result.ok { color: #7fd88f; }
+  #menu-result.error { color: #ff6b6b; }
 </style>
 </head>
 <body>
@@ -740,17 +755,275 @@ function renderSceneTree(scene) {
   return html;
 }
 
-let activeTab = 'run'; // 'run' | 'scene' | 'infos'
+// --- "Menu" tab — a remote-control mirror of the terminal's own pull-down menu ---
+//
+// `Sources/JamShack/main.swift`'s `menuCategories` (and the plain-text REPL) both funnel into
+// one shared `executeCommand(_:_:)` switch, which calls `AppCore.ImprovSession`'s public
+// methods directly — this tab is that same command surface reached over HTTP instead
+// (`GET /menu-action?action=...&...params`, dispatched by `ImprovSession.performMenuAction`),
+// NOT a second copy of the terminal's own menu-building code. Deliberately excludes every
+// pure read-only display item (status/run/scene-tree/show-*) — those already exist elsewhere
+// (Run/Scene/Infos tabs) — and decomposes the CLI menu's few multi-step "wizards" (e.g.
+// "Nouveau guide musical..."'s repeating tonic/scale/progression loop) into their underlying
+// atomic commands (`guide-new`, `guide-add-mode`), submitted independently instead of chained
+// through prompts — a browser form naturally collects every field in one submission, so there
+// is no need to reproduce the terminal's own step-by-step prompting here.
+let menuBuilt = false;
+let menuLists = null; // last `GET /menu-lists` response — see `refreshMenuLists`
+
+const NOTE_NAME_TONIC_OPTIONS = NOTE_NAMES.map((name, pc) => ({ value: String(pc), label: name }));
+
+const MENU_ACTIONS = [
+  { category: 'JamShack', items: [
+    { action: 'folder-pieces', label: 'Choisir dossier de morceaux...', fields: [{ name: 'value', kind: 'text', placeholder: 'chemin du dossier' }] },
+    { action: 'folder-samples', label: 'Choisir dossier de sons...', fields: [{ name: 'value', kind: 'text', placeholder: 'chemin du dossier' }] },
+    { action: 'folder-soundtracks', label: 'Choisir dossier de soundtracks...', fields: [{ name: 'value', kind: 'text', placeholder: 'chemin du dossier' }] },
+    { action: 'folder-guides', label: 'Choisir dossier de guides musicaux...', fields: [{ name: 'value', kind: 'text', placeholder: 'chemin du dossier' }] },
+    { action: 'folder-scenes', label: 'Choisir dossier de scenes...', fields: [{ name: 'value', kind: 'text', placeholder: 'chemin du dossier' }] },
+    { action: 'folder-settings', label: 'Choisir dossier de reglages...', fields: [{ name: 'value', kind: 'text', placeholder: 'chemin du dossier' }] },
+    { action: 'folder-prompts', label: 'Choisir dossier de composition IA...', fields: [{ name: 'value', kind: 'text', placeholder: 'chemin du dossier' }] },
+    { action: 'use-llm', label: 'Choisir une connexion LLM...', fields: [{ name: 'value', kind: 'select', list: 'llmConnections' }] },
+    { action: 'use-palette', label: 'Choisir palette de couleur...', fields: [{ name: 'value', kind: 'select', list: 'colorPalettes' }] },
+    { action: 'midi-mode-merged', label: 'Mode MIDI: fusionne', fields: [] },
+    { action: 'midi-mode-individual', label: 'Mode MIDI: individuel', fields: [] },
+    { action: 'web-console-start', label: 'Demarrer la console web...', fields: [{ name: 'value', kind: 'text', placeholder: 'port (8080)', optional: true }] },
+    { action: 'web-console-stop', label: 'Arreter la console web', fields: [] },
+    { action: 'vk-start', label: 'Demarrer le clavier virtuel...', fields: [{ name: 'value', kind: 'text', placeholder: 'port (8081)', optional: true }] },
+    { action: 'vk-stop', label: 'Arreter le clavier virtuel', fields: [] },
+  ] },
+  { category: 'Scene', items: [
+    { action: 'track-on', label: 'Activer un instrument...', fields: [{ name: 'value', kind: 'select-track' }] },
+    { action: 'track-off', label: 'Arreter un instrument...', fields: [{ name: 'value', kind: 'select-track' }] },
+    { action: 'track-sound-on', label: "Activer le son d'un instrument...", fields: [{ name: 'value', kind: 'select-track' }] },
+    { action: 'track-sound-off', label: "Desactiver le son d'un instrument...", fields: [{ name: 'value', kind: 'select-track' }] },
+    { action: 'track-instrument', label: 'Choisir un son pour un instrument...', fields: [
+        { name: 'track', kind: 'select-track', label: 'Instrument' },
+        { name: 'value', kind: 'select', list: 'sampleFiles', label: 'Son' },
+      ] },
+    { action: 'scene-save', label: 'Sauvegarder scene...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
+    { action: 'scene-load', label: 'Charger scene...', fields: [{ name: 'value', kind: 'select', list: 'sceneFiles' }] },
+  ] },
+  { category: 'Guide Musicaux', items: [
+    { action: 'guide-new', label: 'Nouveau guide musical...', fields: [{ name: 'value', kind: 'text', placeholder: 'titre' }] },
+    { action: 'guide-add-mode', label: 'Ajouter un mode au guide...', fields: [
+        { name: 'tonic', kind: 'select', options: NOTE_NAME_TONIC_OPTIONS, label: 'Tonique' },
+        { name: 'scale', kind: 'select', list: 'scales', label: 'Gamme' },
+        { name: 'progression', kind: 'select', list: 'chordProgressionTemplates', label: 'Progression', optional: true },
+      ] },
+    { action: 'guide-load', label: 'Charger un guide musical...', fields: [{ name: 'value', kind: 'select', list: 'guideFiles' }] },
+    { action: 'guide-save', label: 'Sauvegarder le guide musical', fields: [] },
+    { action: 'guide-save-as', label: 'Sauvegarder le guide musical sous...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
+    { action: 'guide-start', label: 'Demarrer le guide musical', fields: [] },
+    { action: 'guide-stop', label: 'Arreter le guide musical', fields: [] },
+  ] },
+  { category: 'Enregistrement', items: [
+    { action: 'record-start', label: 'Demarrer un enregistrement...', fields: [{ name: 'value', kind: 'text', placeholder: 'pistes separees par espace (vide = toutes)', optional: true }] },
+    { action: 'record-stop', label: "Arreter l'enregistrement", fields: [] },
+    { action: 'soundtrack-play', label: "Jouer l'enregistrement", fields: [] },
+    { action: 'soundtrack-load', label: 'Charger un enregistrement...', fields: [{ name: 'value', kind: 'select', list: 'soundTrackFiles' }] },
+    { action: 'soundtrack-save', label: "Sauvegarder l'enregistrement", fields: [] },
+    { action: 'soundtrack-save-as', label: "Sauvegarder l'enregistrement sous...", fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
+    { action: 'soundtrack-compose', label: "Composer un morceau a partir de l'enregistrement...", fields: [
+        { name: 'value', kind: 'text', placeholder: 'titre', label: 'Titre', optional: true },
+        { name: 'count', kind: 'text', placeholder: '1', label: 'Nombre de candidats', optional: true },
+      ] },
+    { action: 'soundtrack-framing-set', label: 'Modifier la phrase de cadrage...', fields: [{ name: 'value', kind: 'textarea' }] },
+    { action: 'soundtrack-framing-save', label: 'Sauvegarder la phrase de cadrage...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
+    { action: 'soundtrack-framing-load', label: 'Charger une phrase de cadrage...', fields: [{ name: 'value', kind: 'select', list: 'soundTrackFramingFiles' }] },
+    { action: 'soundtrack-framing-reset', label: 'Revenir a la phrase de cadrage par defaut', fields: [] },
+    { action: 'soundtrack-instructions-set', label: 'Modifier les indications de style...', fields: [{ name: 'value', kind: 'text', placeholder: 'indications', optional: true }] },
+    { action: 'soundtrack-instructions-save', label: 'Sauvegarder les indications de style...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
+    { action: 'soundtrack-instructions-load', label: 'Charger des indications de style...', fields: [{ name: 'value', kind: 'select', list: 'soundTrackInstructionsFiles' }] },
+    { action: 'soundtrack-instructions-reset', label: 'Revenir aux indications de style par defaut', fields: [] },
+    { action: 'soundtrack-prompt-export', label: 'Exporter le prompt de composition...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
+  ] },
+  { category: 'Morceaux', items: [
+    { action: 'piece-play', label: 'Ecouter le morceau', fields: [] },
+    { action: 'piece-sample', label: 'Choisir le son de lecture du morceau...', fields: [{ name: 'value', kind: 'select', list: 'sampleFiles' }] },
+    { action: 'piece-track-instrument', label: "Choisir le son d'une piste...", fields: [
+        { name: 'section', kind: 'text', placeholder: 'section #', label: 'Section' },
+        { name: 'track', kind: 'text', placeholder: 'piste #', label: 'Piste' },
+        { name: 'value', kind: 'select', list: 'sampleFiles', label: 'Son', optional: true },
+      ] },
+    { action: 'piece-chord-instrument', label: "Choisir le son des accords d'une section...", fields: [
+        { name: 'section', kind: 'text', placeholder: 'section #', label: 'Section' },
+        { name: 'value', kind: 'select', list: 'sampleFiles', label: 'Son', optional: true },
+      ] },
+    { action: 'piece-load-demo', label: 'Charger demo', fields: [] },
+    { action: 'piece-load', label: 'Charger morceau...', fields: [{ name: 'value', kind: 'select', list: 'pieceFiles' }] },
+    { action: 'piece-save', label: 'Sauvegarder le morceau', fields: [] },
+    { action: 'piece-save-as', label: 'Sauvegarder le morceau sous...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
+  ] },
+  { category: 'Composition', items: [
+    { action: 'composition-describe', label: 'Decrire le morceau...', fields: [
+        { name: 'title', kind: 'text', placeholder: 'titre', label: 'Titre', optional: true },
+        { name: 'value', kind: 'textarea', label: 'Description' },
+        { name: 'instructions', kind: 'text', placeholder: 'indications', label: 'Indications', optional: true },
+      ] },
+    { action: 'composition-compose', label: 'Composer a partir de la description', fields: [] },
+    { action: 'composition-load', label: 'Charger une description...', fields: [{ name: 'value', kind: 'select', list: 'compositionFiles' }] },
+    { action: 'composition-save-as', label: 'Sauvegarder la description sous...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
+    { action: 'composition-save', label: 'Sauvegarder la description', fields: [] },
+    { action: 'text-framing-set', label: 'Modifier la phrase de cadrage...', fields: [{ name: 'value', kind: 'textarea' }] },
+    { action: 'text-framing-save', label: 'Sauvegarder la phrase de cadrage...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
+    { action: 'text-framing-load', label: 'Charger une phrase de cadrage...', fields: [{ name: 'value', kind: 'select', list: 'textFramingFiles' }] },
+    { action: 'text-framing-reset', label: 'Revenir a la phrase de cadrage par defaut', fields: [] },
+    { action: 'text-prompt-export', label: 'Exporter le prompt de composition...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
+  ] },
+  { category: 'Jam Session', items: [
+    { action: 'jam-start', label: 'Demarrer une jam session...', fields: [
+        { name: 'pseudo', kind: 'text', placeholder: 'pseudo', label: 'Pseudo', optional: true },
+        { name: 'value', kind: 'text', placeholder: 'port (7777)', label: 'Port', optional: true },
+      ] },
+    { action: 'jam-stop', label: 'Arreter la jam session', fields: [] },
+    { action: 'jam-join', label: 'Rejoindre une jam session...', fields: [
+        { name: 'pseudo', kind: 'text', placeholder: 'pseudo', label: 'Pseudo', optional: true },
+        { name: 'host', kind: 'text', placeholder: 'hote', label: 'Hote' },
+        { name: 'port', kind: 'text', placeholder: 'port (7777)', label: 'Port', optional: true },
+      ] },
+    { action: 'jam-discover', label: 'Rechercher des jam sessions...', fields: [] },
+    { action: 'jam-connect-discovered', label: 'Rejoindre une session trouvee...', fields: [{ name: 'value', kind: 'select', list: 'discoveredJamSessions', useIndex: true }] },
+    { action: 'jam-leave', label: 'Quitter la jam session', fields: [] },
+  ] },
+];
+
+function escapeHTML(text) {
+  return String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function menuFieldControlHTML(action, field) {
+  const id = 'menu-' + action + '-' + field.name;
+  if (field.kind === 'text') {
+    return `<input type="text" id="${id}" placeholder="${escapeHTML(field.placeholder || '')}">`;
+  }
+  if (field.kind === 'textarea') {
+    return `<textarea id="${id}" rows="3"></textarea>`;
+  }
+  // 'select' (list-driven or fixed `options`) and 'select-track' (always list-driven, from
+  // `menuLists.tracks`) — `data-list`/`data-use-index`/`data-optional` are read back by
+  // `refreshMenuLists` so it can repaint just this element's `<option>`s in place without
+  // disturbing any other field's in-progress input.
+  const listName = field.kind === 'select-track' ? 'tracks' : (field.list || '');
+  const staticOptionsHTML = field.options ? field.options.map(o => `<option value="${escapeHTML(o.value)}">${escapeHTML(o.label)}</option>`).join('') : '';
+  const placeholderOptionHTML = field.optional ? '<option value="">(aucun)</option>' : '';
+  return `<select id="${id}" data-list="${listName}" data-use-index="${field.useIndex ? '1' : ''}" data-optional="${field.optional ? '1' : ''}">` +
+    placeholderOptionHTML + staticOptionsHTML + '</select>';
+}
+
+function menuItemRowHTML(item) {
+  const fieldsHTML = item.fields.map(field => {
+    const labelHTML = field.label ? `<label for="menu-${item.action}-${field.name}">${escapeHTML(field.label)}</label>` : '';
+    return labelHTML + menuFieldControlHTML(item.action, field);
+  }).join('');
+  return `<div class="menu-row"><label>${escapeHTML(item.label)}</label>${fieldsHTML}` +
+    `<button onclick="submitMenuItem('${item.action}')">OK</button></div>`;
+}
+
+function buildMenuTab() {
+  const html = '<div id="menu-result"></div>' + MENU_ACTIONS.map(category =>
+    `<div class="menu-category"><h2>${escapeHTML(category.category)}</h2>` +
+    category.items.map(menuItemRowHTML).join('') + '</div>'
+  ).join('');
+  document.getElementById('menu-container').innerHTML = html;
+  refreshMenuLists();
+}
+
+function menuItemByAction(action) {
+  for (const category of MENU_ACTIONS) {
+    const found = category.items.find(item => item.action === action);
+    if (found) return found;
+  }
+  return null;
+}
+
+function submitMenuItem(action) {
+  const item = menuItemByAction(action);
+  if (!item) return;
+  const params = {};
+  for (const field of item.fields) {
+    const el = document.getElementById('menu-' + action + '-' + field.name);
+    if (!el) continue;
+    if (!el.value && field.optional) continue;
+    // `useIndex` fields (only `jam-connect-discovered` today, never `optional`, so
+    // `selectedIndex` needs no placeholder-offset correction) send the option's position
+    // rather than its label — `lastDiscoveredServers` has no other stable per-item key.
+    params[field.name] = (field.kind === 'select' && el.dataset.useIndex === '1') ? String(el.selectedIndex) : el.value;
+  }
+  runMenuAction(action, params);
+}
+
+function runMenuAction(action, params) {
+  const qs = Object.keys(params).map(key => encodeURIComponent(key) + '=' + encodeURIComponent(params[key])).join('&');
+  fetch('/menu-action?action=' + encodeURIComponent(action) + (qs ? '&' + qs : ''), { cache: 'no-store' })
+    .then(response => response.json())
+    .then(showMenuResult)
+    .catch(() => showMenuResult({ ok: false, message: 'connexion perdue' }))
+    .then(refreshMenuLists);
+}
+
+function showMenuResult(result) {
+  const el = document.getElementById('menu-result');
+  if (!el) return;
+  el.textContent = result.message + (result.items && result.items.length ? ' (' + result.items.join(', ') + ')' : '');
+  el.className = result.ok ? 'ok' : 'error';
+  return result;
+}
+
+// Repaints just the `<option>`s of every list-driven `<select>` currently on the page, keyed
+// by its own `data-list` attribute — deliberately never touches text inputs/textareas, or any
+// select's currently-typed... nothing to preserve there beyond the selection itself, which
+// this restores by value (see `previousValue` below) whenever the freshly-listed options still
+// contain it. Called after every action (a save/list-folder action can change what these lists
+// contain) and once when the tab is first built.
+async function refreshMenuLists() {
+  try {
+    const response = await fetch('/menu-lists', { cache: 'no-store' });
+    menuLists = await response.json();
+  } catch (error) { return; }
+  document.querySelectorAll('#menu-container select[data-list]').forEach(sel => {
+    const listName = sel.dataset.list;
+    if (!listName || !menuLists) return;
+    const items = menuLists[listName] || [];
+    const useIndex = sel.dataset.useIndex === '1';
+    const previousValue = sel.value;
+    const placeholderOptionHTML = sel.dataset.optional === '1' ? '<option value="">(aucun)</option>' : '';
+    const optionsHTML = items.map((item, index) => {
+      let value, label;
+      if (useIndex) { value = String(index); label = item; }
+      else if (typeof item === 'string') { value = item; label = item; }
+      else if (listName === 'tracks') { value = item.id; label = item.label; }
+      else { value = item.id; label = item.name; } // scales: {id, name}
+      return `<option value="${escapeHTML(value)}">${escapeHTML(label)}</option>`;
+    }).join('');
+    sel.innerHTML = placeholderOptionHTML + optionsHTML;
+    if (Array.from(sel.options).some(o => o.value === previousValue)) sel.value = previousValue;
+  });
+}
+
+let activeTab = 'run'; // 'run' | 'scene' | 'infos' | 'menu'
 function renderTabBar() {
   return '<div class="tab-bar">' +
     `<a class="tab${activeTab === 'run' ? ' active' : ''}" onclick="setTab('run')">Run</a>` +
     `<a class="tab${activeTab === 'scene' ? ' active' : ''}" onclick="setTab('scene')">Scene</a>` +
+    `<a class="tab${activeTab === 'menu' ? ' active' : ''}" onclick="setTab('menu')">Menu</a>` +
     `<a class="tab${activeTab === 'infos' ? ' active' : ''}" onclick="setTab('infos')">Infos</a>` +
     '</div>';
 }
-function setTab(tab) { activeTab = tab; refresh(); }
+function setTab(tab) { activeTab = tab; menuBuilt = false; refresh(); }
 
 async function refresh() {
+  // The "Menu" tab never touches `/state` at all (see `buildMenuTab`'s own doc comment) — its
+  // DOM is built once per visit and then left alone so in-progress form input survives this
+  // function's own ~250ms tick, unlike every other tab, which is fine being wholesale replaced
+  // since none of them hold any live user input.
+  if (activeTab === 'menu') {
+    if (!menuBuilt) {
+      document.getElementById('app').innerHTML = renderTabBar() + '<div id="menu-container"></div>';
+      buildMenuTab();
+      menuBuilt = true;
+    }
+    return;
+  }
   let state;
   try {
     const response = await fetch('/state', { cache: 'no-store' });

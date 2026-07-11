@@ -767,8 +767,17 @@ function miniWhiteSlot(pitch) {
 // through `getBoundingClientRect()`, i.e. the actual on-screen size, so it's automatically
 // correct at any scale).
 function renderMiniPianoOverview(svgTargetWidth) {
-  const octaveCount = Math.ceil((MINI_PIANO_MAX - MINI_PIANO_MIN + 1) / 12);
-  const naturalWidth = octaveCount * 7 * MINI_WHITE_WIDTH;
+  // NOT `Math.ceil((MAX-MIN+1)/12) * 7 * MINI_WHITE_WIDTH` (a round number of octaves) — real
+  // bug found by measuring rendered element boxes, not by inspection: `MINI_PIANO_MIN`..
+  // `MINI_PIANO_MAX` spans C-1..C8, i.e. 9 full octaves plus one extra white key (the final C),
+  // not a round 10 octaves — rounding UP to 10 left a trailing ~59px strip of transparent SVG
+  // background past the last drawn key, which is exactly the flush-right edge this SVG is
+  // measured/sized against (`ensureKeyboardBuilt()`), so the piano keys visibly stopped short of
+  // the `▸` arrow while the (invisible) SVG box itself sat correctly flush against it — read as
+  // "the keyboard drawing isn't centered between the arrows". Deriving `naturalWidth` from the
+  // actual rightmost drawn white key instead makes the SVG's own coordinate space match its
+  // content exactly, with no dead space possible on either edge.
+  const naturalWidth = (miniWhiteSlot(MINI_PIANO_MAX) + 1) * MINI_WHITE_WIDTH;
   const displayWidth = svgTargetWidth || naturalWidth;
   const displayHeight = MINI_WHITE_HEIGHT * (displayWidth / naturalWidth);
   const width = naturalWidth;
