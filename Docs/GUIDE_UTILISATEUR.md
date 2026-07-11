@@ -419,7 +419,7 @@ Menus disponibles :
 |---|---|
 | **JamShack** | Menu principal (premier de la barre, s'ouvre par défaut) : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/**composition IA**/**réglages** — ce dernier remplace l'ancien choix indépendant de dossier de connexions LLM ; palettes de couleur, progressions d'accords et connexions LLM vivent tous sous ce même dossier de réglages, par défaut `Settings/`) ; (3) choisir une connexion LLM, isolée dans son propre groupe ; (3bis) choisir la palette de couleur (voir §13) ; (4) mode MIDI fusionné/individuel ; (5) démarrer/arrêter la console web (voir §11) et le clavier virtuel (voir §12) ; (6) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
 | **Scene** | Voir le plan de scène en arbre (`scene-tree`) — l'application, ses instruments locaux, l'état de la console web et du clavier virtuel, et en mode serveur la liste des clients connectés avec leurs propres instruments (voir §9) —, activer/arrêter un instrument, *séparateur*, activer/désactiver le son d'un instrument, *séparateur*, choisir un son pour un instrument, *séparateur*, sauvegarder/charger une scène (la configuration complète des instruments : actif, son actif, quel son). Les actions qui demandent de choisir un instrument présentent la liste numérotée (voir §3) — répondre par le numéro évite d'avoir à retaper `midi:1`/`clavier`/etc. |
-| **Guide Musicaux** | Voir l'écran Guide Musical, *séparateur*, créer un nouveau guide musical (propose d'ajouter un mode en boucle jusqu'à laisser la tonique vide) / ajouter un mode au guide musical en cours — chaque ajout propose ensuite une liste numérotée de progressions d'accords (blues, ii-V-I, cadence andalouse…, tirée de `chordprogressions.json` dans le dossier de réglages) à attacher à cette étape, ou de laisser vide pour n'en attacher aucune, *séparateur*, charger un guide musical / sauvegarder le guide musical (sous...), *séparateur*, démarrer/arrêter le guide musical — aussi accessible directement par la barre d'espace une fois sur l'écran Guide Musical. |
+| **Guide Musicaux** | Voir l'écran Guide Musical, *séparateur*, créer un nouveau guide musical (propose d'ajouter un mode en boucle jusqu'à laisser la tonique vide) / ajouter un mode au guide musical en cours — chaque ajout propose d'abord la liste numérotée des **33 gammes/modes des 7 familles** de `MusicTheoryKit` (les 7 modes majeurs usuels, puis mineur mélodique, mineur harmonique, majeur harmonique, diminué, tons entiers, augmenté — un numéro suffit, plus besoin de connaître l'id écrit), chaque ligne affichant les deux appellations (nom courant et nom systématique, ex. « Altered / Super Locrian / Ionian #1 »), puis une liste numérotée de progressions d'accords (blues, ii-V-I, cadence andalouse…, tirée de `chordprogressions.json` dans le dossier de réglages) à attacher à cette étape, ou de laisser vide pour n'en attacher aucune, *séparateur*, charger un guide musical / sauvegarder le guide musical (sous...), *séparateur*, démarrer/arrêter le guide musical — aussi accessible directement par la barre d'espace une fois sur l'écran Guide Musical. Note : la roue des quintes n'affiche le contour diatonique/chiffrage romain que pour les 7 modes majeurs — un mode d'une autre famille reste jouable et reconnu, juste sans ce contour sur la roue. |
 | **Enregistrement** | Démarrer/arrêter un enregistrement, voir l'enregistrement, jouer l'enregistrement, *séparateur*, charger/sauvegarder l'enregistrement, *séparateur*, composer un morceau à partir de l'enregistrement en le nommant (voir §10), *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser les indications de style, *séparateur*, voir/exporter le prompt de composition (voir §6). |
 | **Morceaux** | Quatre groupes, séparés par des traits : (1) écouter/voir le morceau ; (2) choisir le son par défaut de lecture, ou le son d'une piste/des accords d'une section (voir §7 — la structure affichée numérote les sections et les pistes, pour savoir directement quel numéro saisir) ; (3) charger la démo, charger un morceau, sauvegarder le morceau, sauvegarder le morceau sous ; (4) **Assistant IA** — pour l'instant un intitulé de sous-section réservé, sans action, en attente d'une future fonction de modification par dialogue (« plus vite », « moins vite »…) applicable à n'importe quel morceau. |
 | **Composition** | Décrire le morceau (assistant titre → description → indications → composition, voir §6), composer à partir de la description, voir la description, *séparateur*, charger une description/sauvegarder la description (sous...), *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/exporter le prompt de composition. |
@@ -625,23 +625,37 @@ navigateur (sur la même machine, ou une autre machine du même réseau local vi
 de celle qui héberge) — la page se rafraîchit d'elle-même environ 4 fois par seconde, tant
 qu'elle reste ouverte, sans rien à faire de plus.
 
-**Ce qui s'affiche** : le dernier événement MIDI reçu, un clavier par piste en écoute (mêmes
-couleurs que le terminal — magenta la fondamentale, jaune les autres notes de l'accord, vert
-une note tenue hors accord, une ligne cyan pour le mode détecté — voir §5), et, pendant la
-lecture, le clavier du morceau ou de l'enregistrement en cours. Un simple miroir de ce que
-montre l'écran `run` (§8) — la console web n'a aucun contrôle ni menu, elle ne fait qu'afficher
-(pour jouer depuis un navigateur, voir §12, une page distincte).
+**Ce qui s'affiche** : un clavier par piste en écoute (mêmes couleurs que le terminal — magenta
+la fondamentale, jaune les autres notes de l'accord, vert une note tenue hors accord, une ligne
+cyan pour le mode détecté — voir §5), sa portée musicale (voir plus bas) puis, juste en dessous,
+l'accord/les modes détectés — et, pendant la lecture, le clavier du morceau ou de
+l'enregistrement en cours. Un simple miroir de ce que montre l'écran `run` (§8) — la console
+web n'a aucun contrôle ni menu, elle ne fait qu'afficher (pour jouer depuis un navigateur, voir
+§12, une page distincte). Une piste `clavier-web:<id>` (voir §12) n'affiche jamais son
+identifiant technique ici, seulement son alias — rien à taper depuis une page en lecture seule.
+
+**Portée musicale** : sous chaque clavier (piste en écoute, morceau/enregistrement en lecture),
+une petite portée à deux clés (sol et fa, Sol2-Do6) affiche, de gauche à droite, un **historique
+des derniers accords/notes joués** (jusqu'à 20 événements) plutôt que seulement l'instant présent
+— une note seule tenue sans accord reconnu compte comme un événement à part entière (en gris),
+au même titre qu'un accord ; la durée réelle de chaque événement n'est pas encore prise en compte
+(un retraitement futur, peut-être assisté par IA, pourrait l'ajouter). Pas d'armure — chaque
+altération (dièse/bémol) est notée note par note, puisque le mode réellement joué n'est pas
+toujours fiable en temps réel ; les noms de note utilisés sont toujours ceux, dièses uniquement,
+déjà utilisés partout ailleurs dans l'app (roue des quintes, claviers) plutôt qu'une orthographe
+théorique par tonalité. Défile horizontalement si besoin, comme les claviers.
 
 **Disposition en deux colonnes** : le cercle des quintes à gauche, et à droite d'abord "le
 clavier du mode" — celui du guide musical s'il est en cours (menu **Guide Musicaux**), sinon
 celui du morceau/de l'enregistrement en cours de lecture — puis chaque piste active, la
 sienne. Cette disposition est désormais la même que le guide soit actif ou non.
 
-**Deux onglets** : `Run` (ce qui précède — l'activité musicale en cours) et `Scene` — le même
+**Trois onglets** : `Run` (ce qui précède — l'activité musicale en cours), `Scene` — le même
 plan de scène qu'affiche `scene-tree` dans le terminal (voir §9), mais en liste imbriquée
 plutôt qu'en dessin ASCII : l'application, ses instruments locaux, l'état de la console web et
 du clavier virtuel, et en mode serveur la liste des clients connectés avec leurs propres
-instruments. Basculer d'un onglet à l'autre ne recharge pas la page.
+instruments — et `Infos`, une simple description statique de la page. Basculer d'un onglet à
+l'autre ne recharge pas la page.
 
 **Largeur adaptative** : la page s'élargit pour profiter de l'espace disponible sur un grand
 écran (cercle des quintes agrandi, largeur totale plafonnée pour rester lisible plutôt que de
@@ -688,12 +702,27 @@ autre (`track clavier-web:<id> son on`, `record start clavier-web:<id>`...), l'i
 exact se copiant depuis `tracks`. Arrêter le clavier virtuel supprime toutes les pistes
 connectées d'un coup.
 
-**Mise en page** : deux colonnes (repasse en une colonne sur un écran étroit, comme la console
-web) — à gauche ton nom/réglages, l'info du guide musical (s'il est en cours) et le cercle des
-quintes ; à droite, en vis-à-vis, la vue d'ensemble du clavier (voir « Glissement d'octave »
-plus bas), le piano interactif lui-même, puis l'accord détecté juste en-dessous. La vue
-d'ensemble et le piano sont alignés (centrés l'un sur l'autre), quel que soit lequel des deux
-est le plus large à ce moment.
+**Deux onglets** : `Clavier` (tout le contenu graphique/interactif ci-dessous) et `Infos` — ton
+nom/réglages (alias, disposition QWERTY/QWERTZ) et le petit texte d'aide (flèches, Tab, Échap),
+déplacés dans cet onglet séparé pour laisser plus de place au clavier lui-même dans l'onglet
+`Clavier`.
+
+**Mise en page** : deux colonnes — à gauche l'info du guide musical (s'il est en cours) et le
+cercle des quintes (élargi de 20% par rapport à la première version) ; à droite, en vis-à-vis
+et **tous de la même largeur, alignés au même bord gauche** (celle du piano) : la vue
+d'ensemble du clavier (voir « Glissement d'octave » plus bas) + le piano interactif, sa portée
+musicale, puis l'accord/le mode détecté — chacun sur sa propre ligne, sans étiquette. Les
+étiquettes de note la plus grave/aiguë de la vue d'ensemble (ex. « F2 »/« B4 ») se calent sur
+ces mêmes bords gauche/droite ; les touches de la vue d'ensemble elle-même sont légèrement en
+retrait des deux bords pour leur laisser la place.
+
+**Taille adaptée à l'écran** : toute cette mise en page (roue + clavier) se redimensionne comme
+un seul bloc pour tenir dans la largeur de fenêtre disponible — pensée pour rester utilisable
+sans défilement horizontal sur un MacBook 13 pouces ou un iPad 11 pouces (en orientation
+paysage), et s'agrandit proportionnellement sur un écran plus grand plutôt que de rester petite.
+Un iPhone/écran très étroit en portrait n'est pas encore la cible d'une mise en page dédiée (à
+venir) — le bloc s'y réduit simplement au minimum plutôt que de casser, mais reste peu
+confortable pour l'instant.
 
 **Cinq façons de jouer, en même temps si besoin** :
 - **Souris/tactile** : clique ou touche directement une touche du piano affiché.
@@ -724,8 +753,9 @@ est le plus large à ce moment.
   (Chrome/Edge, et seulement si la page est ouverte en HTTPS ou en `http://localhost` — pas
   depuis l'adresse réseau d'un autre appareil), sinon QWERTY par défaut : à corriger à la main
   une fois avec ce lien si besoin, ça reste ensuite.
-- **Glissement d'octave** : juste au-dessus du piano, une petite vue d'ensemble du clavier
-  complet (Do-1 à Do8, en tout petit) entoure d'un cadre rouge la tranche actuellement jouable,
+- **Glissement d'octave** : juste au-dessus du piano, une vue d'ensemble du clavier complet
+  (Do-1 à Do8) — largeur alignée sur celle du piano, tout comme la portée et le panneau
+  accord/mode juste en dessous — entoure d'un cadre rouge la tranche actuellement jouable,
   flanquée à gauche de la note la plus grave et à droite de la plus aiguë, avec une flèche
   **◂/▸** de chaque côté. Pour déplacer toute la zone jouable par pas d'une octave (de C0 à
   C6) : clique une flèche, appuie sur **flèche gauche/droite** au clavier, ou — sur un clavier
@@ -735,7 +765,8 @@ est le plus large à ce moment.
   toujours sur l'un des mêmes crans fixes (C0..C6), jamais sur une note arbitraire au pixel
   près. Le piano affiché juste en-dessous s'ajuste pour montrer exactement la tranche jouable
   au clavier de l'ordinateur à cet instant. Changer d'octave relâche d'abord toutes les notes
-  en cours (comme Échap), la zone affichée changeant entièrement.
+  en cours (comme Échap), la zone affichée changeant entièrement. Le repère d'octave (« C3 »,
+  « C4 »...) sous chaque touche Do est en bleu azur, pour rester bien visible.
 
 **Différence importante avec la piste `clavier` du terminal** : un terminal ne voit jamais le
 relâchement d'une touche (§3.2), donc chaque frappe y déclenche une note "pincée" de ~300ms.
@@ -744,7 +775,9 @@ clavier virtuel **tient vraiment** la note jusqu'au relâchement, comme un vrai 
 
 **Ce qui s'affiche** : les mêmes couleurs de rôle que partout ailleurs dans l'app (magenta la
 fondamentale, jaune les autres notes de l'accord, vert une note tenue hors accord — voir §5),
-plus la ligne de degrés au-dessus du clavier et le libellé accord/mode détecté au-dessus.
+plus la ligne de degrés au-dessus du clavier puis, en dessous du piano, la même portée musicale
+(historique inclus, voir §11) que la console web pour les notes de TA piste, et enfin l'accord
+détecté et les modes candidats — chacun sur sa propre ligne, sans étiquette.
 
 **Si un guide musical est en cours** : son titre et la liste de ses étapes s'affichent (à
 gauche), et le cercle des quintes (voir plus haut) retrouve son contour des 7 accords
@@ -897,6 +930,8 @@ quit                    quitte
 | Les lettres tapées en `run` ouvrent un menu au lieu de jouer une note | La piste « clavier » n'écoute pas — `track clavier on` (ou menu Scene). |
 | Impossible de sortir de la piste « clavier » pour ouvrir un menu | Appuyer sur **Échap**. |
 | Une note reste affichée/jouée sans s'arrêter après `play` | Devrait être corrigé (filet de sécurité en fin de lecture) — si le problème réapparaît, le signaler. |
+| Au clavier MIDI, une note reste affichée « tenue » après l'avoir relâchée | Devrait être corrigé (le parseur MIDI ne gérait pas le « running status », utilisé par une partie du matériel réel pour les note-off consécutifs) — si ça persiste, le signaler avec le modèle de clavier/interface utilisé. |
+| Au clavier MIDI en mode individuel, une note jouée s'affiche deux fois | Vérifier `sources`/`tracks` : si le même clavier physique apparaît comme plusieurs sources MIDI visibles, chacune devient sa propre piste par design de ce mode — repasser en mode fusionné (menu JamShack) réunit tout en une seule piste. |
 | Le clavier ASCII scintille ou se déforme | Devrait être corrigé (largeur de ligne bornée) — si ça persiste, vérifier la largeur du terminal (≥ 80 colonnes recommandé). |
 | `compose` échoue avec une erreur réseau | Vérifier que le serveur (Ollama local) tourne, ou que la variable d'environnement de clé API est bien définie pour la connexion choisie. |
 | `client` échoue ou reste sans piste distante visible | Vérifier host/port, que `server` tourne bien de l'autre côté, et qu'aucun pare-feu ne bloque le port — voir §9. |

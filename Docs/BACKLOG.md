@@ -31,17 +31,7 @@ CHANGELOG une fois traitée.
 
 ## Fonctionnalités (2026-07-11)
 
-1. **Portée musicale classique (piano, clés de sol et fa).** Représenter :
-   - en mode `run` : les notes jouées / accords détectés en direct,
-   - en mode `guide` : les accords à jouer de l'étape courante.
-
-   Question ouverte à trancher : le choix des altérations. Pour le guide, c'est simple (le
-   mode de l'étape est connu, les altérations s'en déduisent). Pour `run`, le mode n'est pas
-   toujours fiable en temps réel — probablement partir d'une portée sans altération à la clé
-   et gérer les altérations accord par accord (dièse/bémol par note plutôt qu'une armure
-   globale) plutôt que d'essayer de deviner une tonalité.
-
-2. **Meilleure détection micro pour le jeu au piano.** Le piano introduit trois sources de
+1. **Meilleure détection micro pour le jeu au piano.** Le piano introduit trois sources de
    fausses notes que la détection FFT actuelle ne filtre pas :
    - harmoniques hautes réelles de la note jouée (sur un do : le do à l'octave, le sol qui
      suit, etc.),
@@ -56,11 +46,12 @@ CHANGELOG une fois traitée.
      harmoniques/résonances sont typiquement plus faibles que la fondamentale réellement
      jouée.
 
-3. **Exposer toute la bibliothèque de modes/échelles au moment de composer**, pas seulement
-   les modes principaux déjà présentés sur le cercle des quintes. La source est
-   `KnowledgeBase/Modes/scales_of_harmonies.pdf` (33 gammes / 7 familles, déjà à la base de
-   `MusicTheoryKit`, mais pas toutes proposées dans l'UI d'ajout de mode à un morceau/guide).
-   À faire en même temps : vérifier que les notes du mode choisi — y compris les modes moins
-   courants — sont bien répercutées sur tous les affichages de clavier existants (mode-marker
-   row, "Notes du mode", clavier virtuel), pas seulement sur les modes déjà couverts
-   aujourd'hui.
+2. **Clavier virtuel : adapter la taille du piano à la largeur de la page (mode paysage).**
+   Aujourd'hui le piano a une largeur fixe en pixels par touche (`WHITE_KEY_WIDTH`), calculée
+   uniquement à partir du nombre de touches visibles — sur un écran large/en paysage (tablette,
+   grand moniteur), il reste petit au lieu de profiter de l'espace disponible. Explicitement
+   noté par l'utilisateur comme pouvant être fait séparément du reste. Pistes à explorer :
+   recalculer `WHITE_KEY_WIDTH` (et donc `BLACK_KEY_WIDTH`, les décalages de touches noires,
+   `MINI_WHITE_WIDTH`...) à partir de la largeur de `.layout-col-right` plutôt qu'une constante
+   fixe, en gardant une taille minimale lisible sur mobile étroit ; recalculer sur
+   `resize`/orientation change, pas seulement au chargement.

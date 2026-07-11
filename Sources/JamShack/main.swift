@@ -479,25 +479,34 @@ func printSceneTree() {
     }
 }
 
-/// The 7 classic "Major Modes" (family 1), in degree order — the common case for a guide
-/// step, and the only family the circle-of-fifths wheel understands (see
-/// `CircleOfFifths.parentTonic(for:)`). Printed as a numbered pick-list before prompting for
-/// a scale id, so typing a bare number meant for this list (instead of the id itself) still
-/// resolves — that exact mistake used to silently save an unresolvable guide step (see
-/// `resolvedScaleID`).
+/// All 33 scales of `ScaleLibrary.all`, grouped under a family-name heading — `.all`'s
+/// declaration order is already family-then-degree (see `ScaleLibrary.swift`), so no
+/// re-sorting is needed, just a heading printed whenever the family changes. Printed as a
+/// numbered pick-list before prompting for a scale id, so typing a bare number meant for this
+/// list (instead of the id itself) still resolves — that exact mistake used to silently save
+/// an unresolvable guide step (see `resolvedScaleID`). Previously only family 1 (the 7
+/// classic "Major Modes") was listed here, leaving the other 26 scales undiscoverable in this
+/// menu even though `guide-add-mode`/`ScaleLibrary.byID` already accepted any of them by id.
+/// The circle-of-fifths wheel still only understands family 1 for its own display (see
+/// `CircleOfFifths.parentTonic(for:)`) — unrelated to this pick-list, not something to "fix"
+/// here: a non-family-1 mode simply shows on the wheel without its diatonic contour.
 func printNumberedScales() {
-    for (index, scale) in ScaleLibrary.scales(inFamily: 1).enumerated() {
-        print("  \(index + 1). \(scale.id) (\(scale.popularName))")
+    var currentFamilyID = -1
+    for (index, scale) in ScaleLibrary.all.enumerated() {
+        if scale.familyID != currentFamilyID {
+            currentFamilyID = scale.familyID
+            print("  -- \(ScaleFamilies.family(currentFamilyID).name) --")
+        }
+        print("  \(index + 1). \(scale.id) (\(scale.popularName) / \(scale.systematicName))")
     }
 }
 
-/// Resolves a "<n|id>" argument against the family-1 pick-list `printNumberedScales()` just
-/// printed — a number picks by 1-based position, anything else (e.g. a family-2+ id like
-/// "melodic_minor", or a correctly-typed family-1 id) is passed through literally.
+/// Resolves a "<n|id>" argument against the full `ScaleLibrary.all` pick-list
+/// `printNumberedScales()` just printed — a number picks by 1-based position, anything else
+/// (a correctly-typed id) is passed through literally.
 func resolvedScaleID(_ text: String) -> String {
-    let familyOne = ScaleLibrary.scales(inFamily: 1)
-    if let index = Int(text), familyOne.indices.contains(index - 1) {
-        return familyOne[index - 1].id
+    if let index = Int(text), ScaleLibrary.all.indices.contains(index - 1) {
+        return ScaleLibrary.all[index - 1].id
     }
     return text
 }
@@ -1576,8 +1585,7 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             guard let trackChoice = promptLine("Pour quel instrument (numero ou id): "), !trackChoice.isEmpty else { return }
             try promptChooseSoundForTrack(resolvedTrackIDText(trackChoice))
         },
-        MenuItem.separator,
-        MenuItem.header("Scene"),
+        MenuItem.header("Fichier de scene"),
         MenuItem(label: "Sauvegarder scene...") {
             guard let name = promptLine("Nom de la scene: "), !name.isEmpty else { return }
             try executeCommand("save-scene", [name])

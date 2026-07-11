@@ -124,6 +124,28 @@ musicale qu'elle ne respecte peut-être pas.
 - `MIDIInputListener` : enveloppe CoreMIDI réelle. `connectAllSources()` (comportement par
   défaut) ou `connectSource(atIndex:)` (une seule source choisie).
 
+**Vrai bug corrigé, pas juste une théorie : le running status MIDI n'était pas géré.**
+Utilisateur signalant "des notes qui restent memorisées à tort" en jouant un vrai clavier MIDI.
+`parseNoteEvents` exigeait un octet de statut (`& 0x80 != 0`) en tête de chaque message — or
+beaucoup de matériel réel (surtout tout ce qui parle le vrai MIDI 5 broches plutôt que
+l'USB-MIDI class-compliant) omet l'octet de statut répété pour des messages consécutifs sur le
+même canal (le "running status" du standard MIDI) : juste les deux octets de données, en
+comptant sur le dernier statut réel encore en vigueur. Avant la correction, ces deux octets
+(tous deux `< 0x80`) étaient silencieusement sautés un par un — pour un **note-off** en
+running status, ça voulait dire que la hauteur ne quittait jamais `heldPitches`, restant
+bloquée "tenue" jusqu'à ce qu'un futur note-off sans lien (même hauteur, un octet de statut
+réel cette fois) arrive par hasard, ou jamais. Corrigé en suivant un `runningStatus: UInt8?`
+mutable pendant le parcours des octets — un octet de statut note-on/note-off réel le met à
+jour, tout autre octet de statut réel le réinitialise à `nil` (un message d'un type différent
+porte quasiment toujours son propre octet de statut explicite en pratique). Vérifié par 3
+nouveaux tests dans `Tests/MIDIEngineTests/MIDIRawParserTests.swift` (+ miroir `SanityChecks`,
+547 → 550 checks) couvrant explicitement le running-status note-on, le running-status note-off
+(le cas du bug lui-même), et la remise à zéro par un octet de statut non-note. Root-cause
+identifiée via un agent de recherche dédié plutôt que par supposition — classé le plus probable
+des deux symptômes rapportés (l'autre, "une note jouée en affiche deux", reste possible en
+mode MIDI individuel si le clavier physique expose plus d'une source CoreMIDI visible, mais
+dépend du matériel de l'utilisateur et n'a pas été corrigé ici faute de pouvoir le reproduire).
+
 ## AudioEngine — lecture audio et écoute
 
 - **`PiecePlayer`** : lecture non temps-réel d'un `Piece` (`play(_:instrumentURLs:)`) via un
@@ -365,6 +387,115 @@ wrapper avant que ce callback n'ait eu la moindre chance de s'exécuter :
   seule — même discipline que la leçon `feedback-debug-verify-dont-theorize` déjà retenue pour
   le bug de scintillement du terminal.
 
+### Portée musicale (`renderStaffSVG`, dupliquée dans les deux assets)
+
+Sous chaque clavier ASCII/HTML (console web et clavier virtuel), une portée à deux clés (sol
+et fa) en SVG généré côté client. Le code JS est identique dans `StaticAssets.swift` et
+`VirtualKeyboardAssets.swift` (copié tel quel, pas factorisé — les deux fichiers embarquent
+chacun un script HTML autonome, aucun module JS partagé entre les deux pages) ; toute future
+correction doit être répercutée dans les deux.
+
+- **Fenêtre fixe Sol2-Do6** (`STAFF_MIN_MIDI`/`STAFF_MAX_MIDI`), un ton naturel de marge
+  au-delà de `MIN_MIDI`/`MAX_MIDI` de chaque côté — même logique de fenêtre fixe (pas
+  recentrée dynamiquement) que le clavier ASCII du terminal, pour la même raison : simplicité,
+  pas de redimensionnement à gérer.
+- **`STAFF_ROWS`** : une entrée par note naturelle de la fenêtre, avec une parité
+  ligne/interligne calculée une seule fois par rapport à un point d'ancrage connu (Mi4, la
+  ligne du bas de la clé de sol) — les lignes et interlignes alternent strictement sur toute la
+  portée, y compris au-delà des deux clés, donc les lignes supplémentaires ne sont qu'une
+  continuation du même motif plutôt qu'un cas particulier à part.
+- **`staffLedgerRows(rowIndex)`** : parcourt depuis le bord de la portée le plus proche jusqu'à
+  la note, en ne gardant que les positions de parité "ligne" — généralise à n'importe quelle
+  note sans table de correspondance séparée à tenir à jour.
+- **Clés positionnées sur G4/F3 ET à la bonne taille** — deux passes, pas une. La première
+  passe (`STAFF_CLEF_G_DY`/`STAFF_CLEF_F_DY`) a centré la volute de la clé de sol sur Sol4 et
+  les deux points de la clé de fa sur Fa3 mais avec une taille de police beaucoup trop petite
+  (34) — trouvée en jugeant seulement l'alignement, pas la proportion. Résultat : la clé ne
+  dépassait même pas les lignes de la portée, contrairement à une vraie clé de sol/fa qui
+  déborde nettement au-dessus et en dessous — exactement la plainte de l'utilisateur ("ne
+  respecte pas la taille standard"), qu'aucun réglage de position seule ne pouvait corriger.
+  Deuxième passe : mesure de l'extension réelle de CE glyphe (haut/bas de l'encre dessinée, et
+  position de son "œil"/du milieu des deux points) par rapport à la ligne de base du texte, à
+  une grande taille de police, dans une capture Chrome headless avec grille de mesure — ratios
+  trouvés : l'œil de la clé de sol est à 0.25em au-dessus de la ligne de base, le haut du
+  glyphe à 0.417em au-dessus de l'œil, le bas à 0.293em en dessous ; l'ancrage Fa3 de la clé de
+  fa (milieu des deux points) est à 0.45em au-dessus de la ligne de base, le haut du glyphe à
+  0.217em au-dessus de cet ancrage, le bas à 0.45em en dessous. `STAFF_CLEF_FONT_SIZE_G = 130`/
+  `STAFF_CLEF_FONT_SIZE_F = 118` choisies à partir de ces ratios puis réduites (un premier choix
+  plus grand, dérivé des mêmes ratios pour atteindre l'extension "idéale" façon partition
+  imprimée, faisait visuellement se chevaucher les deux clés — l'écart entre les deux portées
+  n'est pas assez grand pour ça) — un compromis entre "dépasse clairement la portée" et "ne
+  chevauche pas l'autre clé". `STAFF_MARGIN_TOP`/`STAFF_MARGIN_BOTTOM` (46/32, avant : 22/22
+  symétrique) agrandis en conséquence — la clé de sol déborde plus au-dessus que la clé de fa
+  en dessous, d'où des marges asymétriques ; `STAFF_STAVES_X` (78, avant 32) pour laisser la
+  place à la clé de fa, plus large des deux à cause de ses deux points. À revérifier avec une
+  nouvelle mesure si le rendu de ce glyphe change un jour (moteur de rendu, police système).
+  **Troisième passe** (retour utilisateur après la deuxième) : `STAFF_CLEF_FONT_SIZE_F` réduite
+  d'encore ~30% (118 → 83, `STAFF_CLEF_G_DY`/`STAFF_CLEF_F_DY` recalculées automatiquement —
+  ce sont des formules dérivées du font-size, pas des constantes séparées à resynchroniser à la
+  main) — la clé de fa restait trop massive à côté de la clé de sol une fois les deux
+  effectivement visibles côte à côte. La clé de sol elle-même n'a pas été retouchée (seule la
+  clé de fa a été signalée comme trop grosse).
+  **Quatrième passe** : `STAFF_CLEF_G_DY` affiné de `0.25 * fontSize` à `0.22 * fontSize` — un
+  léger excès faisait sembler la clé de sol "un tout petit peu trop basse" par rapport à la
+  ligne Sol4. Vérifié en comparant plusieurs valeurs de ratio côte à côte contre une ligne de
+  repère, comme pour les passes précédentes.
+- **Lignes de portée prolongées sous les deux clés, comme en vraie notation** —
+  `STAFF_LINES_LEFT_X` (nouvelle constante, proche du bord gauche du papier) sépare enfin "où
+  les lignes commencent" de "où la première colonne de notes commence" (`STAFF_STAVES_X`,
+  inchangée) : les deux étaient confondues avant ce correctif, laissant les lignes s'arrêter net
+  à droite des clés au lieu de passer dessous. Les clés, dessinées APRÈS les lignes dans le
+  SVG (donc peintes par-dessus), continuent de bien apparaître au premier plan.
+- **Historique d'événements, pas un instantané** (`STAFF_HISTORY_LENGTH = 20`, initialement 12
+  puis agrandi — "il y a assez de place") : `renderStaffSVG`
+  prend désormais un tableau d'événements `{ pitches, chordRoot, chordTones }` (un événement =
+  une colonne, la plus ancienne à gauche) plutôt que les seules notes tenues à l'instant présent
+  — chaque piste/clavier virtuel garde son propre historique roulant (`updateStaffHistory`
+  côté console, indexé par id de piste ; `staffHistory`, un simple tableau, côté clavier virtuel
+  qui n'a qu'une seule piste). `pushStaffEvent` n'ajoute une colonne que si l'instantané courant
+  diffère du dernier événement enregistré ET qu'il y a au moins une note tenue — un relâchement
+  complet ne pousse pas d'événement "silence" (le dernier accord/note joué reste affiché tel
+  quel), et une note seule tenue sans accord reconnu est un événement à part entière (gris),
+  au même titre qu'un accord. La largeur du SVG grandit avec le nombre de colonnes ; `.staff`
+  passe donc de `width: <fixe>` à `width: auto` (hauteur fixe, ratio préservé) pour que
+  l'élargissement du contenu élargisse vraiment l'affichage au lieu d'être écrasé dans une
+  boîte de taille fixe.
+- **Décalage en zigzag pour les secondes tenues ensemble** (`shiftByRow`), par colonne : notes
+  triées du grave à l'aigu, une note n'est décalée que si son voisin immédiatement au-dessus
+  existe ET n'a pas lui-même déjà été décalé — reproduit le zigzag habituel de gravure plutôt
+  qu'un décalage bête de "toute note qui a un voisin au-dessus".
+- **Rondes de note agrandies** (`STAFF_NOTE_RX`/`STAFF_NOTE_RY`, ~près de la hauteur d'un
+  interligne) et **contour de la même couleur que le remplissage** (`.staff-note-root`,
+  `.staff-note-tone`, etc. — `stroke` = `fill`, plus de liseré gris uniforme `#333`) — mêmes
+  couleurs que `.pkey.*`.
+- **Altérations** : pas d'armure — chaque note altérée porte son propre dièse/bémol,
+  puisqu'il n'existe nulle part ailleurs dans ce projet de logique d'orthographe par
+  tonalité/mode ; le nom vient de la même table `NOTE_NAMES` (dièses uniquement) que le reste
+  de la page.
+- **Largeur minimale alignée sur le clavier, dans les deux pages** (`renderStaffSVG(history,
+  minWidthPx)`) : le papier de la portée (fond blanc) n'est jamais plus étroit que le clavier
+  affiché juste au-dessus, converti en unités de viewBox via le ratio hauteur-affichée/
+  hauteur-viewBox (`STAFF_DISPLAY_HEIGHT_PX = 130`) — évite que la portée paraisse plus étroite
+  que le clavier juste parce qu'il n'y a pas encore assez d'historique pour la remplir. Diffère
+  entre les deux pages seulement dans la SOURCE de `minWidthPx` : `VirtualKeyboardAssets.swift`
+  utilise `keyboardPixelWidth` (recalculé à chaque reconstruction du piano — changement
+  d'octave — puisque la fenêtre `[MIN_MIDI, MAX_MIDI]` glisse mais garde toujours le même
+  nombre de touches ; correction ajoutée après-coup, la console web n'en avait pas au départ) ;
+  `StaticAssets.swift` utilise `KEYBOARD_TOTAL_WIDTH`, une simple constante (`Math.ceil((MAX_MIDI
+  - MIN_MIDI + 1) / 12) * 7 * WHITE_KEY_WIDTH`, dérivée des mêmes `MIN_MIDI`/`MAX_MIDI`/
+  `WHITE_KEY_WIDTH` que `keyboardHTML` elle-même) puisque cette page n'a pas de glissement
+  d'octave — une seule fenêtre fixe pour toute piste/guide/lecture.
+- **Vérifié** : la logique JS (lignes/interlignes, ledger, zigzag, coloration, historique) via
+  un script Node.js autonome (pas de navigateur ni Xcode disponibles dans cet environnement —
+  voir la limite déjà documentée ailleurs) ; le rendu réel (positionnement des clés, tailles,
+  couleurs, alignement des largeurs, onglets) via des captures d'écran Chrome headless de la
+  vraie page extraite du fichier Swift avec un `fetch`/`prompt` simulés (`prompt` bloque
+  indéfiniment sous Chrome headless sans interface — piège réel rencontré en testant, pas
+  une supposition : reproduit d'abord sur le code déjà commité, donc pas une régression
+  introduite ici). Aucun test XCTest/`SanityChecks` ajouté : cette portée est un script JS
+  embarqué dans une constante Swift, hors de portée du compilateur Swift comme de
+  `SanityChecks` (même convention déjà établie pour `keyboardHTML`/`renderWheel`).
+
 ### Second serveur : le Clavier virtuel (`VirtualKeyboardAssets.swift`)
 
 Une seconde instance d'`HTTPServer`, sur un port indépendant, pilotée par
@@ -456,24 +587,106 @@ fire-and-forget, pas un geste tenu, donc sans le même besoin de préserver l'id
 DOM entre deux sondages que les touches du piano ou de la roue.
 
 **Mise en page à deux colonnes** (`.layout-columns`, même motif responsive que la console) :
-colonne gauche = identité/réglages + info du guide (si actif) + roue ; colonne droite,
-en vis-à-vis = `#keyboard-align-wrapper` (aperçu/flèches d'octave, puis piano réel) suivi de
-l'accord détecté juste en dessous. `#keyboard-align-wrapper` est un `flex-direction: column`
-avec `align-items: center` — centre chaque rangée sur la plus large des deux plutôt que sur
-toute la largeur de la colonne (l'approche précédente, qui les désalignait dès que le piano
-était plus étroit que la colonne et restait collé à gauche dedans). Ça ne suffisait pas tout
-seul : `ensureKeyboardBuilt()` calculait la largeur du `.keyboard` par
-`Math.ceil((MAX_MIDI-MIN_MIDI+1)/12)*7*WHITE_KEY_WIDTH` — une approximation qui réserve un
-nombre ENTIER d'octaves de touches blanches, laissant une marge invisible d'un côté de la
-boîte dès que `MIN_MIDI` ne tombe pas exactement sur un Do (le cas courant, `MIN_MIDI` étant
-un Sol — voir `BASS_WHITE_OFFSETS`) ; `align-items: center` centre sur la BOÎTE rendue, pas
-sur les touches visibles à l'intérieur, donc cette marge invisible décalait quand même
-l'alignement. Corrigé en calculant la largeur exacte à partir du slot de touche blanche de
-`MIN_MIDI`/`MAX_MIDI` (`whiteSlotFor`, `leftWhiteSlotOffset`) et en décalant chaque touche de
-`leftWhiteSlotOffset` — la boîte du clavier correspond désormais pile à ses propres touches
-visibles, sans marge d'aucun côté. Le piano réel reste enveloppé dans `.keyboard-scroll`
-(`overflow-x: auto`) pour défiler dans sa colonne plutôt que déborder toute la page une fois
-celle-ci scindée en deux.
+colonne gauche = guide (si actif) + roue ; colonne droite, en vis-à-vis =
+`#keyboard-align-wrapper` (aperçu/flèches d'octave, piano réel, portée, panneau accord/mode).
+`ensureKeyboardBuilt()` calcule la largeur exacte du `.keyboard` à partir du slot de touche
+blanche de `MIN_MIDI`/`MAX_MIDI` (`whiteSlotFor`, `leftWhiteSlotOffset`, décalant chaque touche
+de `leftWhiteSlotOffset`) — la boîte du clavier correspond pile à ses propres touches visibles,
+sans marge invisible d'un côté (l'ancienne approximation par nombre entier d'octaves en
+laissait une dès que `MIN_MIDI` ne tombait pas sur un Do, ce qui est le cas courant — voir
+`BASS_WHITE_OFFSETS`). Le piano réel reste enveloppé dans `.keyboard-scroll` (`overflow-x:
+auto`) pour défiler dans sa colonne plutôt que déborder toute la page une fois celle-ci scindée
+en deux.
+
+**`#keyboard-align-wrapper` : `display: inline-flex` (pas `flex`), `align-items: stretch`** —
+fait que l'aperçu d'octave, le piano, la portée et le panneau accord/mode partagent tous la
+même largeur. `inline-flex` (pas juste `flex`) est le point qui compte : un conteneur flex
+`display: flex` (bloc) remplit la largeur disponible de SON PARENT, qui peut être plus étroite
+que le piano — **vrai bug trouvé ainsi, pas par relecture** : avec `flex` tout court, le piano
+se retrouvait visuellement tronqué (dernières touches invisibles/coupées), parce que
+`align-items: stretch` rétrécissait `#keyboard-container` à la largeur de la colonne (660px
+dans un cas mesuré) au lieu de la largeur réelle du piano (792px) — confirmé en lisant
+`getBoundingClientRect()` des deux dans une capture headless. `inline-flex` se comporte comme
+`inline-block` : il se dimensionne d'abord sur son enfant le plus large, PUIS `align-items:
+stretch` étire les autres sur cette même largeur — restaure la pleine largeur du piano (qui
+peut toujours déborder sur un écran étroit/défiler via `.keyboard-scroll`, exactement comme
+avant l'existence de cette fonctionnalité).
+
+**Aperçu de clavier — alignement final, après plusieurs itérations guidées par une maquette
+cible fournie par l'utilisateur** (`renderMiniPianoOverview()`) : une première version
+l'affichait délibérément ~30% plus large que le piano (mauvaise lecture d'une demande
+utilisateur — le "30% de plus" visait la taille de l'aperçu par rapport à SA PROPRE version
+précédente, pas une différence voulue avec le piano). Une deuxième version a fait correspondre
+la largeur du SVG lui-même à `keyboardPixelWidth`, avec tout centré (`justify-content: center`
+sur `.octave-controls`/`.keyboard-scroll`). La maquette cible a montré autre chose : les
+étiquettes min/max ("F5 ◂"/"▸ B7") doivent être **au ras des mêmes bords gauche/droite** que le
+piano/la portée/le panneau texte — pas le SVG de l'aperçu tout seul, la RANGÉE ENTIÈRE
+(étiquette + flèche + SVG + flèche + étiquette), avec les touches de l'aperçu lui-même en
+retrait des deux bords (pas alignées sur les touches du piano). Implémentation finale :
+- `.octave-controls`/`.keyboard-scroll` passés de `justify-content: center` à `flex-start` —
+  tout au ras du même bord gauche, plus de centrage nulle part dans cette colonne.
+- `renderMiniPianoOverview(svgTargetWidth)` prend désormais la largeur cible du SVG **lui-même**
+  en paramètre (pas `keyboardPixelWidth` directement) — le viewBox reste à sa taille naturelle
+  (calcul interne rects blancs/noirs/surbrillance inchangé), seuls les attributs `width`/
+  `height` du `<svg>` changent (pur zoom d'affichage) ; `jumpOctaveFromMiniPianoClick` n'a
+  besoin d'aucun changement, il convertit déjà via `getBoundingClientRect()` (taille RÉELLE),
+  pas une supposition d'échelle 1:1.
+- `ensureKeyboardBuilt()` calcule ce `svgTargetWidth` comme `keyboardPixelWidth` moins la
+  largeur déjà prise par les étiquettes/flèches ("overhead"), pour que la RANGÉE TOTALE
+  corresponde au piano, pas le SVG seul. **Piège réel trouvé en comparant le rendu à la
+  maquette, pas par relecture** : une première mesure de cet "overhead" lisait
+  `#octave-container.getBoundingClientRect().width` — mais cette boîte est déjà étirée à
+  `keyboardPixelWidth` par le `align-items: stretch` du `#keyboard-align-wrapper` parent,
+  donc ça mesurait ~792px de "overhead" sur un piano de 792px de large quel que soit le texte
+  réel des étiquettes, écrasant l'aperçu à sa largeur plancher (`20`px, presque invisible dans
+  la capture). Corrigé en sommant les largeurs INDIVIDUELLES des étiquettes/flèches (chaque
+  enfant flex non-`mini-piano-container` se dimensionne sur son propre contenu le long de
+  l'axe principal, indépendamment de la largeur étirée de la rangée qui les contient) plus les
+  `gap` entre eux, mesurés avec `#mini-piano-container` encore vide (texte des étiquettes déjà
+  posé, SVG pas encore inséré).
+
+**Taille adaptative — tenir sur un MacBook 13"/iPad 11", grandir sur un plus grand écran**
+(`applyResponsiveScale()`) : toute la mise en page à deux colonnes (`#layout-columns`) est mise
+à l'échelle comme un seul bloc via un `transform: scale(...)` CSS calculé à partir de la largeur
+de fenêtre réellement disponible, recalculé au chargement et sur `resize` — remplace l'ancien
+repli `flex-wrap: wrap` (repasser en une colonne), explicitement écarté par l'utilisateur pour
+cette passe ("on fera un design iPhone plus tard").
+- **`.layout-columns` passe de `display: flex` à `inline-flex`, et `.layout-col-left`/
+  `.layout-col-right` de `flex: 1 1 380px` à `flex: 0 0 auto`** — même leçon "inline-flex vs
+  flex" que `#keyboard-align-wrapper` plus haut, retrouvée en construisant CETTE fonctionnalité :
+  une première version forçait `#layout-columns` à une largeur totale ESTIMÉE (`WHEEL_MAX_WIDTH_PX
+  + LAYOUT_GAP_PX + keyboardPixelWidth`) pour en déduire le facteur d'échelle — mais avec les
+  deux colonnes en `flex-grow: 1`, forcer une largeur totale approximative faisait répartir tout
+  écart 50/50 entre les deux colonnes SANS RAPPORT avec ce dont chacune avait réellement besoin,
+  confirmé en lisant `getBoundingClientRect()` : `#keyboard-align-wrapper` se retrouvait plus
+  large que sa propre colonne parente, débordant sans être contenu. Avec les deux colonnes
+  fixées à leur taille de contenu (plus de "grandir"), plus rien à estimer par formule.
+- **Largeur naturelle mesurée dans le DOM, pas calculée par formule** — mais pas en mesurant
+  `#layout-columns` lui-même : `.wheel` est `width: 100%; max-width: 624px`, et ce `100%` se
+  résout par rapport à l'espace que la fenêtre ACTUELLE laisse à `.layout-col-left` — un vrai
+  piège trouvé en mesurant, pas en relisant le code : remettre le `transform` à `none` puis
+  relire `getBoundingClientRect().width` donnait systématiquement un nombre suspicieusement
+  proche de la largeur de fenêtre ACTUELLE à chaque taille essayée, au lieu d'un nombre fixe
+  indépendant du viewport — parce que le `100%` de la roue s'était déjà adapté à la largeur de
+  page du moment, donc "annuler le transform" n'annulait jamais vraiment l'influence du
+  viewport sur la mesure. Solution : mesurer directement `#keyboard-align-wrapper` (aucun `%`
+  dans tout ce sous-arbre, seulement du pixel fixe ou du contenu) et utiliser la constante
+  `WHEEL_MAX_WIDTH_PX` (624, la taille que la roue prendra une fois ce bloc mis à l'échelle,
+  puisque le transform s'applique uniformément à tout le sous-arbre) pour la contribution de la
+  roue plutôt que de la mesurer.
+- **`RESPONSIVE_MIN_SCALE`/`RESPONSIVE_MAX_SCALE`** (0.5/1.6) bornent le facteur, `BODY_MAX_WIDTH_PX`/
+  `BODY_HORIZONTAL_PADDING_PX` (1600/48) reproduisent les contraintes déjà posées par le CSS de
+  `body` pour calculer la largeur réellement disponible. `#responsive-scale-clip` (nouveau
+  wrapper autour de `#layout-columns`, `overflow: hidden`) reçoit une `height` explicite
+  (hauteur naturelle × échelle) — un `transform` ne modifie pas le flux de mise en page normal,
+  donc sans ça un bloc rétréci laisserait un vide de sa hauteur non réduite en dessous (ou un
+  bloc agrandi déborderait sur ce qui suit).
+- **Vérifié** via des captures Chrome headless à plusieurs largeurs de fenêtre représentatives
+  (MacBook 13" ≈1280px, iPad 11" paysage ≈1194px, un grand écran 1920px, et un iPad 11"
+  portrait ≈834px comme cas dégradé non ciblé) avec un mock de roue réaliste (12 colonnes, pas
+  juste `wheel: null`, pour éviter de sous-estimer la largeur naturelle) — piano et roue
+  entièrement visibles sans défilement horizontal aux deux premières tailles, agrandissement
+  visible au-delà, réduction sans casse (juste petit) au cas dégradé.
 
 **Roue toujours affichée, avec ou sans guide** : `ImprovSession.handleVirtualKeyboardRequest`
 calcule désormais `wheel` à chaque `/state` sans condition (avant : seulement si un guide
@@ -609,6 +822,28 @@ imbriqué plutôt qu'en box-drawing, plus naturel dans un navigateur). `WebConso
 gagné `isListening`/`canHaveSound`/`soundEnabled`/`instrumentName` pour cet usage — inutiles
 pour l'onglet `Run` (qui ne reçoit déjà que des pistes en écoute), nécessaires pour l'arbre de
 scène, qui liste toute piste qu'elle écoute ou non.
+
+**Troisième onglet `Infos`** (console web) : texte statique (le titre de page, déplacé hors du
+`<body>` fixe dans cet onglet — plus affiché en permanence au-dessus de `Run`/`Scene`), `ternaire
+à 3 branches` dans `refresh()`. La ligne "Dernier evt" (dernier événement MIDI brut) a été
+retirée de l'onglet `Run` — jugée peu utile face à la portée musicale, qui montre déjà
+l'historique des notes/accords joués. `renderTrack`/`sceneTrackLineHTML` n'affichent plus
+`[track.id]` en préfixe du libellé — pour une piste `clavier-web:<uuid>` ça exposait l'uuid
+brut du client sans utilité pour une page en lecture seule (rien à taper) ; le libellé seul
+(déjà l'alias choisi pour une piste clavier virtuel) suffit.
+
+**Clavier virtuel — deux onglets `Clavier`/`Infos`** (même mécanisme que la console web, état
+`activeVKTab`/`setVKTab()`, mais bascule juste le `display` de deux conteneurs déjà construits
+au lieu de reconstruire le HTML — cette page met déjà à jour ses sous-conteneurs en place à
+chaque sondage plutôt que de reconstruire une grande chaîne HTML, voir plus haut) : `Infos`
+récupère la ligne identité/réglages et le texte d'aide, libérant de la place dans `Clavier`.
+
+**Menu terminal, catégorie Scene** (`Sources/JamShack/main.swift`) : `MenuItem.header("Scene")`
+juste avant "Sauvegarder scene.../Charger scene..." dupliquait le nom de la catégorie
+elle-même (déjà affiché en vidéo inverse juste au-dessus une fois le menu ouvert) — repérable
+comme "un sous-menu qui a l'air désactivé" (un second "Scene" en grisé, sans lien apparent avec
+le premier). Renommé en "Fichier de scene", et le séparateur juste avant supprimé (il faisait
+double emploi avec l'en-tête lui-même).
 
 ### Groupes de fonctionnalités
 
@@ -913,7 +1148,7 @@ Barre de menu façon interface DOS graphique, sept catégories (`menuCategories`
 |---|---|
 | **JamShack (S)** | Menu principal, ouvert par défaut. Groupes séparés par des traits : infos/aide ; choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/**composition IA**/**réglages** — ce dernier remplace l'ancien choix indépendant de dossier de connexions LLM, toujours dans `Settings/` désormais) ; choisir une connexion LLM (isolée dans son propre groupe) ; choisir la palette de couleur (`ColorPalette`, voir plus bas) ; mode MIDI fusionné/individuel ; démarrer/arrêter la console web et le clavier virtuel (§WebConsole) ; quitter. Point d'entrée unique pour toute la configuration de session — aucun autre menu ne propose de choisir un dossier ou une connexion. |
 | **Scene (n)** | Lister/activer/arrêter les pistes d'entrée, *séparateur*, activer/désactiver leur son, *séparateur*, choisir un son, *séparateur*, sauvegarder/charger une scène (configuration d'instruments : actif, son actif, quel son). Les actions qui demandent une piste et la sélection d'instrument dans "Choisir un son..." présentent `session.tracks` numérotée (`printNumberedTracks()`) — le choix accepte un numéro ou l'id littéral (`resolvedTrackIDText(_:)`, même convention que `resolvedSampleName`). |
-| **Guide Musicaux (G)** | Voir l'écran Guide Musical, *séparateur*, créer un nouveau guide musical (boucle "ajouter un mode" jusqu'à tonique vide) / ajouter un mode au guide musical en cours — chaque ajout propose aussi une progression d'accords optionnelle prise dans `chordprogressions.json` (voir §Progressions d'accords), *séparateur*, charger/sauvegarder(-sous) un guide musical, *séparateur*, démarrer/arrêter le guide musical (aussi accessible par la barre d'espace sur l'écran Guide Musical). |
+| **Guide Musicaux (G)** | Voir l'écran Guide Musical, *séparateur*, créer un nouveau guide musical (boucle "ajouter un mode" jusqu'à tonique vide) / ajouter un mode au guide musical en cours — chaque ajout présente `printNumberedScales()`, les 33 entrées de `ScaleLibrary.all` (déjà en ordre famille→degré, voir §MusicTheoryKit) groupées sous un en-tête par famille, chaque ligne montrant `popularName` **et** `systematicName` (ex. `"altered (Altered / Super Locrian / Ionian #1)"`) — les deux appellations du PDF source, pas seulement le nom usuel —, `resolvedScaleID(_:)` résolvant un numéro contre cette même liste à plat (numéro ou id littéral, même convention que `resolvedTrackIDText`) — corrigé le 2026-07-11, ne listait auparavant que la famille 1 (7 modes majeurs) alors que `guide-add-mode`/`ScaleLibrary.byID` acceptaient déjà n'importe laquelle des 33 —, puis une progression d'accords optionnelle prise dans `chordprogressions.json` (voir §Progressions d'accords), *séparateur*, charger/sauvegarder(-sous) un guide musical, *séparateur*, démarrer/arrêter le guide musical (aussi accessible par la barre d'espace sur l'écran Guide Musical). |
 | **Enregistrement (E)** | Démarrer/arrêter/voir/jouer un enregistrement, *séparateur*, charger/sauvegarder, *séparateur*, composer un morceau à partir de l'enregistrement, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser les indications de style, *séparateur*, voir/exporter le prompt de composition. Ordre — cadrage puis indications avant le prompt — délibéré (voir §LLMEngine/§AppCore). |
 | **Morceaux (M)** | 4 groupes : écouter/voir le morceau ; choisir le son de lecture, d'une piste, ou des accords d'une section (`pieceDetailLines()` numérote visuellement chaque section — `"Section 1: A"` — et chaque piste — `"piste 1 '...'"` — pour que l'utilisateur sache directement quel numéro saisir) ; charger la démo/un morceau, sauvegarder ; `MenuItem.header("Assistant IA")` — sous-section réservée, sans item pour l'instant, en attente d'une future fonction de modification par dialogue applicable à n'importe quel morceau. |
 | **Composition (C)** | Décrire le morceau (assistant titre → description → indications → composition), composer à partir de la description, voir la description, *séparateur*, charger/sauvegarder(-sous) une description, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/exporter le prompt de composition. |

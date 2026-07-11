@@ -96,18 +96,52 @@ public let virtualKeyboardIndexHTML = """
   .hint { color: #666; font-size: 0.85rem; margin-top: 0.3rem; }
   .identity { color: #666; font-size: 0.85rem; }
   .identity a { color: #6cf; cursor: pointer; text-decoration: underline; }
-  .layout-columns { display: flex; flex-wrap: wrap; gap: 2rem; align-items: flex-start; }
-  .layout-col-left, .layout-col-right { flex: 1 1 380px; min-width: 0; }
-  /* Centers the mini-piano group ABOVE the real piano ("centrer la representation du clavier
-     global au dessus du clavier actif") regardless of which of the two is wider — a column
-     flex box with `align-items: center` centers each row relative to the widest one, unlike
-     centering `.octave-controls` alone within the FULL column width (the earlier approach):
-     that lined it up with the COLUMN's center, not the piano's own, whenever the piano itself
-     was narrower than the column and sat left-aligned inside it. */
-  .keyboard-align-wrapper { display: flex; flex-direction: column; align-items: center; }
+  /* `display: inline-flex` (not `flex`) so `#layout-columns` shrink-wraps to the two columns'
+     own natural content width — same "inline-flex vs flex" lesson as `.keyboard-align-wrapper`
+     above, learned the SAME way (measured widths not matching visual expectations) — a plain
+     `flex` row fills its parent's available width, and with both columns sharing
+     `flex-grow: 1`, any leftover space between that available width and the columns' actual
+     content got split 50/50 REGARDLESS of which column's content needed it — real bug caught
+     this way (not by inspection) while building `applyResponsiveScale()` below: forcing
+     `#layout-columns` to a specific pixel width to compute a transform scale from made this
+     exact mismatch obvious (`getBoundingClientRect()` showed `#keyboard-align-wrapper` wider
+     than its own parent `.layout-col-right`, silently overflowing it uncontained, instead of
+     the piano fitting inside a correctly-sized column). `flex-wrap: nowrap` — no more
+     CSS-driven wrapping to a single narrow column; `applyResponsiveScale()` is now the only
+     responsive mechanism (a phone-sized single-column redesign is a separate, later pass, per
+     the user's own scoping). */
+  .layout-columns { display: inline-flex; flex-wrap: nowrap; gap: 2rem; align-items: flex-start; }
+  .layout-col-left, .layout-col-right { flex: 0 0 auto; }
+  /* `applyResponsiveScale()` sets `transform: scale(...)` on `#layout-columns` (now sized to
+     its own natural content, see above) and an explicit `height` here to match — a transform
+     doesn't affect normal layout flow on its own, so without this a shrunk layout would leave
+     blank space below it (or a grown one would overflow into whatever follows). */
+  #responsive-scale-clip { overflow: hidden; }
+  .tab-bar { display: flex; gap: 1.2rem; border-bottom: 1px solid #333; margin-bottom: 1rem; }
+  .tab { color: #888; cursor: pointer; padding: 0.3rem 0; user-select: none; }
+  .tab.active { color: #fff; border-bottom: 2px solid #6cf; }
+  /* `align-items: stretch` makes every direct child — octave overview, piano, staff,
+     chord/mode panel — share the SAME width, but only once the container's OWN width is the
+     widest child's width in the first place: a `display: flex` (block-level) container fills
+     its PARENT's available width instead, which can be narrower than the piano — real bug
+     caught this way, not by inspection: the piano visibly got clipped (the column was 660px,
+     the piano itself 792px) once this was `flex`, because `align-items: stretch` shrank
+     `#keyboard-container` down to that narrower 660px instead of matching the 792px piano.
+     `inline-flex` shrink-wraps to content first (like `inline-block`), THEN `align-items:
+     stretch` stretches every other child out to that content-driven width — restores the
+     piano's own full width (it can still overflow onto a narrow viewport/scroll via
+     `.keyboard-scroll`'s own `overflow-x: auto`, same as before this whole feature existed).
+     `.octave-controls` gets its own `justify-content: flex-start` below so the whole row
+     (labels + arrows + mini-piano) stays flush left, lined up with the piano/staff/panel below
+     it, rather than centering — a target layout mockup made this explicit: every element
+     shares the SAME left AND right edge. The row's own total width (labels + arrows + SVG) is
+     what's matched to the piano's width (see `renderMiniPianoOverview`'s own comment on
+     `octaveControlsOverheadWidth`), not the SVG alone — the mockup shows the mini-piano's own
+     keys inset from both edges, with "F5 ◂"/"▸ B7" sitting flush at the shared edges instead. */
+  .keyboard-align-wrapper { display: inline-flex; flex-direction: column; align-items: stretch; }
   .octave-controls {
     color: #888; font-size: 0.85rem; margin: 0.4rem 0; display: flex; align-items: center;
-    gap: 0.5rem;
+    justify-content: flex-start; gap: 0.5rem;
   }
   .octave-controls b { color: #ddd; }
   .octave-arrow {
@@ -123,9 +157,13 @@ public let virtualKeyboardIndexHTML = """
   .mini-piano-active { fill: none; stroke: #e91e63; stroke-width: 1.5; }
   /* Lets the real piano scroll horizontally within its own column instead of overflowing the
      whole page when it's wider than the column (common once the layout is 2 columns instead
-     of the full page width) — same convention as the console's own `.keyboard-scroll`. */
-  .keyboard-scroll { overflow-x: auto; max-width: 100%; }
-  .wheel { margin: 0.5rem 0 1rem; display: block; width: 100%; max-width: 520px; height: auto; }
+     of the full page width) — same convention as the console's own `.keyboard-scroll`.
+     `justify-content: flex-start` (not `center`) keeps the piano flush left, lined up with the
+     mini-piano overview/staff/chord panel above and below it — a target layout mockup made
+     this explicit, every element sharing one left edge rather than being centered relative to
+     each other. */
+  .keyboard-scroll { display: flex; justify-content: flex-start; overflow-x: auto; max-width: 100%; }
+  .wheel { margin: 0.5rem 0 1rem; display: block; width: 100%; max-width: 624px; height: auto; } /* 520px + 20% */
   .wheel-disk { fill: #fff; }
   .wheel-grid-line { stroke: #000; stroke-width: 1; }
   .wheel-cell-shape { stroke: #333; stroke-width: 1; cursor: pointer; }
@@ -155,6 +193,17 @@ public let virtualKeyboardIndexHTML = """
   .pkey.outside { background: #4caf50 !important; }
   .pkey.held { background: #bbb !important; }
   .pkey.pressed { filter: brightness(0.7); }
+  .staff-scroll { overflow-x: auto; max-width: 100%; }
+  .staff { display: block; margin: 0.4rem 0 0.8rem; width: auto; height: 130px; }
+  .staff-paper { fill: #fff; }
+  .staff-line, .staff-ledger { stroke: #333; stroke-width: 1; }
+  .staff-clef { fill: #333; }
+  .staff-note { stroke-width: 1; }
+  .staff-note-root { fill: #e91e63; stroke: #e91e63; }
+  .staff-note-tone { fill: #fdd835; stroke: #fdd835; }
+  .staff-note-outside { fill: #4caf50; stroke: #4caf50; }
+  .staff-note-held { fill: #bbb; stroke: #bbb; }
+  .staff-accidental { font-size: 13px; text-anchor: middle; }
   .degree-badge {
     position: absolute; top: -24px; left: 50%; transform: translateX(-50%);
     width: 20px; height: 20px; border-radius: 50%;
@@ -172,12 +221,11 @@ public let virtualKeyboardIndexHTML = """
   .pkey.black .key-letter { color: #fff; }
   .octave-label {
     position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
-    font-size: 10px; color: #999; pointer-events: none;
+    font-size: 10px; color: #0097e6; font-weight: bold; pointer-events: none;
   }
 </style>
 </head>
 <body>
-<h1>JamShack — Clavier virtuel (souris/tactile/clavier ordinateur)</h1>
 <div id="app"></div>
 <script src="/app.js"></script>
 </body>
@@ -366,6 +414,147 @@ function identityQuery() {
 // the plain wheel itself, per "juste le cercle des quintes."
 const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 const CHORD_SUFFIX = { major: '', minor: 'm', diminished: '°' };
+
+// --- Grand staff (treble + bass) — ported verbatim from `StaticAssets.swift`'s own
+// `renderStaffSVG`/`pushStaffEvent` (see there for the full reasoning behind the row/ledger-
+// line math, the alternating-seconds offset, the clef font-size/offset tuning, and the
+// history/event model); this page has just the one track (its own), so there's a single
+// `staffHistory` array rather than a `Map` keyed by track id.
+const STAFF_MIN_MIDI = 43; // G2
+const STAFF_MAX_MIDI = 84; // C6
+const STAFF_LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const STAFF_LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const STAFF_HISTORY_LENGTH = 20;
+
+const STAFF_ROWS = (() => {
+  const naturals = [];
+  for (let m = STAFF_MIN_MIDI; m <= STAFF_MAX_MIDI; m++) {
+    const pc = ((m % 12) + 12) % 12;
+    const letter = STAFF_LETTERS.find(l => STAFF_LETTER_PC[l] === pc);
+    if (letter) naturals.push({ midi: m, letter });
+  }
+  const anchorIndex = naturals.findIndex(n => n.midi === 64); // E4
+  return naturals.reverse().map((n, i) => ({
+    ...n,
+    isLine: (((naturals.length - 1 - i) - anchorIndex) % 2 + 2) % 2 === 0,
+  }));
+})();
+const STAFF_TREBLE_TOP = STAFF_ROWS.findIndex(r => r.midi === 77); // F5
+const STAFF_TREBLE_BOTTOM = STAFF_ROWS.findIndex(r => r.midi === 64); // E4
+const STAFF_BASS_TOP = STAFF_ROWS.findIndex(r => r.midi === 57); // A3
+const STAFF_BASS_BOTTOM = STAFF_ROWS.findIndex(r => r.midi === 43); // G2
+const STAFF_G4_ROW = STAFF_ROWS.findIndex(r => r.midi === 67); // G4 — treble clef curls around this line
+const STAFF_F3_ROW = STAFF_ROWS.findIndex(r => r.midi === 53); // F3 — bass clef's two dots straddle this line
+
+function staffRowIndexForPitch(pitch) {
+  const pc = ((pitch % 12) + 12) % 12;
+  const name = NOTE_NAMES[pc];
+  const naturalMidi = pitch - (name.length > 1 ? (name[1] === '#' ? 1 : -1) : 0);
+  return STAFF_ROWS.findIndex(r => r.midi === naturalMidi);
+}
+
+function staffLedgerRows(rowIndex) {
+  const ledger = [];
+  if (rowIndex < STAFF_TREBLE_TOP) {
+    for (let i = STAFF_TREBLE_TOP - 1; i >= rowIndex; i--) if (STAFF_ROWS[i].isLine) ledger.push(i);
+  } else if (rowIndex > STAFF_BASS_BOTTOM) {
+    for (let i = STAFF_BASS_BOTTOM + 1; i <= rowIndex; i++) if (STAFF_ROWS[i].isLine) ledger.push(i);
+  } else if (rowIndex > STAFF_TREBLE_BOTTOM && rowIndex < STAFF_BASS_TOP) {
+    for (let i = STAFF_TREBLE_BOTTOM + 1; i <= rowIndex; i++) if (STAFF_ROWS[i].isLine) ledger.push(i);
+  }
+  return ledger;
+}
+
+const STAFF_ROW_HEIGHT = 9, STAFF_MARGIN_RIGHT = 16;
+// See `StaticAssets.swift`'s own copy of these constants for how they were derived (measured
+// glyph-ink-extent ratios against the text baseline, at a large font-size in a headless-Chrome
+// screenshot) — kept identical here since both pages render the exact same clef glyphs.
+const STAFF_MARGIN_TOP = 46, STAFF_MARGIN_BOTTOM = 32;
+const STAFF_CLEF_FONT_SIZE_G = 130, STAFF_CLEF_FONT_SIZE_F = 83; // F clef reduced ~30% per feedback
+const STAFF_CLEF_G_DY = 0.22 * STAFF_CLEF_FONT_SIZE_G, STAFF_CLEF_F_DY = 0.45 * STAFF_CLEF_FONT_SIZE_F; // 0.25 sat a hair too low
+const STAFF_CLEF_X = 4;
+const STAFF_LINES_LEFT_X = 4; // lines run the FULL width, under both clefs, like real notation
+const STAFF_STAVES_X = 78; // past both clefs' own widest extent — first NOTE column starts here, not the lines themselves
+const STAFF_COL_WIDTH = 44, STAFF_FIRST_COL_X = STAFF_STAVES_X + 26;
+const STAFF_NOTE_RX = 9, STAFF_NOTE_RY = 7.5;
+
+// Must match `.staff`'s own CSS `height` — how a viewBox width converts to an on-screen pixel
+// width, since `.staff` is `width: auto; height: 130px` (aspect-ratio-preserving).
+const STAFF_DISPLAY_HEIGHT_PX = 130;
+
+// `minWidthPx`: the staff's on-screen width is never narrower than this (extra blank paper to
+// the right of the last event) — used to match the piano's own current width (see
+// `keyboardPixelWidth`) so the two don't visually mismatch just because there isn't enough
+// history yet to need that much room on its own. Omit/0 to size purely from content, as the
+// read-only console's own per-track staff still does (it has no single "the keyboard" to
+// match widths against).
+function renderStaffSVG(history, minWidthPx) {
+  const events = (history || []).filter(e => e.pitches && e.pitches.length);
+  const height = STAFF_MARGIN_TOP + STAFF_MARGIN_BOTTOM + (STAFF_ROWS.length - 1) * STAFF_ROW_HEIGHT;
+  const contentWidth = STAFF_FIRST_COL_X + Math.max(events.length - 1, 0) * STAFF_COL_WIDTH + STAFF_MARGIN_RIGHT;
+  const minViewBoxWidth = minWidthPx ? minWidthPx * (height / STAFF_DISPLAY_HEIGHT_PX) : 0;
+  const width = Math.max(contentWidth, minViewBoxWidth);
+  const y = i => STAFF_MARGIN_TOP + i * STAFF_ROW_HEIGHT;
+
+  let svg = `<svg class="staff" viewBox="0 0 ${width} ${height}">`;
+  svg += `<rect class="staff-paper" x="0" y="0" width="${width}" height="${height}" rx="4" />`;
+  for (let i = STAFF_TREBLE_TOP; i <= STAFF_TREBLE_BOTTOM; i++) {
+    if (STAFF_ROWS[i].isLine) svg += `<line class="staff-line" x1="${STAFF_LINES_LEFT_X}" y1="${y(i)}" x2="${width - 4}" y2="${y(i)}" />`;
+  }
+  for (let i = STAFF_BASS_TOP; i <= STAFF_BASS_BOTTOM; i++) {
+    if (STAFF_ROWS[i].isLine) svg += `<line class="staff-line" x1="${STAFF_LINES_LEFT_X}" y1="${y(i)}" x2="${width - 4}" y2="${y(i)}" />`;
+  }
+  svg += `<text class="staff-clef" x="${STAFF_CLEF_X}" y="${y(STAFF_G4_ROW) + STAFF_CLEF_G_DY}" font-size="${STAFF_CLEF_FONT_SIZE_G}">\u{1D11E}</text>`;
+  svg += `<text class="staff-clef" x="${STAFF_CLEF_X}" y="${y(STAFF_F3_ROW) + STAFF_CLEF_F_DY}" font-size="${STAFF_CLEF_FONT_SIZE_F}">\u{1D122}</text>`;
+
+  events.forEach((ev, colIndex) => {
+    const tones = new Set(ev.chordTones || []);
+    const held = ev.pitches.map(pitch => ({ pitch, row: staffRowIndexForPitch(pitch) })).filter(n => n.row >= 0);
+    const shiftByRow = new Map();
+    let previousRow = null, previousShifted = false;
+    held.slice().sort((a, b) => a.row - b.row).forEach(n => {
+      const shift = previousRow !== null && n.row - previousRow === 1 && !previousShifted;
+      shiftByRow.set(n.row, shift);
+      previousRow = n.row;
+      previousShifted = shift;
+    });
+    const colX = STAFF_FIRST_COL_X + colIndex * STAFF_COL_WIDTH;
+    held.forEach(n => {
+      const pc = ((n.pitch % 12) + 12) % 12;
+      let cls = 'held';
+      if (ev.chordRoot !== null && ev.chordRoot !== undefined && pc === ev.chordRoot) cls = 'root';
+      else if (tones.has(pc)) cls = 'tone';
+      else if (ev.chordRoot !== null && ev.chordRoot !== undefined) cls = 'outside';
+      const cx = colX + (shiftByRow.get(n.row) ? 20 : 0);
+      staffLedgerRows(n.row).forEach(li => {
+        svg += `<line class="staff-ledger" x1="${cx - 12}" y1="${y(li)}" x2="${cx + 12}" y2="${y(li)}" />`;
+      });
+      const name = NOTE_NAMES[pc];
+      if (name.length > 1) {
+        const glyph = name[1] === '#' ? '♯' : '♭';
+        svg += `<text class="staff-accidental staff-note-${cls}" x="${cx - 15}" y="${y(n.row) + 4}">${glyph}</text>`;
+      }
+      svg += `<ellipse class="staff-note staff-note-${cls}" cx="${cx}" cy="${y(n.row)}" rx="${STAFF_NOTE_RX}" ry="${STAFF_NOTE_RY}" />`;
+    });
+  });
+
+  svg += '</svg>';
+  return `<div class="staff-scroll">${svg}</div>`;
+}
+
+function pushStaffEvent(history, pitches, chordRoot, chordTones) {
+  if (!pitches || !pitches.length) return history;
+  const sortedPitches = [...pitches].sort((a, b) => a - b);
+  const sortedTones = [...(chordTones || [])].sort((a, b) => a - b);
+  const sig = JSON.stringify(sortedPitches) + '|' + (chordRoot ?? 'null') + '|' + JSON.stringify(sortedTones);
+  const last = history[history.length - 1];
+  if (last && last.sig === sig) return history;
+  history.push({ pitches: sortedPitches, chordRoot: chordRoot ?? null, chordTones: sortedTones, sig });
+  if (history.length > STAFF_HISTORY_LENGTH) history.shift();
+  return history;
+}
+
+const staffHistory = [];
 // Plain triads (root/third/fifth), rooted at a fixed C4-based octave regardless of
 // `shiftOctave()` — lights up real on-screen keys as long as the current octave window
 // happens to overlap C4..G5, same as before this page could slide its own visible range;
@@ -571,10 +760,26 @@ function miniWhiteSlot(pitch) {
   const octave = Math.floor(pitch / 12) - MINI_OCTAVE_BASE;
   return octave * 7 + WHITE_SLOT_BY_SEMITONE[pc];
 }
-function renderMiniPianoOverview() {
+// `svgTargetWidth`: the SVG's OWN displayed width — NOT the same as the piano's width. Per a
+// target layout mockup, the whole `.octave-controls` ROW (min-label + ◂ + this SVG + ▸ +
+// max-label) is what should match the piano's width, with "F5 ◂"/"▸ B7" flush at the shared
+// left/right edges and the mini-piano's own keys inset from both — so the caller
+// (`ensureKeyboardBuilt`) passes `keyboardPixelWidth` minus the labels/arrows' own measured
+// width, not `keyboardPixelWidth` directly (an earlier pass did that, and separately had
+// mis-read "make the overview bigger" as "30% wider than the piano" — the actual ask was
+// always for the whole row to match the piano's width end to end). A pure display-size scale
+// via the SVG's own `width`/`height` attributes, distinct from its `viewBox`: every rect below
+// is still positioned in NATURAL (unscaled) coordinates, so this scale factor never has to
+// leak into any of the click-to-pitch math (`jumpOctaveFromMiniPianoClick` already converts
+// through `getBoundingClientRect()`, i.e. the actual on-screen size, so it's automatically
+// correct at any scale).
+function renderMiniPianoOverview(svgTargetWidth) {
   const octaveCount = Math.ceil((MINI_PIANO_MAX - MINI_PIANO_MIN + 1) / 12);
-  const width = octaveCount * 7 * MINI_WHITE_WIDTH;
-  let svg = `<svg class="mini-piano" width="${width}" height="${MINI_WHITE_HEIGHT}" viewBox="0 0 ${width} ${MINI_WHITE_HEIGHT}">`;
+  const naturalWidth = octaveCount * 7 * MINI_WHITE_WIDTH;
+  const displayWidth = svgTargetWidth || naturalWidth;
+  const displayHeight = MINI_WHITE_HEIGHT * (displayWidth / naturalWidth);
+  const width = naturalWidth;
+  let svg = `<svg class="mini-piano" width="${displayWidth}" height="${displayHeight}" viewBox="0 0 ${width} ${MINI_WHITE_HEIGHT}">`;
   for (let pitch = MINI_PIANO_MIN; pitch <= MINI_PIANO_MAX; pitch++) {
     const pc = ((pitch % 12) + 12) % 12;
     if (WHITE_SLOT_BY_SEMITONE[pc] === undefined) continue;
@@ -630,10 +835,14 @@ let roles = {};          // pitch class -> {degree, color, textColor}, from the 
 let heldPitches = new Set();
 let chordRoot = null;
 let chordTones = new Set();
-let infoLine = '<span class="empty">(aucune note)</span>';
+// Two separate lines (chord, then mode candidates below it if any), neither labeled — chord
+// and mode are two independent pieces of information, not one combined sentence.
+let chordLine = '<span class="empty">(aucune note)</span>';
+let modeLine = '';
 let guideIsActive = false;
 let guideInfoHTML = '';  // guide title + steps, only while a guide is active — see refresh()
 let wheelHTML = '';      // always rendered, mode-relative parts gated by `guideIsActive`
+let staffHTML = '';      // this client's own track, rebuilt every poll — see refresh()
 // Global, not scoped to this client's own track — see `ImprovSession.handleVirtualKeyboardRequest`'s
 // doc comment on `/guide-advance`.
 function sendGuideAdvance(delta) {
@@ -739,6 +948,60 @@ function keyClasses(pitch, pc) {
 // note could not). Never destroying the element at all removes the failure mode entirely,
 // regardless of hold duration or poll timing.
 let keyboardBuilt = false;
+// The real piano's current on-screen pixel width — recomputed only when the keyboard itself
+// is rebuilt (an octave shift), not every poll. `renderStaffSVG` reads this so the staff's
+// white "paper" background is never narrower than the piano above it, even when there isn't
+// enough history yet to need that much width on its own — see `renderStaffSVG`'s own comment.
+let keyboardPixelWidth = 0;
+
+// Fits the whole two-column layout (wheel + keyboard/staff/etc.) into whatever viewport width
+// is actually available, then grows it proportionally on a bigger screen instead of a fixed
+// pixel design that just needs horizontal scrolling on a 13" MacBook/11" iPad and stays small
+// on a large monitor — "usable on a 13"/11" screen, and grows on anything bigger" was the
+// explicit ask (a phone-sized redesign is a separate, later pass).
+//
+// The wheel's own rendered width can't be measured directly and trusted as "natural": `.wheel`
+// is `width: 100%; max-width: 624px`, and that 100% resolves against whatever space the
+// CURRENT viewport happens to leave `.layout-col-left` — a real trap found via measurement,
+// not by inspection: resetting `#layout-columns`' transform to `none` and reading
+// `getBoundingClientRect().width` back kept coming back suspiciously close to the CURRENT
+// viewport's own available width at every window size tried, instead of one fixed
+// viewport-independent number — because the wheel's 100% had already shrunk/grown to fit
+// whatever the page's actual current width was, so "resetting the transform" never actually
+// removed the viewport's influence on the measurement. `#keyboard-align-wrapper`'s own width
+// has no such trap (its children are all fixed-pixel or content-driven, no `%`-of-viewport
+// sizing anywhere in that subtree), so it's measured directly; the wheel's contribution uses
+// its own `WHEEL_MAX_WIDTH_PX` constant instead — the size it would actually render at once
+// this whole block is scaled to fit (the transform applies uniformly to the whole subtree, so
+// the wheel ends up the right proportional size regardless of what its `100%` resolved to at
+// measurement time).
+const WHEEL_MAX_WIDTH_PX = 624; // matches `.wheel`'s own CSS max-width
+const LAYOUT_GAP_PX = 32; // matches `.layout-columns`' `gap: 2rem` (1rem = 16px default)
+const BODY_MAX_WIDTH_PX = 1600, BODY_HORIZONTAL_PADDING_PX = 48; // matches `body`'s own CSS
+const RESPONSIVE_MIN_SCALE = 0.5, RESPONSIVE_MAX_SCALE = 1.6;
+function applyResponsiveScale() {
+  const columns = document.getElementById('layout-columns');
+  const clip = document.getElementById('responsive-scale-clip');
+  const wrapper = document.getElementById('keyboard-align-wrapper');
+  if (!columns || !clip || !wrapper) return;
+  columns.style.transform = 'none';
+  const wrapperWidth = wrapper.getBoundingClientRect().width;
+  const naturalHeight = columns.getBoundingClientRect().height;
+  if (!wrapperWidth) return;
+  const naturalWidth = WHEEL_MAX_WIDTH_PX + LAYOUT_GAP_PX + wrapperWidth;
+  const available = Math.max(1, Math.min(window.innerWidth, BODY_MAX_WIDTH_PX) - BODY_HORIZONTAL_PADDING_PX);
+  const scale = Math.max(RESPONSIVE_MIN_SCALE, Math.min(RESPONSIVE_MAX_SCALE, available / naturalWidth));
+  columns.style.transformOrigin = 'top left';
+  columns.style.transform = `scale(${scale})`;
+  // `transform` doesn't affect normal layout flow — without this, a shrunk layout would leave
+  // its own UNSCALED height's worth of blank space below it (or a grown one would overflow
+  // into whatever follows), since the surrounding page still sees the pre-transform box size.
+  // Uses `naturalHeight` (measured above, before re-applying the transform) rather than
+  // re-measuring now — `getBoundingClientRect()` after the transform already reflects the
+  // SCALED size, and multiplying that by `scale` again would double-apply it.
+  clip.style.height = (naturalHeight * scale) + 'px';
+}
+window.addEventListener('resize', applyResponsiveScale);
 function ensureKeyboardBuilt() {
   if (keyboardBuilt) return;
   // Only reached right after `shiftOctave()` sets `keyboardBuilt = false` (a deliberate,
@@ -766,6 +1029,7 @@ function ensureKeyboardBuilt() {
   // rendered BOX width, not on where the visible keys happen to sit inside that box.
   const leftWhiteSlotOffset = whiteSlotFor(MIN_MIDI);
   const totalWidth = (whiteSlotFor(MAX_MIDI) - leftWhiteSlotOffset + 1) * WHITE_KEY_WIDTH;
+  keyboardPixelWidth = totalWidth;
   const keyboardEl = document.createElement('div');
   keyboardEl.className = 'keyboard';
   keyboardEl.style.width = totalWidth + 'px';
@@ -836,9 +1100,27 @@ function ensureKeyboardBuilt() {
   // octave change rather than every ~200ms tick: a click/tap on the mini-piano's own SVG must
   // survive until its (synchronous, same-tick) handling finishes, same principle as the piano
   // keys above even though this SVG doesn't track a held gesture across ticks like they do.
-  document.getElementById('mini-piano-container').innerHTML = renderMiniPianoOverview();
+  // Labels set FIRST, then their own individual widths summed (NOT `#octave-container`'s own
+  // `getBoundingClientRect()` — that measures the row's OUTER box, already stretched to match
+  // `keyboardPixelWidth` by `#keyboard-align-wrapper`'s `align-items: stretch`, which made a
+  // first version of this measure ~792px of "overhead" out of a 792px-wide piano regardless of
+  // how short the labels actually were, collapsing the mini-piano to its `20`-minimum clamp —
+  // caught by comparing the rendered screenshot against the target mockup, not by inspection.
+  // Individual flex-item children size to their OWN content along the row's main axis
+  // regardless of the row's own stretched total width, so summing just the label/arrow
+  // elements (skipping the empty `#mini-piano-container` span) plus the gaps between all of
+  // them gives the real overhead. See `renderMiniPianoOverview`'s own comment for why the SVG's
+  // target width is the piano's width MINUS this overhead, not the piano's width directly.
   document.getElementById('octave-min-label').textContent = noteLabel(MIN_MIDI);
   document.getElementById('octave-max-label').textContent = noteLabel(MAX_MIDI);
+  const octaveContainerEl = document.getElementById('octave-container');
+  const octaveGapPx = parseFloat(getComputedStyle(octaveContainerEl).columnGap) || 0;
+  let octaveOverheadWidth = octaveGapPx * (octaveContainerEl.children.length - 1);
+  Array.from(octaveContainerEl.children).forEach(child => {
+    if (child.id !== 'mini-piano-container') octaveOverheadWidth += child.getBoundingClientRect().width;
+  });
+  const miniPianoTargetWidth = keyboardPixelWidth ? Math.max(20, keyboardPixelWidth - octaveOverheadWidth) : 0;
+  document.getElementById('mini-piano-container').innerHTML = renderMiniPianoOverview(miniPianoTargetWidth);
 }
 
 function refreshKeyLetterLabels() {
@@ -875,17 +1157,33 @@ function updateKeyVisuals() {
   });
 }
 
+let activeVKTab = 'clavier'; // 'clavier' | 'infos'
+function setVKTab(tab) {
+  activeVKTab = tab;
+  document.getElementById('clavier-tab').style.display = tab === 'clavier' ? '' : 'none';
+  document.getElementById('infos-tab').style.display = tab === 'infos' ? '' : 'none';
+  document.querySelectorAll('#vk-tab-bar .tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+}
+
 function renderKeyboard() {
   if (!document.getElementById('keyboard-container')) {
-    // Left: identity/settings, the guide's own info (while active), the wheel. Right, the
-    // octave overview + arrows and the actual piano (wrapped together so their centers line
-    // up — see `.keyboard-align-wrapper`), then the detected-chord line right below the
-    // keyboard — "le plan de clavier et le clavier actif" together, "l'accord detecte" right
-    // underneath, next to "the guide/wheel" on the other side.
+    // Two tabs: "Clavier" keeps every bit of graphical/interactive content (guide, wheel,
+    // octave overview + piano + staff + chord/mode panel); "Infos" holds the identity/settings
+    // line and the instructional hint text — moved out of the way so "Clavier" has more room,
+    // per the user's own ask. Both tabs' DOM is built once and always kept up to date every
+    // poll below (same as everything else on this page) — only `display` toggles with the
+    // active tab, not a from-scratch re-render, since this page already updates sub-containers
+    // in place rather than rebuilding one big HTML string per poll (unlike the read-only
+    // console, see `StaticAssets.swift`).
     document.getElementById('app').innerHTML =
-      '<div class="layout-columns">' +
+      '<div id="vk-tab-bar" class="tab-bar">' +
+      `<a class="tab active" data-tab="clavier" onclick="setVKTab('clavier')">Clavier</a>` +
+      `<a class="tab" data-tab="infos" onclick="setVKTab('infos')">Infos</a>` +
+      '</div>' +
+      '<div id="clavier-tab">' +
+      '<div id="responsive-scale-clip">' +
+      '<div id="layout-columns" class="layout-columns">' +
       '<div class="layout-col-left">' +
-      '<div id="identity-container"></div>' +
       '<div id="guide-container"></div>' +
       '<div id="wheel-container"></div>' +
       '</div>' +
@@ -899,13 +1197,21 @@ function renderKeyboard() {
       '<b id="octave-max-label"></b>' +
       '</div>' +
       '<div id="keyboard-container"></div>' +
-      '</div>' +
+      '<div id="staff-container"></div>' +
       '<div id="info-container"></div>' +
       '</div>' +
       '</div>' +
-      '<div class="hint">Lettres affichees sur les touches (positionnelles — fonctionne quel que soit ton agencement clavier). Fleches, touches &lt; et - (pres du Shift), ou clic/tap sur le petit clavier : glisse la zone jouable. Tab/Maj+Tab : navigue le guide (si actif). Echap : relache tout.</div>';
+      '</div>' +
+      '</div>' +
+      '</div>' +
+      '<div id="infos-tab" style="display:none">' +
+      '<h1>JamShack — Clavier virtuel (souris/tactile/clavier ordinateur)</h1>' +
+      '<div id="identity-container"></div>' +
+      '<div class="hint">Lettres affichees sur les touches (positionnelles — fonctionne quel que soit ton agencement clavier). Fleches, touches &lt; et - (pres du Shift), ou clic/tap sur le petit clavier : glisse la zone jouable. Tab/Maj+Tab : navigue le guide (si actif). Echap : relache tout.</div>' +
+      '</div>';
   }
   ensureKeyboardBuilt();
+  applyResponsiveScale();
   const layoutLabel = keyboardLayout === 'qwertz' ? 'QWERTZ' : 'QWERTY';
   document.getElementById('identity-container').innerHTML =
     `<div class="identity">Vous : <b>${alias}</b> — <a onclick="renameIdentity()">changer</a>` +
@@ -917,7 +1223,9 @@ function renderKeyboard() {
     document.getElementById('wheel-container').innerHTML = wheelHTML;
   }
   document.getElementById('guide-container').innerHTML = guideInfoHTML;
-  document.getElementById('info-container').innerHTML = `<div class="field">Accord: <b>${infoLine}</b></div>`;
+  document.getElementById('staff-container').innerHTML = staffHTML;
+  document.getElementById('info-container').innerHTML =
+    `<div class="field">${chordLine}</div>` + (modeLine ? `<div class="field">${modeLine}</div>` : '');
   updateKeyVisuals();
 }
 
@@ -1084,12 +1392,14 @@ async function refresh() {
       chordTones = new Set(track.chordTones || []);
       roles = {};
       (track.modeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc], textColor: PITCH_CLASS_TEXT_COLORS[pc] }; });
-      infoLine = track.chordLabel
-        ? `${track.chordLabel}${track.modesLabel ? ' — ' + track.modesLabel : ''}`
-        : (track.modesLabel || '<span class="empty">(aucune note)</span>');
+      chordLine = track.chordLabel || '<span class="empty">(aucun accord)</span>';
+      modeLine = track.modesLabel || '';
+      staffHTML = renderStaffSVG(pushStaffEvent(staffHistory, track.heldPitches, track.chordRoot, track.chordTones), keyboardPixelWidth);
     } else {
       heldPitches = new Set(); chordRoot = null; chordTones = new Set(); roles = {};
-      infoLine = '<span class="empty">(piste non initialisee)</span>';
+      chordLine = '<span class="empty">(piste non initialisee)</span>';
+      modeLine = '';
+      staffHTML = renderStaffSVG(staffHistory, keyboardPixelWidth);
     }
     // While a guide is running, the role-line (degree badges) switches to ITS mode's notes
     // instead of this track's own recognized mode — "présente le clavier avec les notes du
@@ -1113,7 +1423,8 @@ async function refresh() {
     const progressionChords = guideIsActive ? (state.guide.currentChordProgression || []).filter(c => c.quality) : [];
     wheelHTML = renderWheel(state.wheel, guideIsActive, detectedChordFrom(track), progressionChords);
   } catch {
-    infoLine = '<span class="empty">(connexion perdue — l\\'application est-elle toujours lancee ?)</span>';
+    chordLine = '<span class="empty">(connexion perdue — l\\'application est-elle toujours lancee ?)</span>';
+    modeLine = '';
   }
   renderKeyboard();
 }

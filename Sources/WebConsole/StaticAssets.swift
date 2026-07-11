@@ -92,6 +92,20 @@ public let webConsoleIndexHTML = """
   .pkey.tone { background: #fdd835 !important; }
   .pkey.outside { background: #4caf50 !important; }
   .pkey.held { background: #bbb !important; }
+  .staff-scroll { overflow-x: auto; max-width: 100%; }
+  /* width: auto (not a fixed px) — the SVG's viewBox now grows with history length, so its
+     natural aspect ratio (preserved by leaving width unset) is what should scale, not a fixed
+     box that would squash a wide multi-event staff down to a narrow one. */
+  .staff { display: block; margin: 0.4rem 0 0.8rem; width: auto; height: 130px; }
+  .staff-paper { fill: #fff; }
+  .staff-line, .staff-ledger { stroke: #333; stroke-width: 1; }
+  .staff-clef { fill: #333; }
+  .staff-note { stroke-width: 1; }
+  .staff-note-root { fill: #e91e63; stroke: #e91e63; }
+  .staff-note-tone { fill: #fdd835; stroke: #fdd835; }
+  .staff-note-outside { fill: #4caf50; stroke: #4caf50; }
+  .staff-note-held { fill: #bbb; stroke: #bbb; }
+  .staff-accidental { font-size: 13px; text-anchor: middle; }
   .degree-badge {
     position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
     width: 14px; height: 14px; border-radius: 50%;
@@ -122,7 +136,6 @@ public let webConsoleIndexHTML = """
 </style>
 </head>
 <body>
-<h1>JamShack — activite en direct (lecture seule, rafraichi toutes les ~250ms)</h1>
 <div id="app"></div>
 <script src="/app.js"></script>
 </body>
@@ -163,6 +176,11 @@ function instrumentColor(index) { return INSTRUMENT_COLORS[index % INSTRUMENT_CO
 const WHITE_KEY_WIDTH = 22, WHITE_KEY_HEIGHT = 72, BLACK_KEY_WIDTH = 13, BLACK_KEY_HEIGHT = 46;
 const WHITE_SLOT_BY_SEMITONE = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
 const BLACK_AFTER_WHITE_SLOT = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };
+// Same window for every track/guide/playback here (unlike the virtual keyboard, this page has
+// no octave-shifting), so — unlike `keyboardPixelWidth` there — this is a plain constant, not
+// something that needs recomputing per poll; passed into `renderStaffSVG` so a staff is never
+// narrower than the keyboard drawn right above it (see `renderStaffSVG`'s own comment).
+const KEYBOARD_TOTAL_WIDTH = Math.ceil((MAX_MIDI - MIN_MIDI + 1) / 12) * 7 * WHITE_KEY_WIDTH;
 
 function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones) {
   const held = new Set(heldPitches || []);
@@ -204,6 +222,199 @@ function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones) {
   // container so a narrow browser window scrolls just this widget horizontally instead of
   // the whole page (see `.keyboard-scroll` in the CSS above).
   return `<div class="keyboard-scroll"><div class="keyboard" style="width:${totalWidth}px; height:${WHITE_KEY_HEIGHT}px;">${whiteHTML}${blackHTML}</div></div>`;
+}
+
+// Grand staff (treble + bass), a fixed G2..C6 natural-row window (one natural step of margin
+// beyond MIN_MIDI/MAX_MIDI on each side) — same root/tone/outside/held meaning and colors as
+// `keyboardHTML`'s `.pkey.*` classes, just a different physical layout. Accidentals reuse the
+// wheel's own fixed `NOTE_NAMES` table (see there for why: this project has no per-key/per-mode
+// spelling logic anywhere, so a single site-wide convention is used rather than inventing a
+// second one here).
+//
+// Shows a short *history* of recent chord/note events (left = oldest, right = most recent/
+// still sounding), not just the current instant — deliberately without any real timing/
+// duration for now (a future pass, possibly LLM-assisted, may retroprocess that): each column
+// is one discrete "what was held" snapshot, not a duration-weighted note. See `pushStaffEvent`.
+const STAFF_MIN_MIDI = 43; // G2
+const STAFF_MAX_MIDI = 84; // C6
+const STAFF_LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const STAFF_LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const STAFF_HISTORY_LENGTH = 20;
+
+// One entry per natural note in [STAFF_MIN_MIDI, STAFF_MAX_MIDI], row 0 = highest pitch
+// (descending), each carrying whether it's a staff LINE or a space. Lines/spaces strictly
+// alternate across the whole grand staff — that's what makes ledger lines a continuation of
+// the same pattern rather than a separate concept — so parity relative to one known line (E4,
+// the treble clef's bottom line) determines every other row automatically, staff or ledger,
+// with no separate per-position lookup table to keep in sync.
+const STAFF_ROWS = (() => {
+  const naturals = [];
+  for (let m = STAFF_MIN_MIDI; m <= STAFF_MAX_MIDI; m++) {
+    const pc = ((m % 12) + 12) % 12;
+    const letter = STAFF_LETTERS.find(l => STAFF_LETTER_PC[l] === pc);
+    if (letter) naturals.push({ midi: m, letter });
+  }
+  const anchorIndex = naturals.findIndex(n => n.midi === 64); // E4
+  return naturals.reverse().map((n, i) => ({
+    ...n,
+    isLine: (((naturals.length - 1 - i) - anchorIndex) % 2 + 2) % 2 === 0,
+  }));
+})();
+const STAFF_TREBLE_TOP = STAFF_ROWS.findIndex(r => r.midi === 77); // F5
+const STAFF_TREBLE_BOTTOM = STAFF_ROWS.findIndex(r => r.midi === 64); // E4
+const STAFF_BASS_TOP = STAFF_ROWS.findIndex(r => r.midi === 57); // A3
+const STAFF_BASS_BOTTOM = STAFF_ROWS.findIndex(r => r.midi === 43); // G2
+const STAFF_G4_ROW = STAFF_ROWS.findIndex(r => r.midi === 67); // G4 — treble clef curls around this line
+const STAFF_F3_ROW = STAFF_ROWS.findIndex(r => r.midi === 53); // F3 — bass clef's two dots straddle this line
+
+function staffRowIndexForPitch(pitch) {
+  const pc = ((pitch % 12) + 12) % 12;
+  const name = NOTE_NAMES[pc];
+  const naturalMidi = pitch - (name.length > 1 ? (name[1] === '#' ? 1 : -1) : 0);
+  return STAFF_ROWS.findIndex(r => r.midi === naturalMidi);
+}
+
+// Ledger lines needed between the staff and a given row — walks outward from whichever staff
+// edge the row is beyond (or, for a row between the two staves, from the treble's own bottom
+// line), collecting every LINE-parity position along the way. A plain continuation of the
+// alternating pattern, so it generalizes to any row instead of special-casing "middle C".
+function staffLedgerRows(rowIndex) {
+  const ledger = [];
+  if (rowIndex < STAFF_TREBLE_TOP) {
+    for (let i = STAFF_TREBLE_TOP - 1; i >= rowIndex; i--) if (STAFF_ROWS[i].isLine) ledger.push(i);
+  } else if (rowIndex > STAFF_BASS_BOTTOM) {
+    for (let i = STAFF_BASS_BOTTOM + 1; i <= rowIndex; i++) if (STAFF_ROWS[i].isLine) ledger.push(i);
+  } else if (rowIndex > STAFF_TREBLE_BOTTOM && rowIndex < STAFF_BASS_TOP) {
+    for (let i = STAFF_TREBLE_BOTTOM + 1; i <= rowIndex; i++) if (STAFF_ROWS[i].isLine) ledger.push(i);
+  }
+  return ledger;
+}
+
+const STAFF_ROW_HEIGHT = 9, STAFF_MARGIN_RIGHT = 16;
+// More top margin than bottom — measured empirically (see below), the treble clef's own
+// glyph extends further above G4 than the bass clef's extends below F3, so the top needs more
+// breathing room to avoid clipping; the bottom margin was also bumped up from an earlier,
+// too-tight value that put the bottom bass line uncomfortably close to the paper's edge.
+const STAFF_MARGIN_TOP = 46, STAFF_MARGIN_BOTTOM = 32;
+// Font-size/offsets found by measuring THIS glyph's own ink extent (top/bottom of the drawn
+// shape, and the "eye"/dot-midpoint position) relative to the text baseline, at a large
+// font-size in a headless-Chrome screenshot with a measurement grid — a first pass anchored
+// the "eye" on G4/F3 correctly but picked a font-size far too small (34) relative to the
+// glyph's own proportions, so the clef never actually reached the staff's own top/bottom
+// lines, let alone extended past them like real notation (the actual complaint). Measured
+// ratios: treble eye sits 0.25em above baseline, glyph top 0.417em above eye, glyph bottom
+// 0.293em below eye; bass F3-anchor (dot midpoint) sits 0.45em above baseline, glyph top
+// 0.217em above that, glyph bottom 0.45em below it. Font-sizes below are picked from those
+// ratios, then reduced (an initial larger pick made the two clefs visually collide — the gap
+// between the two staves isn't big enough for both clefs at their "ideal" real-notation
+// size) — a compromise between "clearly extends past the staff" and "doesn't overlap the
+// other clef", re-verify with a fresh measurement if this glyph's rendering ever changes.
+const STAFF_CLEF_FONT_SIZE_G = 130, STAFF_CLEF_FONT_SIZE_F = 83; // F clef reduced ~30% per feedback
+const STAFF_CLEF_G_DY = 0.22 * STAFF_CLEF_FONT_SIZE_G, STAFF_CLEF_F_DY = 0.45 * STAFF_CLEF_FONT_SIZE_F; // 0.25 sat a hair too low
+const STAFF_CLEF_X = 4;
+const STAFF_LINES_LEFT_X = 4; // lines run the FULL width, under both clefs, like real notation
+const STAFF_STAVES_X = 78; // past both clefs' own widest extent — first NOTE column starts here, not the lines themselves
+const STAFF_COL_WIDTH = 44, STAFF_FIRST_COL_X = STAFF_STAVES_X + 26;
+const STAFF_NOTE_RX = 9, STAFF_NOTE_RY = 7.5; // near-full interline height (interline = 2*ROW_HEIGHT = 18)
+
+// Must match `.staff`'s own CSS `height` — how a viewBox width converts to an on-screen pixel
+// width, since `.staff` is `width: auto; height: 130px` (aspect-ratio-preserving).
+const STAFF_DISPLAY_HEIGHT_PX = 130;
+
+// `history`: array of { pitches: number[], chordRoot: number|null, chordTones: number[] },
+// oldest first, most recent (currently live) last — see `pushStaffEvent`. Each column is drawn
+// independently with its OWN root/tones, so e.g. a single held note with no chord (grey) sits
+// right next to an earlier recognized chord's colored notes without either affecting the other.
+// `minWidthPx`: the staff's on-screen width is never narrower than this — every call site here
+// passes `KEYBOARD_TOTAL_WIDTH` so a track's staff always matches its own keyboard's width,
+// even before there's enough history to need that much room on its own (same mechanism as the
+// virtual keyboard's `keyboardPixelWidth`, just a constant here since this page has no
+// per-track octave shifting).
+function renderStaffSVG(history, minWidthPx) {
+  const events = (history || []).filter(e => e.pitches && e.pitches.length);
+  const height = STAFF_MARGIN_TOP + STAFF_MARGIN_BOTTOM + (STAFF_ROWS.length - 1) * STAFF_ROW_HEIGHT;
+  const contentWidth = STAFF_FIRST_COL_X + Math.max(events.length - 1, 0) * STAFF_COL_WIDTH + STAFF_MARGIN_RIGHT;
+  const minViewBoxWidth = minWidthPx ? minWidthPx * (height / STAFF_DISPLAY_HEIGHT_PX) : 0;
+  const width = Math.max(contentWidth, minViewBoxWidth);
+  const y = i => STAFF_MARGIN_TOP + i * STAFF_ROW_HEIGHT;
+
+  let svg = `<svg class="staff" viewBox="0 0 ${width} ${height}">`;
+  svg += `<rect class="staff-paper" x="0" y="0" width="${width}" height="${height}" rx="4" />`;
+  for (let i = STAFF_TREBLE_TOP; i <= STAFF_TREBLE_BOTTOM; i++) {
+    if (STAFF_ROWS[i].isLine) svg += `<line class="staff-line" x1="${STAFF_LINES_LEFT_X}" y1="${y(i)}" x2="${width - 4}" y2="${y(i)}" />`;
+  }
+  for (let i = STAFF_BASS_TOP; i <= STAFF_BASS_BOTTOM; i++) {
+    if (STAFF_ROWS[i].isLine) svg += `<line class="staff-line" x1="${STAFF_LINES_LEFT_X}" y1="${y(i)}" x2="${width - 4}" y2="${y(i)}" />`;
+  }
+  svg += `<text class="staff-clef" x="${STAFF_CLEF_X}" y="${y(STAFF_G4_ROW) + STAFF_CLEF_G_DY}" font-size="${STAFF_CLEF_FONT_SIZE_G}">\u{1D11E}</text>`;
+  svg += `<text class="staff-clef" x="${STAFF_CLEF_X}" y="${y(STAFF_F3_ROW) + STAFF_CLEF_F_DY}" font-size="${STAFF_CLEF_FONT_SIZE_F}">\u{1D122}</text>`;
+
+  events.forEach((ev, colIndex) => {
+    const tones = new Set(ev.chordTones || []);
+    const held = ev.pitches.map(pitch => ({ pitch, row: staffRowIndexForPitch(pitch) })).filter(n => n.row >= 0);
+    // A run of several consecutive seconds (e.g. the mode's own scale held as a cluster) needs
+    // a proper zigzag, not just "shift every note that has one above it" — that stateless rule
+    // would shift every note but the topmost into the same column. Walking top-to-bottom and
+    // only shifting a note when its immediate upstairs neighbor exists AND wasn't itself shifted
+    // reproduces the standard alternating-seconds engraving instead.
+    const shiftByRow = new Map();
+    let previousRow = null, previousShifted = false;
+    held.slice().sort((a, b) => a.row - b.row).forEach(n => {
+      const shift = previousRow !== null && n.row - previousRow === 1 && !previousShifted;
+      shiftByRow.set(n.row, shift);
+      previousRow = n.row;
+      previousShifted = shift;
+    });
+    const colX = STAFF_FIRST_COL_X + colIndex * STAFF_COL_WIDTH;
+    held.forEach(n => {
+      const pc = ((n.pitch % 12) + 12) % 12;
+      let cls = 'held';
+      if (ev.chordRoot !== null && ev.chordRoot !== undefined && pc === ev.chordRoot) cls = 'root';
+      else if (tones.has(pc)) cls = 'tone';
+      else if (ev.chordRoot !== null && ev.chordRoot !== undefined) cls = 'outside';
+      const cx = colX + (shiftByRow.get(n.row) ? 20 : 0);
+      staffLedgerRows(n.row).forEach(li => {
+        svg += `<line class="staff-ledger" x1="${cx - 12}" y1="${y(li)}" x2="${cx + 12}" y2="${y(li)}" />`;
+      });
+      const name = NOTE_NAMES[pc];
+      if (name.length > 1) {
+        const glyph = name[1] === '#' ? '♯' : '♭';
+        svg += `<text class="staff-accidental staff-note-${cls}" x="${cx - 15}" y="${y(n.row) + 4}">${glyph}</text>`;
+      }
+      svg += `<ellipse class="staff-note staff-note-${cls}" cx="${cx}" cy="${y(n.row)}" rx="${STAFF_NOTE_RX}" ry="${STAFF_NOTE_RY}" />`;
+    });
+  });
+
+  svg += '</svg>';
+  return `<div class="staff-scroll">${svg}</div>`;
+}
+
+// Appends a new event to `history` (mutated in place, capped at STAFF_HISTORY_LENGTH) only
+// when the current live snapshot differs from the last recorded event and there is at least
+// one held pitch — a full release just leaves the last-played event as-is (no "rest" entries),
+// so a momentary silence between chords doesn't spam the history with blanks. A single held
+// note with no recognized chord (`chordRoot === null`) is still pushed as its own grey event,
+// same as any chord — nothing here treats "just one note" as not worth recording.
+function pushStaffEvent(history, pitches, chordRoot, chordTones) {
+  if (!pitches || !pitches.length) return history;
+  const sortedPitches = [...pitches].sort((a, b) => a - b);
+  const sortedTones = [...(chordTones || [])].sort((a, b) => a - b);
+  const sig = JSON.stringify(sortedPitches) + '|' + (chordRoot ?? 'null') + '|' + JSON.stringify(sortedTones);
+  const last = history[history.length - 1];
+  if (last && last.sig === sig) return history;
+  history.push({ pitches: sortedPitches, chordRoot: chordRoot ?? null, chordTones: sortedTones, sig });
+  if (history.length > STAFF_HISTORY_LENGTH) history.shift();
+  return history;
+}
+
+// One rolling history per staff instance, keyed by track id ("guide"/"playback"/"soundtrack"
+// for the single-instance ones) — persists across polls since it's module-level state, exactly
+// like `PITCH_CLASS_COLORS` above. `updateStaffHistory` is the only way callers touch it, so
+// the push-only-on-change/no-rest-events rules in `pushStaffEvent` are never bypassed.
+const staffHistories = new Map();
+function updateStaffHistory(key, pitches, chordRoot, chordTones) {
+  if (!staffHistories.has(key)) staffHistories.set(key, []);
+  return pushStaffEvent(staffHistories.get(key), pitches, chordRoot, chordTones);
 }
 
 // Point at angle `2*PI*index/columnCount - PI/2` (column 0 at 12 o'clock, clockwise — matches
@@ -424,19 +635,27 @@ function renderGuide(guide) {
     html += `<div class="field">Suite d'accords${guide.currentChordProgressionName ? ' (' + guide.currentChordProgressionName + ')' : ''}: ${progression.map(c => c.label).join(' - ')}</div>`;
   }
   html += keyboardHTML(guide.heldPitches, null, [], guide.currentModeTones);
+  // The guide's own step is prescribed, not "recently played" — a single current snapshot,
+  // not a rolling history like a live track's own staff below.
+  html += renderStaffSVG([{ pitches: guide.heldPitches, chordRoot: null, chordTones: [] }], KEYBOARD_TOTAL_WIDTH);
   return html;
 }
 
 function renderTrack(track, index) {
   const owner = track.owner ? ` — ${track.owner}` : '';
   const swatch = `<span class="instrument-swatch" style="background:${instrumentColor(index)}"></span>`;
-  let html = `<h2>${swatch}[${track.id}] ${track.label}${owner}</h2>`;
+  // No `[track.id]` prefix here (used to leak a web-keyboard client's raw uuid, e.g.
+  // "clavier-web:9F2A..." — see `sceneTrackLineHTML`'s own comment) — this is a read-only
+  // viewer, not a place to type commands, so the label alone (already the display alias for a
+  // web keyboard track) is all a viewer needs.
+  let html = `<h2>${swatch}${track.label}${owner}</h2>`;
   if (track.microphoneLevel !== null && track.microphoneLevel !== undefined) {
     html += `<div class="field">Micro: <b>${track.microphoneLevel.toFixed(4)}</b></div>`;
   }
+  html += keyboardHTML(track.heldPitches, track.chordRoot, track.chordTones, track.modeTones);
+  html += renderStaffSVG(updateStaffHistory(track.id, track.heldPitches, track.chordRoot, track.chordTones), KEYBOARD_TOTAL_WIDTH);
   html += `<div class="field">Accord: <b>${track.chordLabel || '-'}</b></div>`;
   html += `<div class="field">Modes: <b>${track.modesLabel || '-'}</b></div>`;
-  html += keyboardHTML(track.heldPitches, track.chordRoot, track.chordTones, track.modeTones);
   return html;
 }
 
@@ -447,20 +666,28 @@ function renderPlayback(playback) {
     seg => seg.isCurrent ? `<b>[${seg.label}]</b>` : seg.label
   ).join(' ') + '</div>';
   html += keyboardHTML(playback.heldPitches, playback.chordRoot, playback.chordTones, playback.modeTones);
+  html += renderStaffSVG([{ pitches: playback.heldPitches, chordRoot: playback.chordRoot, chordTones: playback.chordTones }], KEYBOARD_TOTAL_WIDTH);
   return html;
 }
 
 function renderSoundTrackPlayback(playback) {
   if (!playback) return '';
-  return '<h2>Enregistrement en cours de lecture</h2>' + keyboardHTML(playback.heldPitches, null, [], []);
+  return '<h2>Enregistrement en cours de lecture</h2>'
+    + keyboardHTML(playback.heldPitches, null, [], [])
+    + renderStaffSVG([{ pitches: playback.heldPitches, chordRoot: null, chordTones: [] }], KEYBOARD_TOTAL_WIDTH);
 }
 
 function renderRunTab(state) {
   const tracks = state.tracks || [];
+  // Drop any track's staff history once it disappears from state (e.g. a web-keyboard tab
+  // closes) — otherwise `staffHistories` would grow forever across a long-running session.
+  const liveIDs = new Set(tracks.map(t => t.id));
+  for (const key of staffHistories.keys()) {
+    if (key !== 'guide' && key !== 'playback' && key !== 'soundtrack' && !liveIDs.has(key)) staffHistories.delete(key);
+  }
   const tracksHTML = tracks.length
     ? tracks.map(renderTrack).join('')
     : '<p class="empty">(aucune piste en ecoute)</p>';
-  let html = `<div class="field">Dernier evt: <b>${state.lastEvent || '-'}</b></div>`;
 
   // Always the same 2-column layout: left is just the wheel ("what mode/key are we in"),
   // right leads with whatever represents "the mode" right now — the guide's own keyboard if
@@ -470,14 +697,21 @@ function renderRunTab(state) {
   const modeHTML = renderGuide(state.guide) + renderPlayback(state.playback) + renderSoundTrackPlayback(state.soundTrackPlayback);
   const left = renderWheelSection(state.wheel, tracks, state.guide);
   const right = modeHTML + tracksHTML;
-  html += `<div class="layout-columns"><div class="layout-col-left">${left}</div><div class="layout-col-right">${right}</div></div>`;
-  return html;
+  return `<div class="layout-columns"><div class="layout-col-left">${left}</div><div class="layout-col-right">${right}</div></div>`;
+}
+
+// Static, no live data — just the page's own description, moved here from a permanent page
+// header so the Run/Scene tabs aren't cluttered with it on every visit.
+function renderInfosTab() {
+  return '<h1>JamShack — activite en direct (lecture seule, rafraichi toutes les ~250ms)</h1>';
 }
 
 // One line of the Scene tab's tree (see `renderSceneTree`) — mirrors the terminal's own
-// `printSceneTree`/`trackIDText` line format, just as an `<li>` instead of ASCII box-drawing.
+// `printSceneTree` line format minus the bracketed id (that id exists so the terminal user can
+// type it into a command; there's nothing to type here, and for a web-keyboard track it'd leak
+// that client's raw uuid, e.g. "clavier-web:9F2A...", for no benefit).
 function sceneTrackLineHTML(track) {
-  let line = `[${track.id}] ${track.label}`;
+  let line = track.label;
   if (track.owner) line += ` — ${track.owner}`;
   line += ` — ecoute: <b>${track.isListening ? 'oui' : 'non'}</b>`;
   if (track.canHaveSound) {
@@ -528,11 +762,12 @@ function renderSceneTree(scene) {
   return html;
 }
 
-let activeTab = 'run'; // 'run' | 'scene'
+let activeTab = 'run'; // 'run' | 'scene' | 'infos'
 function renderTabBar() {
   return '<div class="tab-bar">' +
     `<a class="tab${activeTab === 'run' ? ' active' : ''}" onclick="setTab('run')">Run</a>` +
     `<a class="tab${activeTab === 'scene' ? ' active' : ''}" onclick="setTab('scene')">Scene</a>` +
+    `<a class="tab${activeTab === 'infos' ? ' active' : ''}" onclick="setTab('infos')">Infos</a>` +
     '</div>';
 }
 function setTab(tab) { activeTab = tab; refresh(); }
@@ -548,7 +783,9 @@ async function refresh() {
   }
   if (state.palette && state.palette.length === 12) PITCH_CLASS_COLORS = state.palette;
   if (state.paletteTextColors && state.paletteTextColors.length === 12) PITCH_CLASS_TEXT_COLORS = state.paletteTextColors;
-  const tabHTML = activeTab === 'run' ? renderRunTab(state) : renderSceneTree(state.scene);
+  const tabHTML = activeTab === 'run' ? renderRunTab(state)
+    : activeTab === 'scene' ? renderSceneTree(state.scene)
+    : renderInfosTab();
   document.getElementById('app').innerHTML = renderTabBar() + tabHTML;
 }
 

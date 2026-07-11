@@ -682,6 +682,28 @@ func testMIDIEmptyBufferProducesNoEvents() {
     check(MIDIRawParser.parseNoteEvents([]), [], "midi empty buffer produces no events")
 }
 
+func testMIDIRunningStatusNoteOnIsParsedWithoutARepeatedStatusByte() {
+    let events = MIDIRawParser.parseNoteEvents([0x90, 60, 100, 64, 90, 67, 80])
+    check(events, [
+        MIDINoteEvent(kind: .noteOn, pitch: 60, velocity: 100, channel: 0),
+        MIDINoteEvent(kind: .noteOn, pitch: 64, velocity: 90, channel: 0),
+        MIDINoteEvent(kind: .noteOn, pitch: 67, velocity: 80, channel: 0),
+    ], "midi running-status note-on parsed without a repeated status byte")
+}
+
+func testMIDIRunningStatusNoteOffIsParsedWithoutARepeatedStatusByte() {
+    let events = MIDIRawParser.parseNoteEvents([0x80, 60, 0, 64, 0])
+    check(events, [
+        MIDINoteEvent(kind: .noteOff, pitch: 60, velocity: 0, channel: 0),
+        MIDINoteEvent(kind: .noteOff, pitch: 64, velocity: 0, channel: 0),
+    ], "midi running-status note-off parsed without a repeated status byte")
+}
+
+func testMIDINonNoteStatusByteResetsRunningStatus() {
+    let events = MIDIRawParser.parseNoteEvents([0x90, 60, 100, 0xB0, 7, 127])
+    check(events, [MIDINoteEvent(kind: .noteOn, pitch: 60, velocity: 100, channel: 0)], "midi non-note status byte resets running status")
+}
+
 // MARK: - FFTPitchAnalyzerTests (mirrors Tests/AudioEngineTests/FFTPitchAnalyzerTests.swift)
 
 func sineWaveForFFTTests(frequencyHz: Double, sampleRate: Double, count: Int, amplitude: Float = 1.0) -> [Float] {
@@ -3068,6 +3090,9 @@ testMIDIParsesMultipleMessagesInOneBuffer()
 testMIDIIgnoresNonNoteMessages()
 testMIDITruncatedTrailingMessageIsDropped()
 testMIDIEmptyBufferProducesNoEvents()
+testMIDIRunningStatusNoteOnIsParsedWithoutARepeatedStatusByte()
+testMIDIRunningStatusNoteOffIsParsedWithoutARepeatedStatusByte()
+testMIDINonNoteStatusByteResetsRunningStatus()
 
 testLoadDemoPieceSetsPieceAndLogsIt()
 testPlayWithoutAPieceLoadedThrows()
