@@ -149,6 +149,7 @@ Pour le détail complet (modules, concurrence, points de conception), voir
   concurrence, choix de conception).
 - [`Docs/GLOSSAIRE.md`](Docs/GLOSSAIRE.md) — désambiguïsation des termes qui désignent des
   choses différentes selon le contexte.
+- [`Docs/BACKLOG.md`](Docs/BACKLOG.md) — chantiers et idées identifiés mais pas encore engagés.
 
 ## Tester
 
