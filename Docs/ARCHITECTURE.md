@@ -1224,6 +1224,51 @@ session doit réutiliser l'une de ces deux queues, ou en créer une nouvelle —
 directement depuis `.global()`. Voir la mémoire `feedback-improv-app-concurrency` pour le
 détail des trois incidents.
 
+## `mcp-server/` — serveur MCP (Python, hors du package Swift, expérimental)
+
+Un dossier séparé, hors de `Sources/` et de `Package.swift` — pas une cible SwiftPM, un
+programme Python indépendant (venv + `mcp`+`httpx`, voir `mcp-server/README.md`) qui expose les
+mêmes actions que l'onglet "Commandes" de la console web comme des *tools* MCP, pour qu'un
+assistant compatible MCP (Claude Desktop, Claude Code, etc.) puisse piloter l'appli directement
+depuis un prompt.
+
+- **Un simple relais HTTP, pas une réimplémentation** : chaque tool MCP se contente de faire
+  un `GET /menu-action?action=...&...` ou `GET /menu-lists` contre une console web JamShack
+  déjà démarrée (`web-console <port>` côté terminal) — exactement les mêmes routes que
+  l'onglet "Commandes" d'un navigateur utilise (voir plus haut, section WebConsole). Aucune
+  logique de l'appli ne vit dans ce dossier ; `ImprovSession` reste l'unique source de vérité.
+- **`ACTIONS`** (`mcp-server/server.py`) : une copie recopiée à la main de `MENU_ACTIONS`
+  (`Sources/WebConsole/StaticAssets.swift`) — même convention que les autres duplications
+  volontaires déjà établies dans ce projet (`SanityChecks` qui reproduit `Tests/*` à la main,
+  faute de `swift test` disponible) : à resynchroniser manuellement si le menu change.
+  `_make_tool_function` construit, pour chaque action, une VRAIE fonction Python (via `exec`,
+  pas un simple `**kwargs`) avec un paramètre nommé par champ — nécessaire pour que
+  l'introspection de signature de `FastMCP` en déduise un schéma JSON correct par action,
+  plutôt qu'un unique tool générique "exécute cette commande" que le modèle devrait deviner à
+  la volée.
+- **`get_menu_lists`** : un tool à part, miroir de `GET /menu-lists` — un assistant est censé
+  l'appeler avant toute action dont un paramètre vient d'une liste déroulante (nom de morceau,
+  id de piste, etc.), puisque ces listes peuvent changer depuis en dehors de ce serveur MCP
+  aussi (le terminal, un onglet de navigateur, un autre participant de la jam session).
+- **Traduction tonique → classe de hauteur** : `guide_add_mode`'s `tonic` est le seul champ que
+  ce serveur traduit lui-même avant l'envoi — il accepte un nom de note ("D", "F#"...) et le
+  convertit dans l'index attendu par `/menu-action`, exactement ce que fait déjà le `<select>`
+  de la page web côté client.
+- **Expérimental, v1** : toutes les actions sont exposées sans mécanisme de permission plus
+  fin — demandé explicitement ainsi par l'utilisateur (2026-07-12) ; un filtrage plus
+  sélectif (lecture seule vs. mutante, liste d'autorisation) est une étape volontairement
+  différée, pas un oubli.
+- **Vérifié en conditions réelles** (pas seulement par lecture de schéma) : contre une vraie
+  session JamShack déjà lancée par l'utilisateur (console web sur le port 8080) —
+  `get_menu_lists()` (lecture seule), puis `midi_mode_merged` (idempotent : passer en mode
+  fusionné alors qu'il l'est déjà est un no-op documenté dans
+  `ImprovSession.setMIDIFusionMode`, donc sans risque contre une session réelle en cours
+  d'utilisation), puis `guide_add_mode(tonic: "D", scale: "dorian")` pour confirmer la
+  traduction "D" → `tonic=2` dans la requête HTTP réelle (vue dans les logs `httpx`) et un
+  message d'erreur propre ("aucune séquence de guide") plutôt qu'un crash puisqu'aucun guide
+  n'était démarré — jamais de test contre le port réel avec une action destructrice/mutante
+  non-idempotente (save/load/jam-session), par prudence.
+
 ## JamShack — l'interface en ligne de commande
 
 Trois modes d'affichage coexistent, tous alimentés par le même `ImprovSession` :
