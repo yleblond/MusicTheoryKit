@@ -3247,6 +3247,115 @@ func testRecentChordEventsCapsAtTwentyEntries() {
 }
 testRecentChordEventsCapsAtTwentyEntries()
 
+// MARK: - Read-only structure detail (piece/composition/guide/soundtrack) — mirrors
+// Tests/AppCoreTests/ImprovSessionTests.swift's tests of the same name.
+
+func testBuildPieceDetailReflectsWholeStructureIncludingEmptyTracks() {
+    do {
+        let session = ImprovSession()
+        check(session.buildPieceDetail().loaded, false, "buildPieceDetail reports not loaded with no piece")
+
+        let trackWithNotes = Track(name: "lead", instrument: "mcb.sf2", melodyEvents: [
+            MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 60),
+        ])
+        // The real regression this route fixes: `pieceDetailLines()` (the terminal's own
+        // piece display) silently skips any track with zero `melodyEvents` — a fragment-only
+        // track just vanishes. `buildPieceDetail()` must not repeat that mistake.
+        let emptyTrack = Track(name: "fragment-only", instrument: "")
+        let chord = ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 0, chordTemplateID: "Ma7"))
+        let section = Section(
+            name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"),
+            chordProgression: [chord], tracks: [trackWithNotes, emptyTrack]
+        )
+        let piece = Piece(title: "Detail Test", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [section])
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        try JSONEncoder().encode(piece).write(to: tempFile)
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.loadPiece(fromJSONFile: tempFile.path)
+
+        let detail = session.buildPieceDetail()
+        check(detail.loaded, true, "buildPieceDetail reports loaded once a piece is loaded")
+        check(detail.sections?.count, 1, "buildPieceDetail section count")
+        check(detail.sections?[0].chordProgression.first?.chord.label, "CMa7", "buildPieceDetail resolves a chord label")
+        check(detail.sections?[0].tracks.count, 2, "buildPieceDetail keeps every track, including empty ones")
+        let hasEmptyTrack = detail.sections?[0].tracks.contains { $0.name == "fragment-only" && $0.melodyEvents.isEmpty } ?? false
+        check(hasEmptyTrack, true, "buildPieceDetail includes a track with zero melody events")
+    } catch {
+        failures += 1
+        print("FAIL [buildPieceDetail]: threw \(error)")
+    }
+}
+testBuildPieceDetailReflectsWholeStructureIncludingEmptyTracks()
+
+func testBuildCompositionDetailReflectsStagedTextAndResolvedPrompt() {
+    let session = ImprovSession()
+    let empty = session.buildCompositionDetail()
+    checkNil(empty.sourceText, "buildCompositionDetail has no source text before anything is staged")
+    checkNil(empty.resolvedPrompt, "buildCompositionDetail has no resolved prompt before anything is staged")
+
+    session.setSourceText("a quiet lake at dusk")
+    session.setCompositionTitle("Lake Piece")
+    session.setAdditionalCompositionInstructions("impressionist, slow tempo")
+
+    let detail = session.buildCompositionDetail()
+    check(detail.title, "Lake Piece", "buildCompositionDetail title")
+    check(detail.sourceText, "a quiet lake at dusk", "buildCompositionDetail source text")
+    check(detail.additionalInstructions, "impressionist, slow tempo", "buildCompositionDetail instructions")
+    check(detail.resolvedPrompt?.contains("a quiet lake at dusk") ?? false, true, "buildCompositionDetail resolved prompt contains the source text")
+}
+testBuildCompositionDetailReflectsStagedTextAndResolvedPrompt()
+
+func testBuildGuideDetailReflectsAllStepsNotJustCurrent() {
+    do {
+        let session = ImprovSession()
+        check(session.buildGuideDetail().loaded, false, "buildGuideDetail reports not loaded with no guide")
+
+        session.newGuideSequence(title: "Explore")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        try session.addGuideStep(ModeReference(tonic: 7, scaleID: "mixolydian"))
+        try session.startGuide()
+
+        let detail = session.buildGuideDetail()
+        check(detail.loaded, true, "buildGuideDetail reports loaded once a guide is loaded")
+        check(detail.title, "Explore", "buildGuideDetail title")
+        check(detail.steps?.count, 2, "buildGuideDetail step count")
+        check(detail.currentStepIndex, 0, "buildGuideDetail current step index")
+        check(detail.steps?[0].isCurrent, true, "buildGuideDetail flags the current step")
+        // The real regression this route fixes: `GET /state`'s own `guide` field only ever
+        // exposes the CURRENT step's mode/chords — a non-current step's own detail must
+        // still be reported here.
+        check(detail.steps?[1].isCurrent, false, "buildGuideDetail correctly flags a non-current step")
+        check(detail.steps?[1].mode.scaleID, "mixolydian", "buildGuideDetail reports a non-current step's own scale")
+        check(detail.steps?[1].mode.tonicName, "G", "buildGuideDetail reports a non-current step's own tonic name")
+    } catch {
+        failures += 1
+        print("FAIL [buildGuideDetail]: threw \(error)")
+    }
+}
+testBuildGuideDetailReflectsAllStepsNotJustCurrent()
+
+func testBuildSoundTrackDetailReflectsEventsAndTrackIDs() {
+    do {
+        let session = ImprovSession()
+        check(session.buildSoundTrackDetail().loaded, false, "buildSoundTrackDetail reports not loaded with no soundtrack")
+
+        try session.startRecording(title: "Detail Test")
+        session.pressKey(pitch: 60)
+        session.releaseKey(pitch: 60)
+        _ = try session.stopRecording()
+
+        let detail = session.buildSoundTrackDetail()
+        check(detail.loaded, true, "buildSoundTrackDetail reports loaded once a soundtrack is recorded")
+        check(detail.title, "Detail Test", "buildSoundTrackDetail title")
+        check(detail.events?.count, 2, "buildSoundTrackDetail event count")
+        check(detail.trackIDs, ["clavier"], "buildSoundTrackDetail track ids")
+    } catch {
+        failures += 1
+        print("FAIL [buildSoundTrackDetail]: threw \(error)")
+    }
+}
+testBuildSoundTrackDetailReflectsEventsAndTrackIDs()
+
 func testNewPieceStartsBlank() {
     let session = ImprovSession()
     session.newPiece(title: "My Poem Piece")

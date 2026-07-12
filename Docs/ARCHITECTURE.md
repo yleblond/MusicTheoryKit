@@ -473,6 +473,67 @@ sauvegardent quelque chose. Deux nouvelles routes `GET` dans `handleWebConsoleRe
   gain (fraîcheur en dessous de 2s) qui n'apporte rien d'utile ici — non implémenté par choix,
   pas par oubli.
 
+### Lecture de structure (piece/composition/guide/soundtrack) — routes dédiées LLM/MCP
+
+`GET /state` (état de jeu en direct) et `GET /menu-lists` (noms de fichiers pour les listes
+déroulantes) ne portent AUCUNE structure/contenu de ce qui est chargé — pas de nombre de
+sections, pas d'accords par section, pas de contenu mélodique, pas de description de
+composition en attente, pas de détail complet d'un guide chargé. Ce n'était pas hypothétique :
+un client MCP (Claude Desktop) en train de composer une pièce à partir d'un texte s'est
+retrouvé bloqué, incapable de répondre à "combien de sections a cette pièce, quelles sont les
+lignes mélodiques, quels accords en section 2" — rien dans la surface HTTP existante ne
+pouvait le lui dire. Quatre nouvelles routes `GET`, ajoutées dans `handleWebConsoleRequest`
+(même emplacement que `/menu-lists`/`/menu-action`) :
+
+- **`GET /piece-detail`** : structure complète de `session.piece` — titre/compositeur/tempo/
+  tonalité, et par section : mode, progression d'accords (mesure/temps/durée/inversion/
+  bassOverride/playingStyle, PAS seulement "mesure N : nom"), et **chaque piste, y compris
+  celles à zéro `melodyEvents`** — corrige un vrai bug de `pieceDetailLines()` (l'affichage
+  du terminal), qui les ignore silencieusement (`where !track.melodyEvents.isEmpty`) : une
+  piste uniquement composée de `fragmentPlacements` disparaissait purement et simplement de
+  la vue. `loaded: false` si aucune pièce n'est chargée.
+- **`GET /composition-detail`** : la description actuellement en attente pour la composition
+  IA — titre, texte source, indications, ET le prompt résolu exact qui serait envoyé au LLM
+  maintenant (`currentTextCompositionPrompt()`). Même cause que ci-dessus, un cran plus tôt :
+  `composition-describe` (action du menu) écrit ces champs mais ne les relit jamais nulle
+  part ; un assistant en plein flux de composition n'avait aucun moyen de vérifier ce qui
+  était réellement en attente.
+- **`GET /guide-detail`** : structure complète du guide musical chargé — CHAQUE étape (mode,
+  progression d'accords), pas seulement les libellés + l'étape courante que `GET /state`'s
+  champ `guide` expose déjà.
+- **`GET /soundtrack-detail`** : l'enregistrement courant — titre, durée, pistes contributrices,
+  et chaque événement note on/off individuel (pas seulement un compte).
+
+**Décision de conception — structs hybrides, pas un simple encodage de `Piece`** : deux
+alternatives écartées — encoder `Piece` tel quel (fidélité totale, zéro maintenance, mais
+laisse l'appelant refaire lui-même l'arithmétique classe-de-hauteur pour nommer chaque
+accord/mode), ou un résumé fait main (perd en fidélité). À la place : les types déjà
+`Codable` de `PieceModel` sont réutilisés SANS changement partout où aucune résolution de nom
+n'apporte rien (`TimeSignature`, `RhythmStructure`, `MelodicFragment`, `MelodyEvent`,
+`FragmentPlacement`, `PlayingStyle`, `RecordedNoteEvent`), et seuls `ModeReference`/
+`ChordReference` sont enveloppés pour ajouter un nom résolu à côté des entiers bruts
+(`tonicName`/`scaleName`, `rootName`/`label`) — exactement le même principe déjà en place
+pour `WebConsoleChordProgressionEntry` (`WebConsoleState.swift`, `label` à côté de `root`),
+pas une nouvelle convention. Les hauteurs de note individuelles restent des entiers MIDI bruts
+délibérément : l'arithmétique pitch→classe-de-hauteur est triviale et sans ambiguïté,
+contrairement à l'identification d'accord/gamme qui est la vraie source de friction — les
+enrichir aurait juste doublé la taille de la charge utile pour rien. Coût : ces structs
+(`PieceDetailSection`, `PieceDetailChordEvent`, etc.) doivent être resynchronisées à la main
+si `Section`/`ChordEvent` gagnent un jour un champ — même compromis déjà accepté ailleurs
+(`ACTIONS` vs `MENU_ACTIONS`, `SanityChecks` vs `Tests/*`).
+
+Comme `buildWebConsoleState()`, chaque route sépare un `build*Detail() -> *Response` `public`
+(pour que `Tests/AppCoreTests` ET `SanityChecks` — module distinct, pas de `@testable import`
+— puissent l'exercer directement) d'un `handle*DetailRequest()` `private` qui l'encode en JSON.
+
+**Volontairement PAS ajoutées à `MENU_ACTIONS`/l'onglet "Commandes"** : ce sont des lectures
+seules, la même catégorie que `GET /state` lui-même, qui n'est pas non plus une action de
+menu — cet onglet reste "actions seulement" par conception.
+
+Voir aussi `## mcp-server/` : quatre nouveaux tools (`get_piece_detail`,
+`get_composition_description`, `get_guide_sequence_detail`, `get_soundtrack_detail`) exposent
+ces routes côté MCP, en simples lectures sans paramètre, même forme que `get_menu_lists`.
+
 ### Portée musicale (`renderStaffSVG`, dupliquée dans les deux assets)
 
 Sous chaque clavier ASCII/HTML (console web et clavier virtuel), une portée à deux clés (sol
@@ -1258,6 +1319,27 @@ depuis un prompt.
   fin — demandé explicitement ainsi par l'utilisateur (2026-07-12) ; un filtrage plus
   sélectif (lecture seule vs. mutante, liste d'autorisation) est une étape volontairement
   différée, pas un oubli.
+- **`get_piece_detail`/`get_composition_description`/`get_guide_sequence_detail`/
+  `get_soundtrack_detail`** : quatre tools de lecture seule, sans paramètre, miroirs des
+  routes du même nom décrites dans la section "Lecture de structure" plus haut — ajoutés
+  après qu'un assistant s'est retrouvé bloqué en pleine composition IA, incapable de savoir
+  combien de sections comptait la pièce ou quelles étaient ses lignes mélodiques.
+- **Traduction tonique → classe de hauteur** : `guide_add_mode`'s `tonic` est le seul champ que
+  ce serveur traduit lui-même avant l'envoi — il accepte un nom de note ("D", "F#"...) et le
+  convertit dans l'index attendu par `/menu-action`, exactement ce que fait déjà le `<select>`
+  de la page web côté client.
+- **Délai HTTP différent pour les deux actions qui appellent un LLM** (`LONG_RUNNING_ACTIONS`
+  dans `server.py`) : `composition-compose`/`soundtrack-compose` (`ImprovSession.
+  composeFromText`/`composeSoundTrackToPieces`) peuvent légitimement prendre bien plus de
+  quelques secondes — le terminal n'a aucun délai pour ça (un simple appel `URLSession`
+  bloquant), d'où "ça marche en mode terminal". Un `timeout` `httpx` fixe de 10s s'appliquait
+  pourtant à TOUTE action y compris celles-ci, coupant la connexion vers JamShack bien avant
+  que le modèle ait fini de répondre — cause réelle confirmée d'un signalement "ça time out
+  via MCP, pas au terminal" (2026-07-12). Corrigé en donnant un délai bien plus long
+  (`LONG_RUNNING_ACTION_TIMEOUT`, 180s) uniquement à ces deux actions, en gardant le délai
+  court partout ailleurs (ces autres actions sont de l'E/S locale/changement d'état en
+  mémoire — un délai court y fait échouer vite une connexion réellement bloquée, plutôt que
+  d'attendre 3 minutes pour rien).
 - **Vérifié en conditions réelles** (pas seulement par lecture de schéma) : contre une vraie
   session JamShack déjà lancée par l'utilisateur (console web sur le port 8080) —
   `get_menu_lists()` (lecture seule), puis `midi_mode_merged` (idempotent : passer en mode
@@ -1267,7 +1349,11 @@ depuis un prompt.
   traduction "D" → `tonic=2` dans la requête HTTP réelle (vue dans les logs `httpx`) et un
   message d'erreur propre ("aucune séquence de guide") plutôt qu'un crash puisqu'aucun guide
   n'était démarré — jamais de test contre le port réel avec une action destructrice/mutante
-  non-idempotente (save/load/jam-session), par prudence.
+  non-idempotente (save/load/jam-session), par prudence. Les quatre routes de lecture de
+  structure ont ensuite été vérifiées de la même façon, en lecture seule, contre la vraie
+  session en cours de l'utilisateur (`/composition-detail` a correctement renvoyé sa
+  description réellement en attente, `/guide-detail`/`/soundtrack-detail` `loaded: false`
+  proprement quand rien n'était chargé).
 
 ## JamShack — l'interface en ligne de commande
 

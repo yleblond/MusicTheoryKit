@@ -995,6 +995,91 @@ final class ImprovSessionTests: XCTestCase {
         session.stopWebConsole() // must not crash/throw
         XCTAssertNil(session.webConsolePort)
     }
+
+    func testBuildPieceDetailReflectsWholeStructureIncludingEmptyTracks() throws {
+        let session = ImprovSession()
+        XCTAssertFalse(session.buildPieceDetail().loaded)
+
+        let trackWithNotes = Track(name: "lead", instrument: "mcb.sf2", melodyEvents: [
+            MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 60),
+        ])
+        // The real regression this route fixes: `pieceDetailLines()` (the terminal's own
+        // piece display) silently skips any track with zero `melodyEvents` — a fragment-only
+        // track just vanishes. `buildPieceDetail()` must not repeat that mistake.
+        let emptyTrack = Track(name: "fragment-only", instrument: "")
+        let chord = ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 0, chordTemplateID: "Ma7"))
+        let section = Section(
+            name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"),
+            chordProgression: [chord], tracks: [trackWithNotes, emptyTrack]
+        )
+        try loadTemporaryPiece(
+            Piece(title: "Detail Test", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [section]),
+            into: session
+        )
+
+        let detail = session.buildPieceDetail()
+        XCTAssertTrue(detail.loaded)
+        XCTAssertEqual(detail.sections?.count, 1)
+        XCTAssertEqual(detail.sections?[0].chordProgression.first?.chord.label, "CMa7")
+        XCTAssertEqual(detail.sections?[0].tracks.count, 2)
+        XCTAssertTrue(detail.sections?[0].tracks.contains { $0.name == "fragment-only" && $0.melodyEvents.isEmpty } ?? false)
+    }
+
+    func testBuildCompositionDetailReflectsStagedTextAndResolvedPrompt() {
+        let session = ImprovSession()
+        let empty = session.buildCompositionDetail()
+        XCTAssertNil(empty.sourceText)
+        XCTAssertNil(empty.resolvedPrompt)
+
+        session.setSourceText("a quiet lake at dusk")
+        session.setCompositionTitle("Lake Piece")
+        session.setAdditionalCompositionInstructions("impressionist, slow tempo")
+
+        let detail = session.buildCompositionDetail()
+        XCTAssertEqual(detail.title, "Lake Piece")
+        XCTAssertEqual(detail.sourceText, "a quiet lake at dusk")
+        XCTAssertEqual(detail.additionalInstructions, "impressionist, slow tempo")
+        XCTAssertTrue(detail.resolvedPrompt?.contains("a quiet lake at dusk") ?? false)
+    }
+
+    func testBuildGuideDetailReflectsAllStepsNotJustCurrent() throws {
+        let session = ImprovSession()
+        XCTAssertFalse(session.buildGuideDetail().loaded)
+
+        session.newGuideSequence(title: "Explore")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        try session.addGuideStep(ModeReference(tonic: 7, scaleID: "mixolydian"))
+        try session.startGuide()
+
+        let detail = session.buildGuideDetail()
+        XCTAssertTrue(detail.loaded)
+        XCTAssertEqual(detail.title, "Explore")
+        XCTAssertEqual(detail.steps?.count, 2)
+        XCTAssertEqual(detail.currentStepIndex, 0)
+        XCTAssertTrue(detail.steps?[0].isCurrent ?? false)
+        // The real regression this route fixes: `GET /state`'s own `guide` field only ever
+        // exposes the CURRENT step's mode/chords — a non-current step's own detail must
+        // still be reported here.
+        XCTAssertFalse(detail.steps?[1].isCurrent ?? true)
+        XCTAssertEqual(detail.steps?[1].mode.scaleID, "mixolydian")
+        XCTAssertEqual(detail.steps?[1].mode.tonicName, "G")
+    }
+
+    func testBuildSoundTrackDetailReflectsEventsAndTrackIDs() throws {
+        let session = ImprovSession()
+        XCTAssertFalse(session.buildSoundTrackDetail().loaded)
+
+        try session.startRecording(title: "Detail Test")
+        session.pressKey(pitch: 60)
+        session.releaseKey(pitch: 60)
+        _ = try session.stopRecording()
+
+        let detail = session.buildSoundTrackDetail()
+        XCTAssertTrue(detail.loaded)
+        XCTAssertEqual(detail.title, "Detail Test")
+        XCTAssertEqual(detail.events?.count, 2)
+        XCTAssertEqual(detail.trackIDs, ["clavier"])
+    }
 }
 
 extension ImprovSession.SessionError: Equatable {

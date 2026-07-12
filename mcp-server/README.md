@@ -67,8 +67,31 @@ if not set — only needed if you started `web-console` on a different port.
   the last jam-session discovery scan). An assistant should call this before an action whose
   parameter comes from one of these lists, since they can change from outside this server too
   (the terminal, a browser tab, another jam-session participant).
+- `get_piece_detail` / `get_composition_description` / `get_guide_sequence_detail` /
+  `get_soundtrack_detail` — read-only content/structure, not just dropdown filenames or live
+  playback state: full piece structure (sections, chords with resolved labels, every track's
+  actual melody notes — including tracks with zero notes, unlike the terminal's own piece
+  display), the composition currently staged for AI generation (title/source text/
+  instructions/resolved prompt), the full guide sequence (every step's mode+chords, not just
+  the current one), and the current soundtrack's events. Added after an assistant got stuck
+  mid-composition unable to answer "how many sections does this piece have" — nothing in
+  `get_menu_lists`/the app's live state exposed that at all.
 
 `guide_add_mode`'s `tonic` parameter is the one place this server translates on your behalf:
 it accepts a note name (`"C"`, `"D"`, `"F#"`, ...) and converts it to the pitch-class index the
 HTTP endpoint actually expects — the web UI's own `<select>` does the same translation
 client-side.
+
+**`composition_describe`'s `source_text` parameter is the terminal's `paste-text`** — there is
+no separate "paste text" tool. An assistant hit exactly this confusion once (the parameter used
+to be exposed as a generic `value`, giving no hint that it was the composition's actual source
+material) and reported being stuck with nothing to call — every action's primary parameter is
+now given an explicit, descriptive name instead of a bare `value` (`track_id`, `piece_name`,
+`folder_path`, `source_text`, ...) for exactly this reason.
+
+**`composition_compose`/`soundtrack_compose` can legitimately take a while** (they call an
+LLM) — JamShack itself has no timeout for this, so it always worked fine from the terminal;
+this server used to apply a flat 10-second HTTP timeout to every action, which aborted these
+two specifically before the model could respond. Fixed by giving just these two a much longer
+timeout (`LONG_RUNNING_ACTIONS` in `server.py`) while keeping every other (fast, local)
+action's timeout short.

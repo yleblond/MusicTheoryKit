@@ -1739,6 +1739,10 @@ public final class ImprovSession: @unchecked Sendable {
         case "/state": return HTTPResponse(contentType: "application/json", body: webConsoleStateQueue.sync { webConsoleStateCache })
         case "/menu-lists": return handleMenuListsRequest()
         case "/menu-action": return handleMenuAction(query)
+        case "/piece-detail": return handlePieceDetailRequest()
+        case "/composition-detail": return handleCompositionDetailRequest()
+        case "/guide-detail": return handleGuideDetailRequest()
+        case "/soundtrack-detail": return handleSoundTrackDetailRequest()
         default: return .notFound()
         }
     }
@@ -2079,6 +2083,272 @@ public final class ImprovSession: @unchecked Sendable {
         default:
             throw MenuActionError.unknownAction(action)
         }
+    }
+
+    // MARK: - Read-only structure detail (piece/composition/guide/soundtrack)
+    //
+    // `GET /state` and `GET /menu-lists` cover live performance state and dropdown-list
+    // filenames respectively, but neither carries the actual CONTENT/STRUCTURE of what's
+    // loaded — no section count, no chords-per-section, no melody notes, no staged
+    // composition description, no per-step guide detail, no soundtrack events. This was a
+    // real gap, not a hypothetical one: an MCP client mid-AI-composition got stuck unable to
+    // answer "how many sections does this piece have, what are the melodic lines, what
+    // chords are in section 2" — nothing in the existing HTTP surface could tell it. These
+    // four routes are the fix, one per already-existing-but-unreadable piece of state.
+    //
+    // Every response struct below reuses the underlying `PieceModel`/`SoundTrackModel` types
+    // UNCHANGED wherever no name resolution helps (`TimeSignature`, `RhythmStructure`,
+    // `MelodicFragment`, `MelodyEvent`, `FragmentPlacement`, `PlayingStyle`,
+    // `RecordedNoteEvent`) — deliberately NOT re-encoding the whole `Piece` as one opaque
+    // blob (that would be zero-maintenance but leaves a caller doing pitch-class arithmetic
+    // on every chord/mode itself) and NOT hand-summarizing away detail into counts either
+    // (the exact mistake `pieceDetailLines()`'s track line already makes — see below). Only
+    // `ModeReference`/`ChordReference` get a wrapper that adds a resolved name/label
+    // alongside the raw ints — the same "label next to the raw value" shape already used by
+    // `WebConsoleChordProgressionEntry` (`WebConsoleState.swift`). Per-note pitches are left
+    // as raw MIDI ints on purpose: pitch-class-from-MIDI is trivial, unambiguous arithmetic,
+    // unlike chord/scale identification, which is the actual source of friction — enriching
+    // every note would just double payload size for no benefit.
+    //
+    // Kept in sync BY HAND against `Section`/`ChordEvent`/etc. if those ever gain a field —
+    // same accepted trade-off as `ACTIONS` (mcp-server/server.py) vs `MENU_ACTIONS`, or
+    // `SanityChecks` vs `Tests/*`: real duplication, deliberately chosen over the
+    // alternatives above, not an oversight.
+    //
+    // Deliberately NOT added to `MENU_ACTIONS`/the web console's "Commandes" tab: these are
+    // read-only displays, the same category `GET /state` already is, which also isn't a menu
+    // action — that tab's scope stays "actions only" by design.
+
+    /// `public` (not `private`), same reason as `buildWebConsoleState()`: `Tests/AppCoreTests`
+    /// AND `SanityChecks` (a genuinely different module, no `@testable import`) both need to
+    /// exercise the detail-building logic directly, without standing up the HTTP layer.
+    public struct PieceDetailModeReference: Codable {
+        public var tonic: Int
+        public var scaleID: String
+        public var tonicName: String
+        public var scaleName: String
+
+        init(_ reference: ModeReference) {
+            tonic = reference.tonic
+            scaleID = reference.scaleID
+            tonicName = PitchClass(reference.tonic).name()
+            scaleName = ScaleLibrary.byID(reference.scaleID)?.popularName ?? reference.scaleID
+        }
+    }
+
+    public struct PieceDetailChordReference: Codable {
+        public var root: Int
+        public var chordTemplateID: String
+        public var rootName: String
+        public var label: String
+
+        init(_ reference: ChordReference) {
+            root = reference.root
+            chordTemplateID = reference.chordTemplateID
+            rootName = PitchClass(reference.root).name()
+            label = "\(rootName)\(reference.chordTemplateID)"
+        }
+    }
+
+    public struct PieceDetailModeTransition: Codable {
+        public var toMode: PieceDetailModeReference
+        public var pivotChords: [PieceDetailChordReference]
+        public var atMeasure: Int
+
+        init(_ transition: ModeTransition) {
+            toMode = PieceDetailModeReference(transition.toMode)
+            pivotChords = transition.pivotChords.map(PieceDetailChordReference.init)
+            atMeasure = transition.atMeasure
+        }
+    }
+
+    public struct PieceDetailChordEvent: Codable {
+        public var id: String
+        public var measure: Int
+        public var beat: Double
+        public var durationBeats: Double
+        public var chord: PieceDetailChordReference
+        public var inversion: Int
+        public var bassOverride: Int?
+        public var bassOverrideName: String?
+        public var playingStyle: PlayingStyle
+
+        init(_ event: ChordEvent) {
+            id = event.id
+            measure = event.measure
+            beat = event.beat
+            durationBeats = event.durationBeats
+            chord = PieceDetailChordReference(event.chord)
+            inversion = event.inversion
+            bassOverride = event.bassOverride
+            bassOverrideName = event.bassOverride.map { PitchClass($0).name() }
+            playingStyle = event.playingStyle
+        }
+    }
+
+    public struct PieceDetailTrack: Codable {
+        public var id: String
+        public var name: String
+        public var instrument: String
+        public var melodyEvents: [MelodyEvent]
+        public var fragmentPlacements: [FragmentPlacement]
+
+        init(_ track: Track) {
+            id = track.id
+            name = track.name
+            instrument = track.instrument
+            melodyEvents = track.melodyEvents
+            fragmentPlacements = track.fragmentPlacements
+        }
+    }
+
+    public struct PieceDetailSection: Codable {
+        public var id: String
+        public var name: String
+        public var lengthInMeasures: Int
+        public var mode: PieceDetailModeReference
+        public var modeTransition: PieceDetailModeTransition?
+        public var chordProgression: [PieceDetailChordEvent]
+        public var tracks: [PieceDetailTrack]
+        public var chordInstrument: String?
+
+        init(_ section: Section) {
+            id = section.id
+            name = section.name
+            lengthInMeasures = section.lengthInMeasures
+            mode = PieceDetailModeReference(section.mode)
+            modeTransition = section.modeTransition.map(PieceDetailModeTransition.init)
+            chordProgression = section.chordProgression.map(PieceDetailChordEvent.init)
+            // EVERY track, including ones with zero `melodyEvents` — the terminal's own
+            // `pieceDetailLines()` silently skips those (`where !track.melodyEvents.isEmpty`),
+            // which is exactly the kind of gap that caused the incident this route fixes: a
+            // fragment-only track would otherwise just vanish from an LLM's view of the piece.
+            tracks = section.tracks.map(PieceDetailTrack.init)
+            chordInstrument = section.chordInstrument
+        }
+    }
+
+    public struct PieceDetailResponse: Codable {
+        public var loaded: Bool
+        public var id: String?
+        public var title: String?
+        public var composer: String?
+        public var timeSignature: TimeSignature?
+        public var tempoBPM: Double?
+        public var key: PieceDetailModeReference?
+        public var rhythmStructure: RhythmStructure?
+        public var fragments: [MelodicFragment]?
+        public var sections: [PieceDetailSection]?
+    }
+
+    public func buildPieceDetail() -> PieceDetailResponse {
+        guard let piece else {
+            return PieceDetailResponse(
+                loaded: false, id: nil, title: nil, composer: nil, timeSignature: nil,
+                tempoBPM: nil, key: nil, rhythmStructure: nil, fragments: nil, sections: nil
+            )
+        }
+        return PieceDetailResponse(
+            loaded: true, id: piece.id, title: piece.title, composer: piece.composer,
+            timeSignature: piece.timeSignature, tempoBPM: piece.tempoBPM,
+            key: PieceDetailModeReference(piece.key), rhythmStructure: piece.rhythmStructure,
+            fragments: piece.fragments, sections: piece.sections.map(PieceDetailSection.init)
+        )
+    }
+
+    private func handlePieceDetailRequest() -> HTTPResponse {
+        guard let data = try? JSONEncoder().encode(buildPieceDetail()) else { return .notFound() }
+        return HTTPResponse(contentType: "application/json", body: data)
+    }
+
+    public struct CompositionDetailResponse: Codable {
+        public var title: String?
+        public var additionalInstructions: String?
+        public var sourceText: String?
+        public var resolvedPrompt: String?
+    }
+
+    public func buildCompositionDetail() -> CompositionDetailResponse {
+        // `currentTextCompositionPrompt()`'s only throw site is "no `sourceText` yet" (see
+        // its own `guard let sourceText else { throw ... }`) — already reported via
+        // `sourceText` above, so `try?` silently producing `nil` here needs no separate
+        // error field to explain itself.
+        CompositionDetailResponse(
+            title: compositionTitle, additionalInstructions: additionalCompositionInstructions,
+            sourceText: sourceText, resolvedPrompt: try? currentTextCompositionPrompt()
+        )
+    }
+
+    private func handleCompositionDetailRequest() -> HTTPResponse {
+        guard let data = try? JSONEncoder().encode(buildCompositionDetail()) else { return .notFound() }
+        return HTTPResponse(contentType: "application/json", body: data)
+    }
+
+    public struct GuideDetailStep: Codable {
+        public var mode: PieceDetailModeReference
+        public var chordProgressionName: String?
+        public var chordProgression: [PieceDetailChordReference]?
+        public var isCurrent: Bool
+    }
+
+    public struct GuideDetailResponse: Codable {
+        public var loaded: Bool
+        public var title: String?
+        public var filePath: String?
+        public var currentStepIndex: Int?
+        public var steps: [GuideDetailStep]?
+    }
+
+    public func buildGuideDetail() -> GuideDetailResponse {
+        guard let currentGuide else {
+            return GuideDetailResponse(loaded: false, title: nil, filePath: nil, currentStepIndex: nil, steps: nil)
+        }
+        let steps = currentGuide.steps.enumerated().map { index, step in
+            GuideDetailStep(
+                mode: PieceDetailModeReference(step.mode),
+                chordProgressionName: step.chordProgressionName,
+                chordProgression: step.chordProgression?.map(PieceDetailChordReference.init),
+                isCurrent: index == currentGuideStepIndex
+            )
+        }
+        return GuideDetailResponse(
+            loaded: true, title: currentGuide.title, filePath: currentGuideFilePath,
+            currentStepIndex: currentGuideStepIndex, steps: steps
+        )
+    }
+
+    private func handleGuideDetailRequest() -> HTTPResponse {
+        guard let data = try? JSONEncoder().encode(buildGuideDetail()) else { return .notFound() }
+        return HTTPResponse(contentType: "application/json", body: data)
+    }
+
+    public struct SoundTrackDetailResponse: Codable {
+        public var loaded: Bool
+        public var id: String?
+        public var title: String?
+        public var filePath: String?
+        public var durationSeconds: Double?
+        public var trackIDs: [String]?
+        public var events: [RecordedNoteEvent]?
+    }
+
+    public func buildSoundTrackDetail() -> SoundTrackDetailResponse {
+        guard let currentSoundTrack else {
+            return SoundTrackDetailResponse(
+                loaded: false, id: nil, title: nil, filePath: nil, durationSeconds: nil,
+                trackIDs: nil, events: nil
+            )
+        }
+        return SoundTrackDetailResponse(
+            loaded: true, id: currentSoundTrack.id, title: currentSoundTrack.title,
+            filePath: currentSoundTrackFilePath, durationSeconds: currentSoundTrack.durationSeconds,
+            trackIDs: currentSoundTrack.trackIDs.sorted(), events: currentSoundTrack.events
+        )
+    }
+
+    private func handleSoundTrackDetailRequest() -> HTTPResponse {
+        guard let data = try? JSONEncoder().encode(buildSoundTrackDetail()) else { return .notFound() }
+        return HTTPResponse(contentType: "application/json", body: data)
     }
 
     // MARK: - Virtual keyboard (interactive browser piano — keydown/keyup + mouse/touch)
