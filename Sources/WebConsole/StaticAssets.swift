@@ -727,6 +727,24 @@ function renderSceneTree(scene) {
   let html = `<div class="field">Mode: <b>${scene.networkRoleText}</b></div>`;
   html += '<ul class="scene-tree">';
 
+  // The scene/roles concept as its own clearly-labeled, always-present branch — shown even
+  // with no active scene ("(aucune)") so the concept itself is always visible in the tree,
+  // not just when it happens to be in use, and placed BEFORE "Instruments locaux" since a
+  // scene/role is the declarative concept an instrument then gets attached to, not the other
+  // way around. See `Sources/AppCore/Scene.swift`'s own doc comments for what a role is.
+  const roles = scene.roles || [];
+  html += '<li>Scene: ' + (scene.sceneTitle ? `<b>${scene.sceneTitle}</b>` : '<span class="empty">(aucune)</span>');
+  if (scene.sceneTitle) {
+    html += roles.length
+      ? '<ul>' + roles.map(role => {
+          const soundText = role.soundName ? ` [${role.soundName}]` : '';
+          const attachedText = role.attachedLabel ? `<b>${role.attachedLabel}</b>` : '<span class="empty">(libre)</span>';
+          return `<li>${role.name} — ${attachedText}${soundText}</li>`;
+        }).join('') + '</ul>'
+      : ' <span class="empty">(aucun role declare)</span>';
+  }
+  html += '</li>';
+
   const localInstruments = scene.localInstruments || [];
   html += '<li>Instruments locaux' + (
     localInstruments.length
@@ -736,15 +754,6 @@ function renderSceneTree(scene) {
 
   html += `<li>Console web: <b>${scene.webConsolePort ? 'http://localhost:' + scene.webConsolePort : '(inactive)'}</b></li>`;
   html += `<li>Clavier virtuel: <b>${scene.virtualKeyboardPort ? 'http://localhost:' + scene.virtualKeyboardPort : '(inactif)'}</b></li>`;
-
-  const roles = scene.roles || [];
-  if (roles.length) {
-    html += '<li>Roles de la scene active<ul>' + roles.map(role => {
-      const soundText = role.soundName ? ` [${role.soundName}]` : '';
-      const attachedText = role.attachedLabel ? `<b>${role.attachedLabel}</b>` : '<span class="empty">(libre)</span>';
-      return `<li>${role.name} — ${attachedText}${soundText}</li>`;
-    }).join('') + '</ul></li>';
-  }
 
   if (isServer) {
     const clients = scene.clients || [];

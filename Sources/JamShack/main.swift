@@ -437,6 +437,27 @@ func printSceneTree() {
     if case .server = session.networkRole { isServer = true } else { isServer = false }
     print("JamShack — mode: \(networkRoleText())")
 
+    // The scene/roles concept as its own clearly-labeled branch, shown even with no active
+    // scene ("(aucune)") so the concept itself is always visible in the tree, not just when
+    // it happens to be in use — placed BEFORE "Instruments locaux" since a scene/role is the
+    // declarative concept an instrument then gets attached to, not the other way around.
+    // Mirrors the web console's own `renderSceneTree`, kept in sync by hand.
+    if let scene = session.currentScene {
+        printTreeLine("Scene: \(scene.title)", ancestorIsLast: [], isLast: false)
+        if scene.roles.isEmpty {
+            printTreeLine(TextStyle.placeholder("(aucun role declare)"), ancestorIsLast: [false], isLast: true)
+        } else {
+            for (index, role) in scene.roles.enumerated() {
+                let attachedText = role.attachedTrackID.flatMap { id in session.tracks.first { $0.id == id }?.label } ?? TextStyle.placeholder("(libre)")
+                var line = "\(role.name) — \(attachedText)"
+                if let soundName = role.soundName { line += " [\(soundName)]" }
+                printTreeLine(line, ancestorIsLast: [false], isLast: index == scene.roles.count - 1)
+            }
+        }
+    } else {
+        printTreeLine("Scene: \(TextStyle.placeholder("(aucune)"))", ancestorIsLast: [], isLast: false)
+    }
+
     let localTracks = session.tracks.filter { track -> Bool in
         if case .remote = track.id { return false }
         return true

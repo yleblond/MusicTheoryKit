@@ -2127,7 +2127,7 @@ public final class ImprovSession: @unchecked Sendable {
 
         return WebConsoleSceneState(
             networkRoleText: networkRoleText, webConsolePort: webConsolePort, virtualKeyboardPort: virtualKeyboardPort,
-            localInstruments: localInstruments, clients: clients, roles: roles
+            localInstruments: localInstruments, clients: clients, sceneTitle: currentScene?.title, roles: roles
         )
     }
 

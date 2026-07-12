@@ -52,6 +52,10 @@ struct WebConsoleSceneState: Codable {
     /// Every currently-connected jam-session participant and their announced instruments —
     /// always empty outside `.server` (see `ImprovSession.connectedClients()`).
     var clients: [WebConsoleSceneClientState]
+    /// `nil` if no scene is active — lets the client show "(aucune)" explicitly rather than
+    /// just omitting the whole section, so the scene/role concept is always visibly present
+    /// in the tree, not just when it happens to be in use.
+    var sceneTitle: String?
     /// Every role in the active scene, attached or not — `[]` if there's no active scene.
     /// See `Sources/AppCore/Scene.swift`'s own doc comments for what a role is.
     var roles: [WebConsoleSceneRoleState]
