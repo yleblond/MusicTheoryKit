@@ -5,6 +5,14 @@ public enum MIDIListenerError: Error {
     case portCreationFailed(OSStatus)
 }
 
+/// One CoreMIDI source, as reported by `MIDIInputListener.sourceDescriptors()` — see that
+/// function's own doc comment for why `uniqueID` (not this array's own index) is the identity
+/// worth trusting across a reconnect.
+public struct MIDISourceDescriptor: Sendable, Equatable {
+    public let uniqueID: Int32?
+    public let displayName: String
+}
+
 /// Listens to every currently-available CoreMIDI source (a physical keyboard, a virtual
 /// port, an IAC bus...) and delivers decoded note events to `handler`. Distributing those
 /// events to several consumers at once (audio, recognition, UI) is the caller's job —
@@ -50,11 +58,29 @@ public final class MIDIInputListener {
     }
 
     public static func sourceNames() -> [String] {
+        sourceDescriptors().map(\.displayName)
+    }
+
+    /// Like `sourceNames()`, but also reads CoreMIDI's own persistent per-device identifier
+    /// (`kMIDIPropertyUniqueID`) alongside the display name — unlike a source's position in
+    /// this array (what `TrackID.midiSource(Int)` actually keys on), `uniqueID` is stable
+    /// across unplug/replug of the SAME physical device on this Mac in the ordinary case, so
+    /// it's what `AppCore.InstrumentIdentityHint.midiPort`/`ImprovSession.matches(_:_:)` use
+    /// to recognize a previously-attached MIDI device automatically instead of just betting on
+    /// "whatever's at the same index this time." Not a hardware guarantee (two identical
+    /// models can still only be told apart by whichever id CoreMIDI happens to assign each
+    /// instance, and some virtual/IAC ports may lack one) — `uniqueID` is `nil` for a source
+    /// CoreMIDI doesn't report one for, in which case reattachment falls back to name-based
+    /// matching (see that call site's own doc comment).
+    public static func sourceDescriptors() -> [MIDISourceDescriptor] {
         (0..<MIDIGetNumberOfSources()).map { index in
             let source = MIDIGetSource(index)
             var unmanagedName: Unmanaged<CFString>?
             MIDIObjectGetStringProperty(source, kMIDIPropertyDisplayName, &unmanagedName)
-            return (unmanagedName?.takeRetainedValue() as String?) ?? "Unknown source \(index)"
+            let displayName = (unmanagedName?.takeRetainedValue() as String?) ?? "Unknown source \(index)"
+            var uniqueID: Int32 = 0
+            let status = MIDIObjectGetIntegerProperty(source, kMIDIPropertyUniqueID, &uniqueID)
+            return MIDISourceDescriptor(uniqueID: status == noErr ? uniqueID : nil, displayName: displayName)
         }
     }
 

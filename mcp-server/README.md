@@ -58,9 +58,9 @@ if not set — only needed if you started `web-console` on a different port.
 - One tool per action in the terminal's own pull-down menu (mirrors `MENU_ACTIONS` in
   `Sources/WebConsole/StaticAssets.swift`, hand-ported into `ACTIONS` in `server.py` — keep
   the two in sync by hand if the menu ever changes), e.g. `piece_load`, `track_on`,
-  `guide_add_mode`, `composition_describe`, `jam_start`. Pure read-only displays
-  (status/run/scene-tree/show-*) are deliberately not included — same scope as the web
-  console's own "Commandes" tab.
+  `guide_add_mode`, `composition_describe`, `jam_start`, `scene_role_attach`. Pure read-only
+  displays (status/run/scene-tree/show-*) are deliberately not included — same scope as the
+  web console's own "Commandes" tab.
 - `get_menu_lists` — fetches the current valid values for every dropdown-backed parameter
   (piece/sample/soundtrack/guide/scene/composition files, LLM connections, color palettes,
   chord progression templates, the 33 scales, currently-known tracks, MIDI fusion mode, and
@@ -95,3 +95,12 @@ this server used to apply a flat 10-second HTTP timeout to every action, which a
 two specifically before the model could respond. Fixed by giving just these two a much longer
 timeout (`LONG_RUNNING_ACTIONS` in `server.py`) while keeping every other (fast, local)
 action's timeout short.
+
+**Scene roles** (`scene_new`, `scene_role_add`, `scene_role_sound`, `scene_role_listen`,
+`scene_role_attach`, `scene_role_detach`) let an assistant declare named musical positions
+("Piano 1", "Basse Guitare") and attach a live instrument to one — see `Docs/ARCHITECTURE.md`'s
+"Rôles de scène" section for the full design. `scene_role_attach`'s `track_id` should come from
+`get_menu_lists()['unassignedTracks']` (instruments not already attached to a role), not the
+plain `tracks` list. A role attached to a remote/network participant's instrument is not yet
+supported here — local/standalone only for now (a network-claiming phase is designed and
+deliberately deferred, see `Docs/BACKLOG.md`).

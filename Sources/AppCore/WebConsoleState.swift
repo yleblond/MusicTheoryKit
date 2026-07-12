@@ -11,7 +11,7 @@ import Foundation
 ///
 /// `modeTones` (on `WebConsoleTrackState` and `WebConsolePlaybackState`, and
 /// `WebConsoleGuideState.currentModeTones`) is degree-ordered, not an arbitrary set order:
-/// index 0 is scale degree 1, index 1 is degree 2, etc. — this is what lets the role-line
+/// index 0 is scale degree 1, index 1 is degree 2, etc. — this is what lets the degree-line
 /// badges show each note's degree number, not just "in the mode or not".
 public struct WebConsoleState: Codable {
     var lastEvent: String?
@@ -52,12 +52,24 @@ struct WebConsoleSceneState: Codable {
     /// Every currently-connected jam-session participant and their announced instruments —
     /// always empty outside `.server` (see `ImprovSession.connectedClients()`).
     var clients: [WebConsoleSceneClientState]
+    /// Every role in the active scene, attached or not — `[]` if there's no active scene.
+    /// See `Sources/AppCore/Scene.swift`'s own doc comments for what a role is.
+    var roles: [WebConsoleSceneRoleState]
 }
 
 struct WebConsoleSceneClientState: Codable {
     var clientID: String
     var name: String
     var instruments: [WebConsoleTrackState]
+}
+
+struct WebConsoleSceneRoleState: Codable {
+    var name: String
+    /// The label of whichever track is currently attached, `nil` if free — precomputed
+    /// server-side, same "server resolves once, client just paints" convention as
+    /// `WebConsoleTrackState.chordLabel`.
+    var attachedLabel: String?
+    var soundName: String?
 }
 
 public struct WebConsoleTrackState: Codable {
@@ -125,7 +137,7 @@ struct WebConsoleSoundTrackPlaybackState: Codable {
 }
 
 /// The Guide screen's own state (see `ImprovSession.startGuide`/`advanceGuideStep`) —
-/// independent of `WebConsoleTrackState`/`WebConsolePlaybackState`: a track's role-line keeps
+/// independent of `WebConsoleTrackState`/`WebConsolePlaybackState`: a track's degree-line keeps
 /// showing its own recognized mode regardless of whether a guide is running.
 struct WebConsoleGuideState: Codable {
     var isActive: Bool

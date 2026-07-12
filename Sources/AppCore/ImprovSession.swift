@@ -84,11 +84,15 @@ public final class ImprovSession: @unchecked Sendable {
     public private(set) var guideFolder: String?
     public private(set) var guideFiles: [String] = []
     /// The folder last listed with `listSceneFiles`, and the `.json` scene files found in
-    /// it — mirrors `pieceFolder`/`pieceFiles`. No "current scene" is tracked the way a
-    /// piece/guide is: saving/loading a scene is a one-shot action on `tracks`, not an
-    /// ongoing document to keep editing.
+    /// it — mirrors `pieceFolder`/`pieceFiles`.
     public private(set) var sceneFolder: String?
     public private(set) var sceneFiles: [String] = []
+    /// The active scene — an ongoing document (declared roles + which live instrument each
+    /// one is attached to, see `Sources/AppCore/Scene.swift`'s own doc comments), mirroring
+    /// `currentGuide`/`currentGuideFilePath`'s shape rather than the one-shot "snapshot
+    /// tracks, write once" model this used to be.
+    public private(set) var currentScene: Scene?
+    public private(set) var currentSceneFilePath: String?
     /// Every palette loaded from `palettes.json` (see `loadColorPalettes`) — always at least
     /// one entry (`MusicTheoryKit.PitchClassPalette.hex` as "Default" until a real file loads).
     public private(set) var colorPalettes: [ColorPalette] = [ColorPalette.builtInDefaults[0]]
@@ -299,6 +303,8 @@ public final class ImprovSession: @unchecked Sendable {
         case noCurrentGuideFile
         case noSceneFolderListed
         case invalidSceneIndex
+        case noSceneLoaded
+        case unknownSceneRole
         case virtualKeyboardAlreadyActive
         case invalidColorPaletteIndex
         case emptyColorPaletteFile
@@ -345,6 +351,8 @@ public final class ImprovSession: @unchecked Sendable {
             case .noCurrentGuideFile: return "this guide sequence was never loaded from or saved to a file — try 'save-guide-as <name>'"
             case .noSceneFolderListed: return "no scene folder listed yet — try 'scenes <folder>' first"
             case .invalidSceneIndex: return "no scene at that index"
+            case .noSceneLoaded: return "no active scene — try 'scene-new <titre>' first, or load one"
+            case .unknownSceneRole: return "no role with that id in the active scene"
             case .virtualKeyboardAlreadyActive: return "virtual keyboard already running — stop it first"
             case .invalidColorPaletteIndex: return "no color palette at that index"
             case .emptyColorPaletteFile: return "that file has no palettes in it"
@@ -991,22 +999,291 @@ public final class ImprovSession: @unchecked Sendable {
         return currentGuide.steps[currentGuideStepIndex].mode.resolve()
     }
 
-    // MARK: - Scenes (saved instrument configurations — which tracks listen, with what sound)
+    // MARK: - Scenes (declared musical "roles", each optionally attached to a live instrument)
+    //
+    // See `Sources/AppCore/Scene.swift`'s own doc comments for the full rationale. In short:
+    // a `SceneRole` ("Piano 1", "Basse Guitare"...) is declared independently of whatever
+    // happens to be plugged in, owns its own `soundName`, and is only ever ATTACHED to a live
+    // `TrackID` at runtime (`attachInstrument(_:toRole:)`, the one place that ever happens).
+    // This replaces the old `SceneTrack`-only model, which kept an instrument's config keyed
+    // directly on `TrackID.wireIDText` — for a MIDI port, nothing more than CoreMIDI's own raw
+    // enumeration-order index — so unplugging a keyboard (or plugging a second one in first)
+    // silently broke reattachment on `loadScene`, with zero feedback. `SceneTrack`/the old
+    // `Scene.tracks` shape is still decodable (see `Scene.init(from:)`) for old files.
 
-    /// Captures every *local* track's current `isListening`/`soundEnabled`/`instrumentName`
-    /// into a `Scene` and writes it to `path` — `.remote` tracks are skipped (`wireIDText` is
-    /// `nil` for them): a scene only ever describes this machine's own instrument setup.
-    public func saveScene(title: String, toJSONFile path: String) throws {
-        let sceneTracks = tracks.compactMap { track -> SceneTrack? in
-            guard let wireID = track.id.wireIDText else { return nil }
-            return SceneTrack(trackID: wireID, isListening: track.isListening, soundEnabled: track.soundEnabled, instrumentName: track.instrumentName)
+    /// Creates a new, empty active scene — the starting point for declaring roles before
+    /// attaching instruments to them. Replaces any previously active (unsaved) scene, same as
+    /// `newPiece`/`newGuideSequence` already do for their own "start a fresh document" case.
+    public func newScene(title: String) {
+        currentScene = Scene(title: title)
+        currentSceneFilePath = nil
+        append("Nouvelle scene : \(title)")
+    }
+
+    /// Appends a new, unattached role to the active scene — returns its id so a caller (e.g.
+    /// a menu action) can immediately offer to attach an instrument to it.
+    @discardableResult
+    public func addSceneRole(name: String) throws -> SceneRole.ID {
+        guard var scene = currentScene else { throw SessionError.noSceneLoaded }
+        let role = SceneRole(name: name)
+        scene.roles.append(role)
+        currentScene = scene
+        append("Role ajoute : \(name)")
+        return role.id
+    }
+
+    /// Removes a role — whatever instrument was attached to it (if any) is simply detached,
+    /// not stopped/muted (mirrors `detachInstrument`'s own "bookkeeping only" scope).
+    public func removeSceneRole(_ roleID: SceneRole.ID) throws {
+        guard var scene = currentScene else { throw SessionError.noSceneLoaded }
+        guard let index = scene.roles.firstIndex(where: { $0.id == roleID }) else { throw SessionError.unknownSceneRole }
+        let name = scene.roles[index].name
+        scene.roles.remove(at: index)
+        currentScene = scene
+        append("Role supprime : \(name)")
+    }
+
+    /// Sets a role's own sound — if an instrument is currently attached, reapplies it
+    /// immediately, since the sound belongs to the ROLE, not to whichever instrument happens
+    /// to occupy it right now (the whole point of moving `instrumentName` off the track).
+    public func setSceneRoleSound(_ roleID: SceneRole.ID, soundName: String?) throws {
+        guard var scene = currentScene else { throw SessionError.noSceneLoaded }
+        guard let index = scene.roles.firstIndex(where: { $0.id == roleID }) else { throw SessionError.unknownSceneRole }
+        scene.roles[index].soundName = soundName
+        let attachedTrackID = scene.roles[index].attachedTrackID
+        currentScene = scene
+        if let attachedTrackID, let soundName {
+            try? setInstrument(named: soundName, for: attachedTrackID)
         }
-        let scene = Scene(title: title, tracks: sceneTracks)
+        append("Son du role '\(scene.roles[index].name)' : \(soundName ?? "aucun")")
+    }
+
+    /// Sets a role's own declared listening state — if an instrument is currently attached,
+    /// starts/stops it immediately to match.
+    public func setSceneRoleListening(_ roleID: SceneRole.ID, isListening: Bool) throws {
+        guard var scene = currentScene else { throw SessionError.noSceneLoaded }
+        guard let index = scene.roles.firstIndex(where: { $0.id == roleID }) else { throw SessionError.unknownSceneRole }
+        scene.roles[index].isListening = isListening
+        let attachedTrackID = scene.roles[index].attachedTrackID
+        currentScene = scene
+        if let attachedTrackID {
+            if isListening { try? startTrack(attachedTrackID) } else { stopTrack(attachedTrackID) }
+        }
+    }
+
+    /// Every role in the active scene with no instrument attached yet — `[]` if there's no
+    /// active scene at all.
+    public func freeSceneRoles() -> [SceneRole] {
+        currentScene?.roles.filter { $0.attachedTrackID == nil } ?? []
+    }
+
+    /// Every live track NOT currently attached to any role in the active scene — `[]` if
+    /// there's no active scene (nothing to be "unassigned" relative to).
+    public func unassignedInstruments() -> [TrackInfo] {
+        guard let scene = currentScene else { return [] }
+        let attachedIDs = Set(scene.roles.compactMap(\.attachedTrackID))
+        return tracks.filter { !attachedIDs.contains($0.id) }
+    }
+
+    /// The one place `SceneRole.attachedTrackID` is ever set to a non-nil value. Auto-detaches
+    /// `trackID` from wherever else it was attached, and whatever was previously attached to
+    /// `roleID` — moving an instrument between roles is a normal action, not an error, so this
+    /// never throws/rejects for "already attached somewhere," it just logs both sides of the
+    /// move — then applies the role's own declared sound/listening state onto the instrument.
+    public func attachInstrument(_ trackID: TrackID, toRole roleID: SceneRole.ID) throws {
+        guard var scene = currentScene else { throw SessionError.noSceneLoaded }
+        guard let targetIndex = scene.roles.firstIndex(where: { $0.id == roleID }) else { throw SessionError.unknownSceneRole }
+        _ = try trackIndex(trackID) // throws .unknownTrack if this instrument doesn't exist
+
+        if let previousIndex = scene.roles.firstIndex(where: { $0.attachedTrackID == trackID }), previousIndex != targetIndex {
+            append("Instrument deplace : detache de '\(scene.roles[previousIndex].name)'.")
+            scene.roles[previousIndex].attachedTrackID = nil
+        }
+        if let displaced = scene.roles[targetIndex].attachedTrackID, displaced != trackID {
+            append("Role '\(scene.roles[targetIndex].name)' : instrument precedent detache.")
+        }
+
+        scene.roles[targetIndex].attachedTrackID = trackID
+        scene.roles[targetIndex].lastAttachedInstrument = identityHint(for: trackID)
+        let role = scene.roles[targetIndex]
+        currentScene = scene
+
+        try? applyRoleConfiguration(role, to: trackID)
+        append("Instrument attache au role '\(role.name)'.")
+    }
+
+    /// Breaks a role's attachment — bookkeeping only, mirroring `stopTrack`'s own "state
+    /// survives a stop" convention: the instrument itself keeps whatever listening/sound state
+    /// it already had, only the role/track association is cleared. A no-op (not an error) if
+    /// the role wasn't attached to anything, same idempotence already used elsewhere (e.g.
+    /// `stopTrack` on an already-stopped track).
+    public func detachInstrument(fromRole roleID: SceneRole.ID) throws {
+        guard var scene = currentScene else { throw SessionError.noSceneLoaded }
+        guard let index = scene.roles.firstIndex(where: { $0.id == roleID }) else { throw SessionError.unknownSceneRole }
+        guard scene.roles[index].attachedTrackID != nil else { return }
+        let name = scene.roles[index].name
+        scene.roles[index].attachedTrackID = nil
+        currentScene = scene
+        append("Instrument detache du role '\(name)'.")
+    }
+
+    /// Applies a role's own `isListening`/`soundName`/`soundEnabled` onto whichever track is
+    /// now attached to it — the same three steps `loadScene` used to run per saved
+    /// `SceneTrack`, shared by `attachInstrument` and `loadScene` alike so they can't drift
+    /// apart. Errors are swallowed (`try?`), same "best effort, don't abort the rest" spirit
+    /// already used throughout this whole feature — a missing sample file shouldn't stop the
+    /// attachment itself from taking effect.
+    private func applyRoleConfiguration(_ role: SceneRole, to trackID: TrackID) throws {
+        if role.isListening {
+            try? startTrack(trackID)
+        }
+        if let soundName = role.soundName {
+            try? setInstrument(named: soundName, for: trackID)
+            if !role.soundEnabled { try? setSoundEnabled(false, for: trackID) }
+        } else {
+            try? setSoundEnabled(role.soundEnabled, for: trackID)
+        }
+    }
+
+    /// A best-effort snapshot of `trackID`'s current identity, for `SceneRole.
+    /// lastAttachedInstrument` — see `InstrumentIdentityHint`'s own doc comment for why each
+    /// case is (or isn't) trustworthy across a reconnect. `nil` for `.remote` (this feature is
+    /// local/standalone-only for now, see `InstrumentIdentityHint`'s doc comment) or for a
+    /// `.midiSource` index no longer visible to CoreMIDI at the moment this is captured.
+    private func identityHint(for trackID: TrackID) -> InstrumentIdentityHint? {
+        switch trackID {
+        case .midiMerged:
+            return .midiMerged
+        case .midiSource(let index):
+            let descriptors = MIDIInputListener.sourceDescriptors()
+            guard descriptors.indices.contains(index) else { return nil }
+            let descriptor = descriptors[index]
+            return .midiPort(midiUniqueID: descriptor.uniqueID, displayName: descriptor.displayName)
+        case .computerKeyboard:
+            return .computerKeyboard
+        case .webKeyboard(let clientID):
+            return .webKeyboard(clientID: clientID)
+        case .microphone:
+            return .microphone
+        case .remote:
+            return nil
+        }
+    }
+
+    /// Decides whether `trackID` is likely the SAME instrument `hint` was last attached to —
+    /// used by `loadScene` to auto-reattach and by
+    /// `reconcileSceneAttachmentsAfterTrackRefresh` after a mid-session MIDI reshuffle.
+    /// Deliberately conservative: for `.midiPort`, a CoreMIDI `uniqueID` match wins outright,
+    /// but falling back to `displayName` only succeeds if EXACTLY ONE currently-visible source
+    /// shares that name — a first-match-wins guess among duplicates would be exactly the kind
+    /// of silent misattachment this whole redesign exists to stop making. `false` for a `nil`
+    /// hint (nothing to match against) or any hint/`TrackID` kind mismatch.
+    private func matches(_ hint: InstrumentIdentityHint?, _ trackID: TrackID) -> Bool {
+        guard let hint else { return false }
+        switch (hint, trackID) {
+        case (.midiMerged, .midiMerged):
+            // Never reattach a `.midiMerged` hint while the session is actually in individual
+            // mode right now — `loadScene`/reconciliation must not silently flip
+            // `midiFusionMode` as a side effect.
+            return midiFusionMode == .merged
+        case (.midiPort(let hintUniqueID, let hintDisplayName), .midiSource(let index)):
+            let descriptors = MIDIInputListener.sourceDescriptors()
+            guard descriptors.indices.contains(index) else { return false }
+            let candidate = descriptors[index]
+            if let hintUniqueID, let candidateID = candidate.uniqueID {
+                return hintUniqueID == candidateID
+            }
+            return candidate.displayName == hintDisplayName
+                && descriptors.filter { $0.displayName == hintDisplayName }.count == 1
+        case (.computerKeyboard, .computerKeyboard):
+            return true
+        case (.webKeyboard(let hintClientID), .webKeyboard(let candidateClientID)):
+            return hintClientID == candidateClientID
+        case (.microphone, .microphone):
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// After `refreshTracks()` rebuilds `tracks` from whatever CoreMIDI currently reports, an
+    /// attached role's `.midiSource(Int)` may now point at a DIFFERENT physical device (index
+    /// reshuffled) or at nothing at all (device unplugged) — this migrates each attached MIDI
+    /// role to wherever its device now sits, or frees it with a log line if it's genuinely
+    /// gone, then retries matching for every still-free role against the freshly rebuilt
+    /// `tracks`. This is what makes "replug the same keyboard, run `tracks`" reattach
+    /// automatically, given this app's own accepted no-hot-plug-notifications limitation (see
+    /// `refreshTracks`'s own doc comment).
+    private func reconcileSceneAttachmentsAfterTrackRefresh() {
+        guard var scene = currentScene else { return }
+        var changed = false
+        var claimedTrackIDs = Set(scene.roles.compactMap(\.attachedTrackID))
+
+        for index in scene.roles.indices {
+            guard let attachedID = scene.roles[index].attachedTrackID else { continue }
+            guard case .midiSource = attachedID else { continue }
+            guard !tracks.contains(where: { $0.id == attachedID }) else { continue } // still valid
+            claimedTrackIDs.remove(attachedID)
+            let hint = scene.roles[index].lastAttachedInstrument
+            if let relocated = tracks.first(where: { !claimedTrackIDs.contains($0.id) && matches(hint, $0.id) }) {
+                scene.roles[index].attachedTrackID = relocated.id
+                claimedTrackIDs.insert(relocated.id)
+                append("Role '\(scene.roles[index].name)' : instrument MIDI retrouve a un nouvel index.")
+            } else {
+                scene.roles[index].attachedTrackID = nil
+                append("Role '\(scene.roles[index].name)' : instrument MIDI introuvable, role libere.")
+            }
+            changed = true
+        }
+        for index in scene.roles.indices where scene.roles[index].attachedTrackID == nil {
+            guard let hint = scene.roles[index].lastAttachedInstrument else { continue }
+            guard let candidate = tracks.first(where: { !claimedTrackIDs.contains($0.id) && matches(hint, $0.id) }) else { continue }
+            scene.roles[index].attachedTrackID = candidate.id
+            claimedTrackIDs.insert(candidate.id)
+            append("Role '\(scene.roles[index].name)' : instrument reattache automatiquement.")
+            changed = true
+        }
+        if changed { currentScene = scene }
+    }
+
+    /// Captures the active scene (or, if none was ever created, synthesizes one on the fly —
+    /// see below) and writes it to `path`.
+    public func saveScene(title: String, toJSONFile path: String) throws {
+        var scene: Scene
+        if var existing = currentScene {
+            existing.title = title
+            // Refresh every attached role's identity hint from the live device right before
+            // writing — catches a mid-session `attachInstrument` call (already recomputed at
+            // attach time, but doesn't hurt) and, more importantly, a MIDI reshuffle that
+            // `reconcileSceneAttachmentsAfterTrackRefresh` already migrated the attachment
+            // through without necessarily refreshing this specific hint field.
+            for index in existing.roles.indices {
+                if let trackID = existing.roles[index].attachedTrackID {
+                    existing.roles[index].lastAttachedInstrument = identityHint(for: trackID)
+                }
+            }
+            scene = existing
+        } else {
+            // No declared roles at all (a user who never touched the new role commands) —
+            // synthesize one role per currently listening-or-sounding local track, named
+            // after its current label, pre-attached — preserves the old "just save what's
+            // on" one-shot ergonomics for anyone who ignores the new machinery entirely.
+            let roles = tracks.compactMap { track -> SceneRole? in
+                guard track.id.wireIDText != nil, track.isListening || track.soundEnabled else { return nil }
+                return SceneRole(
+                    name: track.label, soundName: track.instrumentName, isListening: track.isListening,
+                    soundEnabled: track.soundEnabled, lastAttachedInstrument: identityHint(for: track.id),
+                    attachedTrackID: track.id
+                )
+            }
+            scene = Scene(title: title, roles: roles)
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(scene)
         try data.write(to: URL(fileURLWithPath: path))
-        append("Saved scene to \(path).")
+        currentSceneFilePath = path
+        append("Scene sauvegardee : \(path).")
     }
 
     /// Saves under `nameOrPath` — `title` becomes both the scene's stored title and (unless
@@ -1039,29 +1316,40 @@ public final class ImprovSession: @unchecked Sendable {
             : "Found \(sceneFiles.count) scene file(s) in \(folderPath).")
     }
 
-    /// Applies a saved scene to whichever of its tracks still exist on this machine (e.g. a
-    /// saved MIDI source index that's no longer visible is silently skipped, same spirit as
-    /// every other "best effort, don't abort the rest" restore in this app) — tracks NOT
-    /// mentioned in the scene are left exactly as they are, so loading a scene never turns
-    /// off something it doesn't know about.
+    /// Loads a saved scene, best-effort: each role's `lastAttachedInstrument` hint is matched
+    /// (`matches(_:_:)`) against currently-visible instruments to decide whether to reattach
+    /// automatically — each live track is claimed by at most one role during this pass, same
+    /// "an instrument occupies only one role" invariant `attachInstrument` enforces at runtime.
+    /// Unlike the old flat `SceneTrack`-keyed format, a role that can't be matched stays
+    /// explicitly FREE and is called out in the log, never silently dropped with no feedback.
     public func loadScene(fromJSONFile path: String) throws {
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        let scene = try JSONDecoder().decode(Scene.self, from: data)
-        for sceneTrack in scene.tracks {
-            guard let id = TrackID(wireIDText: sceneTrack.trackID), tracks.contains(where: { $0.id == id }) else { continue }
-            if sceneTrack.isListening {
-                try? startTrack(id)
-            } else {
-                stopTrack(id)
-            }
-            if let instrumentName = sceneTrack.instrumentName {
-                try? setInstrument(named: instrumentName, for: id)
-                if !sceneTrack.soundEnabled { try? setSoundEnabled(false, for: id) }
-            } else {
-                try? setSoundEnabled(sceneTrack.soundEnabled, for: id)
-            }
+        var scene = try JSONDecoder().decode(Scene.self, from: data)
+        var claimedTrackIDs: Set<TrackID> = []
+        var reattachedCount = 0
+        for index in scene.roles.indices {
+            let hint = scene.roles[index].lastAttachedInstrument
+            guard let candidate = tracks.first(where: { !claimedTrackIDs.contains($0.id) && matches(hint, $0.id) }) else { continue }
+            scene.roles[index].attachedTrackID = candidate.id
+            claimedTrackIDs.insert(candidate.id)
+            reattachedCount += 1
         }
-        append("Loaded scene from \(path): \(scene.title)")
+        currentScene = scene
+        currentSceneFilePath = path
+
+        for role in scene.roles {
+            guard let trackID = role.attachedTrackID else { continue }
+            try? applyRoleConfiguration(role, to: trackID)
+        }
+
+        let freeRoles = scene.roles.filter { $0.attachedTrackID == nil }
+        var message = "Scene chargee : \(scene.title) — \(scene.roles.count) role(s), "
+            + "\(reattachedCount) reattache(s) automatiquement, \(freeRoles.count) libre(s)."
+        if !freeRoles.isEmpty {
+            message += " Roles libres : \(freeRoles.map(\.name).joined(separator: ", "))"
+                + " — utilise 'scene-role-attach' pour les affecter."
+        }
+        append(message)
     }
 
     /// Loads a scene by name from the last-listed folder (see `listSceneFiles`).
@@ -1311,6 +1599,7 @@ public final class ImprovSession: @unchecked Sendable {
         })
         updated.append(preservedOrNewTrack(.microphone, label: "Microphone", canHaveSound: false))
         tracks = updated
+        reconcileSceneAttachmentsAfterTrackRefresh()
     }
 
     private func preservedOrNewTrack(_ id: TrackID, label: String, canHaveSound: Bool = true) -> TrackInfo {
@@ -1831,9 +2120,14 @@ public final class ImprovSession: @unchecked Sendable {
             return WebConsoleSceneClientState(clientID: client.clientID, name: client.name, instruments: instruments)
         }
 
+        let roles = (currentScene?.roles ?? []).map { role in
+            let attachedLabel = role.attachedTrackID.flatMap { id in allTracks.first { $0.id == id }?.label }
+            return WebConsoleSceneRoleState(name: role.name, attachedLabel: attachedLabel, soundName: role.soundName)
+        }
+
         return WebConsoleSceneState(
             networkRoleText: networkRoleText, webConsolePort: webConsolePort, virtualKeyboardPort: virtualKeyboardPort,
-            localInstruments: localInstruments, clients: clients
+            localInstruments: localInstruments, clients: clients, roles: roles
         )
     }
 
@@ -1859,6 +2153,10 @@ public final class ImprovSession: @unchecked Sendable {
 
     private struct WebConsoleMenuTrack: Codable { var id: String; var label: String }
     private struct WebConsoleMenuScale: Codable { var id: String; var name: String }
+    /// `attachedLabel` is the label of whichever track currently occupies this role, `nil` if
+    /// free — precomputed server-side so the web/MCP client never has to cross-reference
+    /// `tracks` itself just to show "Piano 1 (Clavier ordinateur)" vs "Piano 1 (libre)".
+    private struct WebConsoleMenuSceneRole: Codable { var id: String; var name: String; var attachedLabel: String? }
     private struct WebConsoleMenuLists: Codable {
         var tracks: [WebConsoleMenuTrack]
         var pieceFiles: [String]
@@ -1878,6 +2176,13 @@ public final class ImprovSession: @unchecked Sendable {
         /// Only non-empty right after a "Rechercher" (`jam-discover`) action — see that
         /// case's own comment in `performMenuAction`.
         var discoveredJamSessions: [String]
+        /// Every role in the active scene (attached or not) — `[]` if there's no active
+        /// scene. See `Sources/AppCore/Scene.swift`'s own doc comments for what a role is.
+        var sceneRoles: [WebConsoleMenuSceneRole]
+        /// Local tracks not currently attached to any role — mirrors `unassignedInstruments()`
+        /// but as wire ids, same shape as `tracks` above. `[]` (not "every track") when
+        /// there's no active scene, since "unassigned" is meaningless without one.
+        var unassignedTracks: [WebConsoleMenuTrack]
     }
 
     private func handleMenuListsRequest() -> HTTPResponse {
@@ -1885,6 +2190,14 @@ public final class ImprovSession: @unchecked Sendable {
         // machine can start/stop/reassign, same restriction `executeCommand`'s own `track`
         // command has (its `parseTrackID` never produces a `.remote` id either).
         let localTracks = tracks.compactMap { track -> WebConsoleMenuTrack? in
+            guard let idText = track.id.wireIDText else { return nil }
+            return WebConsoleMenuTrack(id: idText, label: track.label)
+        }
+        let sceneRoles = (currentScene?.roles ?? []).map { role in
+            let attachedLabel = role.attachedTrackID.flatMap { id in tracks.first { $0.id == id }?.label }
+            return WebConsoleMenuSceneRole(id: role.id.uuidString, name: role.name, attachedLabel: attachedLabel)
+        }
+        let unassignedTracks = unassignedInstruments().compactMap { track -> WebConsoleMenuTrack? in
             guard let idText = track.id.wireIDText else { return nil }
             return WebConsoleMenuTrack(id: idText, label: track.label)
         }
@@ -1897,7 +2210,8 @@ public final class ImprovSession: @unchecked Sendable {
             chordProgressionTemplates: chordProgressionTemplates.map(\.name),
             scales: ScaleLibrary.all.map { WebConsoleMenuScale(id: $0.id, name: $0.popularName) },
             midiFusionMode: midiFusionMode == .merged ? "fusionne" : "individuel",
-            discoveredJamSessions: lastDiscoveredServers.map(\.name)
+            discoveredJamSessions: lastDiscoveredServers.map(\.name),
+            sceneRoles: sceneRoles, unassignedTracks: unassignedTracks
         )
         guard let data = try? JSONEncoder().encode(lists) else { return .notFound() }
         return HTTPResponse(contentType: "application/json", body: data)
@@ -1983,6 +2297,27 @@ public final class ImprovSession: @unchecked Sendable {
             try setInstrument(named: value, for: id); return ok("Instrument choisi : \(value)")
         case "scene-save": try saveScene(title: value, as: value); return ok("Scene sauvegardee : \(value)")
         case "scene-load": try loadScene(named: value); return ok("Scene chargee : \(value)")
+        case "scene-new": newScene(title: value); return ok("Nouvelle scene : \(value)")
+        case "scene-role-add":
+            let roleID = try addSceneRole(name: value)
+            return ok("Role ajoute : \(value) (\(roleID.uuidString))")
+        case "scene-role-sound":
+            guard let roleID = UUID(uuidString: query["role"] ?? "") else { throw MenuActionError.invalidValue }
+            try setSceneRoleSound(roleID, soundName: value.isEmpty ? nil : value)
+            return ok("Son du role mis a jour.")
+        case "scene-role-listen":
+            guard let roleID = UUID(uuidString: query["role"] ?? "") else { throw MenuActionError.invalidValue }
+            try setSceneRoleListening(roleID, isListening: value.lowercased() == "on")
+            return ok("Ecoute du role mise a jour.")
+        case "scene-role-attach":
+            guard let roleID = UUID(uuidString: query["role"] ?? "") else { throw MenuActionError.invalidValue }
+            guard let trackID = TrackID(wireIDText: value) else { throw MenuActionError.invalidTrack }
+            try attachInstrument(trackID, toRole: roleID)
+            return ok("Instrument attache.")
+        case "scene-role-detach":
+            guard let roleID = UUID(uuidString: value) else { throw MenuActionError.invalidValue }
+            try detachInstrument(fromRole: roleID)
+            return ok("Instrument detache.")
 
         // --- Guide Musicaux ---
         case "guide-new": newGuideSequence(title: value); return ok("Nouveau guide : \(value)")
@@ -2557,7 +2892,7 @@ public final class ImprovSession: @unchecked Sendable {
     }
 
     /// The Guide screen's own state (see `startGuide`/`advanceGuideStep`) — entirely
-    /// independent of `tracks`/`playback` above: a track's own role-line keeps showing its
+    /// independent of `tracks`/`playback` above: a track's own degree-line keeps showing its
     /// own recognized mode regardless of whether a guide is running (the guide only drives
     /// its own dedicated panel/screen, both here and in `JamShack`'s `.guide` screen). The
     /// wheel itself is no longer part of this — see `buildWebConsoleWheelState()`, always
@@ -2629,7 +2964,7 @@ public final class ImprovSession: @unchecked Sendable {
         }
         var modeTones: [Int] = []
         if let modeTonic, let scaleID, let scale = ScaleLibrary.byID(scaleID) {
-            // Degree-ordered (index 0 = degree 1), not a `Set` — the web console's role-line
+            // Degree-ordered (index 0 = degree 1), not a `Set` — the web console's degree-line
             // badges rely on `modeTones[i]` meaning "degree i+1".
             modeTones = Mode(tonic: PitchClass(modeTonic), scale: scale).pitchClasses.map(\.value)
         }

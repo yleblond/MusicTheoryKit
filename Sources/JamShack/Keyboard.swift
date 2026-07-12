@@ -11,9 +11,9 @@ enum KeyboardColor {
     static let chordTone = "\u{1B}[1;33m"        // bold yellow
 
     /// One color per scale degree (index 0 = degree 1 ... index 6 = degree 7) for the
-    /// mode role-line — 256-color ANSI, deliberately distinct from the basic-16-color
+    /// mode degree-line — 256-color ANSI, deliberately distinct from the basic-16-color
     /// root/tone/outside highlights above (which can appear on the same frame) so a
-    /// role-line color is never mistaken for a chord-highlight color.
+    /// degree-line color is never mistaken for a chord-highlight color.
     static let degreeColors: [String] = [
         "\u{1B}[1;38;5;208m", // 1 tonic — orange
         "\u{1B}[1;38;5;39m",  // 2 — sky blue
@@ -51,7 +51,7 @@ private let eToFSeparator = "\u{1B}[2m┊\u{1B}[0m"
 /// unhighlighted. `modeMarker` gives the scale-degree role (1-7) and color of each pitch
 /// class (0...11, repeating every octave) that belongs to the current mode, or nil for a
 /// pitch class outside it — the marker row shows that colored digit above the note instead
-/// of a uniform mark, so the role-line conveys *which* degree each note is, not just
+/// of a uniform mark, so the degree-line conveys *which* degree each note is, not just
 /// membership. The marker row is always drawn (blank where nothing matches when the
 /// default `{ _ in nil }` is used, e.g. no mode detected yet) rather than being omitted —
 /// an omitted row used to shift the keyboard, and everything below it, up and down as mode

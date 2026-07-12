@@ -1080,6 +1080,169 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertEqual(detail.events?.count, 2)
         XCTAssertEqual(detail.trackIDs, ["clavier"])
     }
+
+    // MARK: - Scene roles
+
+    func testNewSceneCreatesEmptyActiveScene() {
+        let session = ImprovSession()
+        XCTAssertNil(session.currentScene)
+        session.newScene(title: "Repetition")
+        XCTAssertEqual(session.currentScene?.title, "Repetition")
+        XCTAssertEqual(session.currentScene?.roles, [])
+    }
+
+    func testAddSceneRoleAppendsAndRemoveSceneRoleRemoves() throws {
+        let session = ImprovSession()
+        session.newScene(title: "Test")
+        let roleID = try session.addSceneRole(name: "Piano 1")
+        XCTAssertEqual(session.currentScene?.roles.count, 1)
+        XCTAssertEqual(session.currentScene?.roles.first?.name, "Piano 1")
+
+        try session.removeSceneRole(roleID)
+        XCTAssertEqual(session.currentScene?.roles.count, 0)
+    }
+
+    func testAddSceneRoleWithoutActiveSceneThrows() {
+        let session = ImprovSession()
+        XCTAssertThrowsError(try session.addSceneRole(name: "Piano 1")) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .noSceneLoaded)
+        }
+    }
+
+    func testAttachInstrumentAppliesRoleConfigurationAndAutoDetachesFromPreviousRole() throws {
+        let session = ImprovSession()
+        try session.start()
+        session.newScene(title: "Test")
+        let pianoID = try session.addSceneRole(name: "Piano")
+        let bassID = try session.addSceneRole(name: "Basse")
+        try session.setSceneRoleListening(pianoID, isListening: true)
+
+        try session.attachInstrument(.computerKeyboard, toRole: pianoID)
+        XCTAssertEqual(session.currentScene?.roles.first { $0.id == pianoID }?.attachedTrackID, .computerKeyboard)
+        XCTAssertTrue(session.tracks.first { $0.id == .computerKeyboard }?.isListening ?? false)
+
+        // Moving the SAME instrument to a different role must auto-detach it from the first,
+        // not throw/reject — the actual regression this choke point exists to prevent.
+        try session.attachInstrument(.computerKeyboard, toRole: bassID)
+        XCTAssertNil(session.currentScene?.roles.first { $0.id == pianoID }?.attachedTrackID)
+        XCTAssertEqual(session.currentScene?.roles.first { $0.id == bassID }?.attachedTrackID, .computerKeyboard)
+    }
+
+    func testDetachInstrumentClearsAttachmentWithoutStoppingTrack() throws {
+        let session = ImprovSession()
+        try session.start()
+        session.newScene(title: "Test")
+        let roleID = try session.addSceneRole(name: "Piano")
+        try session.setSceneRoleListening(roleID, isListening: true)
+        try session.attachInstrument(.computerKeyboard, toRole: roleID)
+        XCTAssertTrue(session.tracks.first { $0.id == .computerKeyboard }?.isListening ?? false)
+
+        try session.detachInstrument(fromRole: roleID)
+        XCTAssertNil(session.currentScene?.roles.first { $0.id == roleID }?.attachedTrackID)
+        // Detaching is bookkeeping only — the instrument itself keeps listening, mirroring
+        // `stopTrack`'s own "state survives a stop" convention.
+        XCTAssertTrue(session.tracks.first { $0.id == .computerKeyboard }?.isListening ?? false)
+    }
+
+    func testAttachInstrumentThrowsForUnknownRoleOrTrack() throws {
+        let session = ImprovSession()
+        try session.start()
+        session.newScene(title: "Test")
+        let roleID = try session.addSceneRole(name: "Piano")
+
+        XCTAssertThrowsError(try session.attachInstrument(.computerKeyboard, toRole: UUID())) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .unknownSceneRole)
+        }
+        XCTAssertThrowsError(try session.attachInstrument(.midiSource(99), toRole: roleID)) { error in
+            guard case .unknownTrack = error as? ImprovSession.SessionError else {
+                XCTFail("expected .unknownTrack, got \(error)"); return
+            }
+        }
+    }
+
+    func testFreeSceneRolesAndUnassignedInstruments() throws {
+        let session = ImprovSession()
+        try session.start()
+        session.newScene(title: "Test")
+        let pianoID = try session.addSceneRole(name: "Piano")
+        _ = try session.addSceneRole(name: "Basse")
+        try session.attachInstrument(.computerKeyboard, toRole: pianoID)
+
+        XCTAssertEqual(session.freeSceneRoles().map(\.name), ["Basse"])
+        XCTAssertFalse(session.unassignedInstruments().contains { $0.id == .computerKeyboard })
+        XCTAssertTrue(session.unassignedInstruments().contains { $0.id == .microphone })
+    }
+
+    func testSceneSaveLoadRoundTripReattachesComputerKeyboardAndReportsFreeRoles() throws {
+        let session = ImprovSession()
+        try session.start()
+        session.newScene(title: "Repetition")
+        let pianoID = try session.addSceneRole(name: "Piano")
+        _ = try session.addSceneRole(name: "Basse")
+        try session.setSceneRoleListening(pianoID, isListening: true)
+        try session.attachInstrument(.computerKeyboard, toRole: pianoID)
+
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.saveScene(title: "Repetition", toJSONFile: tempFile.path)
+
+        let reloaded = ImprovSession()
+        try reloaded.start()
+        try reloaded.loadScene(fromJSONFile: tempFile.path)
+
+        XCTAssertEqual(reloaded.currentScene?.roles.count, 2)
+        let reloadedPiano = reloaded.currentScene?.roles.first { $0.name == "Piano" }
+        XCTAssertEqual(reloadedPiano?.attachedTrackID, .computerKeyboard)
+        XCTAssertTrue(reloaded.tracks.first { $0.id == .computerKeyboard }?.isListening ?? false)
+        let reloadedBasse = reloaded.currentScene?.roles.first { $0.name == "Basse" }
+        XCTAssertNil(reloadedBasse?.attachedTrackID)
+        // The direct fix for the reported bug: a role that couldn't reattach is reported, not
+        // silently dropped.
+        XCTAssertTrue(reloaded.log.contains { $0.contains("Basse") && $0.contains("libre") })
+    }
+
+    func testLoadSceneMigratesLegacyFlatTrackFormat() throws {
+        let legacyJSON = """
+        {"title": "Ancienne Scene", "tracks": [
+            {"trackID": "clavier", "isListening": true, "soundEnabled": true, "instrumentName": "mcb.sf2"}
+        ]}
+        """
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try legacyJSON.write(to: tempFile, atomically: true, encoding: .utf8)
+
+        let session = ImprovSession()
+        try session.start()
+        try session.loadScene(fromJSONFile: tempFile.path)
+
+        XCTAssertEqual(session.currentScene?.title, "Ancienne Scene")
+        XCTAssertEqual(session.currentScene?.roles.count, 1)
+        let role = session.currentScene?.roles.first
+        XCTAssertEqual(role?.name, "Clavier ordinateur")
+        XCTAssertEqual(role?.attachedTrackID, .computerKeyboard)
+        XCTAssertEqual(role?.lastAttachedInstrument, .computerKeyboard)
+    }
+
+    func testLoadSceneDoesNotReattachMidiMergedHintInIndividualMode() throws {
+        // `.midiMerged` has no CoreMIDI dependency (a singleton, unlike `.midiSource`), so this
+        // is the one `matches(_:_:)` case fully testable without real hardware — see
+        // `ImprovSession.matches(_:_:)`'s own doc comment for why `.midiPort` matching isn't
+        // covered here (it needs a real or injectable CoreMIDI source list this test suite has
+        // no way to control).
+        let scene = Scene(title: "Old Setup", roles: [
+            SceneRole(name: "Synth", lastAttachedInstrument: .midiMerged),
+        ])
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try JSONEncoder().encode(scene).write(to: tempFile)
+
+        let session = ImprovSession()
+        try session.start()
+        session.setMIDIFusionMode(.individual) // no MIDI hardware here, so this yields zero midi tracks
+        try session.loadScene(fromJSONFile: tempFile.path)
+
+        XCTAssertNil(session.currentScene?.roles.first?.attachedTrackID)
+    }
 }
 
 extension ImprovSession.SessionError: Equatable {

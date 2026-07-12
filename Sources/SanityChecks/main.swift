@@ -2505,7 +2505,7 @@ func testLoadSceneLeavesTracksNotMentionedUntouched() {
         // An explicitly empty scene (built by hand, not via `saveScene` — which always
         // captures every local track, including as "not listening") must not touch
         // whatever's currently listening: only tracks it actually mentions are restored.
-        let emptyScene = Scene(title: "Empty", tracks: [])
+        let emptyScene = Scene(title: "Empty", roles: [])
         let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: tempFile) }
         try JSONEncoder().encode(emptyScene).write(to: tempFile)
@@ -2518,6 +2518,230 @@ func testLoadSceneLeavesTracksNotMentionedUntouched() {
         print("FAIL [scene leaves unmentioned tracks untouched]: threw \(error)")
     }
 }
+
+// MARK: - Scene roles — mirrors Tests/AppCoreTests/ImprovSessionTests.swift's tests of the same name.
+
+func testNewSceneCreatesEmptyActiveScene() {
+    let session = ImprovSession()
+    checkNil(session.currentScene, "fresh session has no active scene")
+    session.newScene(title: "Repetition")
+    check(session.currentScene?.title, "Repetition", "newScene sets title")
+    check(session.currentScene?.roles.count, 0, "newScene starts with no roles")
+}
+
+func testAddSceneRoleAppendsAndRemoveSceneRoleRemoves() {
+    do {
+        let session = ImprovSession()
+        session.newScene(title: "Test")
+        let roleID = try session.addSceneRole(name: "Piano 1")
+        check(session.currentScene?.roles.count, 1, "addSceneRole appends a role")
+        check(session.currentScene?.roles.first?.name, "Piano 1", "addSceneRole sets the role's name")
+
+        try session.removeSceneRole(roleID)
+        check(session.currentScene?.roles.count, 0, "removeSceneRole removes the role")
+    } catch {
+        failures += 1
+        print("FAIL [scene role add/remove]: threw \(error)")
+    }
+}
+
+func testAddSceneRoleWithoutActiveSceneThrows() {
+    let session = ImprovSession()
+    do {
+        _ = try session.addSceneRole(name: "Piano 1")
+        failures += 1; checks += 1
+        print("FAIL [addSceneRole without active scene throws]: did not throw")
+    } catch {
+        checks += 1 // expected
+    }
+}
+
+func testAttachInstrumentAppliesRoleConfigurationAndAutoDetachesFromPreviousRole() {
+    do {
+        let session = ImprovSession()
+        try session.start()
+        session.newScene(title: "Test")
+        let pianoID = try session.addSceneRole(name: "Piano")
+        let bassID = try session.addSceneRole(name: "Basse")
+        try session.setSceneRoleListening(pianoID, isListening: true)
+
+        try session.attachInstrument(.computerKeyboard, toRole: pianoID)
+        check(session.currentScene?.roles.first { $0.id == pianoID }?.attachedTrackID, .computerKeyboard, "attachInstrument sets attachedTrackID")
+        check(session.tracks.first { $0.id == .computerKeyboard }?.isListening, true, "attachInstrument starts the track per the role's own isListening")
+
+        // Moving the SAME instrument to a different role must auto-detach it from the first,
+        // not throw/reject — the actual regression this choke point exists to prevent.
+        try session.attachInstrument(.computerKeyboard, toRole: bassID)
+        checkNil(session.currentScene?.roles.first { $0.id == pianoID }?.attachedTrackID, "attachInstrument auto-detaches from the previous role")
+        check(session.currentScene?.roles.first { $0.id == bassID }?.attachedTrackID, .computerKeyboard, "attachInstrument attaches to the new role")
+    } catch {
+        failures += 1
+        print("FAIL [attachInstrument auto-detach]: threw \(error)")
+    }
+}
+
+func testDetachInstrumentClearsAttachmentWithoutStoppingTrack() {
+    do {
+        let session = ImprovSession()
+        try session.start()
+        session.newScene(title: "Test")
+        let roleID = try session.addSceneRole(name: "Piano")
+        try session.setSceneRoleListening(roleID, isListening: true)
+        try session.attachInstrument(.computerKeyboard, toRole: roleID)
+        check(session.tracks.first { $0.id == .computerKeyboard }?.isListening, true, "instrument listening after attach")
+
+        try session.detachInstrument(fromRole: roleID)
+        checkNil(session.currentScene?.roles.first { $0.id == roleID }?.attachedTrackID, "detachInstrument clears the attachment")
+        // Detaching is bookkeeping only — the instrument itself keeps listening, mirroring
+        // `stopTrack`'s own "state survives a stop" convention.
+        check(session.tracks.first { $0.id == .computerKeyboard }?.isListening, true, "detachInstrument doesn't stop the track")
+    } catch {
+        failures += 1
+        print("FAIL [detachInstrument bookkeeping-only]: threw \(error)")
+    }
+}
+
+func testAttachInstrumentThrowsForUnknownRoleOrTrack() {
+    do {
+        let session = ImprovSession()
+        try session.start()
+        session.newScene(title: "Test")
+        let roleID = try session.addSceneRole(name: "Piano")
+
+        do {
+            try session.attachInstrument(.computerKeyboard, toRole: UUID())
+            failures += 1; checks += 1
+            print("FAIL [attachInstrument unknown role throws]: did not throw")
+        } catch {
+            checks += 1 // expected
+        }
+        do {
+            try session.attachInstrument(.midiSource(99), toRole: roleID)
+            failures += 1; checks += 1
+            print("FAIL [attachInstrument unknown track throws]: did not throw")
+        } catch {
+            checks += 1 // expected
+        }
+    } catch {
+        failures += 1
+        print("FAIL [attachInstrument error paths]: threw \(error)")
+    }
+}
+
+func testFreeSceneRolesAndUnassignedInstruments() {
+    do {
+        let session = ImprovSession()
+        try session.start()
+        session.newScene(title: "Test")
+        let pianoID = try session.addSceneRole(name: "Piano")
+        _ = try session.addSceneRole(name: "Basse")
+        try session.attachInstrument(.computerKeyboard, toRole: pianoID)
+
+        check(session.freeSceneRoles().map(\.name), ["Basse"], "freeSceneRoles lists only unattached roles")
+        check(session.unassignedInstruments().contains { $0.id == .computerKeyboard }, false, "attached instrument is not unassigned")
+        check(session.unassignedInstruments().contains { $0.id == .microphone }, true, "never-attached instrument is unassigned")
+    } catch {
+        failures += 1
+        print("FAIL [freeSceneRoles/unassignedInstruments]: threw \(error)")
+    }
+}
+
+func testSceneSaveLoadRoundTripReattachesComputerKeyboardAndReportsFreeRoles() {
+    do {
+        let session = ImprovSession()
+        try session.start()
+        session.newScene(title: "Repetition")
+        let pianoID = try session.addSceneRole(name: "Piano")
+        _ = try session.addSceneRole(name: "Basse")
+        try session.setSceneRoleListening(pianoID, isListening: true)
+        try session.attachInstrument(.computerKeyboard, toRole: pianoID)
+
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.saveScene(title: "Repetition", toJSONFile: tempFile.path)
+
+        let reloaded = ImprovSession()
+        try reloaded.start()
+        try reloaded.loadScene(fromJSONFile: tempFile.path)
+
+        check(reloaded.currentScene?.roles.count, 2, "loadScene restores both roles")
+        let reloadedPiano = reloaded.currentScene?.roles.first { $0.name == "Piano" }
+        check(reloadedPiano?.attachedTrackID, .computerKeyboard, "loadScene reattaches the computer keyboard automatically")
+        check(reloaded.tracks.first { $0.id == .computerKeyboard }?.isListening, true, "loadScene applies the role's isListening")
+        let reloadedBasse = reloaded.currentScene?.roles.first { $0.name == "Basse" }
+        checkNil(reloadedBasse?.attachedTrackID, "an unattached role stays free after loadScene")
+        // The direct fix for the reported bug: a role that couldn't reattach is reported, not
+        // silently dropped.
+        check(reloaded.log.contains { $0.contains("Basse") && $0.contains("libre") }, true, "loadScene logs which roles stayed free")
+    } catch {
+        failures += 1
+        print("FAIL [scene save/load round trip with roles]: threw \(error)")
+    }
+}
+
+func testLoadSceneMigratesLegacyFlatTrackFormat() {
+    do {
+        let legacyJSON = """
+        {"title": "Ancienne Scene", "tracks": [
+            {"trackID": "clavier", "isListening": true, "soundEnabled": true, "instrumentName": "mcb.sf2"}
+        ]}
+        """
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try legacyJSON.write(to: tempFile, atomically: true, encoding: .utf8)
+
+        let session = ImprovSession()
+        try session.start()
+        try session.loadScene(fromJSONFile: tempFile.path)
+
+        check(session.currentScene?.title, "Ancienne Scene", "legacy scene title migrates")
+        check(session.currentScene?.roles.count, 1, "legacy scene produces one role per saved track")
+        let role = session.currentScene?.roles.first
+        check(role?.name, "Clavier ordinateur", "legacy track auto-named from its wire id")
+        check(role?.attachedTrackID, .computerKeyboard, "legacy role reattaches to the computer keyboard")
+        check(role?.lastAttachedInstrument, .computerKeyboard, "legacy role gets a computerKeyboard identity hint")
+    } catch {
+        failures += 1
+        print("FAIL [loadScene migrates legacy format]: threw \(error)")
+    }
+}
+
+func testLoadSceneDoesNotReattachMidiMergedHintInIndividualMode() {
+    do {
+        // `.midiMerged` has no CoreMIDI dependency (a singleton, unlike `.midiSource`), so this
+        // is the one `matches(_:_:)` case fully testable without real hardware — see
+        // `ImprovSession.matches(_:_:)`'s own doc comment for why `.midiPort` matching isn't
+        // covered here (it needs a real or injectable CoreMIDI source list this test suite has
+        // no way to control).
+        let scene = Scene(title: "Old Setup", roles: [
+            SceneRole(name: "Synth", lastAttachedInstrument: .midiMerged),
+        ])
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try JSONEncoder().encode(scene).write(to: tempFile)
+
+        let session = ImprovSession()
+        try session.start()
+        session.setMIDIFusionMode(.individual) // no MIDI hardware here, so this yields zero midi tracks
+        try session.loadScene(fromJSONFile: tempFile.path)
+
+        checkNil(session.currentScene?.roles.first?.attachedTrackID, "a .midiMerged hint doesn't reattach while in individual mode")
+    } catch {
+        failures += 1
+        print("FAIL [loadScene midiMerged mode gate]: threw \(error)")
+    }
+}
+
+testNewSceneCreatesEmptyActiveScene()
+testAddSceneRoleAppendsAndRemoveSceneRoleRemoves()
+testAddSceneRoleWithoutActiveSceneThrows()
+testAttachInstrumentAppliesRoleConfigurationAndAutoDetachesFromPreviousRole()
+testDetachInstrumentClearsAttachmentWithoutStoppingTrack()
+testAttachInstrumentThrowsForUnknownRoleOrTrack()
+testFreeSceneRolesAndUnassignedInstruments()
+testSceneSaveLoadRoundTripReattachesComputerKeyboardAndReportsFreeRoles()
+testLoadSceneMigratesLegacyFlatTrackFormat()
+testLoadSceneDoesNotReattachMidiMergedHintInIndividualMode()
 
 func testColorPaletteFileRoundTrips() {
     let file = ColorPaletteFile(palettes: ColorPalette.builtInDefaults)

@@ -400,6 +400,10 @@ func printTracks() {
         }
         print(line)
     }
+    let unassigned = session.unassignedInstruments()
+    if !unassigned.isEmpty {
+        print(TextStyle.placeholder("(\(unassigned.count) instrument(s) non attache(s) a un role de la scene active — voir 'scene-roles')"))
+    }
 }
 
 /// A numbered version of `printTracks`'s per-track lines, for menu actions that need the
@@ -548,6 +552,65 @@ func promptChooseSoundForTrack(_ resolvedTrackID: String) throws {
     try executeCommand("track", [resolvedTrackID, "instrument", sampleChoice])
 }
 
+/// Resolves a "<n|nom>" argument against `session.currentScene?.roles` — a number picks by
+/// 1-based position (mirrors `resolvedChordProgressionTemplate`'s convention), anything else
+/// matches by name, case-insensitively. `nil` if there's no active scene or nothing matches.
+func resolvedSceneRoleID(_ text: String) -> SceneRole.ID? {
+    guard let roles = session.currentScene?.roles else { return nil }
+    if let index = Int(text), roles.indices.contains(index - 1) {
+        return roles[index - 1].id
+    }
+    return roles.first { $0.name.lowercased() == text.lowercased() }?.id
+}
+
+/// A numbered list of the active scene's roles, each showing what's attached (or "(libre)")
+/// and its own sound, if any — the pick-list `scene-role-*` commands/menu items show before
+/// prompting for a role.
+func printNumberedSceneRoles() {
+    guard let roles = session.currentScene?.roles else {
+        print(TextStyle.placeholder("(aucune scene active — 'scene-new <titre>' pour en creer une)"))
+        return
+    }
+    if roles.isEmpty {
+        print(TextStyle.placeholder("(aucun role — 'scene-role-add <nom>' pour en ajouter un)"))
+        return
+    }
+    for (index, role) in roles.enumerated() {
+        let attachedText = role.attachedTrackID.flatMap { id in session.tracks.first { $0.id == id }?.label }
+        var line = "  \(index + 1). \(role.name) — \(attachedText ?? TextStyle.placeholder("(libre)"))"
+        if let soundName = role.soundName { line += " [\(soundName)]" }
+        print(line)
+    }
+}
+
+/// If a scene is active and the just-started track isn't attached to any role yet, offers to
+/// claim a free one (or create a new one on the fly) — satisfies "when connecting an
+/// instrument, choose which role to take" for the interactive terminal case (`track <id> on`'s
+/// own case calls this right after starting the track).
+func promptClaimFreeSceneRoleIfNeeded(for trackID: TrackID) {
+    guard session.currentScene != nil, session.unassignedInstruments().contains(where: { $0.id == trackID }) else { return }
+    print(TextStyle.placeholder("Cette piste n'est attachee a aucun role de la scene active."))
+    let freeRoles = session.freeSceneRoles()
+    if freeRoles.isEmpty {
+        guard let name = promptLine("Nom du nouveau role (vide pour ignorer): "), !name.isEmpty else { return }
+        if let roleID = try? session.addSceneRole(name: name) {
+            try? session.attachInstrument(trackID, toRole: roleID)
+        }
+        return
+    }
+    for (index, role) in freeRoles.enumerated() { print("  \(index + 1). \(role.name)") }
+    print("  n. Nouveau role...")
+    guard let choice = promptLine("Attacher a quel role (numero, 'n', ou vide pour ignorer): "), !choice.isEmpty else { return }
+    if choice.lowercased() == "n" {
+        guard let name = promptLine("Nom du nouveau role: "), !name.isEmpty else { return }
+        if let roleID = try? session.addSceneRole(name: name) {
+            try? session.attachInstrument(trackID, toRole: roleID)
+        }
+    } else if let index = Int(choice), freeRoles.indices.contains(index - 1) {
+        try? session.attachInstrument(trackID, toRole: freeRoles[index - 1].id)
+    }
+}
+
 func printStatus() {
     print(TextStyle.field("Piece", session.piece.map { $0.title } ?? TextStyle.placeholder("(aucun)")))
     print(TextStyle.field("Fichier", session.currentPieceFilePath ?? TextStyle.placeholder("(jamais sauvegarde)")))
@@ -670,7 +733,7 @@ func wrapItems(_ items: [(display: String, plainWidth: Int)], separator: String 
 }
 
 /// Builds a `renderKeyboard(modeMarker:)` closure from a `Mode` — shared by every keyboard
-/// that draws a role-line (per-track, playback, and the `.guide` screen), so "which color
+/// that draws a degree-line (per-track, playback, and the `.guide` screen), so "which color
 /// and degree number goes with this pitch class" is computed in exactly one place. `nil`
 /// mode draws no markers at all (same as `renderKeyboard`'s own default).
 ///
@@ -752,7 +815,7 @@ enum ConsoleScreenMode: CaseIterable {
     /// note-by-note, so this screen stays calm to read even while `run` is busy elsewhere.
     case config
     /// A user-driven mode sequence (see `ImprovSession.startGuide`/`advanceGuideStep`):
-    /// the sequence, the current step's neighbors on the circle of fifths, and a role-line
+    /// the sequence, the current step's neighbors on the circle of fifths, and a degree-line
     /// keyboard for the current step's mode — independent of any track's own recognized
     /// mode, which keeps showing on `.run` unaffected.
     case guide
@@ -1117,6 +1180,7 @@ func executeCommand(_ command: String, _ args: [String]) throws {
             try session.startTrack(id)
             if id == .computerKeyboard { computerKeyboardSourceActive = true }
             pollLogWhileListening()
+            promptClaimFreeSceneRoleIfNeeded(for: id)
         case "off":
             session.stopTrack(id)
             if id == .computerKeyboard { computerKeyboardSourceActive = false }
@@ -1457,6 +1521,41 @@ func executeCommand(_ command: String, _ args: [String]) throws {
     case "save-scene":
         guard let name = args.first else { print("usage: save-scene <nom>"); break }
         try session.saveScene(title: name, as: name)
+    case "scene-new":
+        guard !args.isEmpty else { print("usage: scene-new <titre>"); break }
+        session.newScene(title: args.joined(separator: " "))
+    case "scene-roles":
+        printNumberedSceneRoles()
+    case "scene-role-add":
+        guard !args.isEmpty else { print("usage: scene-role-add <nom>"); break }
+        _ = try session.addSceneRole(name: args.joined(separator: " "))
+    case "scene-role-sound":
+        guard let roleID = args.first.flatMap(resolvedSceneRoleID) else {
+            print("usage: scene-role-sound <role> <son|vide>"); break
+        }
+        try session.setSceneRoleSound(roleID, soundName: args.count >= 2 ? args[1] : nil)
+    case "scene-role-listen":
+        guard args.count >= 2, let roleID = resolvedSceneRoleID(args[0]) else {
+            print("usage: scene-role-listen <role> on|off"); break
+        }
+        try session.setSceneRoleListening(roleID, isListening: args[1].lowercased() == "on")
+    case "scene-role-attach":
+        guard args.count >= 2, let roleID = resolvedSceneRoleID(args[0]),
+              let trackID = parseTrackID(resolvedTrackIDText(args[1]))
+        else {
+            print("usage: scene-role-attach <role> <id-instrument>"); break
+        }
+        try session.attachInstrument(trackID, toRole: roleID)
+    case "scene-role-detach":
+        guard let roleID = args.first.flatMap(resolvedSceneRoleID) else {
+            print("usage: scene-role-detach <role>"); break
+        }
+        try session.detachInstrument(fromRole: roleID)
+    case "scene-role-remove":
+        guard let roleID = args.first.flatMap(resolvedSceneRoleID) else {
+            print("usage: scene-role-remove <role>"); break
+        }
+        try session.removeSceneRole(roleID)
     case "quit", "exit":
         stopAllTracks()
         drainLog()
@@ -1595,6 +1694,37 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
             for (index, name) in session.sceneFiles.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine("Charger quelle scene (numero ou nom): "), !choice.isEmpty else { return }
             try executeCommand("use-scene", [choice])
+        },
+        MenuItem.header("Roles"),
+        MenuItem(label: "Nouvelle scene (roles)...") {
+            guard let title = promptLine("Titre de la scene: "), !title.isEmpty else { return }
+            try executeCommand("scene-new", [title])
+        },
+        MenuItem(label: "Lister les roles") { try executeCommand("scene-roles", []) },
+        MenuItem(label: "Ajouter un role...") {
+            guard let name = promptLine("Nom du role: "), !name.isEmpty else { return }
+            try executeCommand("scene-role-add", [name])
+        },
+        MenuItem(label: "Attacher un instrument a un role...") {
+            printNumberedSceneRoles()
+            guard let roleChoice = promptLine("Quel role (numero ou nom): "), !roleChoice.isEmpty else { return }
+            printNumberedTracks()
+            guard let trackChoice = promptLine("Quel instrument (numero ou id): "), !trackChoice.isEmpty else { return }
+            try executeCommand("scene-role-attach", [roleChoice, resolvedTrackIDText(trackChoice)])
+        },
+        MenuItem(label: "Detacher un role...") {
+            printNumberedSceneRoles()
+            guard let roleChoice = promptLine("Quel role (numero ou nom): "), !roleChoice.isEmpty else { return }
+            try executeCommand("scene-role-detach", [roleChoice])
+        },
+        MenuItem(label: "Choisir le son d'un role...") {
+            printNumberedSceneRoles()
+            guard let roleChoice = promptLine("Quel role (numero ou nom): "), !roleChoice.isEmpty else { return }
+            guard !session.sampleFiles.isEmpty else { print("Choisis d'abord un dossier de sons (menu JamShack)."); return }
+            for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
+            let soundChoice = promptLine("Quel son (numero ou nom, vide pour aucun): ") ?? ""
+            let soundName = soundChoice.isEmpty ? nil : (Int(soundChoice).flatMap { session.sampleFiles.indices.contains($0 - 1) ? session.sampleFiles[$0 - 1] : nil } ?? soundChoice)
+            try executeCommand("scene-role-sound", soundName.map { [roleChoice, $0] } ?? [roleChoice])
         },
     ]),
     MenuCategory(mnemonic: "G", title: "Guide Musicaux", items: [

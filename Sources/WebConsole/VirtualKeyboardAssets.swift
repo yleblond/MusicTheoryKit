@@ -43,7 +43,7 @@
 /// `VirtualKeyboardStateResponse` (`AppCore/WebConsoleState.swift`) — `track` scoped to just
 /// this one client's own track (same shape as one entry of the web console's `tracks` array,
 /// see `StaticAssets.swift`'s own contract comment), `guide` only while a guide is actually
-/// running (see `ImprovSession.handleVirtualKeyboardRequest`'s doc comment) — the role-line
+/// running (see `ImprovSession.handleVirtualKeyboardRequest`'s doc comment) — the degree-line
 /// (degree badges) switches to the guide's own mode while active, but held/chord/root coloring
 /// stays this client's own personal feedback either way:
 /// ```json
@@ -1403,7 +1403,7 @@ async function refresh() {
       modeLine = '';
       staffHTML = renderStaffSVG([], keyboardPixelWidth);
     }
-    // While a guide is running, the role-line (degree badges) switches to ITS mode's notes
+    // While a guide is running, the degree-line (degree badges) switches to ITS mode's notes
     // instead of this track's own recognized mode — "présente le clavier avec les notes du
     // mode [du guide]" — but held/chord/root coloring above stays this track's own, personal
     // feedback either way. `state.guide` is only present at all while a guide is active (see

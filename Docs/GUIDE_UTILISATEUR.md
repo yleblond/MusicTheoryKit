@@ -1,7 +1,7 @@
 # Guide utilisateur — Music Improv Assistant
 
 Manuel d'utilisation de l'application en ligne de commande, dans son état à la fin de la
-session du 2026-07-10. Un terme ambigu ou peu clair ? Voir `Docs/GLOSSAIRE.md`.
+session du 2026-07-12. Un terme ambigu ou peu clair ? Voir `Docs/GLOSSAIRE.md`.
 
 ## Lancer l'application
 
@@ -418,7 +418,7 @@ Menus disponibles :
 | Menu | Contenu |
 |---|---|
 | **JamShack** | Menu principal (premier de la barre, s'ouvre par défaut) : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/**composition IA**/**réglages** — ce dernier remplace l'ancien choix indépendant de dossier de connexions LLM ; palettes de couleur, progressions d'accords et connexions LLM vivent tous sous ce même dossier de réglages, par défaut `Settings/`) ; (3) choisir une connexion LLM, isolée dans son propre groupe ; (3bis) choisir la palette de couleur (voir §13) ; (4) mode MIDI fusionné/individuel ; (5) démarrer/arrêter la console web (voir §11) et le clavier virtuel (voir §12) ; (6) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
-| **Scene** | Voir le plan de scène en arbre (`scene-tree`) — l'application, ses instruments locaux, l'état de la console web et du clavier virtuel, et en mode serveur la liste des clients connectés avec leurs propres instruments (voir §9) —, activer/arrêter un instrument, *séparateur*, activer/désactiver le son d'un instrument, *séparateur*, choisir un son pour un instrument, *séparateur*, sauvegarder/charger une scène (la configuration complète des instruments : actif, son actif, quel son). Les actions qui demandent de choisir un instrument présentent la liste numérotée (voir §3) — répondre par le numéro évite d'avoir à retaper `midi:1`/`clavier`/etc. |
+| **Scene** | Voir le plan de scène en arbre (`scene-tree`) — l'application, ses instruments locaux, l'état de la console web et du clavier virtuel, et en mode serveur la liste des clients connectés avec leurs propres instruments (voir §9) —, activer/arrêter un instrument, *séparateur*, activer/désactiver le son d'un instrument, *séparateur*, choisir un son pour un instrument, *séparateur*, sauvegarder/charger une scène (la configuration complète des instruments : actif, son actif, quel son), *séparateur* **Rôles** — nouvelle scène (à base de rôles), lister les rôles, ajouter un rôle, attacher un instrument à un rôle, détacher un rôle, choisir le son d'un rôle (voir §15 pour le concept). Les actions qui demandent de choisir un instrument présentent la liste numérotée (voir §3) — répondre par le numéro évite d'avoir à retaper `midi:1`/`clavier`/etc. |
 | **Guide Musicaux** | Voir l'écran Guide Musical, *séparateur*, créer un nouveau guide musical (propose d'ajouter un mode en boucle jusqu'à laisser la tonique vide) / ajouter un mode au guide musical en cours — chaque ajout propose d'abord la liste numérotée des **33 gammes/modes des 7 familles** de `MusicTheoryKit` (les 7 modes majeurs usuels, puis mineur mélodique, mineur harmonique, majeur harmonique, diminué, tons entiers, augmenté — un numéro suffit, plus besoin de connaître l'id écrit), chaque ligne affichant les deux appellations (nom courant et nom systématique, ex. « Altered / Super Locrian / Ionian #1 »), puis une liste numérotée de progressions d'accords (blues, ii-V-I, cadence andalouse…, tirée de `chordprogressions.json` dans le dossier de réglages) à attacher à cette étape, ou de laisser vide pour n'en attacher aucune, *séparateur*, charger un guide musical / sauvegarder le guide musical (sous...), *séparateur*, démarrer/arrêter le guide musical — aussi accessible directement par la barre d'espace une fois sur l'écran Guide Musical. Note : la roue des quintes n'affiche le contour diatonique/chiffrage romain que pour les 7 modes majeurs — un mode d'une autre famille reste jouable et reconnu, juste sans ce contour sur la roue. |
 | **Enregistrement** | Démarrer/arrêter un enregistrement, voir l'enregistrement, jouer l'enregistrement, *séparateur*, charger/sauvegarder l'enregistrement, *séparateur*, composer un morceau à partir de l'enregistrement en le nommant (voir §10), *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser les indications de style, *séparateur*, voir/exporter le prompt de composition (voir §6). |
 | **Morceaux** | Quatre groupes, séparés par des traits : (1) écouter/voir le morceau ; (2) choisir le son par défaut de lecture, ou le son d'une piste/des accords d'une section (voir §7 — la structure affichée numérote les sections et les pistes, pour savoir directement quel numéro saisir) ; (3) charger la démo, charger un morceau, sauvegarder le morceau, sauvegarder le morceau sous ; (4) **Assistant IA** — pour l'instant un intitulé de sous-section réservé, sans action, en attente d'une future fonction de modification par dialogue (« plus vite », « moins vite »…) applicable à n'importe quel morceau. |
@@ -650,12 +650,13 @@ clavier du mode" — celui du guide musical s'il est en cours (menu **Guide Musi
 celui du morceau/de l'enregistrement en cours de lecture — puis chaque piste active, la
 sienne. Cette disposition est désormais la même que le guide soit actif ou non.
 
-**Trois onglets** : `Run` (ce qui précède — l'activité musicale en cours), `Scene` — le même
+**Quatre onglets** : `Run` (ce qui précède — l'activité musicale en cours), `Scene` — le même
 plan de scène qu'affiche `scene-tree` dans le terminal (voir §9), mais en liste imbriquée
 plutôt qu'en dessin ASCII : l'application, ses instruments locaux, l'état de la console web et
-du clavier virtuel, et en mode serveur la liste des clients connectés avec leurs propres
-instruments — et `Infos`, une simple description statique de la page. Basculer d'un onglet à
-l'autre ne recharge pas la page.
+du clavier virtuel, en mode serveur la liste des clients connectés avec leurs propres
+instruments, et depuis peu les **rôles de la scène active** (voir §15) — `Commandes`, une
+télécommande complète de l'application depuis le navigateur (voir §16) — et `Infos`, une
+simple description statique de la page. Basculer d'un onglet à l'autre ne recharge pas la page.
 
 **Largeur adaptative** : la page s'élargit pour profiter de l'espace disponible sur un grand
 écran (cercle des quintes agrandi, largeur totale plafonnée pour rester lisible plutôt que de
@@ -841,6 +842,121 @@ Canon, Cadence andalouse, Progression circulaire, Rock mineur) — modifiable à
 ajouter d'autres, même convention que `palettes.json` (un seul fichier listant plusieurs
 templates).
 
+## 15. Scènes — sauvegarder/recharger une configuration d'instruments, avec des rôles
+
+Une **scène** sauvegarde une configuration d'instruments (voir §3) pour la retrouver plus tard
+sans tout reconfigurer à la main — pratique pour passer d'une configuration "répétition solo"
+à "groupe complet" en une commande. Deux façons de l'utiliser :
+
+**Sans rien déclarer à l'avance** (le plus simple) : `save-scene <nom>` capture directement
+l'état courant de chaque piste locale (écoute, son, instrument) — exactement comme avant. Au
+rechargement (`use-scene <n|nom>`), chaque piste retrouvée est réappliquée telle quelle.
+
+**Avec des rôles déclarés** (recommandé si les instruments changent d'une session à l'autre —
+un clavier MIDI qui n'est pas toujours branché, par exemple) : un **rôle** ("Piano 1", "Basse
+Guitare", "Saxophoniste"...) est un poste déclaré à l'avance, avec son propre son, indépendant
+de l'instrument physique/virtuel qui l'occupera cette fois-ci.
+
+```
+scene-new <titre>                    # cree une scene vide, a base de roles
+scene-role-add <nom>                 # ajoute un role ("Piano 1", "Basse"...)
+scene-role-sound <role> <son|vide>   # son de ce role (s'applique a qui l'occupe)
+scene-role-listen <role> on|off      # ecoute declaree pour ce role
+scene-role-attach <role> <id>        # attache un instrument (id: midi, clavier... voir §3) a ce role
+scene-role-detach <role>             # detache l'instrument de ce role (le role reste declare)
+scene-role-remove <role>             # supprime le role de la scene active
+scene-roles                          # liste les roles et ce qui les occupe (ou "libre")
+save-scene <nom>                     # sauvegarde la scene active (roles + leur son, PAS l'attache)
+use-scene <n|nom>                    # charge une scene, tente de reattacher chaque role automatiquement
+```
+
+**Ce qui rend un rôle différent d'avant** : au rechargement, l'application essaie de
+reconnaître le MÊME instrument qu'à la sauvegarde (pour un port MIDI, via un identifiant
+CoreMIDI stable, pas juste "le port qui porte ce numéro-là maintenant" — un vrai clavier
+débranché puis rebranché est ainsi retrouvé même si l'ordre des ports a changé). **Si aucun
+instrument ne correspond, le rôle reste explicitement libre** — annoncé clairement dans le
+message de chargement ("2 réattachés automatiquement, 1 libre") plutôt que silencieusement
+ignoré comme c'était le cas avant l'introduction des rôles.
+
+**Attacher un instrument qui vient de se connecter** : en tapant `track <id> on` alors qu'une
+scène (à base de rôles) est active et que cet instrument n'est encore attaché à aucun rôle,
+l'application propose directement la liste des rôles libres (ou de créer un nouveau rôle à la
+volée). La commande `tracks` rappelle aussi, en une ligne, combien d'instruments actifs ne sont
+attachés à aucun rôle.
+
+**Un instrument n'occupe jamais deux rôles à la fois** : l'attacher à un second rôle le
+détache automatiquement du premier (un déplacement, pas une erreur) — les deux mouvements sont
+journalisés.
+
+**Limite actuelle, assumée** : les rôles ne fonctionnent qu'en solo/standalone pour l'instant —
+un participant connecté à une jam session (§9) ne peut pas encore revendiquer un rôle sur une
+scène partagée. Cette extension est conçue mais délibérément différée à une prochaine session
+(voir `Docs/BACKLOG.md`).
+
+## 16. Onglet Commandes (console web) — piloter l'application depuis un navigateur
+
+En plus des onglets `Run`/`Scene`/`Infos` (lecture seule, §11), l'onglet **Commandes** de la
+console web est une vraie télécommande : chaque action du menu déroulant du terminal (§8) y a
+son équivalent, accessible depuis un navigateur — utile pour piloter l'application depuis un
+autre appareil (tablette, téléphone) sans taper de commande.
+
+Les actions sont groupées en sous-onglets, un par catégorie du menu terminal (JamShack, Scene,
+Guide Musicaux, Enregistrement, Morceaux, Composition, Jam Session) — chaque action montre le
+ou les champs qu'elle attend (menu déroulant pré-rempli avec les valeurs valides du moment,
+champ texte, case à cocher...), suivi d'un bouton pour valider ; le résultat s'affiche
+immédiatement en haut de l'onglet.
+
+**Ce qui n'y est volontairement pas** : les écrans en lecture seule (statut, activité en
+direct, plan de scène) — déjà couverts par les onglets `Run`/`Scene`/`Infos`. L'onglet
+Commandes ne fait qu'agir, jamais qu'afficher.
+
+**Les listes déroulantes restent à jour** même si le changement vient d'ailleurs (le terminal,
+un autre onglet de navigateur, un autre participant de la jam session) — rafraîchies toutes
+les 2 secondes en tâche de fond, sans jamais effacer un champ texte en cours de frappe.
+
+## 17. Serveur MCP — piloter l'application depuis un assistant IA (Claude, etc.)
+
+Un petit serveur séparé (dossier `mcp-server/`, en Python, hors du programme Swift lui-même)
+qui expose les mêmes actions que l'onglet Commandes (§16) comme des *tools* MCP (Model Context
+Protocol) — de quoi demander à un assistant compatible (Claude Desktop, Claude Code...) de
+piloter directement l'application depuis une conversation : charger un morceau, démarrer une
+piste, composer à partir d'une description, gérer une scène et ses rôles, etc.
+
+**Mise en place** (voir `mcp-server/README.md` pour le détail) :
+
+```sh
+cd mcp-server
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
+Puis, dans la configuration MCP du client (Claude Desktop, par exemple) :
+
+```json
+{
+  "mcpServers": {
+    "jamshack": {
+      "command": "/chemin/absolu/vers/mcp-server/.venv/bin/python3",
+      "args": ["/chemin/absolu/vers/mcp-server/server.py"],
+      "env": { "JAMSHACK_BASE_URL": "http://localhost:8080" }
+    }
+  }
+}
+```
+
+**La console web doit déjà tourner** (`web-console 8080` ou menu **JamShack > Demarrer la
+console web...**) — le serveur MCP n'est qu'un relais vers elle, il ne fait tourner aucune
+logique musicale lui-même.
+
+**Ce qui est exposé** : un *tool* par action (mêmes catégories que §16), plus des *tools* de
+lecture pour donner à l'assistant une vraie vue sur le contenu — la structure complète d'un
+morceau (nombre de sections, lignes mélodiques, accords par section), la description en
+attente de composition (avec le prompt exact qui serait envoyé), la structure complète d'un
+guide musical chargé, et le détail d'un enregistrement.
+
+**Expérimental** : toutes les actions sont exposées sans réglage fin des permissions pour
+l'instant (tout ou rien) — un mécanisme plus sélectif est une étape volontairement différée.
+
 ## Liste complète des commandes
 
 `help` les affiche déjà regroupées par catégorie (Général / Morceaux / Pistes d'entrée /
@@ -861,6 +977,17 @@ save-as <nom>           sauvegarde sous un nouveau nom
 play                    joue le morceau courant
 tracks                  liste les pistes d'entrée (MIDI/clavier/micro) et leur état
 scene-tree              plan de scène en arbre (instruments, consoles, clients connectés — voir §9)
+scenes <dossier>        liste les fichiers .json (scènes) du dossier
+use-scene <n|nom>       charge une scène (réattache automatiquement chaque rôle si possible — voir §15)
+save-scene <nom>        sauvegarde la scène active (rôles + leur son, jamais l'attache — voir §15)
+scene-new <titre>       crée une scène vide, à base de rôles (voir §15)
+scene-roles             liste les rôles de la scène active et ce qui les occupe
+scene-role-add <nom>    ajoute un rôle à la scène active
+scene-role-sound <role> <son|vide>  son de ce rôle
+scene-role-listen <role> on|off     écoute déclarée pour ce rôle
+scene-role-attach <role> <id>       attache un instrument (voir §3) à ce rôle
+scene-role-detach <role>            détache l'instrument de ce rôle
+scene-role-remove <role>            supprime le rôle de la scène active
 midi-mode <fusionne|individuel>  MIDI en une piste fusionnée, ou une piste par port
 track <id> on|off       démarre/arrête l'écoute d'une piste (id: midi, midi:<n>, clavier, micro)
 track <id> son on|off   active/désactive le son d'une piste (impossible pour 'micro')
@@ -910,6 +1037,15 @@ use-soundtrack-instructions <n|nom>  charge des indications de style sauvegardee
 reset-soundtrack-instructions        efface les indications de style (aucune)
 show-text-prompt / show-soundtrack-prompt  affiche le prompt complet qui serait envoye maintenant
 export-text-prompt <nom> / export-soundtrack-prompt <nom>  exporte le prompt complet (jamais recharge)
+guide                   ecran Guide Musical (sequence de modes a naviguer en direct)
+guides <dossier>        liste les fichiers .json (guides musicaux) du dossier
+use-guide <n|nom>       charge un guide musical
+save-guide              resauvegarde le guide musical courant
+save-guide-as <nom>     sauvegarde sous un nouveau nom
+guide-new <titre>       demarre une sequence de guide vierge
+guide-add-mode <tonique> <id-gamme> [progression]  ajoute une etape (numero ou id de gamme/progression)
+guide-start [n]         demarre le guide a l'etape n (defaut 0)
+guide-stop              arrete le guide musical
 show-piece              affiche la structure du morceau courant
 status                  affiche l'état courant
 run                     écran fixe: activité musicale en direct (q pour revenir)

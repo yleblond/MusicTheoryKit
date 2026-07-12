@@ -55,3 +55,15 @@ CHANGELOG une fois traitée.
    `MINI_WHITE_WIDTH`...) à partir de la largeur de `.layout-col-right` plutôt qu'une constante
    fixe, en gardant une taille minimale lisible sur mobile étroit ; recalculer sur
    `resize`/orientation change, pas seulement au chargement.
+
+3. **Rôles de scène : revendication par un client réseau connecté.** Le round du 2026-07-12
+   (`Docs/ARCHITECTURE.md`, section "Rôles de scène") a livré la partie locale/standalone
+   (déclarer des rôles, attacher un instrument, réattache automatique au rechargement) ; la
+   demande initiale incluait aussi qu'un instrument connecté via un client réseau puisse
+   revendiquer un rôle libre sur une scène partagée. Conception complète déjà faite et
+   documentée (autorité serveur, nouveaux cas `NetMessage` `.roleClaim`/`.roleRelease`/
+   `.roleClaimRejected`/`.roleSync`, résolution des conflits gratuite via la queue série déjà
+   partagée par toutes les connexions, pas de délai de grâce à la déconnexion) — voir
+   `Docs/ARCHITECTURE.md` pour le détail, prête à implémenter sans reprendre ce qui précède
+   (`InstrumentIdentityHint` n'a délibérément pas de cas `.remote` encore, c'est le point
+   d'extension prévu).

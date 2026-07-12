@@ -1044,6 +1044,142 @@ comme "un sous-menu qui a l'air désactivé" (un second "Scene" en grisé, sans 
 le premier). Renommé en "Fichier de scene", et le séparateur juste avant supprimé (il faisait
 double emploi avec l'en-tête lui-même).
 
+### Rôles de scène (`SceneRole`) — découpler les postes déclarés de l'identité instable des instruments
+
+Refonte de `Scene`/`SceneTrack` (`Sources/AppCore/Scene.swift`) motivée par un vrai bug
+signalé : `loadScene` associait chaque instrument enregistré directement à un
+`TrackID.wireIDText` (ex. "midi:2") — pour un port MIDI, rien de plus que l'index
+d'énumération CoreMIDI du moment. Débrancher le clavier MIDI (ou en brancher un second avant
+lui) change silencieusement à quel index il correspond ; `loadScene` faisait alors
+`guard let id = TrackID(wireIDText:), tracks.contains(where: { $0.id == id }) else { continue }`
+— si aucune piste vivante ne correspondait exactement, l'entrée était **silencieusement
+ignorée, sans le moindre message**. C'est exactement le problème rapporté.
+
+**Le concept** : un `SceneRole` ("Piano 1", "Basse Guitare", "Saxophoniste") est déclaré
+indépendamment de ce qui est branché maintenant, porte son propre son (`soundName`), et n'est
+JAMAIS lié à un instrument qu'à l'exécution (`attachedTrackID`, transitoire — voir plus bas).
+Ainsi "Piano 1" veut toujours un son de piano, quel que soit le clavier physique qui joue ce
+rôle cette session-ci. Terminologie : le mot "rôle" était déjà pris ailleurs dans le code (la
+rangée de badges de degré d'échelle sous le clavier, en commentaire uniquement) — renommé en
+"degree-line" partout (mécanique, ~10 occurrences dans 5 fichiers, aucun identifiant réel
+concerné) pour libérer "rôle" pour ce concept, à la demande explicite de l'utilisateur plutôt
+que d'introduire un nouveau mot (l'alternative envisagée, "pupitre", reste documentée dans
+l'historique de conception si le besoin ressurgit).
+
+**Modèle de données** (`SceneRole`, `InstrumentIdentityHint`) :
+- `SceneRole.attachedTrackID: TrackID?` est **transitoire** — jamais persisté (`Codable`
+  personnalisé, `CodingKeys` qui l'omet), exactement comme `heldPitches`/la reconnaissance
+  d'une piste ne sont déjà jamais capturés par une scène sauvegardée. `Scene.roles` reste la
+  seule source de vérité pour "quel rôle tient quel instrument en ce moment" — pas de
+  dictionnaire séparé `[SceneRole.ID: TrackID]`, pour éviter que deux structures ne divergent.
+- `SceneRole.lastAttachedInstrument: InstrumentIdentityHint?` est l'indice persisté qui permet
+  la réattache automatique. Pour un port MIDI (`.midiPort(midiUniqueID:displayName:)`), adopté
+  MAINTENANT (pas différé) : `kMIDIPropertyUniqueID` de CoreMIDI (`MIDIInputListener.
+  sourceDescriptors()`, nouveau) est un identifiant persistant par périphérique, stable à
+  travers un débranchement/rebranchement sur ce Mac dans le cas normal — contrairement à
+  l'index brut d'énumération que `TrackID.midiSource(Int)` utilise déjà et qui est
+  précisément la cause du bug. Différer cette adoption aurait livré une refonte qui ne
+  résout toujours pas le problème le plus cité.
+- `InstrumentIdentityHint` n'a délibérément PAS de cas `.remote` — cette version est
+  local/standalone uniquement ; en ajouter un plus tard (et élargir les deux `switch` qui
+  consomment ce type) est le point d'extension prévu pour une revendication de rôle par un
+  client réseau (voir plus bas, conception déjà faite, délibérément différée).
+
+**Le seul point de passage** : `attachInstrument(_:toRole:)`/`detachInstrument(fromRole:)`
+(`ImprovSession.swift`) sont les seuls endroits qui modifient `attachedTrackID`. Choix
+décisif : **détache automatiquement, ne rejette jamais** — attacher un instrument déjà attaché
+ailleurs le déplace (les deux mouvements sont journalisés via `append(...)`), ce n'est pas une
+erreur. `detachInstrument` ne touche jamais `isListening`/`soundEnabled` de la piste elle-même
+(même convention que `stopTrack`, "l'état survit à un arrêt") — seule l'association
+rôle/piste est effacée. Les deux méthodes partagent `applyRoleConfiguration(_:to:)` (démarre
+la piste, applique le son du rôle) avec `loadScene`, pour qu'elles ne puissent pas diverger.
+
+**Algorithme de réattache** (`matches(_:_:)`) — volontairement conservateur, un pari ambigu
+étant pire qu'un rôle laissé libre : (1) `uniqueID` CoreMIDI identique → gagne directement ;
+(2) sinon repli sur le nom affiché, mais SEULEMENT si exactement une source visible actuellement
+porte ce nom (jamais "le premier qui correspond" parmi des doublons) ; (3) `.midiMerged` ne
+correspond que si la session est toujours en mode fusionné maintenant (`loadScene` ne bascule
+jamais silencieusement `midiFusionMode`) ; (4) `.webKeyboard`/`.computerKeyboard`/`.microphone`
+par identité exacte (clientID/singleton). Aucune correspondance → **le rôle reste explicitement
+libre, journalisé** ("Scene chargee : X — N role(s), M reattache(s) automatiquement, K
+libre(s). Roles libres : ... — utilise 'scene-role-attach' pour les affecter.") — le correctif
+direct du silence d'avant. `refreshTracks()` gagne `reconcileSceneAttachmentsAfterTrackRefresh()`
+pour le même problème EN COURS DE SESSION (un port MIDI qui change d'index sans redémarrage) :
+migre l'attache vers le nouvel index si le même périphérique y est retrouvé, ou libère le rôle
+avec un message si l'appareil a disparu, puis retente la correspondance pour tout rôle encore
+libre.
+
+**Sauvegarde** : si aucune scène active (`currentScene == nil`, un utilisateur qui n'a jamais
+touché aux nouvelles commandes de rôle), un rôle est synthétisé à la volée par piste locale
+actuellement en écoute ou sonnante, nommé d'après son libellé courant — préserve l'ergonomie
+"sauvegarde juste ce qui est actif" d'avant pour qui ignore la nouvelle mécanique. Sinon,
+chaque rôle attaché voit son indice rafraîchi depuis le périphérique réel juste avant l'écriture.
+
+**Migration** : `Scene.init(from:)` accepte l'ancien format plat (`{"tracks": [SceneTrack]}`,
+`SceneTrack` conservé en lecture seule) en plus du nouveau (`{"roles": [SceneRole]}`) — même
+convention "décoder la forme courante, retomber sur l'ancienne" déjà utilisée par
+`GuideStep.init(from:)`. Chaque `SceneTrack` migré devient un `SceneRole` nommé d'après son
+identifiant fil (ex. "midi:2" → "MIDI port 2"), avec `midiUniqueID: nil` (aucun historique à
+en tirer) — ne se réattachera pas proprement au tout premier chargement après migration,
+coût ponctuel accepté ; la sauvegarde suivante capture un indice correct.
+
+**Surfaces UI** (toutes locales/standalone cette fois-ci — voir plus bas pour le réseau) :
+terminal (commandes `scene-new`/`scene-roles`/`scene-role-add`/`-sound`/`-listen`/`-attach`/
+`-detach`/`-remove`, plus une invite "attacher à quel rôle ?" ajoutée à `track <id> on` quand
+une scène est active et que l'instrument démarré n'est encore attaché à aucun rôle, et une
+ligne de rappel passive dans `tracks`/`scene-tree` s'il reste des instruments non attachés),
+menu déroulant du terminal (bloc "Roles" dans la catégorie Scene existante), onglet
+"Commandes" de la console web (six nouvelles entrées `MENU_ACTIONS` dans la catégorie Scene
+existante, plus `sceneRoles`/`unassignedTracks` dans `GET /menu-lists`), onglet `Scene` de la
+console web (branche "Roles" dans `renderSceneTree`/`WebConsoleSceneState`), et le serveur MCP
+(`mcp-server/server.py`, six actions de plus dans `ACTIONS["Scene"]`, même discipline
+`expose_as` que le reste).
+
+**Revendication de rôle par un client réseau — conçue, délibérément différée** : le besoin
+initial incluait "si une scène est active, un instrument connecté via un client au serveur
+peut choisir un rôle libre." Conception complète déjà faite pour une prochaine session, pensée
+pour s'ajouter sans reprise de ce qui précède :
+- Autorité serveur : la liste de rôles + leurs attaches est un état possédé par le serveur,
+  diffusé à tous les clients (même principe déjà en place pour `tracks`/la reconnaissance/
+  `sync`) — un client ne modifie jamais l'état partagé directement, il envoie une *demande*
+  de revendication/libération et attend la diffusion du serveur pour refléter le résultat
+  (jamais de mutation optimiste locale, même principe que pour une piste `.remote` ou un
+  accord reconnu, qui ne viennent eux aussi jamais d'ailleurs que du serveur).
+- Nouveaux champs/cas `NetMessage` : `roleID`, `reason`, `roles: [RoleSnapshot]` ;
+  `.roleClaim`/`.roleRelease` (client → serveur), `.roleClaimRejected` (serveur → demandeur
+  seul, en cas d'échec uniquement), `.roleSync` (serveur → tous).
+- Résolution des conflits : gratuite — `NetworkServer`/`FramedConnection` traitent déjà
+  toutes les connexions sur une seule queue série partagée, donc deux revendications
+  "simultanées" sont de toute façon traitées strictement l'une après l'autre par le serveur :
+  premier arrivé, premier servi, sans nouvelle synchronisation à écrire.
+- Déconnexion : le rôle tenu se libère immédiatement, sans délai de grâce (v1) — cohérent avec
+  la même absence de délai de grâce déjà en place pour la disparition d'une piste `.remote` ;
+  un délai de grâce reste une v2 clairement différée, pas écartée (le signal dont il aurait
+  besoin — `localClientID` qui survit à une reconnexion dans le même process — existe déjà).
+- Un rôle `.remote` reste hors de la persistance sur disque (même traitement que
+  `heldPitches`), mais serait en revanche pleinement pris en charge À L'EXÉCUTION — c'est le
+  but de cette extension. Un rôle ne peut être revendiqué que par son propre propriétaire pour
+  son propre instrument, jamais réassigné par l'hôte à l'instrument de quelqu'un d'autre.
+  Diffusion via un message dédié à basse fréquence (pas le tick `.sync` à 150ms, les rôles
+  changent rarement) — sur chaque changement, plus un renvoi périodique (~2s) comme filet de
+  sécurité si un message est perdu.
+
+**Vérification** : `swift run SanityChecks` (608 vérifications, dont 10 nouvelles fonctions de
+test couvrant CRUD des rôles, l'attache/détache avec auto-détache, l'aller-retour sauvegarde/
+chargement avec réattache et rapport des rôles restés libres, la migration depuis l'ancien
+format, et la porte de mode pour l'indice `.midiMerged`) — les cas de correspondance MIDI par
+`uniqueID`/nom ambigu ne sont PAS couverts par un test dédié : ils dépendent du résultat réel de
+`MIDIInputListener.sourceDescriptors()`, qu'aucune injection de dépendance ne permet de
+contrôler depuis les tests dans ce projet — honnêtement non testable de façon déterministe ici,
+pas juste oublié. Vérifié aussi en conditions réelles pour la console web (capture headless
+Chrome des six nouvelles actions, listes `sceneRoles`/`unassignedTracks` correctement peuplées)
+et le serveur MCP (les 6 tools s'enregistrent, schémas et construction de requête corrects). Un
+parcours interactif complet du terminal (créer une scène, attacher/sauvegarder/recharger en
+conditions réelles) n'a délibérément pas été tenté dans cette session : l'interface plein écran
+du terminal ne se pilote pas de façon fiable par un simple pipe stdin (confirmé plus tôt cette
+même session), et il existait un risque réel de perturber une session JamShack déjà active de
+l'utilisateur — la couverture de test ci-dessus a été jugée suffisante à la place.
+
 ### Groupes de fonctionnalités
 
 - **Morceau** : `piece`, chargement/sauvegarde (`loadPiece`, `savePiece`/`savePiece(as:)`),

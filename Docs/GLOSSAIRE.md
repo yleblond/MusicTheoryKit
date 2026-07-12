@@ -193,19 +193,66 @@ environnement précis : toute nouvelle fonctionnalité doit gagner un cas dans l
 (le vrai test `XCTest`, prêt pour le jour où Xcode sera installé, **et** son miroir dans
 `SanityChecks`, seul moyen actuel de le vérifier réellement).
 
-## « Scène » — deux concepts sans rapport, malgré le nom
+## « Scène » — trois concepts sans rapport, malgré le nom
 
 - **`AppCore.Scene`** (menu **Scene** > sauvegarder/charger une scène, commandes
-  `save-scene`/`use-scene`) — une **configuration d'instruments sauvegardée** (quelles pistes
-  écoutent, avec quel son) : un instantané rechargeable, sans aucun rapport avec le réseau.
+  `save-scene`/`use-scene`) — une **configuration d'instruments sauvegardée**, depuis peu à
+  base de **rôles** (voir la section suivante) plutôt que directement liée à un instrument
+  précis : un instantané rechargeable, sans aucun rapport avec le réseau.
 - **« Plan de scène »** (commande `scene-tree`, onglet **Scene** de la console web — voir
   `ARCHITECTURE.md` §"Plan de scène") — une **vue en arbre de qui est connecté et avec quels
   instruments**, en direct : l'application, ses instruments locaux, l'état de la console
   web/du clavier virtuel, et en mode serveur les clients de la Jam Session avec leurs propres
   pistes. Rien à sauvegarder ici — c'est un affichage, pas une configuration.
+- **« Scene (lecture du morceau) »** — un intitulé de section dans `help` qui n'a en fait rien
+  à voir avec les deux sens ci-dessus : il documente `samples`/`use-sample`/
+  `set-track-instrument`, c'est-à-dire le choix du **son par défaut d'un morceau (`Piece`)**,
+  pas une configuration d'instruments en direct ni un plan de scène réseau. Une coïncidence de
+  nom héritée de l'historique du projet, pas un concept à part à retenir.
 
-Les deux vivent dans le même menu **Scene** (par coïncidence de nom), mais ne partagent aucun
-code ni aucune donnée.
+Les trois vivent dans le même vocabulaire « Scene »/« scène » (par coïncidence de nom), mais
+ne partagent aucun code ni aucune donnée entre eux.
+
+## « Rôle » (`AppCore.SceneRole`) — un poste déclaré, distinct de l'instrument qui l'occupe
+
+Un **rôle** ("Piano 1", "Basse Guitare", "Saxophoniste"...) est un poste musical déclaré à
+l'avance dans une scène (§ précédente), avec son propre son (`soundName`) — **indépendant** de
+quel instrument physique/virtuel l'occupe cette session-ci (`attachedTrackID`, jamais
+sauvegardé sur disque : uniquement l'état de la session en cours). C'est le correctif direct
+d'un vrai problème : avant les rôles, une scène sauvegardée gardait l'instrument lié
+directement à un `TrackID` (souvent un simple index de port MIDI, instable d'un branchement à
+l'autre) — un clavier MIDI absent au rechargement faisait échouer silencieusement, sans le
+moindre message. Commandes : `scene-new`/`scene-role-add`/`-sound`/`-listen`/`-attach`/
+`-detach`/`-remove`/`scene-roles` (voir `GUIDE_UTILISATEUR.md` §15).
+
+Attention à ne pas confondre avec la **rangée de degrés d'échelle** affichée sous chaque
+clavier (badges 1 à 7) — un concept de théorie musicale sans aucun rapport, qui portait aussi
+le nom « role-line » en commentaire de code jusqu'à cette même session ; renommé
+« degree-line » précisément pour lever cette collision de vocabulaire avant qu'elle ne prête à
+confusion avec le nouveau concept de rôle de scène.
+
+**Limite actuelle, assumée** : un rôle ne peut être occupé que par un instrument de CETTE
+machine (mode solo/standalone) — un participant connecté à une Jam Session ne peut pas encore
+revendiquer un rôle sur une scène partagée. Extension déjà conçue, délibérément différée (voir
+`Docs/BACKLOG.md`).
+
+## Menu déroulant (terminal) vs onglet Commandes (console web) vs serveur MCP — trois façades, une seule logique
+
+Trois interfaces différentes qui déclenchent exactement les mêmes actions (`ImprovSession`),
+jamais une logique dupliquée trois fois :
+
+- **Menu déroulant du terminal** — la référence historique, tapée au clavier ou navigable aux
+  flèches en mode `run`/`config` (voir §8 du guide utilisateur).
+- **Onglet Commandes** (console web) — le même ensemble d'actions, accessible depuis un
+  navigateur (voir §16 du guide utilisateur) ; passe par `GET /menu-action` côté serveur.
+- **Serveur MCP** (`mcp-server/`, dossier séparé, en Python) — le même ensemble d'actions
+  encore, exposé comme des *tools* pour un assistant IA (voir §17 du guide utilisateur) ; un
+  simple relais HTTP vers les mêmes routes que l'onglet Commandes, aucune logique dupliquée.
+
+Les trois excluent volontairement les écrans en lecture seule (statut, activité en direct, plan
+de scène) — ils ne servent qu'à agir, jamais à afficher ; ces écrans-là restent uniquement
+accessibles depuis le terminal (`run`/`config`/`status`) ou les onglets `Run`/`Scene`/`Infos`
+de la console web.
 
 ## « Progression d'accords » — deux notations, deux granularités
 

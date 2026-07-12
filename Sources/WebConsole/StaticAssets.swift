@@ -737,6 +737,15 @@ function renderSceneTree(scene) {
   html += `<li>Console web: <b>${scene.webConsolePort ? 'http://localhost:' + scene.webConsolePort : '(inactive)'}</b></li>`;
   html += `<li>Clavier virtuel: <b>${scene.virtualKeyboardPort ? 'http://localhost:' + scene.virtualKeyboardPort : '(inactif)'}</b></li>`;
 
+  const roles = scene.roles || [];
+  if (roles.length) {
+    html += '<li>Roles de la scene active<ul>' + roles.map(role => {
+      const soundText = role.soundName ? ` [${role.soundName}]` : '';
+      const attachedText = role.attachedLabel ? `<b>${role.attachedLabel}</b>` : '<span class="empty">(libre)</span>';
+      return `<li>${role.name} — ${attachedText}${soundText}</li>`;
+    }).join('') + '</ul></li>';
+  }
+
   if (isServer) {
     const clients = scene.clients || [];
     html += `<li>Clients connectes (${clients.length})`;
@@ -805,6 +814,21 @@ const MENU_ACTIONS = [
       ] },
     { action: 'scene-save', label: 'Sauvegarder scene...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
     { action: 'scene-load', label: 'Charger scene...', fields: [{ name: 'value', kind: 'select', list: 'sceneFiles' }] },
+    { action: 'scene-new', label: 'Nouvelle scene (roles)...', fields: [{ name: 'value', kind: 'text', placeholder: 'titre' }] },
+    { action: 'scene-role-add', label: 'Ajouter un role...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
+    { action: 'scene-role-sound', label: "Choisir le son d'un role...", fields: [
+        { name: 'role', kind: 'select', list: 'sceneRoles', label: 'Role' },
+        { name: 'value', kind: 'select', list: 'sampleFiles', label: 'Son', optional: true },
+      ] },
+    { action: 'scene-role-listen', label: "Ecoute d'un role...", fields: [
+        { name: 'role', kind: 'select', list: 'sceneRoles', label: 'Role' },
+        { name: 'value', kind: 'select', label: 'Ecoute', options: [{ value: 'on', label: 'Activer' }, { value: 'off', label: 'Arreter' }] },
+      ] },
+    { action: 'scene-role-attach', label: 'Attacher un instrument a un role...', fields: [
+        { name: 'role', kind: 'select', list: 'sceneRoles', label: 'Role' },
+        { name: 'value', kind: 'select', list: 'unassignedTracks', label: 'Instrument' },
+      ] },
+    { action: 'scene-role-detach', label: 'Detacher un role...', fields: [{ name: 'value', kind: 'select', list: 'sceneRoles' }] },
   ] },
   { category: 'Guide Musicaux', items: [
     { action: 'guide-new', label: 'Nouveau guide musical...', fields: [{ name: 'value', kind: 'text', placeholder: 'titre' }] },
@@ -1040,7 +1064,8 @@ async function refreshMenuLists() {
       let value, label;
       if (useIndex) { value = String(index); label = item; }
       else if (typeof item === 'string') { value = item; label = item; }
-      else if (listName === 'tracks') { value = item.id; label = item.label; }
+      else if (listName === 'tracks' || listName === 'unassignedTracks') { value = item.id; label = item.label; }
+      else if (listName === 'sceneRoles') { value = item.id; label = item.name + (item.attachedLabel ? ` (${item.attachedLabel})` : ' (libre)'); }
       else { value = item.id; label = item.name; } // scales: {id, name}
       return `<option value="${escapeHTML(value)}">${escapeHTML(label)}</option>`;
     }).join('');

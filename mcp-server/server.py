@@ -45,6 +45,8 @@ def _describe_field(field: dict) -> str:
         return f"{label} — one of the filenames/names from get_menu_lists()['{field['list']}']."
     if kind == "select" and field["name"] == "tonic":
         return f"{label} — a note name: one of {NOTE_NAMES}."
+    if kind == "select" and field.get("options"):
+        return f"{label} — one of: {[o['value'] for o in field['options']]}."
     if field.get("useIndex"):
         return f"{label} — the INDEX (0-based) of an item in get_menu_lists()['{field['list']}'], not its name."
     if kind == "textarea":
@@ -101,6 +103,21 @@ ACTIONS: list[dict] = [
         ]},
         {"action": "scene-save", "label": "Sauvegarder scene", "fields": [{"name": "value", "expose_as": "name", "kind": "text", "placeholder": "nom"}]},
         {"action": "scene-load", "label": "Charger scene", "fields": [{"name": "value", "expose_as": "scene_name", "kind": "select", "list": "sceneFiles"}]},
+        {"action": "scene-new", "label": "Nouvelle scene (roles)", "fields": [{"name": "value", "expose_as": "title", "kind": "text", "placeholder": "titre"}]},
+        {"action": "scene-role-add", "label": "Ajouter un role a la scene active", "fields": [{"name": "value", "expose_as": "name", "kind": "text", "placeholder": "nom du role"}]},
+        {"action": "scene-role-sound", "label": "Choisir le son d'un role", "fields": [
+            {"name": "role", "expose_as": "role_id", "kind": "select", "list": "sceneRoles", "label": "Role"},
+            {"name": "value", "expose_as": "sample_name", "kind": "select", "list": "sampleFiles", "label": "Son", "optional": True},
+        ]},
+        {"action": "scene-role-listen", "label": "Activer/arreter l'ecoute d'un role", "fields": [
+            {"name": "role", "expose_as": "role_id", "kind": "select", "list": "sceneRoles", "label": "Role"},
+            {"name": "value", "expose_as": "listening", "kind": "select", "label": "Ecoute", "options": [{"value": "on", "label": "Activer"}, {"value": "off", "label": "Arreter"}]},
+        ]},
+        {"action": "scene-role-attach", "label": "Attacher un instrument a un role", "fields": [
+            {"name": "role", "expose_as": "role_id", "kind": "select", "list": "sceneRoles", "label": "Role"},
+            {"name": "value", "expose_as": "track_id", "kind": "select", "list": "unassignedTracks", "label": "Instrument"},
+        ]},
+        {"action": "scene-role-detach", "label": "Detacher un role", "fields": [{"name": "value", "expose_as": "role_id", "kind": "select", "list": "sceneRoles"}]},
     ]},
     {"category": "Guide Musicaux", "items": [
         {"action": "guide-new", "label": "Nouveau guide musical", "fields": [{"name": "value", "expose_as": "title", "kind": "text", "placeholder": "titre"}]},
