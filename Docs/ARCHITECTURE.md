@@ -443,6 +443,35 @@ sauvegardent quelque chose. Deux nouvelles routes `GET` dans `handleWebConsoleRe
   item. Chaque champ a un `kind` (`text`, `textarea`, `select` piloté par une des listes
   ci-dessus ou par des `options` fixes comme les 12 noms de note pour la tonique d'un guide,
   ou `select-track` toujours piloté par `tracks`).
+- **Onglet renommé "Commandes"** (affiché seulement — `activeTab` reste `'menu'` en interne,
+  aucune raison de renommer tous les identifiants de code pour un simple changement de libellé)
+  et **catégories en sous-onglets** (`renderMenuSubTabBar`/`setMenuCategory`) plutôt qu'empilées
+  sur une seule page qui défile : les 7 panneaux de catégorie sont tous construits une seule
+  fois (comme le reste de l'onglet, voir plus haut) et seulement montrés/cachés via `display`
+  au changement de sous-onglet — jamais reconstruits — donc changer de sous-onglet ne perd
+  aucune saisie en cours dans un panneau qui devient momentanément invisible, même principe que
+  `menuBuilt` pour l'onglet entier. **Vrai bug latent corrigé au passage** : `setTab(tab)`
+  remettait `menuBuilt = false` de façon inconditionnelle à chaque clic, y compris en
+  recliquant sur l'onglet déjà actif — un simple re-clic sur "Commandes" aurait donc forcé une
+  reconstruction complète (et donc perdu toute saisie en cours) pour rien ; corrigé avec un
+  simple `if (tab === activeTab) return;` en tout début de fonction.
+- **Rafraîchissement périodique des listes de `<select>`** (`menuListsPollTimer`,
+  `startMenuListsPolling`/`stopMenuListsPolling`) : les listes (morceaux, sons, scènes,
+  pistes...) peuvent changer pour des raisons externes à cet onglet — une action lancée depuis
+  le terminal, un autre onglet de navigateur, un autre participant de la jam session — donc un
+  rafraîchissement seulement après les actions DE CET onglet ne suffit pas. `refreshMenuLists`
+  est donc aussi ré-appelée toutes les 2s tant que l'onglet "Commandes" reste ouvert (démarré
+  dans `buildMenuTab`, arrêté dans `setTab` en quittant l'onglet) — nettement plus lent que le
+  tick `/state` à ~250ms des autres onglets, puisque ces listes changent beaucoup moins souvent
+  qu'un état de jeu en direct, et sans risque puisque `refreshMenuLists` ne touche jamais que
+  les `<option>` des `<select>` (jamais les champs texte/textarea, voir plus haut). Un vrai
+  "push" serveur→navigateur (le serveur signalant activement un changement dès qu'il se
+  produit, plutôt que le navigateur qui revient demander) demanderait des connexions HTTP
+  persistantes/en flux (SSE ou WebSocket) sur `WebConsole` — dont le serveur fait-main actuel
+  est explicitement conçu SANS keep-alive ("GET uniquement, pas de corps, pas de keep-alive",
+  voir plus haut) : un changement d'architecture nettement plus lourd que ce polling, pour un
+  gain (fraîcheur en dessous de 2s) qui n'apporte rien d'utile ici — non implémenté par choix,
+  pas par oubli.
 
 ### Portée musicale (`renderStaffSVG`, dupliquée dans les deux assets)
 

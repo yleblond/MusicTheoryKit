@@ -143,8 +143,11 @@ public let webConsoleIndexHTML = """
      `renderMenuTab`'s own doc comment). Built once per visit to the tab and never
      wholesale-replaced afterward, unlike every other tab, so in-progress typing/dropdown
      choices survive the page's own ~250ms `/state` poll — see `refresh()`. */
-  .menu-category { margin-bottom: 1.6rem; }
-  .menu-category h2 { color: #ddd; border-bottom: 1px solid #333; padding-bottom: 0.2rem; }
+  .menu-category-panel { margin-bottom: 1rem; }
+  /* Slightly smaller/dimmer than the page's main Run/Scene/Commandes/Infos bar, so the two
+     nesting levels stay visually distinct rather than reading as one flat row of tabs. */
+  .menu-subtab-bar { margin: 0 0 1rem; border-bottom-color: #292929; }
+  .menu-subtab-bar .tab { font-size: 0.9rem; padding: 0.2rem 0; }
   .menu-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.4rem 0; flex-wrap: wrap; }
   .menu-row label { color: #aaa; min-width: 220px; }
   .menu-row input[type="text"], .menu-row select { background: #1a1a1a; color: #ddd; border: 1px solid #444; border-radius: 3px; padding: 0.3rem 0.4rem; }
@@ -919,13 +922,59 @@ function menuItemRowHTML(item) {
     `<button onclick="submitMenuItem('${item.action}')">OK</button></div>`;
 }
 
+// Which category's panel is currently shown — a sub-tab bar under the main Run/Scene/
+// Commandes/Infos one, one sub-tab per `MENU_ACTIONS` category. Every panel is built once
+// (inside `buildMenuTab`, alongside everything else on this tab) and just hidden/shown via
+// `display`, never removed from the DOM — so switching sub-tabs can't lose any in-progress
+// input in a panel that's momentarily not visible, same principle as `menuBuilt` itself.
+let activeMenuCategory = null;
+
+function renderMenuSubTabBar() {
+  return '<div class="tab-bar menu-subtab-bar">' + MENU_ACTIONS.map(category =>
+    `<a class="tab${category.category === activeMenuCategory ? ' active' : ''}" onclick="setMenuCategory('${category.category}')">${escapeHTML(category.category)}</a>`
+  ).join('') + '</div>';
+}
+
+function setMenuCategory(category) {
+  activeMenuCategory = category;
+  // The sub-tab bar itself holds no user input (just links), so a full re-render of it alone
+  // is safe — unlike the category panels below it, which are only ever shown/hidden.
+  document.querySelector('#menu-container .menu-subtab-bar').outerHTML = renderMenuSubTabBar();
+  document.querySelectorAll('#menu-container .menu-category-panel').forEach(panel => {
+    panel.style.display = panel.dataset.category === activeMenuCategory ? '' : 'none';
+  });
+}
+
 function buildMenuTab() {
-  const html = '<div id="menu-result"></div>' + MENU_ACTIONS.map(category =>
-    `<div class="menu-category"><h2>${escapeHTML(category.category)}</h2>` +
+  activeMenuCategory = MENU_ACTIONS[0].category;
+  const panelsHTML = MENU_ACTIONS.map(category =>
+    `<div class="menu-category-panel" data-category="${escapeHTML(category.category)}">` +
     category.items.map(menuItemRowHTML).join('') + '</div>'
   ).join('');
-  document.getElementById('menu-container').innerHTML = html;
+  document.getElementById('menu-container').innerHTML =
+    '<div id="menu-result"></div>' + renderMenuSubTabBar() + panelsHTML;
+  document.querySelectorAll('#menu-container .menu-category-panel').forEach(panel => {
+    panel.style.display = panel.dataset.category === activeMenuCategory ? '' : 'none';
+  });
   refreshMenuLists();
+  startMenuListsPolling();
+}
+
+// The dropdown lists (pieces/samples/scenes/tracks/...) can change from something other than
+// this tab's own actions — the terminal, another browser tab, another jam-session participant
+// saving a scene, etc. — so a one-shot refresh right after this tab's own actions isn't
+// enough. Polled independently from (and much slower than) the `/state` ~250ms tick used by
+// every other tab, since `refreshMenuLists` only ever repaints `<select>` options in place
+// (never touches text/textarea input, see its own doc comment) — safe to run in the
+// background for as long as this tab stays open. Stopped when leaving the tab (`refresh()`'s
+// non-menu branch) purely to avoid pointless polling while nobody's looking at it.
+let menuListsPollTimer = null;
+function startMenuListsPolling() {
+  stopMenuListsPolling();
+  menuListsPollTimer = setInterval(refreshMenuLists, 2000);
+}
+function stopMenuListsPolling() {
+  if (menuListsPollTimer) { clearInterval(menuListsPollTimer); menuListsPollTimer = null; }
 }
 
 function menuItemByAction(action) {
@@ -1005,11 +1054,20 @@ function renderTabBar() {
   return '<div class="tab-bar">' +
     `<a class="tab${activeTab === 'run' ? ' active' : ''}" onclick="setTab('run')">Run</a>` +
     `<a class="tab${activeTab === 'scene' ? ' active' : ''}" onclick="setTab('scene')">Scene</a>` +
-    `<a class="tab${activeTab === 'menu' ? ' active' : ''}" onclick="setTab('menu')">Menu</a>` +
+    `<a class="tab${activeTab === 'menu' ? ' active' : ''}" onclick="setTab('menu')">Commandes</a>` +
     `<a class="tab${activeTab === 'infos' ? ' active' : ''}" onclick="setTab('infos')">Infos</a>` +
     '</div>';
 }
-function setTab(tab) { activeTab = tab; menuBuilt = false; refresh(); }
+function setTab(tab) {
+  // Re-clicking the tab that's already active must be a no-op — without this guard, clicking
+  // "Commandes" while already on it would force `menuBuilt = false` below and rebuild the
+  // whole tab from scratch on the next `refresh()`, wiping any in-progress input for no reason.
+  if (tab === activeTab) return;
+  if (activeTab === 'menu') stopMenuListsPolling(); // leaving the tab — no point polling unseen
+  activeTab = tab;
+  menuBuilt = false;
+  refresh();
+}
 
 async function refresh() {
   // The "Menu" tab never touches `/state` at all (see `buildMenuTab`'s own doc comment) — its
