@@ -37,6 +37,11 @@ public struct WebConsoleState: Codable {
     /// (not gated behind server mode), like every other top-level field here — `clients` is
     /// just empty outside `.server`.
     var scene: WebConsoleSceneState
+    /// The active UI language ("fr"|"en"|"de") — see `ImprovSession.currentLanguage`. Sent on
+    /// every poll (not just once), same reasoning as `palette`: a language change made via the
+    /// terminal must be visible in an already-open browser tab within one refresh cycle, no
+    /// reload needed.
+    var language: String
 }
 
 /// See `WebConsoleState.scene`'s doc comment.
@@ -250,4 +255,6 @@ struct VirtualKeyboardStateResponse: Codable {
     var palette: [String]
     /// See `WebConsoleState.paletteTextColors`'s doc comment.
     var paletteTextColors: [String]
+    /// See `WebConsoleState.language`'s doc comment.
+    var language: String
 }

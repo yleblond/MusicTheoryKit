@@ -8,6 +8,7 @@ import RecognitionEngine
 @testable import NetEngine
 @testable import SoundTrackModel
 @testable import WebConsole
+import Localization
 import Foundation
 
 // Mirrors the same helper in Tests/AppCoreTests/ImprovSessionTests.swift — compares by
@@ -3947,6 +3948,68 @@ testDominantFrequenciesReturnsEmptyForSilence()
 testDominantFrequenciesRespectsMaxPeaks()
 testDominantFrequenciesMergesPeaksCloserThanMinSemitoneSeparation()
 testDominantFrequencyMatchesFirstOfDominantFrequencies()
+
+// MARK: - Localization (FR/EN/DE UI text) — mirrors Tests/AppCoreTests, no XCTest equivalent yet
+
+func testEveryL10nKeyHasAllThreeLanguages() {
+    for key in L10nKey.allCases {
+        for language in AppLanguage.allCases {
+            let value = L10n.string(key, language)
+            checks += 1
+            if value == key.rawValue {
+                failures += 1
+                print("FAIL [L10nKey completeness]: \(key.rawValue) has no \(language.rawValue) translation")
+            }
+        }
+    }
+}
+
+func testLoadOrCreateLanguageSettingDefaultsToFrenchAndRoundTrips() {
+    do {
+        let session = ImprovSession()
+        try session.start()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let path = folder.appendingPathComponent("language.json").path
+
+        try session.loadOrCreateLanguageSetting(fromJSONFile: path)
+        check(session.currentLanguage, .fr, "loadOrCreateLanguageSetting defaults to French on a fresh file")
+        checks += 1
+        if !FileManager.default.fileExists(atPath: path) {
+            failures += 1
+            print("FAIL [loadOrCreateLanguageSetting creates language.json]: file missing")
+        }
+
+        // `setLanguage` only rewrites language.json once `settingsFolder` is set (mirrors
+        // `selectColorPalette`'s "in-memory only" default, but this one also persists on change).
+        try session.setSettingsFolder(folder.path)
+        try session.setLanguage(.de)
+        let reloaded = ImprovSession()
+        try reloaded.start()
+        try reloaded.loadLanguageSetting(fromJSONFile: path)
+        check(reloaded.currentLanguage, .de, "language.json round-trips the selected language across a fresh ImprovSession")
+    } catch {
+        failures += 1
+        print("FAIL [loadOrCreateLanguageSetting default+roundtrip]: threw \(error)")
+    }
+}
+
+func testSetLanguageUpdatesCurrentLanguageAndWebConsoleState() {
+    do {
+        let session = ImprovSession()
+        try session.start()
+        try session.setLanguage(.de)
+        check(session.currentLanguage, .de, "setLanguage(.de) updates currentLanguage")
+        check(session.buildWebConsoleState().language, "de", "buildWebConsoleState().language reflects the current language")
+    } catch {
+        failures += 1
+        print("FAIL [setLanguage updates state]: threw \(error)")
+    }
+}
+
+testEveryL10nKeyHasAllThreeLanguages()
+testLoadOrCreateLanguageSettingDefaultsToFrenchAndRoundTrips()
+testSetLanguageUpdatesCurrentLanguageAndWebConsoleState()
 
 print("\(checks) checks, \(failures) failures")
 if failures > 0 {

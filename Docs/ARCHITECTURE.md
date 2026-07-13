@@ -53,6 +53,12 @@ AudioEngine (lecture Piece + SoundTrack, micro/FFT)   MIDIEngine (CoreMIDI)   Ne
 `SanityChecks` (exécutable séparé) dépend de tout, pour pouvoir exécuter tous les cas de
 test manuellement.
 
+`Localization` (nouvelle cible, aucune dépendance — absente du schéma ci-dessus par souci de
+lisibilité) est utilisée par `AppCore` **et** par `WebConsole` : seul moyen de partager une
+table de traduction entre les deux sans inverser leur relation de dépendance (`AppCore` →
+`WebConsole`, jamais l'inverse) — voir §Localisation multilingue plus bas. `JamShack` et
+`SanityChecks` en dépendent aussi.
+
 ---
 
 ## MusicTheoryKit — théorie musicale
@@ -950,6 +956,89 @@ Une seule classe, `@Observable`, `@unchecked Sendable`, qui détient tout l'éta
 l'application et toute la logique — indépendante de toute présentation. Le CLI ne fait que
 l'appeler et lire son état ; une future interface SwiftUI pourrait s'y brancher directement.
 
+### Localisation multilingue (FR/EN/DE) — module `Localization`
+
+Nouvelle cible SwiftPM, **zéro dépendance**, ajoutée à `Package.swift`. Elle a dû devenir un
+module à part plutôt qu'un simple ajout à `AppCore` : `WebConsole` n'a elle-même aucune
+dépendance, et c'est `AppCore` qui dépend de `WebConsole` (jamais l'inverse) — loger la table
+de traduction partagée dans `AppCore` l'aurait rendue inatteignable depuis la génération du JS
+embarqué de `WebConsole`. `AppCore` et `WebConsole` dépendent désormais toutes les deux de
+`Localization` ; `JamShack` et `SanityChecks` aussi.
+
+- **`Sources/Localization/Localization.swift`** : `AppLanguage` (`.fr`/`.en`/`.de`, `Codable`,
+  `CaseIterable`), `LanguageSettingFile` (`Codable`, forme sur disque du singleton), `L10nKey`
+  (environ 300 cas, un par chaîne d'UI statique traduisible, groupés par zone fonctionnelle sous
+  des commentaires `MARK`), `L10n.string(_:_:)`/`L10n.string(_:_:_:CVarArg...)` (lecture +
+  formatage, retombe sur le français puis sur le nom brut de la clé si la traduction manque), et
+  `L10n.jsTableLiteral` — une propriété calculée qui rend toute la table sous forme de littéral
+  d'objet JS (`const L10N = {...}`), utilisée pour embarquer LA MÊME donnée FR/EN/DE dans le JS
+  client de la console web et du clavier virtuel par interpolation de chaîne Swift : les
+  traductions ne sont écrites qu'une seule fois.
+- **`Sources/Localization/L10nTable.swift`** : le dictionnaire `[L10nKey: [AppLanguage:
+  String]]` lui-même — la seule source de vérité. Les entrées françaises sont le texte
+  d'origine de l'auteur (inchangé) ; anglais/allemand sont des traductions.
+
+**Persistance** (`AppCore/ImprovSession.swift`) : `currentLanguage: AppLanguage`, persistée
+(contrairement au choix de palette ci-dessus, qui repart de zéro à chaque relance).
+`loadLanguageSetting(fromJSONFile:)`/`loadOrCreateLanguageSetting(fromJSONFile:)` reproduisent
+exactement le patron déjà en place pour `ColorPalette` (charge si présent, crée sinon).
+`setLanguage(_:)` met à jour l'état en mémoire et réécrit aussitôt `Settings/language.json` si
+un dossier de réglages est défini. Câblée dans `setSettingsFolder(_:)` juste après l'appel
+existant à `loadOrCreateColorPalettes` — donc chargée automatiquement au lancement via l'appel
+déjà existant à `session.setSettingsFolder(...)` (`Sources/JamShack/main.swift`), sans nouveau
+point d'entrée. Une installation déjà existante sans `Settings/language.json` en reçoit un
+transparent au premier lancement après cette livraison, par défaut en français.
+
+**Commande terminal** : `language fr|en|de` (aiguillage de `executeCommand`,
+`Sources/JamShack/main.swift`), plus 3 nouvelles entrées dans le menu **JamShack** (« Langue:
+Francais/Anglais/Allemand »). `menuCategories` (un `let` auparavant) devient
+`buildMenuCategories(for lang: AppLanguage) -> [MenuCategory]`, appelée à chaque tick de
+redessin (`renderConsoleFrame`, ~100ms) — un changement de langue est donc visible en un seul
+tick, sans redémarrage.
+
+**Propagation en direct côté web** (`WebConsole/StaticAssets.swift`) : le JS embarqué reçoit une
+table `const L10N = {...}` (générée depuis `Localization` via `\(L10n.jsTableLiteral)`), un
+helper `t(key, ...args)` et une variable JS mutable `currentLanguage` — exactement le même
+schéma déjà en place pour `PITCH_CLASS_COLORS`/`PITCH_CLASS_TEXT_COLORS` (palette, voir
+ci-dessus) : le serveur l'envoie à chaque sondage, le client écrase une globale mutable à chaque
+tick. Nouveau champ `language` sur `WebConsoleState` (`AppCore/WebConsoleState.swift`) et sur
+`WebConsoleMenuLists`, envoyé à chaque `GET /state` et `GET /menu-lists`. **Cas particulier de
+l'onglet Commandes** (`MENU_ACTIONS`) : construit une seule fois par visite d'onglet, ne touche
+jamais `/state` (design volontaire préexistant, pour préserver un champ en cours de saisie) —
+c'est donc `/menu-lists` (déjà sondé toutes les 2s quel que soit l'onglet actif) qui lui permet
+de détecter un changement de langue et de forcer `menuBuilt = false`, reconstruit dans la
+nouvelle langue au tick suivant. Les entrées de `MENU_ACTIONS` portent désormais des clés
+`labelKey`/`placeholderKey`/`categoryLabelKey` (pas du texte littéral) pour qu'une
+reconstruction relise vraiment la langue courante.
+
+**Clavier virtuel** (`WebConsole/VirtualKeyboardAssets.swift`) : même mécanisme `L10N`/`t()`/
+`currentLanguage`. Comme tout le squelette de cette page (barre d'onglets, indications,
+en-têtes) est construit une seule fois et jamais revisité (garde
+`!document.getElementById('keyboard-container')` préexistante), un changement de langue force
+une reconstruction complète : le `innerHTML` de `#app` est vidé et `keyboardBuilt`
+réinitialisé, pour que le piano lui-même se redessine aussi.
+
+**Périmètre** : uniquement le texte d'UI statique (titres/items de menu, en-têtes d'écran/de
+section, noms d'onglets, libellés de champ, invites/placeholders statiques). Les messages
+dynamiques/interpolés du journal de session et des confirmations d'action restent en français
+(différé). Les noms/la syntaxe des commandes (ex. `scene-role-attach`) ne sont **jamais**
+traduits. Le texte de référence de `printHelp()` reste aussi en français (différé — nécessite
+d'abord de le restructurer en table de données, une tâche future séparée, non commencée).
+« JamShack »/« Jam Session » (noms propres) et le libellé d'onglet « Run » de la console web
+restent littéraux/non traduits dans les trois langues.
+
+**Vérifié** : `swift run SanityChecks` (1480 checks, 0 échec, dont 3 nouveaux : chaque
+`L10nKey` a bien ses 3 langues renseignées, le chargement/création de `language.json` retombe
+sur le français et fait un aller-retour correct, `setLanguage` met à jour à la fois
+`currentLanguage` et `buildWebConsoleState().language`). Captures d'écran Chrome headless
+(même technique déjà établie dans ce projet — extraire le HTML/JS embarqué des constantes
+Swift, simuler `fetch`/`prompt`, capturer) : barre d'onglets/plan de scène/onglet Commandes de
+la console web rendus correctement en allemand, un changement de langue en direct pendant que
+l'onglet Commandes était affiché déclenchant réellement une reconstruction (langue simulée
+changée en cours de session, ré-étiquetage de l'onglet observé de l'allemand vers l'anglais), et
+les onglets Clavier/Infos du clavier virtuel, la ligne d'identité et le texte d'indication
+rendus correctement en anglais.
+
 ### Dossiers de travail : Settings / User / Library
 
 Trois racines, à côté de `MusicTheoryKit/`, chacune couvrant un seul type de contenu :
@@ -1624,7 +1713,7 @@ Exécutable qui rejoue à la main chaque cas de test des vrais fichiers `XCTest`
 (`check`/`checkNil`), pour compenser l'absence d'Xcode. **Toujours mettre à jour ce fichier
 en même temps que tout nouveau test** — c'est le seul moyen de vérifier que le code
 fonctionne dans cet environnement. Se lance avec `swift run SanityChecks` depuis
-`MusicTheoryKit/`. Compteur de vérifications à jour : **540 checks, 0 échec**, stable sur
+`MusicTheoryKit/`. Compteur de vérifications à jour : **1480 checks, 0 échec**, stable sur
 plusieurs exécutions répétées.
 
 ## Vérification/tests
@@ -1671,6 +1760,11 @@ swift run JamShack         # lance l'application
   pistes enregistrées à travers un seul `SamplerUnit`, pas un timbre par piste d'origine.
 - **Pas encore de "enregistrer une SoundTrack pendant qu'un Piece joue"** : demandé par
   l'utilisateur mais explicitement reporté ("Eventuellement, plus tard") — non implémenté.
+- **Localisation multilingue : texte d'UI statique seulement** (voir §Localisation
+  multilingue) — les messages dynamiques du journal de session et des confirmations d'action,
+  ainsi que le texte de `help`, restent en français pour l'instant. Aucune gestion du pluriel
+  par langue non plus (chaque libellé reste une chaîne fixe, pas de règles grammaticales par
+  nombre).
 
 ## Suite prévue (feuille de route)
 

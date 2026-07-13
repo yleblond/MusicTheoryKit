@@ -18,9 +18,15 @@ let package = Package(
         .library(name: "LLMEngine", targets: ["LLMEngine"]),
         .library(name: "NetEngine", targets: ["NetEngine"]),
         .library(name: "WebConsole", targets: ["WebConsole"]),
+        .library(name: "Localization", targets: ["Localization"]),
     ],
     targets: [
         .target(name: "MusicTheoryKit"),
+        // FR/EN/DE UI text (`AppLanguage`, `L10nKey`, `L10n.string`) — zero dependencies, like
+        // `WebConsole`/`NetEngine`, specifically so both `AppCore` AND `WebConsole` can depend on
+        // it without `WebConsole` ever depending on `AppCore` (the reverse of the existing
+        // dependency direction below) just to reach the shared translation table.
+        .target(name: "Localization"),
         .testTarget(name: "MusicTheoryKitTests", dependencies: ["MusicTheoryKit"]),
         .target(name: "PieceModel", dependencies: ["MusicTheoryKit"]),
         .testTarget(name: "PieceModelTests", dependencies: ["PieceModel"]),
@@ -44,13 +50,13 @@ let package = Package(
         // Hand-rolled HTTP/1.1 server on Network.framework, serving the browser-based "Console
         // Web" — same "no third-party dependency" style as NetEngine, but HTTP instead of the
         // length-prefixed JSON framing. Deliberately knows nothing about ImprovSession/AppCore.
-        .target(name: "WebConsole"),
+        .target(name: "WebConsole", dependencies: ["Localization"]),
         .testTarget(name: "WebConsoleTests", dependencies: ["WebConsole"]),
         // Presentation-agnostic app state/behavior: a CLI drives it today, a future
         // SwiftUI front-end can bind to the same `ImprovSession` instance later.
-        .target(name: "AppCore", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "AudioEngine", "MIDIEngine", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole"]),
+        .target(name: "AppCore", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "AudioEngine", "MIDIEngine", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole", "Localization"]),
         .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit", "LLMEngine", "NetEngine", "SoundTrackModel"]),
-        .executableTarget(name: "JamShack", dependencies: ["AppCore"]),
-        .executableTarget(name: "SanityChecks", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "AudioEngine", "MIDIEngine", "AppCore", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole"]),
+        .executableTarget(name: "JamShack", dependencies: ["AppCore", "Localization"]),
+        .executableTarget(name: "SanityChecks", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "AudioEngine", "MIDIEngine", "AppCore", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole", "Localization"]),
     ]
 )

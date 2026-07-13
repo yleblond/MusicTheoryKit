@@ -1,5 +1,6 @@
 import Foundation
 import AppCore
+import Localization
 import MusicTheoryKit
 import PieceModel
 
@@ -52,7 +53,7 @@ try? session.setPromptsFolder(userFolder.appendingPathComponent("Composition IA"
 if !session.sceneFiles.isEmpty {
     print("\nScenes disponibles dans \(session.sceneFolder ?? "?"):")
     for (index, name) in session.sceneFiles.enumerated() { print("  \(index + 1). \(name)") }
-    if let choice = promptLine("Charger quelle scene au demarrage ? (numero, ou vide pour aucune): "), !choice.isEmpty {
+    if let choice = promptLine(L10n.string(.promptChargerSceneDemarrage, session.currentLanguage)), !choice.isEmpty {
         do {
             if let index = Int(choice) {
                 try session.loadScene(atIndex: index - 1)
@@ -172,21 +173,22 @@ func printHelp() {
 /// `show-piece` (plain `print`) and the `config` screen (redrawn-in-place `line`), so the
 /// two never drift apart.
 func pieceDetailLines() -> [String] {
+    let lang = session.currentLanguage
     guard let piece = session.piece else {
-        return [TextStyle.placeholder("(aucun morceau charge)")]
+        return [TextStyle.placeholder(L10n.string(.placeholderAucunMorceauCharge, lang))]
     }
     var lines: [String] = []
     let keyName = ScaleLibrary.byID(piece.key.scaleID)?.popularName ?? piece.key.scaleID
     lines.append(TextStyle.heading(piece.title) + (piece.composer.map { " — \($0)" } ?? ""))
-    lines.append(TextStyle.field("Tempo", "\(Int(piece.tempoBPM)) BPM"))
-    lines.append(TextStyle.field("Tonalite", "\(PitchClass(piece.key.tonic).name()) \(keyName)"))
+    lines.append(TextStyle.field(L10n.string(.fieldTempo, lang), "\(Int(piece.tempoBPM)) BPM"))
+    lines.append(TextStyle.field(L10n.string(.fieldTonalite, lang), "\(PitchClass(piece.key.tonic).name()) \(keyName)"))
     if piece.sections.isEmpty {
-        lines.append(TextStyle.placeholder("(pas encore de section)"))
+        lines.append(TextStyle.placeholder(L10n.string(.placeholderAucuneSectionEncore, lang)))
     }
     for (sectionIndex, section) in piece.sections.enumerated() {
         let modeName = ScaleLibrary.byID(section.mode.scaleID)?.popularName ?? section.mode.scaleID
         lines.append("")
-        lines.append(TextStyle.heading("Section \(sectionIndex + 1): \(section.name)") + " (\(section.lengthInMeasures) mesures, \(PitchClass(section.mode.tonic).name()) \(modeName))")
+        lines.append(TextStyle.heading(L10n.string(.formatSection, lang, sectionIndex + 1, section.name)) + " (\(section.lengthInMeasures) mesures, \(PitchClass(section.mode.tonic).name()) \(modeName))")
         let chordInstrumentText = section.chordInstrument.map { "'\($0)'" } ?? "par defaut"
         lines.append("  accords (instrument \(chordInstrumentText)):")
         for chordEvent in section.chordProgression.sorted(by: { $0.measure < $1.measure }) {
@@ -206,28 +208,30 @@ func printPieceDetail() {
 }
 
 func printSoundTrackDetail() {
+    let lang = session.currentLanguage
     guard let soundTrack = session.currentSoundTrack else {
-        print(TextStyle.placeholder("(aucune soundtrack enregistree ou chargee)"))
+        print(TextStyle.placeholder(L10n.string(.placeholderAucuneSoundtrack, lang)))
         return
     }
     print(TextStyle.heading(soundTrack.title))
-    print(TextStyle.field("Fichier", session.currentSoundTrackFilePath ?? TextStyle.placeholder("(jamais sauvegardee)")))
-    print(TextStyle.field("Duree", String(format: "%.1fs", soundTrack.durationSeconds)))
-    print(TextStyle.field("Evenements", "\(soundTrack.events.count)"))
-    print(TextStyle.field("Pistes", soundTrack.trackIDs.sorted().joined(separator: ", ")))
+    print(TextStyle.field(L10n.string(.fieldFichier, lang), session.currentSoundTrackFilePath ?? TextStyle.placeholder(L10n.string(.placeholderJamaisSauvegardee, lang))))
+    print(TextStyle.field(L10n.string(.fieldDuree, lang), String(format: "%.1fs", soundTrack.durationSeconds)))
+    print(TextStyle.field(L10n.string(.fieldEvenements, lang), "\(soundTrack.events.count)"))
+    print(TextStyle.field(L10n.string(.fieldPistes, lang), soundTrack.trackIDs.sorted().joined(separator: ", ")))
 }
 
 /// Everything the "Decrire le morceau..." wizard collects before composing — title,
 /// description (`sourceText`), and style indications — shown together so it's easy to
 /// check what's about to be sent before actually calling `compose`.
 func printCompositionDescription() {
-    print(TextStyle.field("Titre", session.compositionTitle ?? TextStyle.placeholder("(aucun)")))
-    print(TextStyle.field("Indications", session.additionalCompositionInstructions ?? TextStyle.placeholder("(aucune)")))
+    let lang = session.currentLanguage
+    print(TextStyle.field(L10n.string(.fieldTitre, lang), session.compositionTitle ?? TextStyle.placeholder(L10n.string(.placeholderAucun, lang))))
+    print(TextStyle.field(L10n.string(.fieldIndications, lang), session.additionalCompositionInstructions ?? TextStyle.placeholder(L10n.string(.placeholderAucune, lang))))
     if let sourceText = session.sourceText {
-        print(TextStyle.field("Description", ""))
+        print(TextStyle.field(L10n.string(.fieldDescription, lang), ""))
         print(sourceText)
     } else {
-        print(TextStyle.field("Description", TextStyle.placeholder("(aucune)")))
+        print(TextStyle.field(L10n.string(.fieldDescription, lang), TextStyle.placeholder(L10n.string(.placeholderAucune, lang))))
     }
 }
 
@@ -327,7 +331,7 @@ func noteNameWithOctave(_ pitch: Int) -> String {
 /// device problem: stays near 0) apart from "receiving audio, just no clear pitch in it"
 /// (clearly above 0) without guessing.
 func microphoneStatusText(_ track: TrackInfo) -> String {
-    guard track.isListening else { return TextStyle.placeholder("(coupee)") }
+    guard track.isListening else { return TextStyle.placeholder(L10n.string(.placeholderCoupee, session.currentLanguage)) }
     let level = String(format: "%.4f", track.microphoneInputLevel)
     guard !track.lastDetectedPitches.isEmpty else { return TextStyle.placeholder("(silence, niveau \(level))") }
     let notesText = track.lastDetectedPitches
@@ -354,7 +358,7 @@ func chordDisplayText(_ track: TrackInfo) -> String {
     if case .remote = track.id, let display = track.remoteChordDisplay {
         return display
     }
-    return TextStyle.placeholder("(aucun)")
+    return TextStyle.placeholder(L10n.string(.placeholderAucun, session.currentLanguage))
 }
 
 /// Same idea as `chordDisplayText`, for mode candidates.
@@ -372,7 +376,7 @@ func modesDisplayText(_ track: TrackInfo) -> String {
 /// `console`.
 func networkRoleText() -> String {
     switch session.networkRole {
-    case .standalone: return TextStyle.placeholder("(solo)")
+    case .standalone: return TextStyle.placeholder(L10n.string(.placeholderSolo, session.currentLanguage))
     case .server(let port): return "serveur sur le port \(port)"
     case .client(let description): return "connecte a \(description)"
     }
@@ -380,18 +384,19 @@ func networkRoleText() -> String {
 
 /// "(inactive)" / "http://localhost:<port>" — shared by `status`/`config`.
 func webConsoleStatusText() -> String {
-    session.webConsolePort.map { "http://localhost:\($0)" } ?? TextStyle.placeholder("(inactive)")
+    session.webConsolePort.map { "http://localhost:\($0)" } ?? TextStyle.placeholder(L10n.string(.placeholderInactive, session.currentLanguage))
 }
 
 func virtualKeyboardStatusText() -> String {
-    session.virtualKeyboardPort.map { "http://localhost:\($0)" } ?? TextStyle.placeholder("(inactif)")
+    session.virtualKeyboardPort.map { "http://localhost:\($0)" } ?? TextStyle.placeholder(L10n.string(.placeholderInactif, session.currentLanguage))
 }
 
 /// One line per track — shared by the `tracks` command and the Source/Reseau menus'
 /// prompts, so picking a track id to act on always shows the same up-to-date list first.
 func printTracks() {
-    print(TextStyle.field("Reseau", networkRoleText()))
-    print(TextStyle.field("Mode MIDI", session.midiFusionMode == .merged ? "fusionne" : "individuel"))
+    let lang = session.currentLanguage
+    print(TextStyle.field(L10n.string(.fieldReseau, lang), networkRoleText()))
+    print(TextStyle.field(L10n.string(.fieldModeMidi, lang), session.midiFusionMode == .merged ? "fusionne" : "individuel"))
     for track in session.tracks {
         var line = "  [\(trackIDText(track.id))] \(track.label)\(ownerSuffix(track)) — ecoute: \(TextStyle.flag(track.isListening))"
         if track.canHaveSound {
@@ -402,7 +407,7 @@ func printTracks() {
     }
     let unassigned = session.unassignedInstruments()
     if !unassigned.isEmpty {
-        print(TextStyle.placeholder("(\(unassigned.count) instrument(s) non attache(s) a un role de la scene active — voir 'scene-roles')"))
+        print(TextStyle.placeholder(L10n.string(.formatInstrumentsNonAttaches, lang, unassigned.count)))
     }
 }
 
@@ -433,6 +438,7 @@ func printTreeLine(_ text: String, ancestorIsLast: [Bool], isLast: Bool) {
 /// `ImprovSession.connectedClients()`'s doc comment for why that needs its own accessor rather
 /// than just scanning `tracks` for `.remote` entries).
 func printSceneTree() {
+    let lang = session.currentLanguage
     let isServer: Bool
     if case .server = session.networkRole { isServer = true } else { isServer = false }
     print("JamShack — mode: \(networkRoleText())")
@@ -443,28 +449,28 @@ func printSceneTree() {
     // declarative concept an instrument then gets attached to, not the other way around.
     // Mirrors the web console's own `renderSceneTree`, kept in sync by hand.
     if let scene = session.currentScene {
-        printTreeLine("Scene: \(scene.title)", ancestorIsLast: [], isLast: false)
+        printTreeLine("\(L10n.string(.labelSceneTree, lang))\(scene.title)", ancestorIsLast: [], isLast: false)
         if scene.roles.isEmpty {
-            printTreeLine(TextStyle.placeholder("(aucun role declare)"), ancestorIsLast: [false], isLast: true)
+            printTreeLine(TextStyle.placeholder(L10n.string(.placeholderAucunRoleDeclare, lang)), ancestorIsLast: [false], isLast: true)
         } else {
             for (index, role) in scene.roles.enumerated() {
-                let attachedText = role.attachedTrackID.flatMap { id in session.tracks.first { $0.id == id }?.label } ?? TextStyle.placeholder("(libre)")
+                let attachedText = role.attachedTrackID.flatMap { id in session.tracks.first { $0.id == id }?.label } ?? TextStyle.placeholder(L10n.string(.placeholderLibre, lang))
                 var line = "\(role.name) — \(attachedText)"
                 if let soundName = role.soundName { line += " [\(soundName)]" }
                 printTreeLine(line, ancestorIsLast: [false], isLast: index == scene.roles.count - 1)
             }
         }
     } else {
-        printTreeLine("Scene: \(TextStyle.placeholder("(aucune)"))", ancestorIsLast: [], isLast: false)
+        printTreeLine("\(L10n.string(.labelSceneTree, lang))\(TextStyle.placeholder(L10n.string(.placeholderAucune, lang)))", ancestorIsLast: [], isLast: false)
     }
 
     let localTracks = session.tracks.filter { track -> Bool in
         if case .remote = track.id { return false }
         return true
     }
-    printTreeLine("Instruments locaux", ancestorIsLast: [], isLast: false)
+    printTreeLine(L10n.string(.labelInstrumentsLocaux, lang), ancestorIsLast: [], isLast: false)
     if localTracks.isEmpty {
-        printTreeLine(TextStyle.placeholder("(aucun)"), ancestorIsLast: [false], isLast: true)
+        printTreeLine(TextStyle.placeholder(L10n.string(.placeholderAucun, lang)), ancestorIsLast: [false], isLast: true)
     } else {
         for (index, track) in localTracks.enumerated() {
             var line = "[\(trackIDText(track.id))] \(track.label) — ecoute: \(TextStyle.flag(track.isListening))"
@@ -476,14 +482,14 @@ func printSceneTree() {
         }
     }
 
-    printTreeLine("Console web: \(webConsoleStatusText())", ancestorIsLast: [], isLast: false)
-    printTreeLine("Clavier virtuel: \(virtualKeyboardStatusText())", ancestorIsLast: [], isLast: !isServer)
+    printTreeLine("\(L10n.string(.fieldConsoleWeb, lang)): \(webConsoleStatusText())", ancestorIsLast: [], isLast: false)
+    printTreeLine("\(L10n.string(.fieldClavierVirtuel, lang)): \(virtualKeyboardStatusText())", ancestorIsLast: [], isLast: !isServer)
 
     guard isServer else { return }
     let clients = session.connectedClients()
-    printTreeLine("Clients connectes (\(clients.count))", ancestorIsLast: [], isLast: true)
+    printTreeLine(L10n.string(.formatClientsConnectes, lang, clients.count), ancestorIsLast: [], isLast: true)
     if clients.isEmpty {
-        printTreeLine(TextStyle.placeholder("(aucun)"), ancestorIsLast: [true], isLast: true)
+        printTreeLine(TextStyle.placeholder(L10n.string(.placeholderAucun, lang)), ancestorIsLast: [true], isLast: true)
         return
     }
     for (index, client) in clients.enumerated() {
@@ -494,7 +500,7 @@ func printSceneTree() {
             return false
         }
         if clientTracks.isEmpty {
-            printTreeLine(TextStyle.placeholder("(aucun instrument encore)"), ancestorIsLast: [true, clientIsLast], isLast: true)
+            printTreeLine(TextStyle.placeholder(L10n.string(.labelAucunInstrumentEncore, lang)), ancestorIsLast: [true, clientIsLast], isLast: true)
         } else {
             for (trackIndex, track) in clientTracks.enumerated() {
                 let line = "[\(trackIDText(track.id))] \(track.label) — ecoute: \(TextStyle.flag(track.isListening))"
@@ -589,16 +595,16 @@ func resolvedSceneRoleID(_ text: String) -> SceneRole.ID? {
 /// prompting for a role.
 func printNumberedSceneRoles() {
     guard let roles = session.currentScene?.roles else {
-        print(TextStyle.placeholder("(aucune scene active — 'scene-new <titre>' pour en creer une)"))
+        print(TextStyle.placeholder(L10n.string(.placeholderAucuneSceneActive, session.currentLanguage)))
         return
     }
     if roles.isEmpty {
-        print(TextStyle.placeholder("(aucun role — 'scene-role-add <nom>' pour en ajouter un)"))
+        print(TextStyle.placeholder(L10n.string(.placeholderAucunRolePourEnAjouter, session.currentLanguage)))
         return
     }
     for (index, role) in roles.enumerated() {
         let attachedText = role.attachedTrackID.flatMap { id in session.tracks.first { $0.id == id }?.label }
-        var line = "  \(index + 1). \(role.name) — \(attachedText ?? TextStyle.placeholder("(libre)"))"
+        var line = "  \(index + 1). \(role.name) — \(attachedText ?? TextStyle.placeholder(L10n.string(.placeholderLibre, session.currentLanguage)))"
         if let soundName = role.soundName { line += " [\(soundName)]" }
         print(line)
     }
@@ -609,11 +615,12 @@ func printNumberedSceneRoles() {
 /// instrument, choose which role to take" for the interactive terminal case (`track <id> on`'s
 /// own case calls this right after starting the track).
 func promptClaimFreeSceneRoleIfNeeded(for trackID: TrackID) {
+    let lang = session.currentLanguage
     guard session.currentScene != nil, session.unassignedInstruments().contains(where: { $0.id == trackID }) else { return }
     print(TextStyle.placeholder("Cette piste n'est attachee a aucun role de la scene active."))
     let freeRoles = session.freeSceneRoles()
     if freeRoles.isEmpty {
-        guard let name = promptLine("Nom du nouveau role (vide pour ignorer): "), !name.isEmpty else { return }
+        guard let name = promptLine(L10n.string(.promptNomNouveauRole1, lang)), !name.isEmpty else { return }
         if let roleID = try? session.addSceneRole(name: name) {
             try? session.attachInstrument(trackID, toRole: roleID)
         }
@@ -621,9 +628,9 @@ func promptClaimFreeSceneRoleIfNeeded(for trackID: TrackID) {
     }
     for (index, role) in freeRoles.enumerated() { print("  \(index + 1). \(role.name)") }
     print("  n. Nouveau role...")
-    guard let choice = promptLine("Attacher a quel role (numero, 'n', ou vide pour ignorer): "), !choice.isEmpty else { return }
+    guard let choice = promptLine(L10n.string(.promptAttacherAQuelRole, lang)), !choice.isEmpty else { return }
     if choice.lowercased() == "n" {
-        guard let name = promptLine("Nom du nouveau role: "), !name.isEmpty else { return }
+        guard let name = promptLine(L10n.string(.promptNomNouveauRole2, lang)), !name.isEmpty else { return }
         if let roleID = try? session.addSceneRole(name: name) {
             try? session.attachInstrument(trackID, toRole: roleID)
         }
@@ -633,28 +640,29 @@ func promptClaimFreeSceneRoleIfNeeded(for trackID: TrackID) {
 }
 
 func printStatus() {
-    print(TextStyle.field("Piece", session.piece.map { $0.title } ?? TextStyle.placeholder("(aucun)")))
-    print(TextStyle.field("Fichier", session.currentPieceFilePath ?? TextStyle.placeholder("(jamais sauvegarde)")))
-    print(TextStyle.field("Playing", TextStyle.flag(session.isPlaying)))
-    print(TextStyle.field("Recording", TextStyle.flag(session.isRecording)))
-    print(TextStyle.field("Soundtrack", session.currentSoundTrack.map { $0.title } ?? TextStyle.placeholder("(aucune)")))
-    print(TextStyle.field("Playing (soundtrack)", TextStyle.flag(session.isPlayingSoundTrack)))
-    print(TextStyle.field("Console Web", webConsoleStatusText()))
-    print(TextStyle.field("Clavier virtuel", virtualKeyboardStatusText()))
-    print(TextStyle.field("Palette de couleur", session.activeColorPalette.name))
+    let lang = session.currentLanguage
+    print(TextStyle.field(L10n.string(.fieldPiece, lang), session.piece.map { $0.title } ?? TextStyle.placeholder(L10n.string(.placeholderAucun, lang))))
+    print(TextStyle.field(L10n.string(.fieldFichier, lang), session.currentPieceFilePath ?? TextStyle.placeholder(L10n.string(.placeholderJamaisSauvegarde, lang))))
+    print(TextStyle.field(L10n.string(.fieldPlaying, lang), TextStyle.flag(session.isPlaying)))
+    print(TextStyle.field(L10n.string(.fieldRecording, lang), TextStyle.flag(session.isRecording)))
+    print(TextStyle.field(L10n.string(.fieldSoundtrack, lang), session.currentSoundTrack.map { $0.title } ?? TextStyle.placeholder(L10n.string(.placeholderAucune, lang))))
+    print(TextStyle.field(L10n.string(.fieldPlayingSoundtrack, lang), TextStyle.flag(session.isPlayingSoundTrack)))
+    print(TextStyle.field(L10n.string(.fieldConsoleWeb, lang), webConsoleStatusText()))
+    print(TextStyle.field(L10n.string(.fieldClavierVirtuel, lang), virtualKeyboardStatusText()))
+    print(TextStyle.field(L10n.string(.fieldPaletteDeCouleur, lang), session.activeColorPalette.name))
     print()
     printTracks()
     print()
     for track in session.tracks where track.isListening {
         print(TextStyle.heading("[\(trackIDText(track.id))] \(track.label)\(ownerSuffix(track))"))
         if track.id == .microphone {
-            print(TextStyle.field("Micro", microphoneStatusText(track)))
+            print(TextStyle.field(L10n.string(.fieldMicro, lang), microphoneStatusText(track)))
             if track.microphoneInputLevel < 0.0005 {
                 print(TextStyle.placeholder("  (niveau quasi nul: le micro ne semble rien recevoir. Verifie qu'il n'est pas coupe/mute, que c'est le bon peripherique d'entree, et que ce terminal a la permission microphone dans Reglages Systeme > Confidentialite et securite > Microphone)"))
             }
         }
-        print(TextStyle.field("Chord", chordDisplayText(track)))
-        print(TextStyle.field("Modes", modesDisplayText(track)))
+        print(TextStyle.field(L10n.string(.fieldChord, lang), chordDisplayText(track)))
+        print(TextStyle.field(L10n.string(.fieldModes, lang), modesDisplayText(track)))
         print()
     }
 }
@@ -842,10 +850,11 @@ enum ConsoleScreenMode: CaseIterable {
     case guide
 
     var label: String {
+        let lang = session.currentLanguage
         switch self {
-        case .run: return "Run"
-        case .config: return "Config"
-        case .guide: return "Guide Musical"
+        case .run: return L10n.string(.tabRun, lang)
+        case .config: return L10n.string(.tabConfig, lang)
+        case .guide: return L10n.string(.tabGuideMusical, lang)
         }
     }
 }
@@ -859,22 +868,24 @@ func renderScreenTabs(_ mode: ConsoleScreenMode) -> String {
     let tabs = ConsoleScreenMode.allCases.map { candidate -> String in
         candidate == mode ? "\u{1B}[1;33m[\(candidate.label)]\u{1B}[0m" : "\u{1B}[2m\(candidate.label)\u{1B}[0m"
     }.joined(separator: "  ")
-    return "\u{1B}[2mEcran:\u{1B}[0m  \(tabs)"
+    return "\u{1B}[2m\(L10n.string(.labelEcranPrefix, session.currentLanguage))\u{1B}[0m  \(tabs)"
 }
 
 func renderConsoleFrame(mode: ConsoleScreenMode) {
+    let lang = session.currentLanguage
     var output = "\u{1B}[H"
     func line(_ text: String = "") {
         output += "\u{1B}[K" + text + "\n"
     }
     line(renderScreenTabs(mode))
+    let menuCategories = buildMenuCategories(for: lang)
     line(renderMenuBar(menuCategories))
     if let openIndex = openMenuIndex {
         for row in renderDropdown(menuCategories[openIndex]) { line(row) }
     } else {
         // Only shown while no menu is open — once a dropdown is on screen the controls are
         // self-evident, and the hint would just be one more thing to visually parse next to it.
-        line(TextStyle.placeholder("(lettre: ouvre un menu, fleches, Entree, Echap, Tab: change d'ecran, q: quitte l'ecran)"))
+        line(TextStyle.placeholder(L10n.string(.hintMenuControls, lang)))
     }
     line()
 
@@ -887,43 +898,43 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
     if openMenuIndex == nil {
         switch mode {
         case .config:
-            line(TextStyle.field("Piece", session.piece.map { $0.title } ?? TextStyle.placeholder("(aucun)")))
-            line(TextStyle.field("Fichier", session.currentPieceFilePath ?? TextStyle.placeholder("(jamais sauvegarde)")))
-            line(TextStyle.field("Playing", TextStyle.flag(session.isPlaying)))
-            line(TextStyle.field("Recording", TextStyle.flag(session.isRecording)))
-            line(TextStyle.field("Soundtrack", session.currentSoundTrack.map { $0.title } ?? TextStyle.placeholder("(aucune)")))
-            line(TextStyle.field("Reseau", networkRoleText()))
-            line(TextStyle.field("Console Web", webConsoleStatusText()))
-            line(TextStyle.field("Clavier virtuel", virtualKeyboardStatusText()))
-            line(TextStyle.field("Palette de couleur", session.activeColorPalette.name))
-            line(TextStyle.field("Mode MIDI", session.midiFusionMode == .merged ? "fusionne" : "individuel"))
+            line(TextStyle.field(L10n.string(.fieldPiece, lang), session.piece.map { $0.title } ?? TextStyle.placeholder(L10n.string(.placeholderAucun, lang))))
+            line(TextStyle.field(L10n.string(.fieldFichier, lang), session.currentPieceFilePath ?? TextStyle.placeholder(L10n.string(.placeholderJamaisSauvegarde, lang))))
+            line(TextStyle.field(L10n.string(.fieldPlaying, lang), TextStyle.flag(session.isPlaying)))
+            line(TextStyle.field(L10n.string(.fieldRecording, lang), TextStyle.flag(session.isRecording)))
+            line(TextStyle.field(L10n.string(.fieldSoundtrack, lang), session.currentSoundTrack.map { $0.title } ?? TextStyle.placeholder(L10n.string(.placeholderAucune, lang))))
+            line(TextStyle.field(L10n.string(.fieldReseau, lang), networkRoleText()))
+            line(TextStyle.field(L10n.string(.fieldConsoleWeb, lang), webConsoleStatusText()))
+            line(TextStyle.field(L10n.string(.fieldClavierVirtuel, lang), virtualKeyboardStatusText()))
+            line(TextStyle.field(L10n.string(.fieldPaletteDeCouleur, lang), session.activeColorPalette.name))
+            line(TextStyle.field(L10n.string(.fieldModeMidi, lang), session.midiFusionMode == .merged ? "fusionne" : "individuel"))
             line()
-            line(TextStyle.heading("Detail du morceau actif:"))
+            line(TextStyle.heading(L10n.string(.headingDetailMorceauActif, lang)))
             for row in pieceDetailLines() { line(row) }
-    
+
         case .run:
             let lastEventText = session.lastMIDIEvent.map { "\($0.kind == .noteOn ? "on " : "off")pitch=\($0.pitch) vel=\($0.velocity)" } ?? "-"
-            line(TextStyle.field("Dernier evt", lastEventText))
-    
+            line(TextStyle.field(L10n.string(.fieldDernierEvt, lang), lastEventText))
+
             let listeningTracks = session.tracks.filter { $0.isListening }
             if listeningTracks.isEmpty {
                 line()
-                line(TextStyle.placeholder("(aucune piste en ecoute — menu Scene pour en activer une)"))
+                line(TextStyle.placeholder(L10n.string(.placeholderAucunePisteEnEcoute, lang)))
             }
             for track in listeningTracks {
                 line()
                 line(TextStyle.heading("[\(trackIDText(track.id))] \(track.label)\(ownerSuffix(track))"))
                 if track.id == .microphone {
-                    line(TextStyle.field("Micro", microphoneStatusText(track)))
+                    line(TextStyle.field(L10n.string(.fieldMicro, lang), microphoneStatusText(track)))
                 } else if track.canHaveSound {
                     let soundText = TextStyle.flag(track.soundEnabled) + (track.instrumentName.map { " (\($0))" } ?? "")
-                    line(TextStyle.field("Son", soundText))
+                    line(TextStyle.field(L10n.string(.fieldSon, lang), soundText))
                 }
-                line(TextStyle.field("Chord", chordDisplayText(track)))
-                line(TextStyle.field("Modes", modesDisplayText(track)))
+                line(TextStyle.field(L10n.string(.fieldChord, lang), chordDisplayText(track)))
+                line(TextStyle.field(L10n.string(.fieldModes, lang), modesDisplayText(track)))
                 for row in renderTrackKeyboard(track) { line(row) }
             }
-    
+
             // Playback position + a keyboard for "what the composition is playing right now" —
             // only shown while actually playing, mirroring how each track's own fields/keyboard
             // above only appear while that track is listening.
@@ -931,11 +942,11 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
                 let timeline = session.playbackTimeline
                 let currentIndex = session.playbackCurrentChordIndex
                 let currentSegment = currentIndex.flatMap { timeline.indices.contains($0) ? timeline[$0] : nil }
-    
+
                 line()
-                line(TextStyle.heading("Deroule de la composition:"))
+                line(TextStyle.heading(L10n.string(.headingDerouleComposition, lang)))
                 if timeline.isEmpty {
-                    line(TextStyle.placeholder("(pas d'accord dans ce morceau)"))
+                    line(TextStyle.placeholder(L10n.string(.placeholderPasAccordMorceau, lang)))
                 } else {
                     let items = timeline.enumerated().map { index, event -> (display: String, plainWidth: Int) in
                         let name = "\(PitchClass(event.chord.root).name())\(event.chord.chordTemplateID)"
@@ -957,7 +968,7 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
                 let playbackHeld = session.playbackHeldPitches
     
                 line()
-                line(TextStyle.heading("Clavier compose, en cours de jeu (C3-B5):"))
+                line(TextStyle.heading(L10n.string(.headingClavierComposeEnCours, lang)))
                 for row in renderKeyboard(
                     startMIDI: 48,
                     octaveCount: 3,
@@ -981,7 +992,7 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
             if session.isPlayingSoundTrack {
                 let soundTrackHeld = session.soundTrackHeldPitches
                 line()
-                line(TextStyle.heading("Clavier soundtrack, en cours de jeu (C3-B5):"))
+                line(TextStyle.heading(L10n.string(.headingClavierSoundtrackEnCours, lang)))
                 for row in renderKeyboard(
                     startMIDI: 48, octaveCount: 3, blackZoneRows: 2, whiteZoneRows: 1,
                     colorFor: { pitch in soundTrackHeld.contains(pitch) ? KeyboardColor.heldNoChord : nil }
@@ -990,12 +1001,12 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
     
         case .guide:
             guard let currentGuide = session.currentGuide else {
-                line(TextStyle.placeholder("(aucune sequence de guide — menu Guide Musicaux)"))
+                line(TextStyle.placeholder(L10n.string(.placeholderAucuneSequenceGuide, lang)))
                 break
             }
-            line(TextStyle.heading("Sequence: \(currentGuide.title)"))
+            line(TextStyle.heading(L10n.string(.headingSequence, lang, currentGuide.title)))
             if currentGuide.steps.isEmpty {
-                line(TextStyle.placeholder("(sequence vide — menu Guide Musicaux > Ajouter un mode au guide musical)"))
+                line(TextStyle.placeholder(L10n.string(.placeholderSequenceVideGuide, lang)))
             } else {
                 let items = currentGuide.steps.enumerated().map { index, step -> (display: String, plainWidth: Int) in
                     let name = step.mode.resolve()?.displayName ?? "?"
@@ -1012,7 +1023,7 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
                !progression.isEmpty {
                 let name = currentGuide.steps[currentIndex].chordProgressionName
                 let chords = progression.map { $0.resolve()?.displayName ?? "?" }.joined(separator: " - ")
-                line(TextStyle.field(name.map { "Suite d'accords (\($0))" } ?? "Suite d'accords", chords))
+                line(TextStyle.field(name.map { L10n.string(.formatSuiteAccordsNamed, lang, $0) } ?? L10n.string(.fieldSuiteAccords, lang), chords))
             }
             line()
             guard let guideMode = session.currentGuideStepMode() else {
@@ -1021,9 +1032,9 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
                 // it now validates up front, but a hand-edited or older save file could still
                 // have one) — the two used to show the same misleading "not started" message.
                 if session.currentGuideStepIndex != nil {
-                    line(TextStyle.placeholder("(l'etape courante ne resout pas — tonique/gamme invalide dans le fichier)"))
+                    line(TextStyle.placeholder(L10n.string(.placeholderEtapeNeResoutPas, lang)))
                 } else {
-                    line(TextStyle.placeholder("(guide non demarre — barre d'espace, ou menu Guide Musicaux > Demarrer le guide musical)"))
+                    line(TextStyle.placeholder(L10n.string(.placeholderGuideNonDemarre, lang)))
                 }
                 break
             }
@@ -1042,10 +1053,10 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
                 let next = activeIndex < orderedColumns.count - 1 ? orderedColumns[activeIndex + 1].modeName : nil
                 line("\u{25C2} \(previous ?? "—") — [\(orderedColumns[activeIndex].modeName ?? "?")] — \(next ?? "—") \u{25B8}")
             } else {
-                line(TextStyle.placeholder("(roue non disponible pour cette famille de gamme)"))
+                line(TextStyle.placeholder(L10n.string(.placeholderRoueNonDisponible, lang)))
             }
             line()
-            line(TextStyle.heading("Clavier (fleches gauche/droite: etape precedente/suivante):"))
+            line(TextStyle.heading(L10n.string(.headingClavierGuide, lang)))
             let guideHeldPitches = Set(session.tracks.filter(\.isListening).flatMap(\.heldPitches))
             for row in renderKeyboard(
                 startMIDI: 48, octaveCount: 3, blackZoneRows: 2, whiteZoneRows: 1,
@@ -1114,7 +1125,7 @@ func runConsoleScreen(mode initialMode: ConsoleScreenMode) {
                     triggerComputerKeyboardNote(pitch)
                 }
             default:
-                handleMenuKey(key, categories: menuCategories)
+                handleMenuKey(key, categories: buildMenuCategories(for: session.currentLanguage))
             }
         }
         renderConsoleFrame(mode: mode)
@@ -1291,7 +1302,7 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         guard !args.isEmpty else { print("usage: new-piece <titre>"); break }
         session.newPiece(title: args.joined(separator: " "))
     case "paste-text":
-        print("Colle ton texte (termine par une ligne vide) :")
+        print(L10n.string(.pastePasteText, session.currentLanguage))
         var lines: [String] = []
         while let textLine = readLine(), !textLine.isEmpty { lines.append(textLine) }
         session.setSourceText(lines.joined(separator: "\n"))
@@ -1384,12 +1395,12 @@ func executeCommand(_ command: String, _ args: [String]) throws {
     case "show-soundtrack-framing":
         print(session.currentSoundTrackFramingSentence())
     case "set-text-framing":
-        print("Colle la phrase de cadrage (termine par une ligne vide) :")
+        print(L10n.string(.pastePasteFraming, session.currentLanguage))
         var lines: [String] = []
         while let textLine = readLine(), !textLine.isEmpty { lines.append(textLine) }
         session.setTextFramingSentence(lines.joined(separator: "\n"))
     case "set-soundtrack-framing":
-        print("Colle la phrase de cadrage (termine par une ligne vide) :")
+        print(L10n.string(.pastePasteFraming, session.currentLanguage))
         var lines: [String] = []
         while let textLine = readLine(), !textLine.isEmpty { lines.append(textLine) }
         session.setSoundTrackFramingSentence(lines.joined(separator: "\n"))
@@ -1577,6 +1588,11 @@ func executeCommand(_ command: String, _ args: [String]) throws {
             print("usage: scene-role-remove <role>"); break
         }
         try session.removeSceneRole(roleID)
+    case "language":
+        guard let arg = args.first?.lowercased(), let lang = AppLanguage(rawValue: arg) else {
+            print("usage: language fr|en|de"); break
+        }
+        try session.setLanguage(lang)
     case "quit", "exit":
         stopAllTracks()
         drainLog()
@@ -1595,174 +1611,186 @@ func executeCommand(_ command: String, _ args: [String]) throws {
 /// the ambiguity this was added to fix — see the `ownerName` field threaded through
 /// `TrackInfo`/`RemoteTrackSnapshot`.
 func promptForPseudo() {
-    let text = promptLine("Ton pseudo (defaut '\(session.localClientName)'): ") ?? ""
+    let text = promptLine(L10n.string(.promptTonPseudo, session.currentLanguage, session.localClientName)) ?? ""
     if !text.isEmpty { session.localClientName = text }
 }
 
 /// The `console` screen's dropdown menus — each item just calls `executeCommand`, prompting
 /// first for a folder/name/choice where needed. Defined after `executeCommand` (which they
-/// all call) but before it's used in `runConsoleScreen`.
-nonisolated(unsafe) let menuCategories: [MenuCategory] = [
+/// all call) but before it's used in `runConsoleScreen`. A function of the current language
+/// (not a stored `let`) so every redraw tick rebuilds it from whatever `session.currentLanguage`
+/// currently is — see `L10n`/`L10nTable` (`AppCore`) for the FR/EN/DE text itself; this is the
+/// single source of truth the web console's `MENU_ACTIONS` also looks up into (see
+/// `WebConsole/StaticAssets.swift`), so a label never needs hand-copying per surface per
+/// language. Business-logic wiring (which action a label triggers, what it prompts for) is
+/// untouched — only the label/header/prompt STRINGS now come from `L10n.string` instead of a
+/// literal.
+func buildMenuCategories(for lang: AppLanguage) -> [MenuCategory] {
+    [
     // Mnemonic "S" (not the first letter) to avoid colliding with "Jam Session"'s "J" — same
     // trick already used for "IA" vs "Instrument", see renderMenuBar's doc comment.
-    MenuCategory(mnemonic: "S", title: "JamShack", items: [
-        MenuItem(label: "Infos") { try executeCommand("status", []) },
-        MenuItem(label: "Aide") { try executeCommand("help", []) },
+    MenuCategory(mnemonic: "S", title: L10n.string(.catJamShack, lang), items: [
+        MenuItem(label: L10n.string(.menuInfos, lang)) { try executeCommand("status", []) },
+        MenuItem(label: L10n.string(.menuAide, lang)) { try executeCommand("help", []) },
         MenuItem.separator,
-        MenuItem(label: "Choisir dossier de morceaux...") {
-            guard let folder = promptLine("Dossier de morceaux: "), !folder.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuChoisirDossierMorceaux, lang)) {
+            guard let folder = promptLine(L10n.string(.promptDossierMorceaux, lang)), !folder.isEmpty else { return }
             try executeCommand("pieces", [folder])
         },
-        MenuItem(label: "Choisir dossier de sons...") {
-            guard let folder = promptLine("Dossier de sons: "), !folder.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuChoisirDossierSons, lang)) {
+            guard let folder = promptLine(L10n.string(.promptDossierSons, lang)), !folder.isEmpty else { return }
             try executeCommand("samples", [folder])
         },
-        MenuItem(label: "Choisir dossier de soundtracks...") {
-            guard let folder = promptLine("Dossier de soundtracks: "), !folder.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuChoisirDossierSoundtracks, lang)) {
+            guard let folder = promptLine(L10n.string(.promptDossierSoundtracks, lang)), !folder.isEmpty else { return }
             try executeCommand("soundtracks", [folder])
         },
-        MenuItem(label: "Choisir dossier de guides musicaux...") {
-            guard let folder = promptLine("Dossier de guides musicaux: "), !folder.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuChoisirDossierGuides, lang)) {
+            guard let folder = promptLine(L10n.string(.promptDossierGuides, lang)), !folder.isEmpty else { return }
             try executeCommand("guides", [folder])
         },
-        MenuItem(label: "Choisir dossier de scenes...") {
-            guard let folder = promptLine("Dossier de scenes: "), !folder.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuChoisirDossierScenes, lang)) {
+            guard let folder = promptLine(L10n.string(.promptDossierScenes, lang)), !folder.isEmpty else { return }
             try executeCommand("scenes", [folder])
         },
-        MenuItem(label: "Choisir dossier de reglages...") {
-            guard let folder = promptLine("Dossier de reglages (palettes, progressions d'accords, connexions LLM): "), !folder.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuChoisirDossierReglages, lang)) {
+            guard let folder = promptLine(L10n.string(.promptDossierReglages, lang)), !folder.isEmpty else { return }
             try executeCommand("settings", [folder])
         },
-        MenuItem(label: "Choisir dossier de composition IA...") {
-            guard let folder = promptLine("Dossier de composition IA (sous-dossiers crees si absents): "), !folder.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuChoisirDossierCompositionIA, lang)) {
+            guard let folder = promptLine(L10n.string(.promptDossierCompositionIA, lang)), !folder.isEmpty else { return }
             try executeCommand("prompts", [folder])
         },
         MenuItem.separator,
-        MenuItem(label: "Choisir une connexion LLM...") {
+        MenuItem(label: L10n.string(.menuChoisirConnexionLLM, lang)) {
             guard !session.llmConnections.isEmpty else { print("Choisis d'abord un dossier de reglages (menu JamShack)."); return }
             for (index, name) in session.llmConnections.enumerated() { print("  \(index + 1). \(name)") }
-            guard let choice = promptLine("Utiliser quelle connexion (numero ou nom): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptUtiliserQuelleConnexion, lang)), !choice.isEmpty else { return }
             try executeCommand("use-llm", [choice])
         },
         MenuItem.separator,
-        MenuItem(label: "Choisir palette de couleur...") {
+        MenuItem(label: L10n.string(.menuChoisirPalette, lang)) {
             for (index, palette) in session.colorPalettes.enumerated() {
                 let marker = index == session.activeColorPaletteIndex ? " (active)" : ""
                 print("  \(index + 1). \(palette.name)\(marker)")
             }
-            guard let choice = promptLine("Utiliser quelle palette (numero ou nom): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptUtiliserQuellePalette, lang)), !choice.isEmpty else { return }
             try executeCommand("use-palette", [choice])
         },
         MenuItem.separator,
-        MenuItem(label: "Mode MIDI: fusionne") { try executeCommand("midi-mode", ["fusionne"]) },
-        MenuItem(label: "Mode MIDI: individuel") { try executeCommand("midi-mode", ["individuel"]) },
+        MenuItem(label: L10n.string(.menuMidiModeFusionne, lang)) { try executeCommand("midi-mode", ["fusionne"]) },
+        MenuItem(label: L10n.string(.menuMidiModeIndividuel, lang)) { try executeCommand("midi-mode", ["individuel"]) },
         MenuItem.separator,
-        MenuItem(label: "Demarrer la console web...") {
-            let portText = promptLine("Port (defaut 8080): ") ?? ""
+        MenuItem(label: L10n.string(.menuDemarrerConsoleWeb, lang)) {
+            let portText = promptLine(L10n.string(.promptPortDefaut8080, lang)) ?? ""
             try executeCommand("web-console", [portText.isEmpty ? "8080" : portText])
         },
-        MenuItem(label: "Arreter la console web") { try executeCommand("web-console", ["stop"]) },
+        MenuItem(label: L10n.string(.menuArreterConsoleWeb, lang)) { try executeCommand("web-console", ["stop"]) },
         MenuItem.separator,
-        MenuItem(label: "Demarrer le clavier virtuel...") {
-            let portText = promptLine("Port (defaut 8081): ") ?? ""
+        MenuItem(label: L10n.string(.menuDemarrerClavierVirtuel, lang)) {
+            let portText = promptLine(L10n.string(.promptPortDefaut8081, lang)) ?? ""
             try executeCommand("virtual-keyboard", [portText.isEmpty ? "8081" : portText])
         },
-        MenuItem(label: "Arreter le clavier virtuel") { try executeCommand("virtual-keyboard", ["stop"]) },
+        MenuItem(label: L10n.string(.menuArreterClavierVirtuel, lang)) { try executeCommand("virtual-keyboard", ["stop"]) },
         MenuItem.separator,
-        MenuItem(label: "Quitter") { try executeCommand("quit", []) },
+        MenuItem(label: L10n.string(.menuLangueFr, lang)) { try executeCommand("language", ["fr"]) },
+        MenuItem(label: L10n.string(.menuLangueEn, lang)) { try executeCommand("language", ["en"]) },
+        MenuItem(label: L10n.string(.menuLangueDe, lang)) { try executeCommand("language", ["de"]) },
+        MenuItem.separator,
+        MenuItem(label: L10n.string(.menuQuitter, lang)) { try executeCommand("quit", []) },
     ]),
-    MenuCategory(mnemonic: "n", title: "Scene", items: [
-        MenuItem(label: "Lister les instruments") { try executeCommand("scene-tree", []) },
-        MenuItem(label: "Activer un instrument...") {
+    MenuCategory(mnemonic: "n", title: L10n.string(.catScene, lang), items: [
+        MenuItem(label: L10n.string(.menuListerInstruments, lang)) { try executeCommand("scene-tree", []) },
+        MenuItem(label: L10n.string(.menuActiverInstrument, lang)) {
             printNumberedTracks()
-            guard let choice = promptLine("Activer quel instrument (numero ou id): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptActiverQuelInstrument, lang)), !choice.isEmpty else { return }
             let resolvedID = resolvedTrackIDText(choice)
             try executeCommand("track", [resolvedID, "on"])
-            let soundAnswer = promptLine("Activer aussi le son de cet instrument ? (o/n): ") ?? ""
+            let soundAnswer = promptLine(L10n.string(.promptActiverAussiSon, lang)) ?? ""
             if soundAnswer.lowercased().hasPrefix("o") {
                 try promptChooseSoundForTrack(resolvedID)
             }
         },
-        MenuItem(label: "Arreter un instrument...") {
+        MenuItem(label: L10n.string(.menuArreterInstrument, lang)) {
             printNumberedTracks()
-            guard let choice = promptLine("Arreter quel instrument (numero ou id): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptArreterQuelInstrument, lang)), !choice.isEmpty else { return }
             try executeCommand("track", [resolvedTrackIDText(choice), "off"])
         },
         MenuItem.separator,
-        MenuItem(label: "Activer le son d'un instrument...") {
+        MenuItem(label: L10n.string(.menuActiverSonInstrument, lang)) {
             printNumberedTracks()
-            guard let choice = promptLine("Activer le son de quel instrument (numero ou id): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptActiverSonQuelInstrument, lang)), !choice.isEmpty else { return }
             try executeCommand("track", [resolvedTrackIDText(choice), "son", "on"])
         },
-        MenuItem(label: "Desactiver le son d'un instrument...") {
+        MenuItem(label: L10n.string(.menuDesactiverSonInstrument, lang)) {
             printNumberedTracks()
-            guard let choice = promptLine("Desactiver le son de quel instrument (numero ou id): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptDesactiverSonQuelInstrument, lang)), !choice.isEmpty else { return }
             try executeCommand("track", [resolvedTrackIDText(choice), "son", "off"])
         },
         MenuItem.separator,
-        MenuItem(label: "Choisir un son pour un instrument...") {
+        MenuItem(label: L10n.string(.menuChoisirSonPourInstrument, lang)) {
             printNumberedTracks()
-            guard let trackChoice = promptLine("Pour quel instrument (numero ou id): "), !trackChoice.isEmpty else { return }
+            guard let trackChoice = promptLine(L10n.string(.promptPourQuelInstrument, lang)), !trackChoice.isEmpty else { return }
             try promptChooseSoundForTrack(resolvedTrackIDText(trackChoice))
         },
-        MenuItem.header("Fichier de scene"),
-        MenuItem(label: "Sauvegarder scene...") {
-            guard let name = promptLine("Nom de la scene: "), !name.isEmpty else { return }
+        MenuItem.header(L10n.string(.headerFichierDeScene, lang)),
+        MenuItem(label: L10n.string(.menuSauvegarderScene, lang)) {
+            guard let name = promptLine(L10n.string(.promptNomDeLaScene, lang)), !name.isEmpty else { return }
             try executeCommand("save-scene", [name])
         },
-        MenuItem(label: "Charger scene...") {
+        MenuItem(label: L10n.string(.menuChargerScene, lang)) {
             guard !session.sceneFiles.isEmpty else { print("Choisis d'abord un dossier de scenes (menu JamShack)."); return }
             for (index, name) in session.sceneFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let choice = promptLine("Charger quelle scene (numero ou nom): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptChargerQuelleScene, lang)), !choice.isEmpty else { return }
             try executeCommand("use-scene", [choice])
         },
-        MenuItem.header("Roles"),
-        MenuItem(label: "Nouvelle scene (roles)...") {
-            guard let title = promptLine("Titre de la scene: "), !title.isEmpty else { return }
+        MenuItem.header(L10n.string(.headerRoles, lang)),
+        MenuItem(label: L10n.string(.menuNouvelleScene, lang)) {
+            guard let title = promptLine(L10n.string(.promptTitreDeLaScene, lang)), !title.isEmpty else { return }
             try executeCommand("scene-new", [title])
         },
-        MenuItem(label: "Lister les roles") { try executeCommand("scene-roles", []) },
-        MenuItem(label: "Ajouter un role...") {
-            guard let name = promptLine("Nom du role: "), !name.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuListerRoles, lang)) { try executeCommand("scene-roles", []) },
+        MenuItem(label: L10n.string(.menuAjouterRole, lang)) {
+            guard let name = promptLine(L10n.string(.promptNomDuRole, lang)), !name.isEmpty else { return }
             try executeCommand("scene-role-add", [name])
         },
-        MenuItem(label: "Attacher un instrument a un role...") {
+        MenuItem(label: L10n.string(.menuAttacherInstrumentARole, lang)) {
             printNumberedSceneRoles()
-            guard let roleChoice = promptLine("Quel role (numero ou nom): "), !roleChoice.isEmpty else { return }
+            guard let roleChoice = promptLine(L10n.string(.promptQuelRole, lang)), !roleChoice.isEmpty else { return }
             printNumberedTracks()
-            guard let trackChoice = promptLine("Quel instrument (numero ou id): "), !trackChoice.isEmpty else { return }
+            guard let trackChoice = promptLine(L10n.string(.promptQuelInstrument, lang)), !trackChoice.isEmpty else { return }
             try executeCommand("scene-role-attach", [roleChoice, resolvedTrackIDText(trackChoice)])
         },
-        MenuItem(label: "Detacher un role...") {
+        MenuItem(label: L10n.string(.menuDetacherRole, lang)) {
             printNumberedSceneRoles()
-            guard let roleChoice = promptLine("Quel role (numero ou nom): "), !roleChoice.isEmpty else { return }
+            guard let roleChoice = promptLine(L10n.string(.promptQuelRole, lang)), !roleChoice.isEmpty else { return }
             try executeCommand("scene-role-detach", [roleChoice])
         },
-        MenuItem(label: "Choisir le son d'un role...") {
+        MenuItem(label: L10n.string(.menuChoisirSonDunRole, lang)) {
             printNumberedSceneRoles()
-            guard let roleChoice = promptLine("Quel role (numero ou nom): "), !roleChoice.isEmpty else { return }
+            guard let roleChoice = promptLine(L10n.string(.promptQuelRole, lang)), !roleChoice.isEmpty else { return }
             guard !session.sampleFiles.isEmpty else { print("Choisis d'abord un dossier de sons (menu JamShack)."); return }
             for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
-            let soundChoice = promptLine("Quel son (numero ou nom, vide pour aucun): ") ?? ""
+            let soundChoice = promptLine(L10n.string(.promptQuelSonVideAucun, lang)) ?? ""
             let soundName = soundChoice.isEmpty ? nil : (Int(soundChoice).flatMap { session.sampleFiles.indices.contains($0 - 1) ? session.sampleFiles[$0 - 1] : nil } ?? soundChoice)
             try executeCommand("scene-role-sound", soundName.map { [roleChoice, $0] } ?? [roleChoice])
         },
     ]),
-    MenuCategory(mnemonic: "G", title: "Guide Musicaux", items: [
-        MenuItem(label: "Voir le Guide Musical") { try executeCommand("guide", []) },
+    MenuCategory(mnemonic: "G", title: L10n.string(.catGuideMusicaux, lang), items: [
+        MenuItem(label: L10n.string(.menuVoirGuideMusical, lang)) { try executeCommand("guide", []) },
         MenuItem.separator,
-        MenuItem(label: "Nouveau guide musical...") {
-            guard let title = promptLine("Titre de la sequence: "), !title.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuNouveauGuideMusical, lang)) {
+            guard let title = promptLine(L10n.string(.promptTitreDeLaSequence, lang)), !title.isEmpty else { return }
             try executeCommand("guide-new", [title])
             // Keep prompting for one more step until the user leaves the tonic blank,
             // instead of a single add-then-back-to-menu round trip — building a sequence of
             // several modes otherwise means reopening this same menu item repeatedly.
             while true {
-                guard let tonicText = promptLine("Tonique (ex: D, F#, Bb ; vide pour terminer): "), !tonicText.isEmpty else { break }
+                guard let tonicText = promptLine(L10n.string(.promptTonique1, lang)), !tonicText.isEmpty else { break }
                 printNumberedScales()
-                guard let scaleText = promptLine("Id de gamme (numero ci-dessus, ou id ecrit, ex: ionian): "), !scaleText.isEmpty else { break }
+                guard let scaleText = promptLine(L10n.string(.promptIdGamme, lang)), !scaleText.isEmpty else { break }
                 printNumberedChordProgressionTemplates()
-                let progressionText = promptLine("Progression d'accords (numero, ou vide pour aucune): ") ?? ""
+                let progressionText = promptLine(L10n.string(.promptProgressionAccords, lang)) ?? ""
                 do {
                     try executeCommand("guide-add-mode", [tonicText, resolvedScaleID(scaleText), progressionText])
                 } catch {
@@ -1770,207 +1798,208 @@ nonisolated(unsafe) let menuCategories: [MenuCategory] = [
                 }
             }
         },
-        MenuItem(label: "Ajouter un mode au guide musical...") {
-            guard let tonicText = promptLine("Tonique (ex: D, F#, Bb): "), !tonicText.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuAjouterModeAuGuide, lang)) {
+            guard let tonicText = promptLine(L10n.string(.promptTonique2, lang)), !tonicText.isEmpty else { return }
             printNumberedScales()
-            guard let scaleText = promptLine("Id de gamme (numero ci-dessus, ou id ecrit, ex: ionian): "), !scaleText.isEmpty else { return }
+            guard let scaleText = promptLine(L10n.string(.promptIdGamme, lang)), !scaleText.isEmpty else { return }
             printNumberedChordProgressionTemplates()
-            let progressionText = promptLine("Progression d'accords (numero, ou vide pour aucune): ") ?? ""
+            let progressionText = promptLine(L10n.string(.promptProgressionAccords, lang)) ?? ""
             try executeCommand("guide-add-mode", [tonicText, resolvedScaleID(scaleText), progressionText])
         },
         MenuItem.separator,
-        MenuItem(label: "Charger un guide musical...") {
+        MenuItem(label: L10n.string(.menuChargerGuideMusical, lang)) {
             guard !session.guideFiles.isEmpty else { print("Choisis d'abord un dossier de guides musicaux."); return }
             for (index, name) in session.guideFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let choice = promptLine("Charger quelle sequence (numero ou nom): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptChargerQuelleSequence, lang)), !choice.isEmpty else { return }
             try executeCommand("use-guide", [choice])
         },
-        MenuItem(label: "Sauvegarder le guide musical") { try executeCommand("save-guide", []) },
-        MenuItem(label: "Sauvegarder le guide musical sous...") {
-            guard let name = promptLine("Nom de sauvegarde: "), !name.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuSauvegarderGuideMusical, lang)) { try executeCommand("save-guide", []) },
+        MenuItem(label: L10n.string(.menuSauvegarderGuideMusicalSous, lang)) {
+            guard let name = promptLine(L10n.string(.promptNomDeSauvegarde, lang)), !name.isEmpty else { return }
             try executeCommand("save-guide-as", [name])
         },
         MenuItem.separator,
-        MenuItem(label: "Demarrer le guide musical") { try executeCommand("guide-start", []) },
-        MenuItem(label: "Arreter le guide musical") { try executeCommand("guide-stop", []) },
+        MenuItem(label: L10n.string(.menuDemarrerGuideMusical, lang)) { try executeCommand("guide-start", []) },
+        MenuItem(label: L10n.string(.menuArreterGuideMusical, lang)) { try executeCommand("guide-stop", []) },
     ]),
-    MenuCategory(mnemonic: "E", title: "Enregistrement", items: [
-        MenuItem(label: "Demarrer un enregistrement...") {
+    MenuCategory(mnemonic: "E", title: L10n.string(.catEnregistrement, lang), items: [
+        MenuItem(label: L10n.string(.menuDemarrerEnregistrement, lang)) {
             try executeCommand("tracks", [])
-            let idsText = promptLine("Pistes a enregistrer (separees par un espace, vide = toutes celles en ecoute): ") ?? ""
+            let idsText = promptLine(L10n.string(.promptPistesAEnregistrer, lang)) ?? ""
             try executeCommand("record", ["start"] + idsText.split(separator: " ").map(String.init))
         },
-        MenuItem(label: "Arreter l'enregistrement") { try executeCommand("record", ["stop"]) },
-        MenuItem(label: "Voir l'enregistrement") { try executeCommand("show-soundtrack", []) },
-        MenuItem(label: "Jouer l'enregistrement") { try executeCommand("play-soundtrack", []) },
+        MenuItem(label: L10n.string(.menuArreterEnregistrement, lang)) { try executeCommand("record", ["stop"]) },
+        MenuItem(label: L10n.string(.menuVoirEnregistrement, lang)) { try executeCommand("show-soundtrack", []) },
+        MenuItem(label: L10n.string(.menuJouerEnregistrement, lang)) { try executeCommand("play-soundtrack", []) },
         MenuItem.separator,
-        MenuItem(label: "Charger un enregistrement...") {
+        MenuItem(label: L10n.string(.menuChargerEnregistrement, lang)) {
             guard !session.soundTrackFiles.isEmpty else { print("Choisis d'abord un dossier de soundtracks (menu JamShack)."); return }
             for (index, name) in session.soundTrackFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let choice = promptLine("Charger quel enregistrement (numero ou nom): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptChargerQuelEnregistrement, lang)), !choice.isEmpty else { return }
             try executeCommand("use-soundtrack", [choice])
         },
-        MenuItem(label: "Sauvegarder l'enregistrement") { try executeCommand("save-soundtrack", []) },
-        MenuItem(label: "Sauvegarder l'enregistrement sous...") {
-            guard let name = promptLine("Nom de sauvegarde: "), !name.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuSauvegarderEnregistrement, lang)) { try executeCommand("save-soundtrack", []) },
+        MenuItem(label: L10n.string(.menuSauvegarderEnregistrementSous, lang)) {
+            guard let name = promptLine(L10n.string(.promptNomDeSauvegarde, lang)), !name.isEmpty else { return }
             try executeCommand("save-soundtrack-as", [name])
         },
         MenuItem.separator,
-        MenuItem(label: "Composer un morceau a partir de l'enregistrement...") {
-            let titleText = promptLine("Nom du morceau (vide = laisser l'IA choisir): ") ?? ""
-            let countText = promptLine("Combien de candidats (defaut 1): ") ?? ""
+        MenuItem(label: L10n.string(.menuComposerDepuisEnregistrement, lang)) {
+            let titleText = promptLine(L10n.string(.promptNomDuMorceauIA, lang)) ?? ""
+            let countText = promptLine(L10n.string(.promptCombienDeCandidats, lang)) ?? ""
             var cmdArgs = [countText.isEmpty ? "1" : countText]
             if !titleText.isEmpty { cmdArgs.append(titleText) }
             try executeCommand("compose-piece-from-soundtrack", cmdArgs)
         },
         MenuItem.separator,
-        MenuItem(label: "Voir la phrase de cadrage...") { try executeCommand("show-soundtrack-framing", []) },
-        MenuItem(label: "Modifier la phrase de cadrage...") { try executeCommand("set-soundtrack-framing", []) },
-        MenuItem(label: "Sauvegarder la phrase de cadrage...") {
-            guard let name = promptLine("Nom de sauvegarde de la phrase de cadrage: "), !name.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuVoirPhraseDeCadrage, lang)) { try executeCommand("show-soundtrack-framing", []) },
+        MenuItem(label: L10n.string(.menuModifierPhraseDeCadrage, lang)) { try executeCommand("set-soundtrack-framing", []) },
+        MenuItem(label: L10n.string(.menuSauvegarderPhraseDeCadrage, lang)) {
+            guard let name = promptLine(L10n.string(.promptNomSauvegardePhraseDeCadrage, lang)), !name.isEmpty else { return }
             try executeCommand("save-soundtrack-framing", [name])
         },
-        MenuItem(label: "Charger une phrase de cadrage...") {
+        MenuItem(label: L10n.string(.menuChargerPhraseDeCadrage, lang)) {
             guard !session.soundTrackFramingFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu JamShack)."); return }
             for (index, name) in session.soundTrackFramingFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let choice = promptLine("Charger quelle phrase de cadrage (numero ou nom): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptChargerQuellePhraseDeCadrage, lang)), !choice.isEmpty else { return }
             try executeCommand("use-soundtrack-framing", [choice])
         },
-        MenuItem(label: "Revenir a la phrase de cadrage par defaut") { try executeCommand("reset-soundtrack-framing", []) },
+        MenuItem(label: L10n.string(.menuRevenirPhraseDeCadrageParDefaut, lang)) { try executeCommand("reset-soundtrack-framing", []) },
         MenuItem.separator,
-        MenuItem(label: "Voir les indications de style...") { try executeCommand("show-soundtrack-instructions", []) },
-        MenuItem(label: "Modifier les indications de style...") {
-            let text = promptLine("Indications de style, optionnel (ex: romantique, mode mineur — vide pour aucune): ") ?? ""
+        MenuItem(label: L10n.string(.menuVoirIndicationsStyle, lang)) { try executeCommand("show-soundtrack-instructions", []) },
+        MenuItem(label: L10n.string(.menuModifierIndicationsStyle, lang)) {
+            let text = promptLine(L10n.string(.promptIndicationsDeStyle, lang)) ?? ""
             try executeCommand("set-soundtrack-instructions", text.isEmpty ? [] : [text])
         },
-        MenuItem(label: "Sauvegarder les indications de style...") {
-            guard let name = promptLine("Nom de sauvegarde des indications: "), !name.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuSauvegarderIndicationsStyle, lang)) {
+            guard let name = promptLine(L10n.string(.promptNomSauvegardeIndications, lang)), !name.isEmpty else { return }
             try executeCommand("save-soundtrack-instructions", [name])
         },
-        MenuItem(label: "Charger des indications de style...") {
+        MenuItem(label: L10n.string(.menuChargerIndicationsStyle, lang)) {
             guard !session.soundTrackInstructionsFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu JamShack)."); return }
             for (index, name) in session.soundTrackInstructionsFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let choice = promptLine("Charger quelles indications (numero ou nom): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptChargerQuellesIndications, lang)), !choice.isEmpty else { return }
             try executeCommand("use-soundtrack-instructions", [choice])
         },
-        MenuItem(label: "Revenir aux indications de style par defaut (aucune)") { try executeCommand("reset-soundtrack-instructions", []) },
+        MenuItem(label: L10n.string(.menuRevenirIndicationsStyleParDefaut, lang)) { try executeCommand("reset-soundtrack-instructions", []) },
         MenuItem.separator,
-        MenuItem(label: "Voir le prompt de composition...") { try executeCommand("show-soundtrack-prompt", []) },
-        MenuItem(label: "Exporter le prompt de composition...") {
-            guard let name = promptLine("Nom d'export du prompt: "), !name.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuVoirPromptComposition, lang)) { try executeCommand("show-soundtrack-prompt", []) },
+        MenuItem(label: L10n.string(.menuExporterPromptComposition, lang)) {
+            guard let name = promptLine(L10n.string(.promptNomExportPrompt, lang)), !name.isEmpty else { return }
             try executeCommand("export-soundtrack-prompt", [name])
         },
     ]),
-    MenuCategory(mnemonic: "M", title: "Morceaux", items: [
-        MenuItem(label: "Ecouter le morceau") { try executeCommand("play", []) },
-        MenuItem(label: "Voir le morceau (structure et instruments)") { try executeCommand("show-piece", []) },
+    MenuCategory(mnemonic: "M", title: L10n.string(.catMorceaux, lang), items: [
+        MenuItem(label: L10n.string(.menuEcouterMorceau, lang)) { try executeCommand("play", []) },
+        MenuItem(label: L10n.string(.menuVoirMorceau, lang)) { try executeCommand("show-piece", []) },
         MenuItem.separator,
-        MenuItem(label: "Choisir le son de lecture du morceau...") {
+        MenuItem(label: L10n.string(.menuChoisirSonLectureMorceau, lang)) {
             guard !session.sampleFiles.isEmpty else { print("Choisis d'abord un dossier de sons (menu JamShack)."); return }
             for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let choice = promptLine("Charger quel son (numero ou nom): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptChargerQuelSon, lang)), !choice.isEmpty else { return }
             try executeCommand("use-sample", [choice])
         },
-        MenuItem(label: "Choisir le son d'une piste...") {
+        MenuItem(label: L10n.string(.menuChoisirSonDunePiste, lang)) {
             printPieceDetail()
-            guard let sectionText = promptLine("Quelle section (numero): "), !sectionText.isEmpty else { return }
-            guard let trackText = promptLine("Quelle piste (numero): "), !trackText.isEmpty else { return }
+            guard let sectionText = promptLine(L10n.string(.promptQuelleSection, lang)), !sectionText.isEmpty else { return }
+            guard let trackText = promptLine(L10n.string(.promptQuellePiste, lang)), !trackText.isEmpty else { return }
             if session.sampleFiles.isEmpty { print("(Astuce: choisis d'abord un dossier de sons, menu JamShack.)") }
             for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
-            let instrumentText = promptLine("Quel son (numero, nom, ou vide pour le son par defaut): ") ?? ""
+            let instrumentText = promptLine(L10n.string(.promptQuelSonOuVide, lang)) ?? ""
             try executeCommand("set-track-instrument", [sectionText, trackText, instrumentText])
         },
-        MenuItem(label: "Choisir le son des accords d'une section...") {
+        MenuItem(label: L10n.string(.menuChoisirSonAccordsSection, lang)) {
             printPieceDetail()
-            guard let sectionText = promptLine("Quelle section (numero): "), !sectionText.isEmpty else { return }
+            guard let sectionText = promptLine(L10n.string(.promptQuelleSection, lang)), !sectionText.isEmpty else { return }
             if session.sampleFiles.isEmpty { print("(Astuce: choisis d'abord un dossier de sons, menu JamShack.)") }
             for (index, name) in session.sampleFiles.enumerated() { print("  \(index + 1). \(name)") }
-            let instrumentText = promptLine("Quel son (numero, nom, ou vide pour le son par defaut): ") ?? ""
+            let instrumentText = promptLine(L10n.string(.promptQuelSonOuVide, lang)) ?? ""
             try executeCommand("set-chord-instrument", [sectionText, instrumentText])
         },
         MenuItem.separator,
-        MenuItem(label: "Charger demo") { try executeCommand("load-demo", []) },
-        MenuItem(label: "Charger morceau...") {
+        MenuItem(label: L10n.string(.menuChargerDemo, lang)) { try executeCommand("load-demo", []) },
+        MenuItem(label: L10n.string(.menuChargerMorceau, lang)) {
             guard !session.pieceFiles.isEmpty else { print("Choisis d'abord un dossier de morceaux (menu JamShack)."); return }
             for (index, name) in session.pieceFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let choice = promptLine("Charger quel morceau (numero ou nom): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptChargerQuelMorceau, lang)), !choice.isEmpty else { return }
             try executeCommand("use-piece", [choice])
         },
-        MenuItem(label: "Sauvegarder le morceau") { try executeCommand("save", []) },
-        MenuItem(label: "Sauvegarder le morceau sous...") {
-            guard let name = promptLine("Nom de sauvegarde: "), !name.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuSauvegarderMorceau, lang)) { try executeCommand("save", []) },
+        MenuItem(label: L10n.string(.menuSauvegarderMorceauSous, lang)) {
+            guard let name = promptLine(L10n.string(.promptNomDeSauvegarde, lang)), !name.isEmpty else { return }
             try executeCommand("save-as", [name])
         },
         MenuItem.separator,
-        MenuItem.header("Assistant IA"),
+        MenuItem.header(L10n.string(.headerAssistantIA, lang)),
     ]),
-    MenuCategory(mnemonic: "C", title: "Composition", items: [
-        MenuItem(label: "Decrire le morceau...") {
-            guard let title = promptLine("Titre du morceau: "), !title.isEmpty else { return }
+    MenuCategory(mnemonic: "C", title: L10n.string(.catComposition, lang), items: [
+        MenuItem(label: L10n.string(.menuDecrireMorceau, lang)) {
+            guard let title = promptLine(L10n.string(.promptTitreDuMorceau, lang)), !title.isEmpty else { return }
             session.setCompositionTitle(title)
-            print("Colle la description du morceau (termine par une ligne vide) :")
+            print(L10n.string(.pastePasteDescription, lang))
             var lines: [String] = []
             while let textLine = readLine(), !textLine.isEmpty { lines.append(textLine) }
             session.setSourceText(lines.joined(separator: "\n"))
-            let indicationsText = promptLine("Indications de style, optionnel (ex: romantique, mode mineur — vide pour aucune): ") ?? ""
+            let indicationsText = promptLine(L10n.string(.promptIndicationsDeStyle, lang)) ?? ""
             session.setAdditionalCompositionInstructions(indicationsText.isEmpty ? nil : indicationsText)
             try executeCommand("compose", [title])
         },
-        MenuItem(label: "Composer a partir de la description") { try executeCommand("compose", []) },
-        MenuItem(label: "Voir la description") { try executeCommand("show-description", []) },
+        MenuItem(label: L10n.string(.menuComposerDepuisDescription, lang)) { try executeCommand("compose", []) },
+        MenuItem(label: L10n.string(.menuVoirDescription, lang)) { try executeCommand("show-description", []) },
         MenuItem.separator,
-        MenuItem(label: "Charger une description...") {
+        MenuItem(label: L10n.string(.menuChargerDescription, lang)) {
             guard !session.compositionFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu JamShack)."); return }
             for (index, name) in session.compositionFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let choice = promptLine("Charger quelle description (numero ou nom): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptChargerQuelleDescription, lang)), !choice.isEmpty else { return }
             try executeCommand("use-description", [choice])
         },
-        MenuItem(label: "Sauvegarder la description sous...") {
-            guard let name = promptLine("Nom de sauvegarde: "), !name.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuSauvegarderDescriptionSous, lang)) {
+            guard let name = promptLine(L10n.string(.promptNomDeSauvegarde, lang)), !name.isEmpty else { return }
             try executeCommand("save-description-as", [name])
         },
-        MenuItem(label: "Sauvegarder la description") { try executeCommand("save-description", []) },
+        MenuItem(label: L10n.string(.menuSauvegarderDescription, lang)) { try executeCommand("save-description", []) },
         MenuItem.separator,
-        MenuItem(label: "Voir la phrase de cadrage...") { try executeCommand("show-text-framing", []) },
-        MenuItem(label: "Modifier la phrase de cadrage...") { try executeCommand("set-text-framing", []) },
-        MenuItem(label: "Sauvegarder la phrase de cadrage...") {
-            guard let name = promptLine("Nom de sauvegarde de la phrase de cadrage: "), !name.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuVoirPhraseDeCadrage, lang)) { try executeCommand("show-text-framing", []) },
+        MenuItem(label: L10n.string(.menuModifierPhraseDeCadrage, lang)) { try executeCommand("set-text-framing", []) },
+        MenuItem(label: L10n.string(.menuSauvegarderPhraseDeCadrage, lang)) {
+            guard let name = promptLine(L10n.string(.promptNomSauvegardePhraseDeCadrage, lang)), !name.isEmpty else { return }
             try executeCommand("save-text-framing", [name])
         },
-        MenuItem(label: "Charger une phrase de cadrage...") {
+        MenuItem(label: L10n.string(.menuChargerPhraseDeCadrage, lang)) {
             guard !session.textFramingFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu JamShack)."); return }
             for (index, name) in session.textFramingFiles.enumerated() { print("  \(index + 1). \(name)") }
-            guard let choice = promptLine("Charger quelle phrase de cadrage (numero ou nom): "), !choice.isEmpty else { return }
+            guard let choice = promptLine(L10n.string(.promptChargerQuellePhraseDeCadrage, lang)), !choice.isEmpty else { return }
             try executeCommand("use-text-framing", [choice])
         },
-        MenuItem(label: "Revenir a la phrase de cadrage par defaut") { try executeCommand("reset-text-framing", []) },
+        MenuItem(label: L10n.string(.menuRevenirPhraseDeCadrageParDefaut, lang)) { try executeCommand("reset-text-framing", []) },
         MenuItem.separator,
-        MenuItem(label: "Voir le prompt de composition...") { try executeCommand("show-text-prompt", []) },
-        MenuItem(label: "Exporter le prompt de composition...") {
-            guard let name = promptLine("Nom d'export du prompt: "), !name.isEmpty else { return }
+        MenuItem(label: L10n.string(.menuVoirPromptComposition, lang)) { try executeCommand("show-text-prompt", []) },
+        MenuItem(label: L10n.string(.menuExporterPromptComposition, lang)) {
+            guard let name = promptLine(L10n.string(.promptNomExportPrompt, lang)), !name.isEmpty else { return }
             try executeCommand("export-text-prompt", [name])
         },
     ]),
-    MenuCategory(mnemonic: "J", title: "Jam Session", items: [
-        MenuItem(label: "Demarrer une jam session...") {
+    MenuCategory(mnemonic: "J", title: L10n.string(.catJamSession, lang), items: [
+        MenuItem(label: L10n.string(.menuDemarrerJamSession, lang)) {
             promptForPseudo()
-            let portText = promptLine("Port (defaut 7777): ") ?? ""
+            let portText = promptLine(L10n.string(.promptPortDefaut7777, lang)) ?? ""
             try executeCommand("server", [portText.isEmpty ? "7777" : portText])
         },
-        MenuItem(label: "Arreter la jam session") { try executeCommand("stop-server", []) },
-        MenuItem(label: "Rejoindre une jam session...") {
+        MenuItem(label: L10n.string(.menuArreterJamSession, lang)) { try executeCommand("stop-server", []) },
+        MenuItem(label: L10n.string(.menuRejoindreJamSession, lang)) {
             promptForPseudo()
-            let host = promptLine("Serveur (defaut localhost): ") ?? ""
-            let portText = promptLine("Port (defaut 7777): ") ?? ""
+            let host = promptLine(L10n.string(.promptServeurDefautLocalhost, lang)) ?? ""
+            let portText = promptLine(L10n.string(.promptPortDefaut7777, lang)) ?? ""
             try executeCommand("client", [host.isEmpty ? "localhost" : host, portText.isEmpty ? "7777" : portText])
         },
-        MenuItem(label: "Trouver une jam session...") {
+        MenuItem(label: L10n.string(.menuTrouverJamSession, lang)) {
             promptForPseudo()
             try executeCommand("discover", [])
         },
-        MenuItem(label: "Quitter la jam session") { try executeCommand("disconnect", []) },
+        MenuItem(label: L10n.string(.menuQuitterJamSession, lang)) { try executeCommand("disconnect", []) },
     ]),
-]
+    ]
+}
 
 /// Splits a typed command line into tokens on whitespace, except inside a `"..."` quoted
 /// span — needed for filenames with spaces (a real soundfont/piece file can be named e.g.
@@ -2004,8 +2033,8 @@ func tokenizeCommandLine(_ line: String) -> [String] {
 // to this same Command REPL exactly as it always has when leaving `run` explicitly.
 runConsoleScreen(mode: .run)
 
-print("JamShack — mode Command")
-print("Tape 'help' pour la liste des commandes.")
+print(L10n.string(.replModeCommand, session.currentLanguage))
+print(L10n.string(.replTapeAide, session.currentLanguage))
 drainLog() // flush the "Audio engine started." line logged by session.start() above
 printPrompt()
 while let line = readLine() {

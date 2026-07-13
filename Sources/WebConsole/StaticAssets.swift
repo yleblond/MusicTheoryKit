@@ -1,3 +1,5 @@
+import Localization
+
 /// The two static assets served by the web console (`GET /` and `GET /app.js`). Embedded as
 /// Swift string constants rather than read from disk at runtime — avoids wiring up
 /// `Bundle.module`/SwiftPM resources for two short files, and keeps them reviewable/editable
@@ -167,6 +169,19 @@ public let webConsoleIndexHTML = """
 """
 
 public let webConsoleAppJS = """
+\(L10n.jsTableLiteral)
+// The active UI language — mutable (`let`, not `const`), overwritten every `refresh()`/
+// `refreshMenuLists()` tick from `state.language`/`menuLists.language`, same "server-authoritative,
+// re-applied every poll" convention already used by `PITCH_CLASS_COLORS` below. Defaults to 'fr'
+// only until the first poll response lands.
+let currentLanguage = 'fr';
+function t(key, ...args) {
+  const entry = L10N[key];
+  let template = (entry && entry[currentLanguage]) || (entry && entry.fr) || key;
+  args.forEach(arg => { template = template.replace('%d', arg).replace('%@', arg); });
+  return template;
+}
+
 const MIN_MIDI = 48; // C3, same range as the terminal's per-track keyboard
 const MAX_MIDI = 83; // B5
 
@@ -472,7 +487,7 @@ const WHEEL_RING_BOUNDARIES = [
 function renderWheelSection(wheel, tracks, guide) {
   if (!wheel) return '';
   const progressionChords = (guide && guide.isActive) ? (guide.currentChordProgression || []).filter(c => c.quality) : [];
-  return '<h2>Cercle des quintes</h2>' + renderWheel(wheel, tracks, progressionChords);
+  return `<h2>${t('headingCercleDesQuintes')}</h2>` + renderWheel(wheel, tracks, progressionChords);
 }
 
 // The 7 diatonic cells of `wheel.tonic` always occupy exactly 3 adjacent columns — the tonic
@@ -626,13 +641,14 @@ function renderWheel(wheel, tracks, progressionChords) {
 
 function renderGuide(guide) {
   if (!guide || !guide.isActive) return '';
-  let html = '<h2>Guide</h2>';
+  let html = `<h2>${t('headingGuide')}</h2>`;
   html += '<div class="field">' + (guide.steps || []).map(
     step => step.isCurrent ? `<b>[${step.label}]</b>` : step.label
   ).join(' ') + '</div>';
   const progression = guide.currentChordProgression || [];
   if (progression.length) {
-    html += `<div class="field">Suite d'accords${guide.currentChordProgressionName ? ' (' + guide.currentChordProgressionName + ')' : ''}: ${progression.map(c => c.label).join(' - ')}</div>`;
+    const prefix = guide.currentChordProgressionName ? t('formatSuiteAccordsNamed', guide.currentChordProgressionName) : t('fieldSuiteAccords');
+    html += `<div class="field">${prefix}: ${progression.map(c => c.label).join(' - ')}</div>`;
   }
   html += keyboardHTML(guide.heldPitches, null, [], guide.currentModeTones);
   // The guide's own step is prescribed, not "recently played" — a single current snapshot,
@@ -650,18 +666,18 @@ function renderTrack(track, index) {
   // web keyboard track) is all a viewer needs.
   let html = `<h2>${swatch}${track.label}${owner}</h2>`;
   if (track.microphoneLevel !== null && track.microphoneLevel !== undefined) {
-    html += `<div class="field">Micro: <b>${track.microphoneLevel.toFixed(4)}</b></div>`;
+    html += `<div class="field">${t('fieldMicro')}: <b>${track.microphoneLevel.toFixed(4)}</b></div>`;
   }
   html += keyboardHTML(track.heldPitches, track.chordRoot, track.chordTones, track.modeTones);
   html += renderStaffSVG(track.recentChordEvents || [], KEYBOARD_TOTAL_WIDTH);
-  html += `<div class="field">Accord: <b>${track.chordLabel || '-'}</b></div>`;
-  html += `<div class="field">Modes: <b>${track.modesLabel || '-'}</b></div>`;
+  html += `<div class="field">${t('fieldAccordWeb')}: <b>${track.chordLabel || t('fallbackTiret')}</b></div>`;
+  html += `<div class="field">${t('fieldModes')}: <b>${track.modesLabel || t('fallbackTiret')}</b></div>`;
   return html;
 }
 
 function renderPlayback(playback) {
   if (!playback) return '';
-  let html = '<h2>Morceau en cours de lecture</h2>';
+  let html = `<h2>${t('headingMorceauEnCoursDeLecture')}</h2>`;
   html += '<div class="field">' + (playback.timeline || []).map(
     seg => seg.isCurrent ? `<b>[${seg.label}]</b>` : seg.label
   ).join(' ') + '</div>';
@@ -672,7 +688,7 @@ function renderPlayback(playback) {
 
 function renderSoundTrackPlayback(playback) {
   if (!playback) return '';
-  return '<h2>Enregistrement en cours de lecture</h2>'
+  return `<h2>${t('headingEnregistrementEnCoursDeLecture')}</h2>`
     + keyboardHTML(playback.heldPitches, null, [], [])
     + renderStaffSVG([{ pitches: playback.heldPitches, chordRoot: null, chordTones: [] }], KEYBOARD_TOTAL_WIDTH);
 }
@@ -683,7 +699,7 @@ function renderRunTab(state) {
   // comment) — a track's `recentChordEvents` just comes and goes with the track itself, server-side.
   const tracksHTML = tracks.length
     ? tracks.map(renderTrack).join('')
-    : '<p class="empty">(aucune piste en ecoute)</p>';
+    : `<p class="empty">${t('placeholderAucunePisteEnEcouteWeb')}</p>`;
 
   // Always the same 2-column layout: left is just the wheel ("what mode/key are we in"),
   // right leads with whatever represents "the mode" right now — the guide's own keyboard if
@@ -699,7 +715,7 @@ function renderRunTab(state) {
 // Static, no live data — just the page's own description, moved here from a permanent page
 // header so the Run/Scene tabs aren't cluttered with it on every visit.
 function renderInfosTab() {
-  return '<h1>JamShack — activite en direct (lecture seule, rafraichi toutes les ~250ms)</h1>';
+  return `<h1>${t('textInfosTab')}</h1>`;
 }
 
 // One line of the Scene tab's tree (see `renderSceneTree`) — mirrors the terminal's own
@@ -709,9 +725,9 @@ function renderInfosTab() {
 function sceneTrackLineHTML(track) {
   let line = track.label;
   if (track.owner) line += ` — ${track.owner}`;
-  line += ` — ecoute: <b>${track.isListening ? 'oui' : 'non'}</b>`;
+  line += `${t('labelEcoutePrefix')}<b>${track.isListening ? t('labelOui') : t('labelNon')}</b>`;
   if (track.canHaveSound) {
-    line += `, son: <b>${track.soundEnabled ? 'oui' : 'non'}</b>`;
+    line += `${t('labelSonPrefix')}<b>${track.soundEnabled ? t('labelOui') : t('labelNon')}</b>`;
     if (track.instrumentName) line += ` (${track.instrumentName})`;
   }
   return line;
@@ -724,7 +740,7 @@ function sceneTrackLineHTML(track) {
 function renderSceneTree(scene) {
   if (!scene) return '';
   const isServer = scene.networkRoleText.indexOf('serveur') === 0;
-  let html = `<div class="field">Mode: <b>${scene.networkRoleText}</b></div>`;
+  let html = `<div class="field">${t('labelMode')}<b>${scene.networkRoleText}</b></div>`;
   html += '<ul class="scene-tree">';
 
   // The scene/roles concept as its own clearly-labeled, always-present branch — shown even
@@ -733,41 +749,41 @@ function renderSceneTree(scene) {
   // scene/role is the declarative concept an instrument then gets attached to, not the other
   // way around. See `Sources/AppCore/Scene.swift`'s own doc comments for what a role is.
   const roles = scene.roles || [];
-  html += '<li>Scene: ' + (scene.sceneTitle ? `<b>${scene.sceneTitle}</b>` : '<span class="empty">(aucune)</span>');
+  html += `<li>${t('labelSceneTree')}` + (scene.sceneTitle ? `<b>${scene.sceneTitle}</b>` : `<span class="empty">${t('placeholderAucune')}</span>`);
   if (scene.sceneTitle) {
     html += roles.length
       ? '<ul>' + roles.map(role => {
           const soundText = role.soundName ? ` [${role.soundName}]` : '';
-          const attachedText = role.attachedLabel ? `<b>${role.attachedLabel}</b>` : '<span class="empty">(libre)</span>';
+          const attachedText = role.attachedLabel ? `<b>${role.attachedLabel}</b>` : `<span class="empty">${t('placeholderLibre')}</span>`;
           return `<li>${role.name} — ${attachedText}${soundText}</li>`;
         }).join('') + '</ul>'
-      : ' <span class="empty">(aucun role declare)</span>';
+      : ` <span class="empty">${t('placeholderAucunRoleDeclare')}</span>`;
   }
   html += '</li>';
 
   const localInstruments = scene.localInstruments || [];
-  html += '<li>Instruments locaux' + (
+  html += `<li>${t('labelInstrumentsLocaux')}` + (
     localInstruments.length
-      ? '<ul>' + localInstruments.map(t => `<li>${sceneTrackLineHTML(t)}</li>`).join('') + '</ul>'
-      : ' <span class="empty">(aucun)</span>'
+      ? '<ul>' + localInstruments.map(track => `<li>${sceneTrackLineHTML(track)}</li>`).join('') + '</ul>'
+      : ` <span class="empty">${t('placeholderAucun')}</span>`
   ) + '</li>';
 
-  html += `<li>Console web: <b>${scene.webConsolePort ? 'http://localhost:' + scene.webConsolePort : '(inactive)'}</b></li>`;
-  html += `<li>Clavier virtuel: <b>${scene.virtualKeyboardPort ? 'http://localhost:' + scene.virtualKeyboardPort : '(inactif)'}</b></li>`;
+  html += `<li>${t('labelConsoleWebPrefix')}<b>${scene.webConsolePort ? 'http://localhost:' + scene.webConsolePort : t('placeholderInactive')}</b></li>`;
+  html += `<li>${t('labelClavierVirtuelPrefix')}<b>${scene.virtualKeyboardPort ? 'http://localhost:' + scene.virtualKeyboardPort : t('placeholderInactif')}</b></li>`;
 
   if (isServer) {
     const clients = scene.clients || [];
-    html += `<li>Clients connectes (${clients.length})`;
+    html += `<li>${t('formatClientsConnectes', clients.length)}`;
     if (clients.length) {
       html += '<ul>' + clients.map(client => {
         const instruments = client.instruments || [];
         const inner = instruments.length
-          ? '<ul>' + instruments.map(t => `<li>${sceneTrackLineHTML(t)}</li>`).join('') + '</ul>'
-          : ' <span class="empty">(aucun instrument encore)</span>';
+          ? '<ul>' + instruments.map(track => `<li>${sceneTrackLineHTML(track)}</li>`).join('') + '</ul>'
+          : ` <span class="empty">${t('labelAucunInstrumentEncore')}</span>`;
         return `<li>${client.name}${inner}</li>`;
       }).join('') + '</ul>';
     } else {
-      html += ' <span class="empty">(aucun)</span>';
+      html += ` <span class="empty">${t('placeholderAucun')}</span>`;
     }
     html += '</li>';
   }
@@ -792,134 +808,145 @@ function renderSceneTree(scene) {
 let menuBuilt = false;
 let menuLists = null; // last `GET /menu-lists` response — see `refreshMenuLists`
 
-const NOTE_NAME_TONIC_OPTIONS = NOTE_NAMES.map((name, pc) => ({ value: String(pc), label: name }));
+const NOTE_NAME_TONIC_OPTIONS = NOTE_NAMES.map((name, pc) => ({ value: String(pc), labelKey: null, label: name }));
 
+// `labelKey`/`fields[].labelKey`/`fields[].placeholderKey` are `L10nKey` id strings looked up
+// live via `t(...)` at render time (see `menuItemRowHTML`/`menuFieldControlHTML`) — NOT
+// pre-resolved strings — so a language change followed by a Menu-tab rebuild (`buildMenuTab()`,
+// triggered by `refreshMenuLists()` noticing `menuLists.language` changed) actually picks up the
+// new language, instead of forever showing whatever language happened to be active when this
+// array literal was first evaluated. `category` stays each category's ORIGINAL French name and
+// is never displayed directly anymore — it's now purely a stable identifier (matched against
+// `activeMenuCategory`/`data-category`); `categoryLabelKey` is what's actually shown, via
+// `renderMenuSubTabBar`. Every item label here that also exists in the terminal's own
+// `buildMenuCategories` (`JamShack/main.swift`) reuses the exact same `L10nKey` — see
+// `Localization.L10nKey`/`L10nTable` for the single shared FR/EN/DE source of truth.
 const MENU_ACTIONS = [
-  { category: 'JamShack', items: [
-    { action: 'folder-pieces', label: 'Choisir dossier de morceaux...', fields: [{ name: 'value', kind: 'text', placeholder: 'chemin du dossier' }] },
-    { action: 'folder-samples', label: 'Choisir dossier de sons...', fields: [{ name: 'value', kind: 'text', placeholder: 'chemin du dossier' }] },
-    { action: 'folder-soundtracks', label: 'Choisir dossier de soundtracks...', fields: [{ name: 'value', kind: 'text', placeholder: 'chemin du dossier' }] },
-    { action: 'folder-guides', label: 'Choisir dossier de guides musicaux...', fields: [{ name: 'value', kind: 'text', placeholder: 'chemin du dossier' }] },
-    { action: 'folder-scenes', label: 'Choisir dossier de scenes...', fields: [{ name: 'value', kind: 'text', placeholder: 'chemin du dossier' }] },
-    { action: 'folder-settings', label: 'Choisir dossier de reglages...', fields: [{ name: 'value', kind: 'text', placeholder: 'chemin du dossier' }] },
-    { action: 'folder-prompts', label: 'Choisir dossier de composition IA...', fields: [{ name: 'value', kind: 'text', placeholder: 'chemin du dossier' }] },
-    { action: 'use-llm', label: 'Choisir une connexion LLM...', fields: [{ name: 'value', kind: 'select', list: 'llmConnections' }] },
-    { action: 'use-palette', label: 'Choisir palette de couleur...', fields: [{ name: 'value', kind: 'select', list: 'colorPalettes' }] },
-    { action: 'midi-mode-merged', label: 'Mode MIDI: fusionne', fields: [] },
-    { action: 'midi-mode-individual', label: 'Mode MIDI: individuel', fields: [] },
-    { action: 'web-console-start', label: 'Demarrer la console web...', fields: [{ name: 'value', kind: 'text', placeholder: 'port (8080)', optional: true }] },
-    { action: 'web-console-stop', label: 'Arreter la console web', fields: [] },
-    { action: 'vk-start', label: 'Demarrer le clavier virtuel...', fields: [{ name: 'value', kind: 'text', placeholder: 'port (8081)', optional: true }] },
-    { action: 'vk-stop', label: 'Arreter le clavier virtuel', fields: [] },
+  { category: 'JamShack', categoryLabelKey: 'catJamShack', items: [
+    { action: 'folder-pieces', labelKey: 'menuChoisirDossierMorceaux', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderCheminDuDossier' }] },
+    { action: 'folder-samples', labelKey: 'menuChoisirDossierSons', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderCheminDuDossier' }] },
+    { action: 'folder-soundtracks', labelKey: 'menuChoisirDossierSoundtracks', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderCheminDuDossier' }] },
+    { action: 'folder-guides', labelKey: 'menuChoisirDossierGuides', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderCheminDuDossier' }] },
+    { action: 'folder-scenes', labelKey: 'menuChoisirDossierScenes', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderCheminDuDossier' }] },
+    { action: 'folder-settings', labelKey: 'menuChoisirDossierReglages', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderCheminDuDossier' }] },
+    { action: 'folder-prompts', labelKey: 'menuChoisirDossierCompositionIA', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderCheminDuDossier' }] },
+    { action: 'use-llm', labelKey: 'menuChoisirConnexionLLM', fields: [{ name: 'value', kind: 'select', list: 'llmConnections' }] },
+    { action: 'use-palette', labelKey: 'menuChoisirPalette', fields: [{ name: 'value', kind: 'select', list: 'colorPalettes' }] },
+    { action: 'midi-mode-merged', labelKey: 'menuMidiModeFusionne', fields: [] },
+    { action: 'midi-mode-individual', labelKey: 'menuMidiModeIndividuel', fields: [] },
+    { action: 'web-console-start', labelKey: 'menuDemarrerConsoleWeb', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderPort8080', optional: true }] },
+    { action: 'web-console-stop', labelKey: 'menuArreterConsoleWeb', fields: [] },
+    { action: 'vk-start', labelKey: 'menuDemarrerClavierVirtuel', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderPort8081', optional: true }] },
+    { action: 'vk-stop', labelKey: 'menuArreterClavierVirtuel', fields: [] },
   ] },
-  { category: 'Scene', items: [
-    { action: 'track-on', label: 'Activer un instrument...', fields: [{ name: 'value', kind: 'select-track' }] },
-    { action: 'track-off', label: 'Arreter un instrument...', fields: [{ name: 'value', kind: 'select-track' }] },
-    { action: 'track-sound-on', label: "Activer le son d'un instrument...", fields: [{ name: 'value', kind: 'select-track' }] },
-    { action: 'track-sound-off', label: "Desactiver le son d'un instrument...", fields: [{ name: 'value', kind: 'select-track' }] },
-    { action: 'track-instrument', label: 'Choisir un son pour un instrument...', fields: [
-        { name: 'track', kind: 'select-track', label: 'Instrument' },
-        { name: 'value', kind: 'select', list: 'sampleFiles', label: 'Son' },
+  { category: 'Scene', categoryLabelKey: 'catScene', items: [
+    { action: 'track-on', labelKey: 'menuActiverInstrument', fields: [{ name: 'value', kind: 'select-track' }] },
+    { action: 'track-off', labelKey: 'menuArreterInstrument', fields: [{ name: 'value', kind: 'select-track' }] },
+    { action: 'track-sound-on', labelKey: 'menuActiverSonInstrument', fields: [{ name: 'value', kind: 'select-track' }] },
+    { action: 'track-sound-off', labelKey: 'menuDesactiverSonInstrument', fields: [{ name: 'value', kind: 'select-track' }] },
+    { action: 'track-instrument', labelKey: 'menuChoisirSonPourInstrument', fields: [
+        { name: 'track', kind: 'select-track', labelKey: 'fieldInstrument' },
+        { name: 'value', kind: 'select', list: 'sampleFiles', labelKey: 'fieldSon' },
       ] },
-    { action: 'scene-save', label: 'Sauvegarder scene...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
-    { action: 'scene-load', label: 'Charger scene...', fields: [{ name: 'value', kind: 'select', list: 'sceneFiles' }] },
-    { action: 'scene-new', label: 'Nouvelle scene (roles)...', fields: [{ name: 'value', kind: 'text', placeholder: 'titre' }] },
-    { action: 'scene-role-add', label: 'Ajouter un role...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
-    { action: 'scene-role-sound', label: "Choisir le son d'un role...", fields: [
-        { name: 'role', kind: 'select', list: 'sceneRoles', label: 'Role' },
-        { name: 'value', kind: 'select', list: 'sampleFiles', label: 'Son', optional: true },
+    { action: 'scene-save', labelKey: 'menuSauvegarderScene', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderNom' }] },
+    { action: 'scene-load', labelKey: 'menuChargerScene', fields: [{ name: 'value', kind: 'select', list: 'sceneFiles' }] },
+    { action: 'scene-new', labelKey: 'menuNouvelleScene', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderTitreCourt' }] },
+    { action: 'scene-role-add', labelKey: 'menuAjouterRole', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderNom' }] },
+    { action: 'scene-role-sound', labelKey: 'menuChoisirSonDunRole', fields: [
+        { name: 'role', kind: 'select', list: 'sceneRoles', labelKey: 'fieldRole' },
+        { name: 'value', kind: 'select', list: 'sampleFiles', labelKey: 'fieldSon', optional: true },
       ] },
-    { action: 'scene-role-listen', label: "Ecoute d'un role...", fields: [
-        { name: 'role', kind: 'select', list: 'sceneRoles', label: 'Role' },
-        { name: 'value', kind: 'select', label: 'Ecoute', options: [{ value: 'on', label: 'Activer' }, { value: 'off', label: 'Arreter' }] },
+    { action: 'scene-role-listen', labelKey: 'menuEcouteDunRole', fields: [
+        { name: 'role', kind: 'select', list: 'sceneRoles', labelKey: 'fieldRole' },
+        { name: 'value', kind: 'select', labelKey: 'fieldEcoute', options: [{ value: 'on', labelKey: 'optionActiver' }, { value: 'off', labelKey: 'optionArreter' }] },
       ] },
-    { action: 'scene-role-attach', label: 'Attacher un instrument a un role...', fields: [
-        { name: 'role', kind: 'select', list: 'sceneRoles', label: 'Role' },
-        { name: 'value', kind: 'select', list: 'unassignedTracks', label: 'Instrument' },
+    { action: 'scene-role-attach', labelKey: 'menuAttacherInstrumentARole', fields: [
+        { name: 'role', kind: 'select', list: 'sceneRoles', labelKey: 'fieldRole' },
+        { name: 'value', kind: 'select', list: 'unassignedTracks', labelKey: 'fieldInstrument' },
       ] },
-    { action: 'scene-role-detach', label: 'Detacher un role...', fields: [{ name: 'value', kind: 'select', list: 'sceneRoles' }] },
+    { action: 'scene-role-detach', labelKey: 'menuDetacherRole', fields: [{ name: 'value', kind: 'select', list: 'sceneRoles' }] },
   ] },
-  { category: 'Guide Musicaux', items: [
-    { action: 'guide-new', label: 'Nouveau guide musical...', fields: [{ name: 'value', kind: 'text', placeholder: 'titre' }] },
-    { action: 'guide-add-mode', label: 'Ajouter un mode au guide...', fields: [
-        { name: 'tonic', kind: 'select', options: NOTE_NAME_TONIC_OPTIONS, label: 'Tonique' },
-        { name: 'scale', kind: 'select', list: 'scales', label: 'Gamme' },
-        { name: 'progression', kind: 'select', list: 'chordProgressionTemplates', label: 'Progression', optional: true },
+  { category: 'Guide Musicaux', categoryLabelKey: 'catGuideMusicaux', items: [
+    { action: 'guide-new', labelKey: 'menuNouveauGuideMusical', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderTitreCourt' }] },
+    { action: 'guide-add-mode', labelKey: 'menuAjouterModeAuGuideCourt', fields: [
+        { name: 'tonic', kind: 'select', options: NOTE_NAME_TONIC_OPTIONS, labelKey: 'fieldTonique' },
+        { name: 'scale', kind: 'select', list: 'scales', labelKey: 'fieldGamme' },
+        { name: 'progression', kind: 'select', list: 'chordProgressionTemplates', labelKey: 'fieldProgression', optional: true },
       ] },
-    { action: 'guide-load', label: 'Charger un guide musical...', fields: [{ name: 'value', kind: 'select', list: 'guideFiles' }] },
-    { action: 'guide-save', label: 'Sauvegarder le guide musical', fields: [] },
-    { action: 'guide-save-as', label: 'Sauvegarder le guide musical sous...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
-    { action: 'guide-start', label: 'Demarrer le guide musical', fields: [] },
-    { action: 'guide-stop', label: 'Arreter le guide musical', fields: [] },
+    { action: 'guide-load', labelKey: 'menuChargerGuideMusical', fields: [{ name: 'value', kind: 'select', list: 'guideFiles' }] },
+    { action: 'guide-save', labelKey: 'menuSauvegarderGuideMusical', fields: [] },
+    { action: 'guide-save-as', labelKey: 'menuSauvegarderGuideMusicalSous', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderNom' }] },
+    { action: 'guide-start', labelKey: 'menuDemarrerGuideMusical', fields: [] },
+    { action: 'guide-stop', labelKey: 'menuArreterGuideMusical', fields: [] },
   ] },
-  { category: 'Enregistrement', items: [
-    { action: 'record-start', label: 'Demarrer un enregistrement...', fields: [{ name: 'value', kind: 'text', placeholder: 'pistes separees par espace (vide = toutes)', optional: true }] },
-    { action: 'record-stop', label: "Arreter l'enregistrement", fields: [] },
-    { action: 'soundtrack-play', label: "Jouer l'enregistrement", fields: [] },
-    { action: 'soundtrack-load', label: 'Charger un enregistrement...', fields: [{ name: 'value', kind: 'select', list: 'soundTrackFiles' }] },
-    { action: 'soundtrack-save', label: "Sauvegarder l'enregistrement", fields: [] },
-    { action: 'soundtrack-save-as', label: "Sauvegarder l'enregistrement sous...", fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
-    { action: 'soundtrack-compose', label: "Composer un morceau a partir de l'enregistrement...", fields: [
-        { name: 'value', kind: 'text', placeholder: 'titre', label: 'Titre', optional: true },
-        { name: 'count', kind: 'text', placeholder: '1', label: 'Nombre de candidats', optional: true },
+  { category: 'Enregistrement', categoryLabelKey: 'catEnregistrement', items: [
+    { action: 'record-start', labelKey: 'menuDemarrerEnregistrement', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderPistesSepareesParEspace', optional: true }] },
+    { action: 'record-stop', labelKey: 'menuArreterEnregistrement', fields: [] },
+    { action: 'soundtrack-play', labelKey: 'menuJouerEnregistrement', fields: [] },
+    { action: 'soundtrack-load', labelKey: 'menuChargerEnregistrement', fields: [{ name: 'value', kind: 'select', list: 'soundTrackFiles' }] },
+    { action: 'soundtrack-save', labelKey: 'menuSauvegarderEnregistrement', fields: [] },
+    { action: 'soundtrack-save-as', labelKey: 'menuSauvegarderEnregistrementSous', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderNom' }] },
+    { action: 'soundtrack-compose', labelKey: 'menuComposerDepuisEnregistrement', fields: [
+        { name: 'value', kind: 'text', placeholderKey: 'placeholderTitreCourt', labelKey: 'fieldTitre', optional: true },
+        { name: 'count', kind: 'text', placeholderKey: 'placeholderUn', labelKey: 'fieldNombreCandidats', optional: true },
       ] },
-    { action: 'soundtrack-framing-set', label: 'Modifier la phrase de cadrage...', fields: [{ name: 'value', kind: 'textarea' }] },
-    { action: 'soundtrack-framing-save', label: 'Sauvegarder la phrase de cadrage...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
-    { action: 'soundtrack-framing-load', label: 'Charger une phrase de cadrage...', fields: [{ name: 'value', kind: 'select', list: 'soundTrackFramingFiles' }] },
-    { action: 'soundtrack-framing-reset', label: 'Revenir a la phrase de cadrage par defaut', fields: [] },
-    { action: 'soundtrack-instructions-set', label: 'Modifier les indications de style...', fields: [{ name: 'value', kind: 'text', placeholder: 'indications', optional: true }] },
-    { action: 'soundtrack-instructions-save', label: 'Sauvegarder les indications de style...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
-    { action: 'soundtrack-instructions-load', label: 'Charger des indications de style...', fields: [{ name: 'value', kind: 'select', list: 'soundTrackInstructionsFiles' }] },
-    { action: 'soundtrack-instructions-reset', label: 'Revenir aux indications de style par defaut', fields: [] },
-    { action: 'soundtrack-prompt-export', label: 'Exporter le prompt de composition...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
+    { action: 'soundtrack-framing-set', labelKey: 'menuModifierPhraseDeCadrage', fields: [{ name: 'value', kind: 'textarea' }] },
+    { action: 'soundtrack-framing-save', labelKey: 'menuSauvegarderPhraseDeCadrage', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderNom' }] },
+    { action: 'soundtrack-framing-load', labelKey: 'menuChargerPhraseDeCadrage', fields: [{ name: 'value', kind: 'select', list: 'soundTrackFramingFiles' }] },
+    { action: 'soundtrack-framing-reset', labelKey: 'menuRevenirPhraseDeCadrageParDefaut', fields: [] },
+    { action: 'soundtrack-instructions-set', labelKey: 'menuModifierIndicationsStyle', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderIndicationsCourt', optional: true }] },
+    { action: 'soundtrack-instructions-save', labelKey: 'menuSauvegarderIndicationsStyle', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderNom' }] },
+    { action: 'soundtrack-instructions-load', labelKey: 'menuChargerIndicationsStyle', fields: [{ name: 'value', kind: 'select', list: 'soundTrackInstructionsFiles' }] },
+    { action: 'soundtrack-instructions-reset', labelKey: 'menuRevenirIndicationsStyleParDefaut', fields: [] },
+    { action: 'soundtrack-prompt-export', labelKey: 'menuExporterPromptComposition', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderNom' }] },
   ] },
-  { category: 'Morceaux', items: [
-    { action: 'piece-play', label: 'Ecouter le morceau', fields: [] },
-    { action: 'piece-sample', label: 'Choisir le son de lecture du morceau...', fields: [{ name: 'value', kind: 'select', list: 'sampleFiles' }] },
-    { action: 'piece-track-instrument', label: "Choisir le son d'une piste...", fields: [
-        { name: 'section', kind: 'text', placeholder: 'section #', label: 'Section' },
-        { name: 'track', kind: 'text', placeholder: 'piste #', label: 'Piste' },
-        { name: 'value', kind: 'select', list: 'sampleFiles', label: 'Son', optional: true },
+  { category: 'Morceaux', categoryLabelKey: 'catMorceaux', items: [
+    { action: 'piece-play', labelKey: 'menuEcouterMorceau', fields: [] },
+    { action: 'piece-sample', labelKey: 'menuChoisirSonLectureMorceau', fields: [{ name: 'value', kind: 'select', list: 'sampleFiles' }] },
+    { action: 'piece-track-instrument', labelKey: 'menuChoisirSonDunePiste', fields: [
+        { name: 'section', kind: 'text', placeholderKey: 'placeholderSectionNum', labelKey: 'fieldSection' },
+        { name: 'track', kind: 'text', placeholderKey: 'placeholderPisteNum', labelKey: 'fieldPiste' },
+        { name: 'value', kind: 'select', list: 'sampleFiles', labelKey: 'fieldSon', optional: true },
       ] },
-    { action: 'piece-chord-instrument', label: "Choisir le son des accords d'une section...", fields: [
-        { name: 'section', kind: 'text', placeholder: 'section #', label: 'Section' },
-        { name: 'value', kind: 'select', list: 'sampleFiles', label: 'Son', optional: true },
+    { action: 'piece-chord-instrument', labelKey: 'menuChoisirSonAccordsSection', fields: [
+        { name: 'section', kind: 'text', placeholderKey: 'placeholderSectionNum', labelKey: 'fieldSection' },
+        { name: 'value', kind: 'select', list: 'sampleFiles', labelKey: 'fieldSon', optional: true },
       ] },
-    { action: 'piece-load-demo', label: 'Charger demo', fields: [] },
-    { action: 'piece-load', label: 'Charger morceau...', fields: [{ name: 'value', kind: 'select', list: 'pieceFiles' }] },
-    { action: 'piece-save', label: 'Sauvegarder le morceau', fields: [] },
-    { action: 'piece-save-as', label: 'Sauvegarder le morceau sous...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
+    { action: 'piece-load-demo', labelKey: 'menuChargerDemo', fields: [] },
+    { action: 'piece-load', labelKey: 'menuChargerMorceau', fields: [{ name: 'value', kind: 'select', list: 'pieceFiles' }] },
+    { action: 'piece-save', labelKey: 'menuSauvegarderMorceau', fields: [] },
+    { action: 'piece-save-as', labelKey: 'menuSauvegarderMorceauSous', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderNom' }] },
   ] },
-  { category: 'Composition', items: [
-    { action: 'composition-describe', label: 'Decrire le morceau...', fields: [
-        { name: 'title', kind: 'text', placeholder: 'titre', label: 'Titre', optional: true },
-        { name: 'value', kind: 'textarea', label: 'Description' },
-        { name: 'instructions', kind: 'text', placeholder: 'indications', label: 'Indications', optional: true },
+  { category: 'Composition', categoryLabelKey: 'catComposition', items: [
+    { action: 'composition-describe', labelKey: 'menuDecrireMorceau', fields: [
+        { name: 'title', kind: 'text', placeholderKey: 'placeholderTitreCourt', labelKey: 'fieldTitre', optional: true },
+        { name: 'value', kind: 'textarea', labelKey: 'fieldDescription' },
+        { name: 'instructions', kind: 'text', placeholderKey: 'placeholderIndicationsCourt', labelKey: 'fieldIndications', optional: true },
       ] },
-    { action: 'composition-compose', label: 'Composer a partir de la description', fields: [] },
-    { action: 'composition-load', label: 'Charger une description...', fields: [{ name: 'value', kind: 'select', list: 'compositionFiles' }] },
-    { action: 'composition-save-as', label: 'Sauvegarder la description sous...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
-    { action: 'composition-save', label: 'Sauvegarder la description', fields: [] },
-    { action: 'text-framing-set', label: 'Modifier la phrase de cadrage...', fields: [{ name: 'value', kind: 'textarea' }] },
-    { action: 'text-framing-save', label: 'Sauvegarder la phrase de cadrage...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
-    { action: 'text-framing-load', label: 'Charger une phrase de cadrage...', fields: [{ name: 'value', kind: 'select', list: 'textFramingFiles' }] },
-    { action: 'text-framing-reset', label: 'Revenir a la phrase de cadrage par defaut', fields: [] },
-    { action: 'text-prompt-export', label: 'Exporter le prompt de composition...', fields: [{ name: 'value', kind: 'text', placeholder: 'nom' }] },
+    { action: 'composition-compose', labelKey: 'menuComposerDepuisDescription', fields: [] },
+    { action: 'composition-load', labelKey: 'menuChargerDescription', fields: [{ name: 'value', kind: 'select', list: 'compositionFiles' }] },
+    { action: 'composition-save-as', labelKey: 'menuSauvegarderDescriptionSous', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderNom' }] },
+    { action: 'composition-save', labelKey: 'menuSauvegarderDescription', fields: [] },
+    { action: 'text-framing-set', labelKey: 'menuModifierPhraseDeCadrage', fields: [{ name: 'value', kind: 'textarea' }] },
+    { action: 'text-framing-save', labelKey: 'menuSauvegarderPhraseDeCadrage', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderNom' }] },
+    { action: 'text-framing-load', labelKey: 'menuChargerPhraseDeCadrage', fields: [{ name: 'value', kind: 'select', list: 'textFramingFiles' }] },
+    { action: 'text-framing-reset', labelKey: 'menuRevenirPhraseDeCadrageParDefaut', fields: [] },
+    { action: 'text-prompt-export', labelKey: 'menuExporterPromptComposition', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderNom' }] },
   ] },
-  { category: 'Jam Session', items: [
-    { action: 'jam-start', label: 'Demarrer une jam session...', fields: [
-        { name: 'pseudo', kind: 'text', placeholder: 'pseudo', label: 'Pseudo', optional: true },
-        { name: 'value', kind: 'text', placeholder: 'port (7777)', label: 'Port', optional: true },
+  { category: 'Jam Session', categoryLabelKey: 'catJamSession', items: [
+    { action: 'jam-start', labelKey: 'menuDemarrerJamSession', fields: [
+        { name: 'pseudo', kind: 'text', placeholderKey: 'placeholderPseudoCourt', labelKey: 'fieldPseudo', optional: true },
+        { name: 'value', kind: 'text', placeholderKey: 'placeholderPort7777', labelKey: 'fieldPort', optional: true },
       ] },
-    { action: 'jam-stop', label: 'Arreter la jam session', fields: [] },
-    { action: 'jam-join', label: 'Rejoindre une jam session...', fields: [
-        { name: 'pseudo', kind: 'text', placeholder: 'pseudo', label: 'Pseudo', optional: true },
-        { name: 'host', kind: 'text', placeholder: 'hote', label: 'Hote' },
-        { name: 'port', kind: 'text', placeholder: 'port (7777)', label: 'Port', optional: true },
+    { action: 'jam-stop', labelKey: 'menuArreterJamSession', fields: [] },
+    { action: 'jam-join', labelKey: 'menuRejoindreJamSession', fields: [
+        { name: 'pseudo', kind: 'text', placeholderKey: 'placeholderPseudoCourt', labelKey: 'fieldPseudo', optional: true },
+        { name: 'host', kind: 'text', placeholderKey: 'placeholderHoteCourt', labelKey: 'fieldHote' },
+        { name: 'port', kind: 'text', placeholderKey: 'placeholderPort7777', labelKey: 'fieldPort', optional: true },
       ] },
-    { action: 'jam-discover', label: 'Rechercher des jam sessions...', fields: [] },
-    { action: 'jam-connect-discovered', label: 'Rejoindre une session trouvee...', fields: [{ name: 'value', kind: 'select', list: 'discoveredJamSessions', useIndex: true }] },
-    { action: 'jam-leave', label: 'Quitter la jam session', fields: [] },
+    { action: 'jam-discover', labelKey: 'menuRechercherJamSessions', fields: [] },
+    { action: 'jam-connect-discovered', labelKey: 'menuRejoindreSessionTrouvee', fields: [{ name: 'value', kind: 'select', list: 'discoveredJamSessions', useIndex: true }] },
+    { action: 'jam-leave', labelKey: 'menuQuitterJamSession', fields: [] },
   ] },
 ];
 
@@ -930,7 +957,7 @@ function escapeHTML(text) {
 function menuFieldControlHTML(action, field) {
   const id = 'menu-' + action + '-' + field.name;
   if (field.kind === 'text') {
-    return `<input type="text" id="${id}" placeholder="${escapeHTML(field.placeholder || '')}">`;
+    return `<input type="text" id="${id}" placeholder="${escapeHTML(field.placeholderKey ? t(field.placeholderKey) : '')}">`;
   }
   if (field.kind === 'textarea') {
     return `<textarea id="${id}" rows="3"></textarea>`;
@@ -940,19 +967,21 @@ function menuFieldControlHTML(action, field) {
   // `refreshMenuLists` so it can repaint just this element's `<option>`s in place without
   // disturbing any other field's in-progress input.
   const listName = field.kind === 'select-track' ? 'tracks' : (field.list || '');
-  const staticOptionsHTML = field.options ? field.options.map(o => `<option value="${escapeHTML(o.value)}">${escapeHTML(o.label)}</option>`).join('') : '';
-  const placeholderOptionHTML = field.optional ? '<option value="">(aucun)</option>' : '';
+  // `o.labelKey` for translatable fixed options (e.g. Activer/Arreter); plain `o.label` for
+  // options whose text is itself musical/dynamic data, not UI copy (e.g. note names).
+  const staticOptionsHTML = field.options ? field.options.map(o => `<option value="${escapeHTML(o.value)}">${escapeHTML(o.labelKey ? t(o.labelKey) : o.label)}</option>`).join('') : '';
+  const placeholderOptionHTML = field.optional ? `<option value="">${escapeHTML(t('optionAucun'))}</option>` : '';
   return `<select id="${id}" data-list="${listName}" data-use-index="${field.useIndex ? '1' : ''}" data-optional="${field.optional ? '1' : ''}">` +
     placeholderOptionHTML + staticOptionsHTML + '</select>';
 }
 
 function menuItemRowHTML(item) {
   const fieldsHTML = item.fields.map(field => {
-    const labelHTML = field.label ? `<label for="menu-${item.action}-${field.name}">${escapeHTML(field.label)}</label>` : '';
+    const labelHTML = field.labelKey ? `<label for="menu-${item.action}-${field.name}">${escapeHTML(t(field.labelKey))}</label>` : '';
     return labelHTML + menuFieldControlHTML(item.action, field);
   }).join('');
-  return `<div class="menu-row"><label>${escapeHTML(item.label)}</label>${fieldsHTML}` +
-    `<button onclick="submitMenuItem('${item.action}')">OK</button></div>`;
+  return `<div class="menu-row"><label>${escapeHTML(t(item.labelKey))}</label>${fieldsHTML}` +
+    `<button onclick="submitMenuItem('${item.action}')">${escapeHTML(t('buttonOK'))}</button></div>`;
 }
 
 // Which category's panel is currently shown — a sub-tab bar under the main Run/Scene/
@@ -964,7 +993,7 @@ let activeMenuCategory = null;
 
 function renderMenuSubTabBar() {
   return '<div class="tab-bar menu-subtab-bar">' + MENU_ACTIONS.map(category =>
-    `<a class="tab${category.category === activeMenuCategory ? ' active' : ''}" onclick="setMenuCategory('${category.category}')">${escapeHTML(category.category)}</a>`
+    `<a class="tab${category.category === activeMenuCategory ? ' active' : ''}" onclick="setMenuCategory('${category.category}')">${escapeHTML(t(category.categoryLabelKey))}</a>`
   ).join('') + '</div>';
 }
 
@@ -1039,7 +1068,7 @@ function runMenuAction(action, params) {
   fetch('/menu-action?action=' + encodeURIComponent(action) + (qs ? '&' + qs : ''), { cache: 'no-store' })
     .then(response => response.json())
     .then(showMenuResult)
-    .catch(() => showMenuResult({ ok: false, message: 'connexion perdue' }))
+    .catch(() => showMenuResult({ ok: false, message: t('fallbackConnexionPerdue') }))
     .then(refreshMenuLists);
 }
 
@@ -1062,19 +1091,28 @@ async function refreshMenuLists() {
     const response = await fetch('/menu-lists', { cache: 'no-store' });
     menuLists = await response.json();
   } catch (error) { return; }
+  // The Menu tab never touches `/state` (see `buildMenuTab`'s own doc comment) — `/menu-lists`
+  // (polled every 2s regardless of which tab is showing, see `startMenuListsPolling`) is the
+  // only channel it has to notice a language change made elsewhere. Mirrors `refresh()`'s own
+  // `state.language` handling below.
+  if (menuLists.language && menuLists.language !== currentLanguage) {
+    currentLanguage = menuLists.language;
+    document.documentElement.lang = currentLanguage;
+    menuBuilt = false;
+  }
   document.querySelectorAll('#menu-container select[data-list]').forEach(sel => {
     const listName = sel.dataset.list;
     if (!listName || !menuLists) return;
     const items = menuLists[listName] || [];
     const useIndex = sel.dataset.useIndex === '1';
     const previousValue = sel.value;
-    const placeholderOptionHTML = sel.dataset.optional === '1' ? '<option value="">(aucun)</option>' : '';
+    const placeholderOptionHTML = sel.dataset.optional === '1' ? `<option value="">${escapeHTML(t('optionAucun'))}</option>` : '';
     const optionsHTML = items.map((item, index) => {
       let value, label;
       if (useIndex) { value = String(index); label = item; }
       else if (typeof item === 'string') { value = item; label = item; }
       else if (listName === 'tracks' || listName === 'unassignedTracks') { value = item.id; label = item.label; }
-      else if (listName === 'sceneRoles') { value = item.id; label = item.name + (item.attachedLabel ? ` (${item.attachedLabel})` : ' (libre)'); }
+      else if (listName === 'sceneRoles') { value = item.id; label = item.name + (item.attachedLabel ? ` (${item.attachedLabel})` : ` (${t('optionLibre')})`); }
       else { value = item.id; label = item.name; } // scales: {id, name}
       return `<option value="${escapeHTML(value)}">${escapeHTML(label)}</option>`;
     }).join('');
@@ -1087,9 +1125,9 @@ let activeTab = 'run'; // 'run' | 'scene' | 'infos' | 'menu'
 function renderTabBar() {
   return '<div class="tab-bar">' +
     `<a class="tab${activeTab === 'run' ? ' active' : ''}" onclick="setTab('run')">Run</a>` +
-    `<a class="tab${activeTab === 'scene' ? ' active' : ''}" onclick="setTab('scene')">Scene</a>` +
-    `<a class="tab${activeTab === 'menu' ? ' active' : ''}" onclick="setTab('menu')">Commandes</a>` +
-    `<a class="tab${activeTab === 'infos' ? ' active' : ''}" onclick="setTab('infos')">Infos</a>` +
+    `<a class="tab${activeTab === 'scene' ? ' active' : ''}" onclick="setTab('scene')">${t('tabScene')}</a>` +
+    `<a class="tab${activeTab === 'menu' ? ' active' : ''}" onclick="setTab('menu')">${t('tabCommandes')}</a>` +
+    `<a class="tab${activeTab === 'infos' ? ' active' : ''}" onclick="setTab('infos')">${t('tabInfos')}</a>` +
     '</div>';
 }
 function setTab(tab) {
@@ -1121,11 +1159,17 @@ async function refresh() {
     const response = await fetch('/state', { cache: 'no-store' });
     state = await response.json();
   } catch (error) {
-    document.getElementById('app').innerHTML = '<p class="empty">(connexion perdue — l\\'application est-elle toujours lancee ?)</p>';
+    document.getElementById('app').innerHTML = `<p class="empty">${t('fallbackConnexionPerdueDetail')}</p>`;
     return;
   }
   if (state.palette && state.palette.length === 12) PITCH_CLASS_COLORS = state.palette;
   if (state.paletteTextColors && state.paletteTextColors.length === 12) PITCH_CLASS_TEXT_COLORS = state.paletteTextColors;
+  if (state.language && state.language !== currentLanguage) {
+    currentLanguage = state.language;
+    document.documentElement.lang = currentLanguage;
+    document.title = t('titleConsoleWeb');
+    menuBuilt = false; // forces the Menu tab to rebuild with the new language next time it's shown
+  }
   const tabHTML = activeTab === 'run' ? renderRunTab(state)
     : activeTab === 'scene' ? renderSceneTree(state.scene)
     : renderInfosTab();

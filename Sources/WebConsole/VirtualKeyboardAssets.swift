@@ -1,3 +1,5 @@
+import Localization
+
 /// The two static assets served by the virtual-keyboard HTTP server (`GET /` and `GET
 /// /app.js`) — see `ImprovSession.startVirtualKeyboard`. Deliberately a separate page/module
 /// concern from `StaticAssets.swift`'s read-only web console: this one is interactive (typed
@@ -238,6 +240,17 @@ public let virtualKeyboardIndexHTML = """
 """
 
 public let virtualKeyboardAppJS = """
+\(L10n.jsTableLiteral)
+// See `StaticAssets.swift`'s own identical `currentLanguage`/`t()` pair for the full reasoning
+// — mutable, overwritten every `refresh()` tick from `state.language`.
+let currentLanguage = 'fr';
+function t(key, ...args) {
+  const entry = L10N[key];
+  let template = (entry && entry[currentLanguage]) || (entry && entry.fr) || key;
+  args.forEach(arg => { template = template.replace('%d', arg).replace('%@', arg); });
+  return template;
+}
+
 // Two overlaid row-pairs — the number row + top letter row form one "black keys above,
 // white keys below" register for the low notes (bass), the home row + bottom letter row
 // form the next one up (treble), continuing right where the bass register's last white key
@@ -396,11 +409,11 @@ function loadOrCreateClientID() {
 const clientID = loadOrCreateClientID();
 let alias = localStorage.getItem('vkAlias');
 if (!alias) {
-  alias = (prompt('Quel nom afficher sur ce clavier virtuel ?', '') || '').trim() || 'Invite';
+  alias = (prompt(t('vkPromptDisplayName'), '') || '').trim() || t('vkDefaultAlias');
   localStorage.setItem('vkAlias', alias);
 }
 function renameIdentity() {
-  const next = (prompt('Nouveau nom :', alias) || '').trim();
+  const next = (prompt(t('vkPromptNewName'), alias) || '').trim();
   if (!next) return;
   alias = next;
   localStorage.setItem('vkAlias', alias);
@@ -1179,8 +1192,8 @@ function renderKeyboard() {
     // console, see `StaticAssets.swift`).
     document.getElementById('app').innerHTML =
       '<div id="vk-tab-bar" class="tab-bar">' +
-      `<a class="tab active" data-tab="clavier" onclick="setVKTab('clavier')">Clavier</a>` +
-      `<a class="tab" data-tab="infos" onclick="setVKTab('infos')">Infos</a>` +
+      `<a class="tab active" data-tab="clavier" onclick="setVKTab('clavier')">${t('tabClavier')}</a>` +
+      `<a class="tab" data-tab="infos" onclick="setVKTab('infos')">${t('tabInfos')}</a>` +
       '</div>' +
       '<div id="clavier-tab">' +
       '<div id="responsive-scale-clip">' +
@@ -1207,17 +1220,17 @@ function renderKeyboard() {
       '</div>' +
       '</div>' +
       '<div id="infos-tab" style="display:none">' +
-      '<h1>JamShack — Clavier virtuel (souris/tactile/clavier ordinateur)</h1>' +
+      `<h1>${t('vkHeading')}</h1>` +
       '<div id="identity-container"></div>' +
-      '<div class="hint">Lettres affichees sur les touches (positionnelles — fonctionne quel que soit ton agencement clavier). Fleches, touches &lt; et - (pres du Shift), ou clic/tap sur le petit clavier : glisse la zone jouable. Tab/Maj+Tab : navigue le guide (si actif). Echap : relache tout.</div>' +
+      `<div class="hint">${t('vkHint')}</div>` +
       '</div>';
   }
   ensureKeyboardBuilt();
   applyResponsiveScale();
   const layoutLabel = keyboardLayout === 'qwertz' ? 'QWERTZ' : 'QWERTY';
   document.getElementById('identity-container').innerHTML =
-    `<div class="identity">Vous : <b>${alias}</b> — <a onclick="renameIdentity()">changer</a>` +
-    ` · Disposition clavier : <b>${layoutLabel}</b> — <a onclick="toggleKeyboardLayout()">changer</a></div>`;
+    `<div class="identity">${t('vkVousPrefix')}<b>${alias}</b> — <a onclick="renameIdentity()">${t('vkChanger')}</a>` +
+    `${t('vkDispositionClavierPrefix')}<b>${layoutLabel}</b> — <a onclick="toggleKeyboardLayout()">${t('vkChanger')}</a></div>`;
   // Skipped entirely (not just "kept identical") while a wheel-cell press is in flight — see
   // `wheelChordActiveCount`'s doc comment. `guide-container` has no such touch/click state of
   // its own (just text), so it's always safe to update every poll.
@@ -1387,6 +1400,19 @@ async function refresh() {
     const state = await response.json();
     if (state.palette && state.palette.length === 12) PITCH_CLASS_COLORS = state.palette;
     if (state.paletteTextColors && state.paletteTextColors.length === 12) PITCH_CLASS_TEXT_COLORS = state.paletteTextColors;
+    // Unlike `StaticAssets.swift` (which only ever rebuilds its Menu tab from a `menuBuilt`
+    // flag), THIS page's whole tab bar/hint/heading skeleton is built once and never revisited
+    // (see `renderKeyboard()`'s own `!document.getElementById('keyboard-container')` guard) — so
+    // a language change has to clear it out entirely to force that one-time skeleton (and the
+    // piano itself, via `keyboardBuilt`) to rebuild in the new language on the very next
+    // `renderKeyboard()` call below.
+    if (state.language && state.language !== currentLanguage) {
+      currentLanguage = state.language;
+      document.documentElement.lang = currentLanguage;
+      document.title = t('titleClavierVirtuel');
+      document.getElementById('app').innerHTML = '';
+      keyboardBuilt = false;
+    }
     const track = state.track;
     if (track) {
       heldPitches = new Set(track.heldPitches || []);
@@ -1394,12 +1420,12 @@ async function refresh() {
       chordTones = new Set(track.chordTones || []);
       roles = {};
       (track.modeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc], textColor: PITCH_CLASS_TEXT_COLORS[pc] }; });
-      chordLine = track.chordLabel || '<span class="empty">(aucun accord)</span>';
+      chordLine = track.chordLabel || `<span class="empty">${t('placeholderAucunAccordVK')}</span>`;
       modeLine = track.modesLabel || '';
       staffHTML = renderStaffSVG(track.recentChordEvents || [], keyboardPixelWidth);
     } else {
       heldPitches = new Set(); chordRoot = null; chordTones = new Set(); roles = {};
-      chordLine = '<span class="empty">(piste non initialisee)</span>';
+      chordLine = `<span class="empty">${t('placeholderPisteNonInitialisee')}</span>`;
       modeLine = '';
       staffHTML = renderStaffSVG([], keyboardPixelWidth);
     }
@@ -1415,17 +1441,20 @@ async function refresh() {
       (state.guide.currentModeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc], textColor: PITCH_CLASS_TEXT_COLORS[pc] }; });
       const steps = (state.guide.steps || []).map(step => step.isCurrent ? `<b>[${step.label}]</b>` : step.label).join(' ');
       const progression = state.guide.currentChordProgression || [];
+      const progressionPrefix = state.guide.currentChordProgressionName
+        ? t('formatSuiteAccordsNamed', state.guide.currentChordProgressionName)
+        : t('fieldSuiteAccords');
       const progressionHTML = progression.length
-        ? `<div class="field">Suite d'accords${state.guide.currentChordProgressionName ? ' (' + state.guide.currentChordProgressionName + ')' : ''}: ${progression.map(c => c.label).join(' - ')}</div>`
+        ? `<div class="field">${progressionPrefix}: ${progression.map(c => c.label).join(' - ')}</div>`
         : '';
-      guideInfoHTML = '<h2>Guide</h2>' + `<div class="field">${steps}</div>` + progressionHTML;
+      guideInfoHTML = `<h2>${t('vkHeadingGuide')}</h2>` + `<div class="field">${steps}</div>` + progressionHTML;
     } else {
       guideInfoHTML = '';
     }
     const progressionChords = guideIsActive ? (state.guide.currentChordProgression || []).filter(c => c.quality) : [];
     wheelHTML = renderWheel(state.wheel, guideIsActive, detectedChordFrom(track), progressionChords);
   } catch {
-    chordLine = '<span class="empty">(connexion perdue — l\\'application est-elle toujours lancee ?)</span>';
+    chordLine = `<span class="empty">${t('fallbackConnexionPerdueDetail')}</span>`;
     modeLine = '';
   }
   renderKeyboard();

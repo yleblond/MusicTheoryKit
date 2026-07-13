@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import Localization
 import MusicTheoryKit
 import PieceModel
 import SoundTrackModel
@@ -624,6 +625,7 @@ public final class ImprovSession: @unchecked Sendable {
         try listLLMConnections(in: llmFolder)
         try loadOrCreateColorPalettes(fromJSONFile: (folderPath as NSString).appendingPathComponent("palettes.json"))
         try loadOrCreateChordProgressionTemplates(fromJSONFile: (folderPath as NSString).appendingPathComponent("chordprogressions.json"))
+        try loadOrCreateLanguageSetting(fromJSONFile: (folderPath as NSString).appendingPathComponent("language.json"))
         settingsFolder = folderPath
         append("Dossier de reglages: \(folderPath).")
     }
@@ -1408,6 +1410,46 @@ public final class ImprovSession: @unchecked Sendable {
         append("Using color palette: \(activeColorPalette.name)")
     }
 
+    // MARK: - UI language (shared by terminal, web console, virtual keyboard)
+
+    /// Which of the 3 supported languages the static UI text is shown in — unlike
+    /// `activeColorPaletteIndex`, this IS persisted (see `loadOrCreateLanguageSetting`/
+    /// `setLanguage`) since a language choice should survive a relaunch rather than silently
+    /// reset to French every time.
+    public private(set) var currentLanguage: AppLanguage = .fr
+
+    /// Mirrors `loadColorPalettes(fromJSONFile:)`'s shape, but for the singleton
+    /// `language.json` (one value, not a list).
+    public func loadLanguageSetting(fromJSONFile path: String) throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        currentLanguage = try JSONDecoder().decode(LanguageSettingFile.self, from: data).language
+    }
+
+    /// Mirrors `loadOrCreateColorPalettes(fromJSONFile:)`: writes a default (French) file first
+    /// if nothing is there yet, then loads it either way.
+    public func loadOrCreateLanguageSetting(fromJSONFile path: String) throws {
+        if !FileManager.default.fileExists(atPath: path) {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(LanguageSettingFile(language: .fr))
+            try data.write(to: URL(fileURLWithPath: path))
+        }
+        try loadLanguageSetting(fromJSONFile: path)
+    }
+
+    /// The one place `currentLanguage` actually changes at runtime — mirrors
+    /// `selectColorPalette(atIndex:)`, but also rewrites `language.json` immediately (unlike
+    /// palette selection), since this setting must survive a relaunch.
+    public func setLanguage(_ language: AppLanguage) throws {
+        currentLanguage = language
+        if let settingsFolder {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(LanguageSettingFile(language: language))
+            try data.write(to: URL(fileURLWithPath: (settingsFolder as NSString).appendingPathComponent("language.json")))
+        }
+    }
+
     // MARK: - Chord progression templates (roman-numeral libraries, see `RomanNumeralChord`)
 
     /// Every template loaded from `chordprogressions.json` — same "flat list, hand-edited
@@ -2093,7 +2135,7 @@ public final class ImprovSession: @unchecked Sendable {
             wheel: buildWebConsoleWheelState(listeningTracks: listeningTracks),
             guide: buildWebConsoleGuideState(),
             palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors,
-            scene: buildWebConsoleSceneState()
+            scene: buildWebConsoleSceneState(), language: currentLanguage.rawValue
         )
     }
 
@@ -2183,6 +2225,10 @@ public final class ImprovSession: @unchecked Sendable {
         /// but as wire ids, same shape as `tracks` above. `[]` (not "every track") when
         /// there's no active scene, since "unassigned" is meaningless without one.
         var unassignedTracks: [WebConsoleMenuTrack]
+        /// See `WebConsoleState.language`'s doc comment — the Menu tab is built once per
+        /// tab-visit and never reads `/state`, so this is the only channel it has to notice a
+        /// language change made while already sitting on that tab.
+        var language: String
     }
 
     private func handleMenuListsRequest() -> HTTPResponse {
@@ -2211,7 +2257,7 @@ public final class ImprovSession: @unchecked Sendable {
             scales: ScaleLibrary.all.map { WebConsoleMenuScale(id: $0.id, name: $0.popularName) },
             midiFusionMode: midiFusionMode == .merged ? "fusionne" : "individuel",
             discoveredJamSessions: lastDiscoveredServers.map(\.name),
-            sceneRoles: sceneRoles, unassignedTracks: unassignedTracks
+            sceneRoles: sceneRoles, unassignedTracks: unassignedTracks, language: currentLanguage.rawValue
         )
         guard let data = try? JSONEncoder().encode(lists) else { return .notFound() }
         return HTTPResponse(contentType: "application/json", body: data)
@@ -2751,7 +2797,7 @@ public final class ImprovSession: @unchecked Sendable {
             // client-side while no guide is running — see `app.js`'s own `renderWheel`.
             let listeningTracks: [TrackInfo] = liveInputQueue.sync { tracks.filter(\.isListening) }
             let wheelState = buildWebConsoleWheelState(listeningTracks: listeningTracks)
-            let response = VirtualKeyboardStateResponse(track: info.map(self.webConsoleTrackState), guide: isGuideActive ? guideState : nil, wheel: wheelState, palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors)
+            let response = VirtualKeyboardStateResponse(track: info.map(self.webConsoleTrackState), guide: isGuideActive ? guideState : nil, wheel: wheelState, palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors, language: currentLanguage.rawValue)
             guard let data = try? JSONEncoder().encode(response) else { return .notFound() }
             return HTTPResponse(contentType: "application/json", body: data)
         case "/note-on":

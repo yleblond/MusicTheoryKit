@@ -417,7 +417,7 @@ Menus disponibles :
 
 | Menu | Contenu |
 |---|---|
-| **JamShack** | Menu principal (premier de la barre, s'ouvre par défaut) : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/**composition IA**/**réglages** — ce dernier remplace l'ancien choix indépendant de dossier de connexions LLM ; palettes de couleur, progressions d'accords et connexions LLM vivent tous sous ce même dossier de réglages, par défaut `Settings/`) ; (3) choisir une connexion LLM, isolée dans son propre groupe ; (3bis) choisir la palette de couleur (voir §13) ; (4) mode MIDI fusionné/individuel ; (5) démarrer/arrêter la console web (voir §11) et le clavier virtuel (voir §12) ; (6) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
+| **JamShack** | Menu principal (premier de la barre, s'ouvre par défaut) : (1) infos (status), aide ; (2) choisir chacun des dossiers (morceaux/sons/soundtracks/**guides musicaux**/**scènes**/**composition IA**/**réglages** — ce dernier remplace l'ancien choix indépendant de dossier de connexions LLM ; palettes de couleur, progressions d'accords et connexions LLM vivent tous sous ce même dossier de réglages, par défaut `Settings/`) ; (3) choisir une connexion LLM, isolée dans son propre groupe ; (3bis) choisir la palette de couleur (voir §13) ; (4) mode MIDI fusionné/individuel ; (5) démarrer/arrêter la console web (voir §11) et le clavier virtuel (voir §12) ; (5bis) choisir la langue de l'interface — Francais/Anglais/Allemand (voir §18) ; (6) quitter. Point d'entrée unique pour la configuration de la session — dossiers, connexion LLM et mode MIDI ne se réglent que depuis ce menu. |
 | **Scene** | Voir le plan de scène en arbre (`scene-tree`) — l'application, ses instruments locaux, l'état de la console web et du clavier virtuel, et en mode serveur la liste des clients connectés avec leurs propres instruments (voir §9) —, activer/arrêter un instrument, *séparateur*, activer/désactiver le son d'un instrument, *séparateur*, choisir un son pour un instrument, *séparateur*, sauvegarder/charger une scène (la configuration complète des instruments : actif, son actif, quel son), *séparateur* **Rôles** — nouvelle scène (à base de rôles), lister les rôles, ajouter un rôle, attacher un instrument à un rôle, détacher un rôle, choisir le son d'un rôle (voir §15 pour le concept). Les actions qui demandent de choisir un instrument présentent la liste numérotée (voir §3) — répondre par le numéro évite d'avoir à retaper `midi:1`/`clavier`/etc. |
 | **Guide Musicaux** | Voir l'écran Guide Musical, *séparateur*, créer un nouveau guide musical (propose d'ajouter un mode en boucle jusqu'à laisser la tonique vide) / ajouter un mode au guide musical en cours — chaque ajout propose d'abord la liste numérotée des **33 gammes/modes des 7 familles** de `MusicTheoryKit` (les 7 modes majeurs usuels, puis mineur mélodique, mineur harmonique, majeur harmonique, diminué, tons entiers, augmenté — un numéro suffit, plus besoin de connaître l'id écrit), chaque ligne affichant les deux appellations (nom courant et nom systématique, ex. « Altered / Super Locrian / Ionian #1 »), puis une liste numérotée de progressions d'accords (blues, ii-V-I, cadence andalouse…, tirée de `chordprogressions.json` dans le dossier de réglages) à attacher à cette étape, ou de laisser vide pour n'en attacher aucune, *séparateur*, charger un guide musical / sauvegarder le guide musical (sous...), *séparateur*, démarrer/arrêter le guide musical — aussi accessible directement par la barre d'espace une fois sur l'écran Guide Musical. Note : la roue des quintes n'affiche le contour diatonique/chiffrage romain que pour les 7 modes majeurs — un mode d'une autre famille reste jouable et reconnu, juste sans ce contour sur la roue. |
 | **Enregistrement** | Démarrer/arrêter un enregistrement, voir l'enregistrement, jouer l'enregistrement, *séparateur*, charger/sauvegarder l'enregistrement, *séparateur*, composer un morceau à partir de l'enregistrement en le nommant (voir §10), *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser la phrase de cadrage, *séparateur*, voir/modifier/sauvegarder/charger/réinitialiser les indications de style, *séparateur*, voir/exporter le prompt de composition (voir §6). |
@@ -957,6 +957,41 @@ guide musical chargé, et le détail d'un enregistrement.
 **Expérimental** : toutes les actions sont exposées sans réglage fin des permissions pour
 l'instant (tout ou rien) — un mécanisme plus sélectif est une étape volontairement différée.
 
+## 18. Langue de l'interface — français / anglais / allemand
+
+L'interface texte (menus, en-têtes d'écran, noms d'onglets, libellés de champ) est disponible
+en trois langues : français (langue d'origine, celle des captures/exemples de ce guide),
+anglais et allemand. Un seul réglage partagé s'applique à la fois au terminal, à la console web
+et au clavier virtuel — changer la langue depuis n'importe lequel des trois se répercute
+immédiatement sur les deux autres.
+
+```
+language fr    # francais (par defaut)
+language en    # anglais
+language de    # allemand
+```
+
+Menu **JamShack > Langue: Francais/Anglais/Allemand** fait la même chose. Contrairement à la
+palette de couleur (§13), ce choix est **persisté** : écrit aussitôt dans
+`Settings/language.json` (créé automatiquement, par défaut en français, si absent au premier
+lancement), il survit à un redémarrage.
+
+**Se répercute sans redémarrer** : le terminal redessine son menu à chaque tick (~100ms, écrans
+`run`/`config`), donc le changement est visible en un tick ; la console web et le clavier
+virtuel reçoivent la langue à chaque sondage (`/state`, `/menu-lists`) et se redessinent en
+conséquence — y compris l'onglet **Commandes** (§16), qui ne se reconstruit normalement jamais
+tant qu'on reste dessus (pour ne pas effacer un champ en cours de remplissage), mais détecte
+quand même un changement de langue via `/menu-lists` et se reconstruit dans la nouvelle langue
+au sondage suivant.
+
+**Ce qui est traduit** : les titres/items de menu, les en-têtes d'écran/de section, les noms
+d'onglets, les libellés de champ, les invites/textes statiques. **Ce qui reste en français pour
+l'instant** : les messages du journal d'activité et les confirmations d'action (texte généré
+dynamiquement, pas encore internationalisé), et le texte affiché par `help` (à restructurer
+d'abord). **Jamais traduits** : les noms/la syntaxe des commandes elles-mêmes
+(`scene-role-attach` reste `scene-role-attach` dans les trois langues), ainsi que les noms
+« JamShack »/« Jam Session » et l'onglet « Run » de la console web.
+
 ## Liste complète des commandes
 
 `help` les affiche déjà regroupées par catégorie (Général / Morceaux / Pistes d'entrée /
@@ -1055,6 +1090,7 @@ web-console stop        arrete la console web
 virtual-keyboard [port] demarre le clavier virtuel (piano interactif dans un navigateur, piste 'clavier-web', defaut port 8081)
 virtual-keyboard stop   arrete le clavier virtuel
 use-palette <n ou nom>  choisit la palette de couleur active (console web + clavier virtuel, propre a cette instance)
+language <fr|en|de>     change la langue de l'interface (menus, en-têtes, libellés) — persiste dans Settings/language.json
 quit                    quitte
 ```
 
