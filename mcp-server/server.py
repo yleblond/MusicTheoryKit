@@ -101,6 +101,15 @@ ACTIONS: list[dict] = [
             {"name": "track", "expose_as": "track_id", "kind": "select-track", "label": "Instrument"},
             {"name": "value", "expose_as": "sample_name", "kind": "select", "list": "sampleFiles", "label": "Son"},
         ]},
+        {"action": "track-recognition-mode", "label": "Choisir le mode de reconnaissance du microphone", "fields": [
+            {"name": "track", "expose_as": "track_id", "kind": "select-track", "label": "Instrument"},
+            {"name": "value", "expose_as": "recognition_mode", "kind": "select", "label": "Mode", "options": [
+                {"value": "mono-heuristique", "label": "Monophonique (heuristique)"},
+                {"value": "mono-hps", "label": "Monophonique (HPS)"},
+                {"value": "poly-latched", "label": "Polyphonique verrouille"},
+                {"value": "poly-glissant", "label": "Polyphonique glissant"},
+            ]},
+        ]},
         {"action": "scene-save", "label": "Sauvegarder scene", "fields": [{"name": "value", "expose_as": "name", "kind": "text", "placeholder": "nom"}]},
         {"action": "scene-load", "label": "Charger scene", "fields": [{"name": "value", "expose_as": "scene_name", "kind": "select", "list": "sceneFiles"}]},
         {"action": "scene-new", "label": "Nouvelle scene (roles)", "fields": [{"name": "value", "expose_as": "title", "kind": "text", "placeholder": "titre"}]},

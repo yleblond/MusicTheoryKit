@@ -75,6 +75,73 @@ public enum MIDIFusionMode: Sendable, Equatable {
     case individual
 }
 
+/// How a `.microphone` track turns raw FFT detections into confirmed notes — see
+/// `ImprovSession.setMicrophoneRecognitionMode`. Two different techniques are offered for the
+/// "one instrument voice at a time" case (flute, voice, single-line reed/brass...) and two
+/// different temporal-smoothing strategies for the "several notes at once" case (piano,
+/// guitar...), deliberately kept side by side rather than settling on one, so they can be
+/// compared against real playing. See `FFTPitchAnalyzer.monophonicFundamentalHeuristic`/
+/// `monophonicFundamentalHPS` and `MicrophonePitchStabilizer.Policy` for what each one
+/// actually does.
+public enum MicrophoneRecognitionMode: Sendable, Equatable, Codable {
+    /// One note at a time; harmonic-vs-fundamental ambiguity resolved via a lightweight
+    /// subharmonic-promotion heuristic over the top few FFT candidates.
+    case monophonicHeuristic
+    /// One note at a time; harmonic-vs-fundamental ambiguity resolved via a Harmonic Product
+    /// Spectrum estimate — more principled, a bit more computation, same latency budget.
+    case monophonicHPS
+    /// Several simultaneous notes; a note-on/off is confirmed only once `windows` consecutive
+    /// ~93ms analysis windows agree, damping flicker at the cost of added confirmation latency.
+    case polyphonicLatched(windows: Int)
+    /// Several simultaneous notes; a note-on/off is confirmed by simple majority over the
+    /// last `windows` analysis windows — tolerates one dropped/aliased window without losing
+    /// confirmation, unlike `.polyphonicLatched`'s strict consecutiveness requirement.
+    case polyphonicSliding(windows: Int)
+
+    /// Applied to a `.microphone` track that starts listening without an explicit mode
+    /// choice: light polyphonic smoothing (a small, deliberate departure from this app's
+    /// original always-unsmoothed microphone behavior), not one of the monophonic modes —
+    /// nothing about a freshly-added microphone track implies it's a solo instrument.
+    public static let `default`: MicrophoneRecognitionMode = .polyphonicLatched(windows: 2)
+
+    /// The canonical wire-format string for this mode — what the terminal's `track <id> mode
+    /// ...` command, the web console's fixed-option menu, and the MCP server all send/parse
+    /// (mirrors `TrackID.wireIDText`/`init?(wireIDText:)`'s own convention). `windows` is
+    /// appended as `:N` only when it differs from that mode's own preset default, so the
+    /// common preset choices stay short while arbitrary values remain round-trippable.
+    public var wireValueText: String {
+        switch self {
+        case .monophonicHeuristic: return "mono-heuristique"
+        case .monophonicHPS: return "mono-hps"
+        case .polyphonicLatched(let windows): return windows == 2 ? "poly-latched" : "poly-latched:\(windows)"
+        case .polyphonicSliding(let windows): return windows == 3 ? "poly-glissant" : "poly-glissant:\(windows)"
+        }
+    }
+
+    /// The inverse of `wireValueText`, also accepting an explicit `poly-latched:N`/
+    /// `poly-glissant:K` suffix for arbitrary window counts (the terminal command's power-user
+    /// path — the web/MCP fixed-option menu only ever sends the bare preset form). `nil` for
+    /// anything not recognized, including a present-but-non-numeric suffix (a plain missing
+    /// suffix falls back to that mode's own preset default — `setMicrophoneRecognitionMode` is
+    /// what actually validates `windows >= 1`, not this parser).
+    public init?(wireValueText text: String) {
+        let parts = text.split(separator: ":", maxSplits: 1)
+        guard let key = parts.first else { return nil }
+        var windows: Int?
+        if parts.count > 1 {
+            guard let parsed = Int(parts[1]) else { return nil }
+            windows = parsed
+        }
+        switch key {
+        case "mono-heuristique": self = .monophonicHeuristic
+        case "mono-hps": self = .monophonicHPS
+        case "poly-latched": self = .polyphonicLatched(windows: windows ?? 2)
+        case "poly-glissant": self = .polyphonicSliding(windows: windows ?? 3)
+        default: return nil
+        }
+    }
+}
+
 /// One live-input track's current state: whether it's being listened to, whether (and with
 /// what instrument) it produces sound, and its own independent chord/mode recognition —
 /// every track recognizes on its own held notes, there is no single shared set anymore.
@@ -102,6 +169,8 @@ public struct TrackInfo: Identifiable, Sendable {
     public var lastDetectedPitches: [DetectedPitch]
     /// Only meaningful for `.microphone` — its current raw input level (RMS).
     public var microphoneInputLevel: Float
+    /// Only meaningful for `.microphone` — see `MicrophoneRecognitionMode`.
+    public var microphoneRecognitionMode: MicrophoneRecognitionMode
     /// Only ever populated for `.remote` tracks on a client: a ready-to-display chord
     /// summary taken straight from the server's `sync` broadcast. A `RecognizedChord` needs
     /// theory-library values (root pitch class, chord template ID) that only exist where
@@ -123,6 +192,7 @@ public struct TrackInfo: Identifiable, Sendable {
         soundEnabled: Bool = false, instrumentName: String? = nil, heldPitches: Set<Int> = [],
         recognizedChord: RecognizedChord? = nil, recognizedModes: [RecognizedMode] = [],
         lastDetectedPitches: [DetectedPitch] = [], microphoneInputLevel: Float = 0,
+        microphoneRecognitionMode: MicrophoneRecognitionMode = .default,
         remoteChordDisplay: String? = nil, remoteModesDisplay: String? = nil, ownerName: String? = nil
     ) {
         self.id = id
@@ -136,6 +206,7 @@ public struct TrackInfo: Identifiable, Sendable {
         self.recognizedModes = recognizedModes
         self.lastDetectedPitches = lastDetectedPitches
         self.microphoneInputLevel = microphoneInputLevel
+        self.microphoneRecognitionMode = microphoneRecognitionMode
         self.remoteChordDisplay = remoteChordDisplay
         self.remoteModesDisplay = remoteModesDisplay
         self.ownerName = ownerName

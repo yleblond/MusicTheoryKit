@@ -189,10 +189,13 @@ public final class ImprovSession: @unchecked Sendable {
     /// One independent sampler per track with sound enabled — see `setSoundEnabled`. Never
     /// present for `.microphone` (enforced there, not here).
     private var samplers: [TrackID: SamplerUnit] = [:]
-    /// The microphone's last reported pitches, so `handleDetectedPitches` knows which are
-    /// new (need a note-on) and which dropped out (need a note-off) on the next detection
-    /// round, instead of resending the same held notes every ~93ms.
-    private var lastDetectedMIDIPitches: [TrackID: Set<Int>] = [:]
+    /// One `MicrophonePitchStabilizer` per microphone track (today there's only ever one,
+    /// `.microphone`, but keyed by `TrackID` for consistency with `recognizers`/`samplers`),
+    /// created in `startTrack` from that track's `microphoneRecognitionMode` and discarded in
+    /// `stopTrack` — see `handleDetectedPitches` for how it turns raw per-window detections
+    /// into debounced note-on/note-off transitions, replacing what used to be a same-window
+    /// direct diff with no smoothing at all.
+    private var pitchStabilizers: [TrackID: MicrophonePitchStabilizer] = [:]
     /// One rolling event log per track, appended in `refreshRecognition` the instant the
     /// held-pitches/chord actually changes — see `WebConsoleTrackState.recentChordEvents`'s
     /// own doc comment for why this lives here (server-side, change-triggered) rather than
@@ -277,6 +280,8 @@ public final class ImprovSession: @unchecked Sendable {
         case llmComposeFailed([String])
         case unknownTrack(String)
         case trackCannotHaveSound
+        case recognitionModeOnlyForMicrophone
+        case invalidRecognitionWindowCount
         case remoteTrackListeningIsNotLocal
         case networkRoleAlreadyActive
         case alreadyRecording
@@ -325,6 +330,8 @@ public final class ImprovSession: @unchecked Sendable {
             case .llmComposeFailed(let warnings): return "composition failed: \(warnings.joined(separator: "; "))"
             case .unknownTrack(let text): return "no such track '\(text)' — try 'tracks' first"
             case .trackCannotHaveSound: return "this track can't produce sound (the microphone is never sounded through the app, to avoid feedback)"
+            case .recognitionModeOnlyForMicrophone: return "recognition mode only applies to the microphone track"
+            case .invalidRecognitionWindowCount: return "window count must be at least 1"
             case .remoteTrackListeningIsNotLocal: return "this track belongs to another participant — its listening state is controlled on their machine, not this one"
             case .networkRoleAlreadyActive: return "already running as a server or connected as a client — disconnect/stop first"
             case .alreadyRecording: return "already recording — try 'stopRecording' first"
@@ -1095,7 +1102,7 @@ public final class ImprovSession: @unchecked Sendable {
     public func attachInstrument(_ trackID: TrackID, toRole roleID: SceneRole.ID) throws {
         guard var scene = currentScene else { throw SessionError.noSceneLoaded }
         guard let targetIndex = scene.roles.firstIndex(where: { $0.id == roleID }) else { throw SessionError.unknownSceneRole }
-        _ = try trackIndex(trackID) // throws .unknownTrack if this instrument doesn't exist
+        let trackIdx = try trackIndex(trackID) // throws .unknownTrack if this instrument doesn't exist
 
         if let previousIndex = scene.roles.firstIndex(where: { $0.attachedTrackID == trackID }), previousIndex != targetIndex {
             append("Instrument deplace : detache de '\(scene.roles[previousIndex].name)'.")
@@ -1107,6 +1114,13 @@ public final class ImprovSession: @unchecked Sendable {
 
         scene.roles[targetIndex].attachedTrackID = trackID
         scene.roles[targetIndex].lastAttachedInstrument = identityHint(for: trackID)
+        if trackID == .microphone {
+            // Sticky, like `lastAttachedInstrument`: whatever mode the microphone was already
+            // running under gets remembered on the role, so a later `applyRoleConfiguration`
+            // (on a fresh attach or a scene reload) restores the SAME mode rather than
+            // silently resetting to `MicrophoneRecognitionMode.default`.
+            scene.roles[targetIndex].microphoneRecognitionMode = tracks[trackIdx].microphoneRecognitionMode
+        }
         let role = scene.roles[targetIndex]
         currentScene = scene
 
@@ -1136,6 +1150,9 @@ public final class ImprovSession: @unchecked Sendable {
     /// already used throughout this whole feature — a missing sample file shouldn't stop the
     /// attachment itself from taking effect.
     private func applyRoleConfiguration(_ role: SceneRole, to trackID: TrackID) throws {
+        if let mode = role.microphoneRecognitionMode, trackID == .microphone {
+            try? setMicrophoneRecognitionMode(mode, for: trackID)
+        }
         if role.isListening {
             try? startTrack(trackID)
         }
@@ -1262,6 +1279,9 @@ public final class ImprovSession: @unchecked Sendable {
             for index in existing.roles.indices {
                 if let trackID = existing.roles[index].attachedTrackID {
                     existing.roles[index].lastAttachedInstrument = identityHint(for: trackID)
+                    if trackID == .microphone, let trackIdx = tracks.firstIndex(where: { $0.id == trackID }) {
+                        existing.roles[index].microphoneRecognitionMode = tracks[trackIdx].microphoneRecognitionMode
+                    }
                 }
             }
             scene = existing
@@ -1689,11 +1709,13 @@ public final class ImprovSession: @unchecked Sendable {
         case .computerKeyboard, .webKeyboard:
             break
         case .microphone:
-            let newListener = MicrophonePitchListener { [weak self] detected, level in
+            let mode = tracks[index].microphoneRecognitionMode
+            let newListener = MicrophonePitchListener(strategy: Self.analysisStrategy(for: mode)) { [weak self] detected, level in
                 self?.handleDetectedPitches(detected, level: level, track: id)
             }
             try newListener.start()
             microphoneListener = newListener
+            pitchStabilizers[id] = MicrophonePitchStabilizer(policy: Self.stabilizerPolicy(for: mode))
         }
         if recognizers[id] == nil { recognizers[id] = RecognitionEngine() }
         tracks[index].isListening = true
@@ -1719,6 +1741,7 @@ public final class ImprovSession: @unchecked Sendable {
         case .microphone:
             microphoneListener?.stop()
             microphoneListener = nil
+            pitchStabilizers[id] = nil
         }
         liveInputQueue.sync {
             recognizers[id]?.reset()
@@ -1728,7 +1751,6 @@ public final class ImprovSession: @unchecked Sendable {
             tracks[index].lastDetectedPitches = []
             tracks[index].microphoneInputLevel = 0
         }
-        lastDetectedMIDIPitches[id] = nil
         recentChordEvents[id] = nil
         tracks[index].isListening = false
         append("Piste '\(tracks[index].label)' : ecoute arretee.")
@@ -1782,6 +1804,61 @@ public final class ImprovSession: @unchecked Sendable {
     public func setInstrument(atIndex sampleIndex: Int, for id: TrackID) throws {
         guard sampleFiles.indices.contains(sampleIndex) else { throw SessionError.invalidSampleIndex }
         try setInstrument(named: sampleFiles[sampleIndex], for: id)
+    }
+
+    /// Changes how the microphone track turns raw FFT detections into confirmed notes — see
+    /// `MicrophoneRecognitionMode`. Only valid for `.microphone` (meaningless for any other
+    /// track kind). If the track is currently listening, restarts it (stop then start) so the
+    /// new mode takes effect immediately rather than only on the next manual restart — a
+    /// brief, one-time input gap, acceptable since permission is already granted so there's no
+    /// re-prompt.
+    public func setMicrophoneRecognitionMode(_ mode: MicrophoneRecognitionMode, for id: TrackID) throws {
+        let index = try trackIndex(id)
+        guard id == .microphone else { throw SessionError.recognitionModeOnlyForMicrophone }
+        switch mode {
+        case .polyphonicLatched(let windows) where windows < 1, .polyphonicSliding(let windows) where windows < 1:
+            throw SessionError.invalidRecognitionWindowCount
+        default:
+            break
+        }
+        let wasListening = tracks[index].isListening
+        if wasListening { stopTrack(id) }
+        tracks[index].microphoneRecognitionMode = mode
+        if wasListening { try startTrack(id) }
+        append("Piste '\(tracks[index].label)' : mode de reconnaissance -> \(Self.describe(mode)).")
+    }
+
+    /// Maps a user-facing `MicrophoneRecognitionMode` to the `AnalysisStrategy` that decides
+    /// which `FFTPitchAnalyzer` method runs per window — see that enum's own doc comment for
+    /// why the two polyphonic modes share one strategy.
+    private static func analysisStrategy(for mode: MicrophoneRecognitionMode) -> AnalysisStrategy {
+        switch mode {
+        case .monophonicHeuristic: return .monophonicHeuristic
+        case .monophonicHPS: return .monophonicHPS
+        case .polyphonicLatched, .polyphonicSliding: return .polyphonic(maxPeaks: 6)
+        }
+    }
+
+    /// Maps a user-facing `MicrophoneRecognitionMode` to the temporal-smoothing `Policy` run
+    /// by that track's `MicrophonePitchStabilizer` — `.passthrough` for both monophonic modes,
+    /// since their fix is spectral (in `AnalysisStrategy`/`FFTPitchAnalyzer`), not temporal.
+    private static func stabilizerPolicy(for mode: MicrophoneRecognitionMode) -> MicrophonePitchStabilizer.Policy {
+        switch mode {
+        case .monophonicHeuristic, .monophonicHPS: return .passthrough
+        case .polyphonicLatched(let windows): return .latched(windows: windows)
+        case .polyphonicSliding(let windows): return .sliding(windows: windows)
+        }
+    }
+
+    /// French display text for a recognition mode — used in the log line above and in the
+    /// terminal/web status displays.
+    private static func describe(_ mode: MicrophoneRecognitionMode) -> String {
+        switch mode {
+        case .monophonicHeuristic: return "monophonique (heuristique)"
+        case .monophonicHPS: return "monophonique (HPS)"
+        case .polyphonicLatched(let windows): return "polyphonique verrouille (N=\(windows))"
+        case .polyphonicSliding(let windows): return "polyphonique glissant (K=\(windows))"
+        }
     }
 
     private static let supportedSampleExtensions: Set<String> = ["sf2", "dls", "aupreset"]
@@ -1887,28 +1964,37 @@ public final class ImprovSession: @unchecked Sendable {
         }
     }
 
-    /// Turns a stream of "here are the pitches right now, or empty for silence" reports
-    /// into discrete note-on/note-off transitions: a note-off for every previously-held
-    /// pitch that dropped out, a note-on for every new one that appeared — the same shape
-    /// as how MIDI note-on/note-off events already drive `heldPitches`/the recognizer, so
-    /// several simultaneously-detected pitches naturally feed the same chord recognition
-    /// real MIDI chords already use. Runs on whichever thread `MicrophonePitchListener`
-    /// calls back on.
-    private func handleDetectedPitches(_ detected: [DetectedPitch], level: Float, track: TrackID) {
+    /// Turns a stream of "here are the pitches right now, or empty for silence" reports into
+    /// discrete, debounced note-on/note-off transitions via that track's
+    /// `MicrophonePitchStabilizer` (see its doc comment for the confirmation policies) — the
+    /// same shape as how MIDI note-on/note-off events already drive `heldPitches`/the
+    /// recognizer, so several simultaneously-confirmed pitches naturally feed the same chord
+    /// recognition real MIDI chords already use. `internal`, not `private`, so it's directly
+    /// testable (`@testable import`) — see also `simulateMicrophoneDetection`, the public
+    /// forwarder `SanityChecks` uses since it has no `@testable import`. Runs on whichever
+    /// thread `MicrophonePitchListener` calls back on.
+    func handleDetectedPitches(_ detected: [DetectedPitch], level: Float, track: TrackID) {
         liveInputQueue.sync {
             guard let index = tracks.firstIndex(where: { $0.id == track }) else { return }
             tracks[index].microphoneInputLevel = level
             tracks[index].lastDetectedPitches = detected
-            let newPitches = Set(detected.map(\.midiPitch))
-            let oldPitches = lastDetectedMIDIPitches[track] ?? []
-            for droppedPitch in oldPitches.subtracting(newPitches) {
-                updateRecognitionState(pitch: droppedPitch, isNoteOn: false, velocity: 0, channel: 0, track: track)
+            let raw = Set(detected.map(\.midiPitch))
+            for transition in pitchStabilizers[track]?.ingest(raw) ?? [] {
+                updateRecognitionState(
+                    pitch: transition.pitch, isNoteOn: transition.kind == .noteOn,
+                    velocity: transition.kind == .noteOn ? 100 : 0, channel: 0, track: track
+                )
             }
-            for newPitch in newPitches.subtracting(oldPitches) {
-                updateRecognitionState(pitch: newPitch, isNoteOn: true, velocity: 100, channel: 0, track: track)
-            }
-            lastDetectedMIDIPitches[track] = newPitches
         }
+    }
+
+    /// Public forwarder to `handleDetectedPitches` for `SanityChecks` (a separate executable
+    /// target with no `@testable import`, so it can only reach `public` API) — lets it exercise
+    /// the full FFT-detection-to-note-event pipeline (including the stabilizer) without real
+    /// microphone hardware, the same way `pressKey`/`releaseKey` already do for MIDI/keyboard
+    /// input.
+    public func simulateMicrophoneDetection(_ detected: [DetectedPitch], level: Float, track: TrackID = .microphone) {
+        handleDetectedPitches(detected, level: level, track: track)
     }
 
     /// Re-runs one track's chord/mode recognition and logs a line only when the result
@@ -2341,6 +2427,10 @@ public final class ImprovSession: @unchecked Sendable {
         case "track-instrument":
             guard let id = TrackID(wireIDText: query["track"] ?? "") else { throw MenuActionError.invalidTrack }
             try setInstrument(named: value, for: id); return ok("Instrument choisi : \(value)")
+        case "track-recognition-mode":
+            guard let id = TrackID(wireIDText: query["track"] ?? "") else { throw MenuActionError.invalidTrack }
+            guard let mode = MicrophoneRecognitionMode(wireValueText: value) else { throw MenuActionError.invalidValue }
+            try setMicrophoneRecognitionMode(mode, for: id); return ok("Mode de reconnaissance : \(value)")
         case "scene-save": try saveScene(title: value, as: value); return ok("Scene sauvegardee : \(value)")
         case "scene-load": try loadScene(named: value); return ok("Scene chargee : \(value)")
         case "scene-new": newScene(title: value); return ok("Nouvelle scene : \(value)")
@@ -2989,6 +3079,7 @@ public final class ImprovSession: @unchecked Sendable {
             chordRoot: track.recognizedChord?.root.value, chordTones: chordTones, modeTones: modeTones,
             chordLabel: chordLabel, modesLabel: modesLabel,
             microphoneLevel: track.id == .microphone ? track.microphoneInputLevel : nil,
+            recognitionMode: track.id == .microphone ? Self.describe(track.microphoneRecognitionMode) : nil,
             recentChordEvents: recentChordEvents[track.id] ?? []
         )
     }

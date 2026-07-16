@@ -843,6 +843,171 @@ func testDominantFrequencyMatchesFirstOfDominantFrequencies() {
     check(single, multi.first, "dominantFrequency matches first of dominantFrequencies")
 }
 
+/// A fundamental plus its own harmonics at independently chosen amplitudes — a synthetic
+/// stand-in for a real instrument tone whose harmonic series isn't flat, unlike
+/// `mixedSineWavesForFFTTests`'s equal-amplitude chord stand-in. `harmonicAmplitudes[0]` is the
+/// fundamental's own amplitude, `[1]` the 2nd harmonic's, etc.
+func harmonicRichWaveForFFTTests(fundamentalHz: Double, harmonicAmplitudes: [Float], sampleRate: Double, count: Int) -> [Float] {
+    var mix = [Float](repeating: 0, count: count)
+    for (index, amplitude) in harmonicAmplitudes.enumerated() {
+        let wave = sineWaveForFFTTests(frequencyHz: fundamentalHz * Double(index + 1), sampleRate: sampleRate, count: count, amplitude: amplitude)
+        for i in 0..<count { mix[i] += wave[i] }
+    }
+    return mix
+}
+
+func testFFTDominantFrequencyLocksOntoStrongSecondHarmonicWhenFundamentalIsWeak() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    let samples = harmonicRichWaveForFFTTests(fundamentalHz: 220, harmonicAmplitudes: [0.25, 0.5], sampleRate: 44100, count: 4096)
+    guard let detected = analyzer.dominantFrequency(in: samples, sampleRate: 44100) else {
+        failures += 1; checks += 1
+        print("FAIL [dominantFrequency locks onto strong 2nd harmonic]: got nil")
+        return
+    }
+    checkClose(detected, 440, accuracy: 3.0, "dominantFrequency locks onto strong 2nd harmonic")
+}
+
+func testMonophonicFundamentalHeuristicRecoversWeakFundamentalUnderStrongSecondHarmonic() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    let samples = harmonicRichWaveForFFTTests(fundamentalHz: 220, harmonicAmplitudes: [0.25, 0.5], sampleRate: 44100, count: 4096)
+    guard let detected = analyzer.monophonicFundamentalHeuristic(in: samples, sampleRate: 44100) else {
+        failures += 1; checks += 1
+        print("FAIL [monophonicFundamentalHeuristic recovers weak fundamental]: got nil")
+        return
+    }
+    checkClose(detected, 220, accuracy: 3.0, "monophonicFundamentalHeuristic recovers weak fundamental")
+}
+
+func testMonophonicFundamentalHeuristicMatchesPlainPeakForAPureTone() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    let samples = sineWaveForFFTTests(frequencyHz: 440, sampleRate: 44100, count: 4096)
+    guard let detected = analyzer.monophonicFundamentalHeuristic(in: samples, sampleRate: 44100) else {
+        failures += 1; checks += 1
+        print("FAIL [monophonicFundamentalHeuristic pure tone]: got nil")
+        return
+    }
+    checkClose(detected, 440, accuracy: 2.0, "monophonicFundamentalHeuristic matches plain peak for a pure tone")
+}
+
+func testMonophonicFundamentalHeuristicReturnsNilForSilence() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    checkNil(analyzer.monophonicFundamentalHeuristic(in: [Float](repeating: 0, count: 4096), sampleRate: 44100), "monophonicFundamentalHeuristic returns nil for silence")
+}
+
+func testMonophonicFundamentalHPSRecoversWeakFundamentalUnderStrongSecondHarmonic() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    let samples = harmonicRichWaveForFFTTests(fundamentalHz: 220, harmonicAmplitudes: [0.25, 0.5], sampleRate: 44100, count: 4096)
+    guard let detected = analyzer.monophonicFundamentalHPS(in: samples, sampleRate: 44100) else {
+        failures += 1; checks += 1
+        print("FAIL [monophonicFundamentalHPS recovers weak fundamental]: got nil")
+        return
+    }
+    checkClose(detected, 220, accuracy: 3.0, "monophonicFundamentalHPS recovers weak fundamental")
+}
+
+func testMonophonicFundamentalHPSMatchesPlainPeakForAPureTone() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    let samples = sineWaveForFFTTests(frequencyHz: 440, sampleRate: 44100, count: 4096)
+    guard let detected = analyzer.monophonicFundamentalHPS(in: samples, sampleRate: 44100) else {
+        failures += 1; checks += 1
+        print("FAIL [monophonicFundamentalHPS pure tone]: got nil")
+        return
+    }
+    checkClose(detected, 440, accuracy: 2.0, "monophonicFundamentalHPS matches plain peak for a pure tone")
+}
+
+func testMonophonicFundamentalHPSReturnsNilForSilence() {
+    let analyzer = FFTPitchAnalyzer(size: 4096)
+    checkNil(analyzer.monophonicFundamentalHPS(in: [Float](repeating: 0, count: 4096), sampleRate: 44100), "monophonicFundamentalHPS returns nil for silence")
+}
+
+// MARK: - MicrophonePitchStabilizerTests (mirrors Tests/AudioEngineTests/MicrophonePitchStabilizerTests.swift)
+
+func testPassthroughConfirmsEveryWindowImmediately() {
+    let stabilizer = MicrophonePitchStabilizer(policy: .passthrough)
+    check(stabilizer.ingest([60]), [StabilizedTransition(pitch: 60, kind: .noteOn)], "passthrough confirms note-on immediately")
+    check(stabilizer.ingest([60, 64]), [StabilizedTransition(pitch: 64, kind: .noteOn)], "passthrough confirms added note immediately")
+    check(stabilizer.ingest([]), [
+        StabilizedTransition(pitch: 60, kind: .noteOff), StabilizedTransition(pitch: 64, kind: .noteOff),
+    ], "passthrough confirms note-offs immediately")
+}
+
+func testLatchedRejectsFlickerShorterThanN() {
+    let stabilizer = MicrophonePitchStabilizer(policy: .latched(windows: 3))
+    check(stabilizer.ingest([60]), [], "latched(3) holds after 1 window")
+    check(stabilizer.ingest([]), [], "latched(3) holds after a dropout before reaching N")
+    check(stabilizer.ingest([60]), [], "latched(3) still holds, flicker never reached N consecutive")
+    check(stabilizer.confirmedPitches, [], "latched(3) never confirmed a flickering note")
+}
+
+func testLatchedConfirmsNoteOnAfterNConsecutiveWindows() {
+    let stabilizer = MicrophonePitchStabilizer(policy: .latched(windows: 3))
+    check(stabilizer.ingest([60]), [], "latched(3) window 1/3")
+    check(stabilizer.ingest([60]), [], "latched(3) window 2/3")
+    check(stabilizer.ingest([60]), [StabilizedTransition(pitch: 60, kind: .noteOn)], "latched(3) confirms on window 3/3")
+    check(stabilizer.confirmedPitches, [60], "latched(3) confirmedPitches after confirmation")
+}
+
+func testLatchedConfirmsNoteOffOnlyAfterNConsecutiveAbsences() {
+    let stabilizer = MicrophonePitchStabilizer(policy: .latched(windows: 2))
+    _ = stabilizer.ingest([60])
+    check(stabilizer.ingest([60]), [StabilizedTransition(pitch: 60, kind: .noteOn)], "latched(2) confirms on")
+    check(stabilizer.ingest([]), [], "latched(2) one dropout does not yet confirm off")
+    check(stabilizer.confirmedPitches, [60], "latched(2) still confirmed after one dropout")
+    check(stabilizer.ingest([]), [StabilizedTransition(pitch: 60, kind: .noteOff)], "latched(2) confirms off after 2 consecutive absences")
+    check(stabilizer.confirmedPitches, [], "latched(2) confirmedPitches empty after off")
+}
+
+func testSlidingConfirmsByMajorityNotConsecutive() {
+    let stabilizer = MicrophonePitchStabilizer(policy: .sliding(windows: 3))
+    check(stabilizer.ingest([60]), [], "sliding(3) 1/1 present, no majority of 3 yet")
+    check(stabilizer.ingest([]), [], "sliding(3) 1/2 present, no majority yet")
+    check(stabilizer.ingest([60]), [StabilizedTransition(pitch: 60, kind: .noteOn)], "sliding(3) 2/3 present reaches majority")
+}
+
+func testSlidingToleratesOneDroppedWindow() {
+    let stabilizer = MicrophonePitchStabilizer(policy: .sliding(windows: 3))
+    _ = stabilizer.ingest([60])
+    _ = stabilizer.ingest([60])
+    check(stabilizer.ingest([60]), [StabilizedTransition(pitch: 60, kind: .noteOn)], "sliding(3) confirms after 3/3")
+    check(stabilizer.ingest([]), [], "sliding(3) tolerates one dropped window (2/3 still majority present)")
+    check(stabilizer.confirmedPitches, [60], "sliding(3) stays confirmed through one dropped window")
+}
+
+func testWindowsOfOneMatchesPassthroughForBothPolicies() {
+    let latched = MicrophonePitchStabilizer(policy: .latched(windows: 1))
+    let sliding = MicrophonePitchStabilizer(policy: .sliding(windows: 1))
+    let passthrough = MicrophonePitchStabilizer(policy: .passthrough)
+    let sequence: [Set<Int>] = [[60], [60, 64], [64], []]
+    for observed in sequence {
+        check(latched.ingest(observed), passthrough.ingest(observed), "latched(1) matches passthrough")
+    }
+    for observed in sequence {
+        check(sliding.ingest(observed), passthrough.ingest(observed), "sliding(1) matches passthrough")
+    }
+}
+
+func testMultiplePitchesTrackedIndependently() {
+    let stabilizer = MicrophonePitchStabilizer(policy: .latched(windows: 2))
+    // 60 is present in every window (confirms after 2 consecutive); 64 alternates
+    // present/absent — present in 2 of 3 windows overall, but never twice IN A ROW, so under
+    // `.latched` (unlike `.sliding`'s majority rule) it never confirms at all.
+    check(stabilizer.ingest([60, 64]), [], "independent tracking window 1")
+    check(stabilizer.ingest([60]), [StabilizedTransition(pitch: 60, kind: .noteOn)], "only the stable pitch (60) confirms")
+    check(stabilizer.ingest([60, 64]), [], "flickering pitch (64) still never confirms")
+    check(stabilizer.confirmedPitches, [60], "confirmedPitches only contains the stable pitch")
+}
+
+func testStabilizerResetClearsHistoryAndConfirmedPitches() {
+    let stabilizer = MicrophonePitchStabilizer(policy: .latched(windows: 2))
+    _ = stabilizer.ingest([60])
+    _ = stabilizer.ingest([60])
+    check(stabilizer.confirmedPitches, [60], "confirmed before reset")
+    stabilizer.reset()
+    check(stabilizer.confirmedPitches, [], "confirmedPitches cleared after reset")
+    check(stabilizer.ingest([60]), [], "reset stabilizer needs the full N again, not just one more window")
+}
+
 // MARK: - ImprovSessionTests (mirrors Tests/AppCoreTests/ImprovSessionTests.swift)
 
 func testLoadDemoPieceSetsPieceAndLogsIt() {
@@ -1107,6 +1272,113 @@ func testMicrophoneTrackCannotHaveSound() {
     } catch {
         failures += 1
         print("FAIL [microphone track cannot have sound]: wrong error \(error)")
+    }
+}
+
+func testSetMicrophoneRecognitionModeRejectsNonMicrophoneTrack() {
+    let session = ImprovSession()
+    checks += 1
+    do {
+        try session.setMicrophoneRecognitionMode(.monophonicHPS, for: .computerKeyboard)
+        failures += 1
+        print("FAIL [setMicrophoneRecognitionMode rejects non-microphone track]: did not throw")
+    } catch ImprovSession.SessionError.recognitionModeOnlyForMicrophone {
+        // expected
+    } catch {
+        failures += 1
+        print("FAIL [setMicrophoneRecognitionMode rejects non-microphone track]: wrong error \(error)")
+    }
+}
+
+func testSetMicrophoneRecognitionModeRejectsInvalidWindowCount() {
+    let session = ImprovSession()
+    for mode: MicrophoneRecognitionMode in [.polyphonicLatched(windows: 0), .polyphonicSliding(windows: 0)] {
+        checks += 1
+        do {
+            try session.setMicrophoneRecognitionMode(mode, for: .microphone)
+            failures += 1
+            print("FAIL [setMicrophoneRecognitionMode rejects invalid window count]: did not throw for \(mode)")
+        } catch ImprovSession.SessionError.invalidRecognitionWindowCount {
+            // expected
+        } catch {
+            failures += 1
+            print("FAIL [setMicrophoneRecognitionMode rejects invalid window count]: wrong error \(error)")
+        }
+    }
+}
+
+func testSetMicrophoneRecognitionModeSurvivesTrackRestart() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.setMicrophoneRecognitionMode(.monophonicHPS, for: .microphone)
+        try session.startTrack(.microphone)
+        check(session.tracks.first { $0.id == .microphone }?.microphoneRecognitionMode, .monophonicHPS, "mode set before listening survives startTrack")
+        try session.setMicrophoneRecognitionMode(.polyphonicSliding(windows: 4), for: .microphone)
+        let track = session.tracks.first { $0.id == .microphone }
+        check(track?.microphoneRecognitionMode, .polyphonicSliding(windows: 4), "mode changed while listening takes effect")
+        check(track?.isListening, true, "track still listening after a live mode change (restart)")
+    } catch {
+        failures += 1
+        print("FAIL [setMicrophoneRecognitionMode survives track restart]: threw \(error)")
+    }
+}
+
+func testMicrophonePolyLatchedDoesNotConfirmAFlickeringNote() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.setMicrophoneRecognitionMode(.polyphonicLatched(windows: 3), for: .microphone)
+        try session.startTrack(.microphone)
+        let pitch = DetectedPitch(frequencyHz: 261.63, midiPitch: 60)
+        session.simulateMicrophoneDetection([pitch], level: 0.1, track: .microphone)
+        session.simulateMicrophoneDetection([], level: 0.1, track: .microphone)
+        session.simulateMicrophoneDetection([pitch], level: 0.1, track: .microphone)
+        if session.tracks.first(where: { $0.id == .microphone })!.heldPitches.contains(60) {
+            failures += 1
+            print("FAIL [poly-latched does not confirm a flickering note]: pitch 60 was confirmed")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [poly-latched does not confirm a flickering note]: threw \(error)")
+    }
+}
+
+func testMicrophonePolySlidingConfirmsUnderMajorityDespiteOneDropout() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.setMicrophoneRecognitionMode(.polyphonicSliding(windows: 3), for: .microphone)
+        try session.startTrack(.microphone)
+        let pitch = DetectedPitch(frequencyHz: 261.63, midiPitch: 60)
+        session.simulateMicrophoneDetection([pitch], level: 0.1, track: .microphone)
+        session.simulateMicrophoneDetection([], level: 0.1, track: .microphone)
+        session.simulateMicrophoneDetection([pitch], level: 0.1, track: .microphone)
+        if !session.tracks.first(where: { $0.id == .microphone })!.heldPitches.contains(60) {
+            failures += 1
+            print("FAIL [poly-sliding confirms under majority despite one dropout]: pitch 60 was not confirmed")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [poly-sliding confirms under majority despite one dropout]: threw \(error)")
+    }
+}
+
+func testMicrophoneMonophonicModeConfirmsImmediately() {
+    checks += 1
+    do {
+        let session = ImprovSession()
+        try session.setMicrophoneRecognitionMode(.monophonicHeuristic, for: .microphone)
+        try session.startTrack(.microphone)
+        let pitch = DetectedPitch(frequencyHz: 261.63, midiPitch: 60)
+        session.simulateMicrophoneDetection([pitch], level: 0.1, track: .microphone)
+        if !session.tracks.first(where: { $0.id == .microphone })!.heldPitches.contains(60) {
+            failures += 1
+            print("FAIL [monophonic mode confirms immediately]: pitch 60 was not confirmed after one window")
+        }
+    } catch {
+        failures += 1
+        print("FAIL [monophonic mode confirms immediately]: threw \(error)")
     }
 }
 
@@ -3334,6 +3606,12 @@ testStartTrackOnAnUnlistedMIDIPortThrows()
 testDefaultMIDIFusionModeIsMergedWithASingleMIDITrack()
 testSetMIDIFusionModeSwitchesTrackList()
 testMicrophoneTrackCannotHaveSound()
+testSetMicrophoneRecognitionModeRejectsNonMicrophoneTrack()
+testSetMicrophoneRecognitionModeRejectsInvalidWindowCount()
+testSetMicrophoneRecognitionModeSurvivesTrackRestart()
+testMicrophonePolyLatchedDoesNotConfirmAFlickeringNote()
+testMicrophonePolySlidingConfirmsUnderMajorityDespiteOneDropout()
+testMicrophoneMonophonicModeConfirmsImmediately()
 testSaveThenLoadRoundTripsThePieceThroughJSON()
 testLoadingAMissingFileThrows()
 testListPieceFilesFindsJSONFilesAndIgnoresOthers()
@@ -3948,6 +4226,22 @@ testDominantFrequenciesReturnsEmptyForSilence()
 testDominantFrequenciesRespectsMaxPeaks()
 testDominantFrequenciesMergesPeaksCloserThanMinSemitoneSeparation()
 testDominantFrequencyMatchesFirstOfDominantFrequencies()
+testFFTDominantFrequencyLocksOntoStrongSecondHarmonicWhenFundamentalIsWeak()
+testMonophonicFundamentalHeuristicRecoversWeakFundamentalUnderStrongSecondHarmonic()
+testMonophonicFundamentalHeuristicMatchesPlainPeakForAPureTone()
+testMonophonicFundamentalHeuristicReturnsNilForSilence()
+testMonophonicFundamentalHPSRecoversWeakFundamentalUnderStrongSecondHarmonic()
+testMonophonicFundamentalHPSMatchesPlainPeakForAPureTone()
+testMonophonicFundamentalHPSReturnsNilForSilence()
+testPassthroughConfirmsEveryWindowImmediately()
+testLatchedRejectsFlickerShorterThanN()
+testLatchedConfirmsNoteOnAfterNConsecutiveWindows()
+testLatchedConfirmsNoteOffOnlyAfterNConsecutiveAbsences()
+testSlidingConfirmsByMajorityNotConsecutive()
+testSlidingToleratesOneDroppedWindow()
+testWindowsOfOneMatchesPassthroughForBothPolicies()
+testMultiplePitchesTrackedIndependently()
+testStabilizerResetClearsHistoryAndConfirmedPitches()
 
 // MARK: - Localization (FR/EN/DE UI text) — mirrors Tests/AppCoreTests, no XCTest equivalent yet
 

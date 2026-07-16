@@ -23,20 +23,22 @@ public struct DetectedPitch: Equatable, Sendable {
 /// plausible musical range, then parabolic interpolation across each peak's neighboring
 /// bins for sub-bin frequency resolution.
 ///
-/// **Known limitations, deliberately not solved here**: this is simple peak-picking, not a
-/// harmonic-aware pitch tracker. For a tone with a weak fundamental and a strong second
-/// harmonic (some instruments/registers), it can lock onto the harmonic instead of the true
-/// fundamental — a real, occasionally-audible inaccuracy. `dominantFrequencies` extends this
-/// to multiple simultaneous peaks (a step toward "detect a chord") but is still a heuristic,
-/// not real multi-pitch estimation: a genuine chord's higher harmonics routinely land close
-/// to (or exactly on) another note's fundamental, which can both manufacture phantom extra
-/// "notes" from one loud tone's harmonic series and, more often, correctly-but-coincidentally
-/// detect a real chord tone that's also a harmonic. Distinguishing "this peak is a
-/// fundamental" from "this peak is another note's harmonic" would need real harmonic
-/// analysis (comparing candidate fundamentals against the full harmonic series, or a
-/// harmonic product spectrum) — real complexity, out of scope for a first version. Treat
-/// multi-peak results as "the most prominent pitches in the sound right now", not a
-/// guaranteed note list.
+/// **Known limitations of `dominantFrequency`/`dominantFrequencies`**: this is simple
+/// peak-picking, not a harmonic-aware pitch tracker. For a tone with a weak fundamental and a
+/// strong second harmonic (some instruments/registers), it can lock onto the harmonic instead
+/// of the true fundamental — a real, occasionally-audible inaccuracy. `dominantFrequencies`
+/// extends this to multiple simultaneous peaks (a step toward "detect a chord") but is still a
+/// heuristic, not real multi-pitch estimation: a genuine chord's higher harmonics routinely
+/// land close to (or exactly on) another note's fundamental, which can both manufacture
+/// phantom extra "notes" from one loud tone's harmonic series and, more often,
+/// correctly-but-coincidentally detect a real chord tone that's also a harmonic. This
+/// multi-peak case is still out of scope for a first version — treat multi-peak results as
+/// "the most prominent pitches in the sound right now", not a guaranteed note list.
+///
+/// For the single-note case, `monophonicFundamentalHeuristic`/`monophonicFundamentalHPS`
+/// below *do* address the weak-fundamental/strong-harmonic problem, via two different
+/// techniques (see their own doc comments) — intended for tracks known in advance to carry
+/// only one instrument voice at a time (flute, voice, single-line reed/brass, etc.).
 public final class FFTPitchAnalyzer {
     public let size: Int
     private let log2n: vDSP_Length
@@ -144,8 +146,30 @@ public final class FFTPitchAnalyzer {
         minSemitoneSeparation: Double = 0.5
     ) -> [Double] {
         guard let magnitudes = magnitudeSpectrum(of: samples) else { return [] }
-
         let binHz = sampleRate / Double(size)
+        let candidates = candidatePeaks(magnitudes: magnitudes, binHz: binHz, minHz: minHz, maxHz: maxHz)
+
+        let separationRatio = pow(2.0, minSemitoneSeparation / 12.0)
+        var accepted: [Double] = []
+        for candidate in candidates {
+            guard accepted.count < maxPeaks else { break }
+            let frequency = interpolatedFrequency(forPeakBin: candidate.bin, magnitudes: magnitudes, binHz: binHz)
+            let tooCloseToAnAlreadyAcceptedPeak = accepted.contains { existing in
+                max(frequency, existing) / min(frequency, existing) < separationRatio
+            }
+            guard !tooCloseToAnAlreadyAcceptedPeak else { continue }
+            accepted.append(frequency)
+        }
+        return accepted
+    }
+
+    /// Every genuine local-maximum peak bin in `magnitudes` within `[minHz, maxHz]`, sorted
+    /// loudest first — the shared candidate-gating logic behind `dominantFrequencies` and
+    /// `monophonicFundamentalHeuristic`, so both apply the exact same "is this bin a real,
+    /// in-band tone" gates (strict local maximum, stands out from the band average, not
+    /// edge-leakage from just outside the band) rather than duplicating them. Empty if the
+    /// band is degenerate (`minBin >= maxBin`) or silent (`bandAverage == 0`).
+    private func candidatePeaks(magnitudes: [Float], binHz: Double, minHz: Double, maxHz: Double) -> [(bin: Int, magnitude: Float)] {
         let minBin = max(1, Int(minHz / binHz))
         let maxBin = min(magnitudes.count - 2, Int(maxHz / binHz))
         guard minBin < maxBin else { return [] }
@@ -164,29 +188,121 @@ public final class FFTPitchAnalyzer {
             // not just be *a* real tone somewhere (the RMS gate already ruled out silence),
             // but specifically a real tone within [minHz, maxHz].
             guard magnitudes[bin] > 8 * bandAverage else { continue }
-            // Edge-leakage gate: see `dominantFrequency`'s original version of this check —
-            // a loud tone just outside the range can leak a decaying tail whose strongest
-            // in-band point sits right at the boundary; if the very next bin *outside* the
-            // range (still readable — `magnitudes` covers the whole spectrum) is louder, the
-            // real source is out of band.
+            // Edge-leakage gate: a loud tone just outside the range can leak a decaying tail
+            // whose strongest in-band point sits right at the boundary; if the very next bin
+            // *outside* the range (still readable — `magnitudes` covers the whole spectrum) is
+            // louder, the real source is out of band.
             if bin == minBin, magnitudes[minBin - 1] > magnitudes[bin] { continue }
             if bin == maxBin, magnitudes[maxBin + 1] > magnitudes[bin] { continue }
             candidates.append((bin, magnitudes[bin]))
         }
 
         candidates.sort { $0.magnitude > $1.magnitude }
+        return candidates
+    }
 
-        let separationRatio = pow(2.0, minSemitoneSeparation / 12.0)
-        var accepted: [Double] = []
-        for candidate in candidates {
-            guard accepted.count < maxPeaks else { break }
-            let frequency = interpolatedFrequency(forPeakBin: candidate.bin, magnitudes: magnitudes, binHz: binHz)
-            let tooCloseToAnAlreadyAcceptedPeak = accepted.contains { existing in
-                max(frequency, existing) / min(frequency, existing) < separationRatio
+    /// Monophonic fundamental estimate via a targeted subharmonic-promotion heuristic: takes
+    /// the strongest in-band peak as a working fundamental `f0`, then checks the next couple
+    /// of weaker candidates for one that looks like `f0`'s *own* subharmonic (i.e. `f0` is
+    /// actually that candidate's 2nd or 3rd harmonic) — a real, plausible way for the true
+    /// fundamental to be quieter than one of its own harmonics. Only promotes a candidate that
+    /// both (a) sits within half a semitone of an exact 1/2 or 1/3 ratio to `f0`, and (b)
+    /// carries at least `subharmonicPromotionFraction` of `f0`'s magnitude (so a faint,
+    /// spurious bin near the right ratio doesn't get promoted just because the ratio matches).
+    /// Cheap (only the top 3 candidates are ever examined) and directly targets the
+    /// weak-fundamental/strong-harmonic case documented on this type — see
+    /// `monophonicFundamentalHPS` for a more principled (and more expensive) alternative
+    /// technique solving the same problem, kept side by side so both can be compared live.
+    public func monophonicFundamentalHeuristic(
+        in samples: [Float],
+        sampleRate: Double,
+        minHz: Double = 60,
+        maxHz: Double = 2000,
+        subharmonicPromotionFraction: Float = 0.1
+    ) -> Double? {
+        guard let magnitudes = magnitudeSpectrum(of: samples) else { return nil }
+        let binHz = sampleRate / Double(size)
+        let candidates = candidatePeaks(magnitudes: magnitudes, binHz: binHz, minHz: minHz, maxHz: maxHz)
+        guard let strongest = candidates.first else { return nil }
+
+        let f0Frequency = interpolatedFrequency(forPeakBin: strongest.bin, magnitudes: magnitudes, binHz: binHz)
+        let semitoneTolerance = 0.5
+        var bestSubharmonic: Double?
+
+        for candidate in candidates.dropFirst().prefix(2) {
+            guard candidate.magnitude >= subharmonicPromotionFraction * strongest.magnitude else { continue }
+            let candidateFrequency = interpolatedFrequency(forPeakBin: candidate.bin, magnitudes: magnitudes, binHz: binHz)
+            guard candidateFrequency < f0Frequency else { continue }
+            let ratio = f0Frequency / candidateFrequency
+            let isPlausibleSubharmonic = [2.0, 3.0].contains { divisor in
+                abs(12 * log2(ratio / divisor)) < semitoneTolerance
             }
-            guard !tooCloseToAnAlreadyAcceptedPeak else { continue }
-            accepted.append(frequency)
+            guard isPlausibleSubharmonic else { continue }
+            if bestSubharmonic == nil || candidateFrequency < bestSubharmonic! {
+                bestSubharmonic = candidateFrequency
+            }
         }
-        return accepted
+        return bestSubharmonic ?? f0Frequency
+    }
+
+    /// Monophonic fundamental estimate via Harmonic Product Spectrum (HPS): scores each
+    /// genuine spectral peak (from `candidatePeaks` — the same real-local-maximum candidates
+    /// `dominantFrequencies`/`monophonicFundamentalHeuristic` already use, NOT every raw bin)
+    /// by multiplying its magnitude with the magnitudes at `2...harmonics` times its own bin
+    /// (a geometric mean, so bins near Nyquist with fewer available harmonic factors aren't
+    /// unfairly penalized against low candidates with the full factor count), then picks
+    /// whichever candidate scores highest. A true fundamental has energy at every one of its
+    /// own harmonics, so all the downsampled copies reinforce at that candidate; a
+    /// strong-but-not-fundamental harmonic has no energy at ITS OWN harmonics (there's no
+    /// signal an octave above a plain overtone) and its score collapses relative to the true
+    /// fundamental's — the textbook fix for "weak fundamental, strong harmonic" this type's own
+    /// doc comment used to flag as unsolved.
+    ///
+    /// Restricting the search to real candidate peaks (rather than scoring every bin in
+    /// `[minHz, maxHz]`, an earlier version of this method that had to be corrected after
+    /// actually testing it) is what makes this robust: scoring arbitrary non-peak bins let a
+    /// low, spectrally-uninteresting bin "win" purely because one of its harmonic multiples
+    /// happened to land inside a real peak's own main-lobe spectral leakage — a false
+    /// reinforcement from a peak that was never a plausible fundamental candidate to begin
+    /// with. Includes one standard HPS correction: if the raw spectrum shows a comparably
+    /// strong peak at half the chosen bin, prefers that lower octave (HPS's known tendency to
+    /// occasionally pick an octave too high when a signal is unusually harmonic-rich).
+    public func monophonicFundamentalHPS(
+        in samples: [Float],
+        sampleRate: Double,
+        minHz: Double = 60,
+        maxHz: Double = 2000,
+        harmonics: Int = 5
+    ) -> Double? {
+        guard let magnitudes = magnitudeSpectrum(of: samples) else { return nil }
+        let binHz = sampleRate / Double(size)
+        let candidates = candidatePeaks(magnitudes: magnitudes, binHz: binHz, minHz: minHz, maxHz: maxHz)
+        guard !candidates.isEmpty else { return nil }
+
+        func hpsScore(_ bin: Int) -> Float {
+            var product = magnitudes[bin]
+            var factorCount = 1
+            if harmonics > 1 {
+                for factor in 2...harmonics {
+                    let harmonicBin = bin * factor
+                    guard harmonicBin < magnitudes.count else { break }
+                    product *= magnitudes[harmonicBin]
+                    factorCount += 1
+                }
+            }
+            return pow(product, 1.0 / Float(factorCount))
+        }
+
+        guard let bestCandidate = candidates.max(by: { hpsScore($0.bin) < hpsScore($1.bin) }) else { return nil }
+        var chosenBin = bestCandidate.bin
+
+        let halfBin = chosenBin / 2
+        if halfBin >= 1, halfBin - 1 >= 0, halfBin + 1 < magnitudes.count,
+           magnitudes[halfBin] > magnitudes[halfBin - 1], magnitudes[halfBin] > magnitudes[halfBin + 1],
+           magnitudes[halfBin] >= 0.5 * magnitudes[chosenBin] {
+            chosenBin = halfBin
+        }
+
+        return interpolatedFrequency(forPeakBin: chosenBin, magnitudes: magnitudes, binHz: binHz)
     }
 }

@@ -16,15 +16,28 @@ public enum MicrophonePitchError: Error, CustomStringConvertible {
     }
 }
 
+/// Which `FFTPitchAnalyzer` method `MicrophonePitchListener` calls per analysis window. A
+/// higher layer (AppCore's per-track `MicrophoneRecognitionMode` setting) maps its 4
+/// user-facing modes onto this 3-case strategy: the two polyphonic modes both map to
+/// `.polyphonic` and differ only in the temporal smoothing applied downstream by
+/// `MicrophonePitchStabilizer`, not in this per-window analysis step.
+public enum AnalysisStrategy: Sendable {
+    case polyphonic(maxPeaks: Int)
+    case monophonicHeuristic
+    case monophonicHPS
+}
+
 /// Pitch detection from the default audio input device, via `FFTPitchAnalyzer`. Delivers
 /// `([DetectedPitch], level: Float)` to `handler` roughly every `analysisWindowSize` samples
 /// of input (~93ms at a typical 44.1kHz input rate, for the default window size) — a plain
 /// non-overlapping window: simpler than a sliding one, at the cost of a coarser update
-/// rate. The array is empty for silence/no clear pitch, one element for a single note, and
-/// more than one when several simultaneous pitches were found (see
+/// rate. Under `.polyphonic`, the array is empty for silence/no clear pitch, one element for
+/// a single note, and more than one when several simultaneous pitches were found (see
 /// `FFTPitchAnalyzer.dominantFrequencies`'s doc comment for how reliable that is — a
-/// heuristic, not real chord transcription). `level` (see `FFTPitchAnalyzer.rms(of:)`) is
-/// reported on *every* call, even when the array is empty — comparing it against
+/// heuristic, not real chord transcription); under either monophonic strategy, the array
+/// always has 0 or 1 elements (see `FFTPitchAnalyzer.monophonicFundamentalHeuristic`/
+/// `monophonicFundamentalHPS`). `level` (see `FFTPitchAnalyzer.rms(of:)`) is reported on
+/// *every* call, even when the array is empty — comparing it against
 /// `FFTPitchAnalyzer.minimumRMSForDetection` is how a caller tells "nothing is reaching the
 /// microphone at all" (permission problem, wrong input device, muted) apart from "audio is
 /// arriving but isn't a clear pitch" (below the detection floor, or a noisy/percussive sound).
@@ -40,13 +53,13 @@ public final class MicrophonePitchListener {
     private let engine = AVAudioEngine()
     private let analyzer: FFTPitchAnalyzer
     private let analysisWindowSize: Int
-    private let maxSimultaneousPitches: Int
+    private let strategy: AnalysisStrategy
     private var accumulated: [Float] = []
     private let handler: Handler
 
-    public init(analysisWindowSize: Int = 4096, maxSimultaneousPitches: Int = 6, handler: @escaping Handler) {
+    public init(analysisWindowSize: Int = 4096, strategy: AnalysisStrategy = .polyphonic(maxPeaks: 6), handler: @escaping Handler) {
         self.analysisWindowSize = analysisWindowSize
-        self.maxSimultaneousPitches = maxSimultaneousPitches
+        self.strategy = strategy
         self.analyzer = FFTPitchAnalyzer(size: analysisWindowSize)
         self.handler = handler
     }
@@ -113,7 +126,16 @@ public final class MicrophonePitchListener {
             let window = Array(accumulated.prefix(analysisWindowSize))
             accumulated.removeFirst(analysisWindowSize)
             let level = FFTPitchAnalyzer.rms(of: window)
-            let frequencies = analyzer.dominantFrequencies(in: window, sampleRate: sampleRate, maxPeaks: maxSimultaneousPitches)
+
+            let frequencies: [Double]
+            switch strategy {
+            case .polyphonic(let maxPeaks):
+                frequencies = analyzer.dominantFrequencies(in: window, sampleRate: sampleRate, maxPeaks: maxPeaks)
+            case .monophonicHeuristic:
+                frequencies = analyzer.monophonicFundamentalHeuristic(in: window, sampleRate: sampleRate).map { [$0] } ?? []
+            case .monophonicHPS:
+                frequencies = analyzer.monophonicFundamentalHPS(in: window, sampleRate: sampleRate).map { [$0] } ?? []
+            }
             let pitches = frequencies.map { DetectedPitch(frequencyHz: $0, midiPitch: DetectedPitch.midiPitch(forFrequencyHz: $0)) }
             handler(pitches, level)
         }

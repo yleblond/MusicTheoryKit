@@ -48,6 +48,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case menuListerInstruments, menuActiverInstrument, menuArreterInstrument
     case menuActiverSonInstrument, menuDesactiverSonInstrument
     case menuChoisirSonPourInstrument
+    case menuChoisirModeReconnaissanceMicro
     case headerFichierDeScene, menuSauvegarderScene, menuChargerScene
     case headerRoles, menuNouvelleScene, menuListerRoles, menuAjouterRole
     case menuAttacherInstrumentARole, menuDetacherRole, menuChoisirSonDunRole
@@ -85,6 +86,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case fieldPiece, fieldFichier, fieldPlaying, fieldRecording, fieldSoundtrack, fieldPlayingSoundtrack
     case fieldReseau, fieldConsoleWeb, fieldClavierVirtuel, fieldPaletteDeCouleur, fieldModeMidi
     case fieldTempo, fieldTonalite, fieldDernierEvt, fieldMicro, fieldSon, fieldChord, fieldModes
+    case fieldModeReconnaissance
     case fieldDuree, fieldEvenements, fieldPistes, fieldTitre, fieldIndications, fieldDescription, fieldPseudo, fieldRole
 
     // MARK: - Headings
@@ -118,6 +120,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case promptPortDefaut8080, promptPortDefaut8081
     case promptActiverQuelInstrument, promptActiverAussiSon, promptArreterQuelInstrument
     case promptActiverSonQuelInstrument, promptDesactiverSonQuelInstrument, promptPourQuelInstrument
+    case promptQuelModeDeReconnaissance
     case promptNomDeLaScene, promptChargerQuelleScene, promptTitreDeLaScene
     case promptNomDuRole, promptQuelRole, promptQuelInstrument, promptQuelSonVideAucun
     case promptTitreDeLaSequence, promptTonique1, promptTonique2, promptIdGamme, promptProgressionAccords
@@ -137,6 +140,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     // MARK: - Web console: extra field labels not needed by the terminal (structured form
     // fields — the terminal collects the same information via inline prompts instead)
     case fieldInstrument, fieldSection, fieldPiste, fieldEcoute, optionActiver, optionArreter
+    case optionMonoHeuristique, optionMonoHPS, optionPolyLatched, optionPolySliding
     case fieldTonique, fieldGamme, fieldProgression, fieldNombreCandidats, fieldPort, fieldHote
 
     // MARK: - Web console: short placeholder hints for MENU_ACTIONS text fields (distinct from

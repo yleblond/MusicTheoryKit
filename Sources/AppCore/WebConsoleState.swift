@@ -104,6 +104,9 @@ public struct WebConsoleTrackState: Codable {
     var chordLabel: String?
     var modesLabel: String?
     var microphoneLevel: Float?
+    /// Only set for `.microphone` — the current recognition mode's display text (see
+    /// `ImprovSession.describe(_:)`), same gating as `microphoneLevel`.
+    var recognitionMode: String?
     /// A rolling log of this track's last ~20 distinct held-pitches/chord snapshots, oldest
     /// first — appended server-side the instant the recognized state actually changes
     /// (`ImprovSession.refreshRecognition`), NOT sampled by however often a browser happens to

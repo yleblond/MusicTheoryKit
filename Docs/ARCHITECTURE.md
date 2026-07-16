@@ -186,17 +186,44 @@ dépend du matériel de l'utilisateur et n'a pas été corrigé ici faute de pou
     qu'un seul lobe spectral ne compte pas comme plusieurs notes.
   - `rms(of:)` / `minimumRMSForDetection` : niveau brut du signal, indépendant de toute
     détection de hauteur — sert de jauge de diagnostic.
-  - **Limite assumée et documentée** : heuristique de pic, pas une vraie transcription
-    polyphonique. Peut se verrouiller sur une harmonique plutôt que la fondamentale ; les
-    harmoniques d'un accord réel peuvent créer de fausses notes ou, à l'inverse, coïncider
-    avec une vraie note de l'accord. Testé et validé sur un accord réel (Do majeur) joué
-    physiquement via les haut-parleurs et capté par le micro.
+  - **Limite assumée et documentée pour le cas polyphonique** : heuristique de pic, pas une
+    vraie transcription polyphonique. Peut se verrouiller sur une harmonique plutôt que la
+    fondamentale ; les harmoniques d'un accord réel peuvent créer de fausses notes ou, à
+    l'inverse, coïncider avec une vraie note de l'accord. Testé et validé sur un accord réel
+    (Do majeur) joué physiquement via les haut-parleurs et capté par le micro.
+  - **`monophonicFundamentalHeuristic(...)`** et **`monophonicFundamentalHPS(...)`** :
+    résolvent ce même problème (fondamentale faible, harmonique forte) pour le cas
+    monophonique — une seule note à la fois, typiquement flûte/voix/instrument mélodique
+    unique. Les deux techniques sont volontairement gardées côte à côte plutôt que de n'en
+    garder qu'une : l'heuristique compare les 2-3 pics les plus forts et promeut un
+    sous-harmonique plausible (ratio proche de 1/2 ou 1/3, portant une énergie suffisante) ;
+    HPS (Harmonic Product Spectrum) multiplie le spectre décimé par 2..5 — une vraie
+    fondamentale renforce tous ses harmoniques, une simple harmonique non. Les deux
+    réutilisent le même filtre `candidatePeaks` (pics locaux réels) que `dominantFrequencies`
+    plutôt que de balayer tous les bins bruts — un premier essai de HPS sur l'ensemble de la
+    plage avait un vrai bug trouvé en testant réellement (pas en le devinant) : un bin sans
+    aucun intérêt spectral pouvait « gagner » simplement parce qu'un de ses harmoniques
+    tombait par hasard dans le lobe spectral d'un pic réel voisin.
 - **`MicrophonePitchListener`** : capture le micro par défaut (`AVAudioEngine.inputNode`),
-  livre `([DetectedPitch], niveau)` toutes les ~93 ms. Vérifie/demande explicitement la
-  permission microphone macOS (`AVCaptureDevice`) avant de démarrer — sans quoi
-  `AVAudioEngine.start()` réussirait silencieusement en ne recevant jamais que du silence.
-  **macOS uniquement** : iOS/iPadOS demanderait en plus une configuration `AVAudioSession`
-  (catégorie, permission) non implémentée ici.
+  livre `([DetectedPitch], niveau)` toutes les ~93 ms, selon une `AnalysisStrategy`
+  (`.polyphonic(maxPeaks:)` / `.monophonicHeuristic` / `.monophonicHPS`) fixée à la
+  construction. Vérifie/demande explicitement la permission microphone macOS
+  (`AVCaptureDevice`) avant de démarrer — sans quoi `AVAudioEngine.start()` réussirait
+  silencieusement en ne recevant jamais que du silence. **macOS uniquement** : iOS/iPadOS
+  demanderait en plus une configuration `AVAudioSession` (catégorie, permission) non
+  implémentée ici.
+- **`MicrophonePitchStabilizer`** : lisse dans le temps le flux brut de détections en
+  transitions note-on/off confirmées, pour amortir le scintillement fondamentale/harmonique
+  d'une fenêtre à l'autre sur un instrument polyphonique (piano, guitare). Type autonome, pur
+  (aucune dépendance FFT/audio), directement testable, gardant un historique glissant par
+  hauteur MIDI. Deux politiques, gardées côte à côte pour être comparées en situation réelle
+  plutôt que tranchées a priori : `.latched(windows:)` (confirme après N fenêtres
+  consécutives d'accord) et `.sliding(windows:)` (confirme par vote majoritaire sur les K
+  dernières fenêtres, tolère une fenêtre perdue sans perdre la confirmation).
+  `.passthrough` (utilisée par les deux modes monophoniques, dont la correction est
+  spectrale, pas temporelle) confirme chaque fenêtre immédiatement — comportement identique à
+  l'ancien pipeline non lissé, et ce à quoi `.latched(windows: 1)`/`.sliding(windows: 1)`
+  se ramènent aussi.
 - **`SamplerUnit`** : la même paire `AVAudioEngine`/`AVAudioUnitSampler` que `PiecePlayer`
   (mêmes `startNote`/`stopNote`/`loadSample`), mais sans notion de morceau pré-composé —
   juste un instrument jouable en temps réel. `AppCore` en crée une instance par piste
@@ -1282,30 +1309,43 @@ l'utilisateur — la couverture de test ci-dessus a été jugée suffisante à l
   `TrackInfo` indépendante dans `session.tracks: [TrackInfo]` (type défini dans
   `AppCore/Track.swift`), avec son propre `heldPitches`/`recognizedChord`/`recognizedModes`,
   son propre état de son (`soundEnabled`/`instrumentName`), et pour le micro son propre
-  `lastDetectedPitches`/`microphoneInputLevel`. `midiFusionMode` (`.merged`/`.individual`)
-  décide si le MIDI apparaît comme une seule piste ou une par port visible ;
-  `setMIDIFusionMode`/`refreshTracks()` reconstruisent la liste en préservant l'état de
-  chaque piste survivante par identité (`TrackID`).
+  `lastDetectedPitches`/`microphoneInputLevel`/`microphoneRecognitionMode`. `midiFusionMode`
+  (`.merged`/`.individual`) décide si le MIDI apparaît comme une seule piste ou une par port
+  visible ; `setMIDIFusionMode`/`refreshTracks()` reconstruisent la liste en préservant l'état
+  de chaque piste survivante par identité (`TrackID`).
   - `startTrack(_:)`/`stopTrack(_:)` : démarre/arrête l'écoute d'une piste — connecte un
     `MIDIInputListener` dédié pour une piste MIDI, démarre `MicrophonePitchListener` pour le
-    micro, ou se contente de marquer la piste « en écoute » pour le clavier (`pressKey`/
-    `releaseKey` pilotent déjà directement cette piste, sans étape de connexion matérielle).
+    micro (`AnalysisStrategy` + un `MicrophonePitchStabilizer` construits selon
+    `microphoneRecognitionMode`), ou se contente de marquer la piste « en écoute » pour le
+    clavier (`pressKey`/`releaseKey` pilotent déjà directement cette piste, sans étape de
+    connexion matérielle).
   - `setSoundEnabled(_:for:)`/`setInstrument(named:for:)` : active/désactive le son d'une
     piste (jamais permis pour `.microphone`, voir §3 du guide utilisateur) et charge un
     instrument sur son propre `SamplerUnit` — chaque piste sonnante a la sienne, donc
     plusieurs pistes peuvent sonner en même temps avec des timbres différents.
+  - **`setMicrophoneRecognitionMode(_:for:)`** : change le mode de reconnaissance du micro
+    (`MicrophoneRecognitionMode` — deux variantes monophoniques, deux variantes
+    polyphoniques, voir §"AudioEngine" plus haut). Réservé à `.microphone`
+    (`SessionError.recognitionModeOnlyForMicrophone`), rejette un compte de fenêtres < 1
+    (`invalidRecognitionWindowCount`). Si la piste écoute déjà, la relance (arrêt puis
+    redémarrage) pour que le changement prenne effet immédiatement — la stratégie d'analyse
+    est fixée à la construction du `MicrophonePitchListener`, pas mutable en place. Un rôle de
+    scène (`SceneRole.microphoneRecognitionMode`) mémorise le mode du micro qui lui était
+    attaché, comme `soundName`, pour le restaurer à la reconnexion/au rechargement d'une scène.
   - `pressKey`/`releaseKey` : le point d'entrée partagé par les commandes `press`/`release`,
     la piste clavier du CLI, et (plus tard) un clavier tactile — paramètre `track:` par
     défaut à `.computerKeyboard`.
   - `handleIncomingMIDIEvent(_:track:)` : logique par événement MIDI (log, recognizer de la
     piste, son via son `SamplerUnit` si activé) — extraite pour être appelable directement
     depuis les tests sans CoreMIDI réel.
-  - `handleDetectedPitches(_:level:track:)` : transforme un flux « ces hauteurs sonnent
-    actuellement » (le micro) en transitions note-on/note-off discrètes (une extinction par
-    hauteur disparue, un allumage par hauteur apparue) sur la piste microphone, exactement
-    comme le ferait un vrai clavier MIDI à plusieurs notes — c'est ce qui permet à la
-    reconnaissance d'accords déjà existante de fonctionner sans aucune modification pour le
-    micro.
+  - `handleDetectedPitches(_:level:track:)` : passe le flux brut de détections de la piste
+    microphone à travers son `MicrophonePitchStabilizer` (`pitchStabilizers[track]`), qui
+    renvoie des transitions note-on/note-off déjà lissées/confirmées selon la politique
+    choisie — remplace l'ancien diff brut fenêtre-à-fenêtre par un lissage réellement
+    temporel. `internal` (pas `private`) pour être testable directement
+    (`@testable import`) ; `simulateMicrophoneDetection(_:level:track:)` est le point
+    d'entrée `public` équivalent pour `SanityChecks`, qui n'a pas `@testable import` — même
+    principe que `pressKey`/`releaseKey` pour simuler des notes sans matériel réel.
 - **Instruments (son par défaut de la lecture du morceau)** : `listSampleFiles`/`loadSample`.
 - **Instruments par piste/accord d'un `Piece`** : `setPieceTrackInstrument(sectionIndex:trackIndex:instrumentName:)`
   et `setPieceChordInstrument(sectionIndex:instrumentName:)` modifient `piece` en mémoire

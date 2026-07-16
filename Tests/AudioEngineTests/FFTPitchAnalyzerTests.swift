@@ -124,4 +124,72 @@ final class FFTPitchAnalyzerTests: XCTestCase {
         let multi = analyzer.dominantFrequencies(in: samples, sampleRate: 44100, maxPeaks: 1)
         XCTAssertEqual(single, multi.first)
     }
+
+    // MARK: - monophonicFundamentalHeuristic / monophonicFundamentalHPS
+
+    /// A fundamental plus its own harmonics at independently chosen amplitudes — a synthetic
+    /// stand-in for a real instrument tone whose harmonic series isn't flat, unlike
+    /// `mixedSineWaves`'s equal-amplitude chord stand-in. `harmonicAmplitudes[0]` is the
+    /// fundamental's own amplitude, `[1]` the 2nd harmonic's, etc.
+    private func harmonicRichWave(fundamentalHz: Double, harmonicAmplitudes: [Float], sampleRate: Double, count: Int) -> [Float] {
+        var mix = [Float](repeating: 0, count: count)
+        for (index, amplitude) in harmonicAmplitudes.enumerated() {
+            let wave = sineWave(frequencyHz: fundamentalHz * Double(index + 1), sampleRate: sampleRate, count: count, amplitude: amplitude)
+            for i in 0..<count { mix[i] += wave[i] }
+        }
+        return mix
+    }
+
+    /// Documents the known limitation `monophonicFundamentalHeuristic`/`monophonicFundamentalHPS`
+    /// exist to fix: plain peak-picking locks onto the louder 2nd harmonic instead of the
+    /// weaker true fundamental.
+    func testDominantFrequencyLocksOntoStrongSecondHarmonicWhenFundamentalIsWeak() {
+        let analyzer = FFTPitchAnalyzer(size: 4096)
+        let samples = harmonicRichWave(fundamentalHz: 220, harmonicAmplitudes: [0.25, 0.5], sampleRate: 44100, count: 4096)
+        let detected = analyzer.dominantFrequency(in: samples, sampleRate: 44100)
+        XCTAssertNotNil(detected)
+        XCTAssertEqual(detected!, 440, accuracy: 3.0)
+    }
+
+    func testMonophonicFundamentalHeuristicRecoversWeakFundamentalUnderStrongSecondHarmonic() {
+        let analyzer = FFTPitchAnalyzer(size: 4096)
+        let samples = harmonicRichWave(fundamentalHz: 220, harmonicAmplitudes: [0.25, 0.5], sampleRate: 44100, count: 4096)
+        let detected = analyzer.monophonicFundamentalHeuristic(in: samples, sampleRate: 44100)
+        XCTAssertNotNil(detected)
+        XCTAssertEqual(detected!, 220, accuracy: 3.0)
+    }
+
+    func testMonophonicFundamentalHeuristicMatchesPlainPeakForAPureTone() {
+        let analyzer = FFTPitchAnalyzer(size: 4096)
+        let samples = sineWave(frequencyHz: 440, sampleRate: 44100, count: 4096)
+        let detected = analyzer.monophonicFundamentalHeuristic(in: samples, sampleRate: 44100)
+        XCTAssertNotNil(detected)
+        XCTAssertEqual(detected!, 440, accuracy: 2.0)
+    }
+
+    func testMonophonicFundamentalHeuristicReturnsNilForSilence() {
+        let analyzer = FFTPitchAnalyzer(size: 4096)
+        XCTAssertNil(analyzer.monophonicFundamentalHeuristic(in: [Float](repeating: 0, count: 4096), sampleRate: 44100))
+    }
+
+    func testMonophonicFundamentalHPSRecoversWeakFundamentalUnderStrongSecondHarmonic() {
+        let analyzer = FFTPitchAnalyzer(size: 4096)
+        let samples = harmonicRichWave(fundamentalHz: 220, harmonicAmplitudes: [0.25, 0.5], sampleRate: 44100, count: 4096)
+        let detected = analyzer.monophonicFundamentalHPS(in: samples, sampleRate: 44100)
+        XCTAssertNotNil(detected)
+        XCTAssertEqual(detected!, 220, accuracy: 3.0)
+    }
+
+    func testMonophonicFundamentalHPSMatchesPlainPeakForAPureTone() {
+        let analyzer = FFTPitchAnalyzer(size: 4096)
+        let samples = sineWave(frequencyHz: 440, sampleRate: 44100, count: 4096)
+        let detected = analyzer.monophonicFundamentalHPS(in: samples, sampleRate: 44100)
+        XCTAssertNotNil(detected)
+        XCTAssertEqual(detected!, 440, accuracy: 2.0)
+    }
+
+    func testMonophonicFundamentalHPSReturnsNilForSilence() {
+        let analyzer = FFTPitchAnalyzer(size: 4096)
+        XCTAssertNil(analyzer.monophonicFundamentalHPS(in: [Float](repeating: 0, count: 4096), sampleRate: 44100))
+    }
 }

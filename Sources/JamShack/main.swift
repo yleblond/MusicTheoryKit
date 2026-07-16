@@ -341,6 +341,19 @@ func microphoneStatusText(_ track: TrackInfo) -> String {
     return "\(notesText) (niveau \(level))"
 }
 
+/// Localized display text for a microphone track's current `MicrophoneRecognitionMode` — the
+/// `N`/`K` window count is always shown numerically (not localized) since it's a plain count,
+/// same convention as every other numeric field in this app.
+func microphoneRecognitionModeText(_ mode: MicrophoneRecognitionMode) -> String {
+    let lang = session.currentLanguage
+    switch mode {
+    case .monophonicHeuristic: return L10n.string(.optionMonoHeuristique, lang)
+    case .monophonicHPS: return L10n.string(.optionMonoHPS, lang)
+    case .polyphonicLatched(let windows): return "\(L10n.string(.optionPolyLatched, lang)) (N=\(windows))"
+    case .polyphonicSliding(let windows): return "\(L10n.string(.optionPolySliding, lang)) (K=\(windows))"
+    }
+}
+
 /// "(aucun)" / the real recognized chord, whichever applies — real structured recognition
 /// (`recognizedChord`) for a track this machine actually runs a recognizer for (every local
 /// track, or any track at all if this machine is the server), or the pre-formatted string
@@ -579,6 +592,30 @@ func promptChooseSoundForTrack(_ resolvedTrackID: String) throws {
     try executeCommand("track", [resolvedTrackID, "instrument", sampleChoice])
 }
 
+/// The 4 fixed recognition-mode presets offered by the menu — arbitrary `N`/`K` window counts
+/// stay reachable only via the typed `track micro mode poly-latched:N`/`poly-glissant:K`
+/// command, same "convenient list vs. power-user typed form" split already used throughout
+/// this app (e.g. `use-piece <n>` vs. `load <path.json>`).
+private let recognitionModePresets: [MicrophoneRecognitionMode] = [
+    .monophonicHeuristic, .monophonicHPS, .default, .polyphonicSliding(windows: 3),
+]
+
+func promptChooseRecognitionModeForTrack(_ resolvedTrackID: String) throws {
+    let lang = session.currentLanguage
+    for (index, mode) in recognitionModePresets.enumerated() {
+        print("  \(index + 1). \(microphoneRecognitionModeText(mode))")
+    }
+    guard let choice = promptLine(L10n.string(.promptQuelModeDeReconnaissance, lang)), !choice.isEmpty else { return }
+    let mode: MicrophoneRecognitionMode?
+    if let index = Int(choice), recognitionModePresets.indices.contains(index - 1) {
+        mode = recognitionModePresets[index - 1]
+    } else {
+        mode = MicrophoneRecognitionMode(wireValueText: choice)
+    }
+    guard let mode else { print("Choix invalide."); return }
+    try executeCommand("track", [resolvedTrackID, "mode", mode.wireValueText])
+}
+
 /// Resolves a "<n|nom>" argument against `session.currentScene?.roles` — a number picks by
 /// 1-based position (mirrors `resolvedChordProgressionTemplate`'s convention), anything else
 /// matches by name, case-insensitively. `nil` if there's no active scene or nothing matches.
@@ -657,6 +694,7 @@ func printStatus() {
         print(TextStyle.heading("[\(trackIDText(track.id))] \(track.label)\(ownerSuffix(track))"))
         if track.id == .microphone {
             print(TextStyle.field(L10n.string(.fieldMicro, lang), microphoneStatusText(track)))
+            print(TextStyle.field(L10n.string(.fieldModeReconnaissance, lang), microphoneRecognitionModeText(track.microphoneRecognitionMode)))
             if track.microphoneInputLevel < 0.0005 {
                 print(TextStyle.placeholder("  (niveau quasi nul: le micro ne semble rien recevoir. Verifie qu'il n'est pas coupe/mute, que c'est le bon peripherique d'entree, et que ce terminal a la permission microphone dans Reglages Systeme > Confidentialite et securite > Microphone)"))
             }
@@ -926,6 +964,7 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
                 line(TextStyle.heading("[\(trackIDText(track.id))] \(track.label)\(ownerSuffix(track))"))
                 if track.id == .microphone {
                     line(TextStyle.field(L10n.string(.fieldMicro, lang), microphoneStatusText(track)))
+                    line(TextStyle.field(L10n.string(.fieldModeReconnaissance, lang), microphoneRecognitionModeText(track.microphoneRecognitionMode)))
                 } else if track.canHaveSound {
                     let soundText = TextStyle.flag(track.soundEnabled) + (track.instrumentName.map { " (\($0))" } ?? "")
                     line(TextStyle.field(L10n.string(.fieldSon, lang), soundText))
@@ -1203,7 +1242,7 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         }
     case "track":
         guard args.count >= 2, let id = parseTrackID(args[0]) else {
-            print("usage: track <id> on|off | track <id> son on|off | track <id> instrument <n|nom>")
+            print("usage: track <id> on|off | track <id> son on|off | track <id> instrument <n|nom> | track <id> mode <mode>")
             print("   id: midi, midi:<n> (mode individuel), clavier, micro")
             break
         }
@@ -1230,8 +1269,14 @@ func executeCommand(_ command: String, _ args: [String]) throws {
             } else {
                 try session.setInstrument(named: args[2], for: id)
             }
+        case "mode":
+            guard args.count >= 3, let mode = MicrophoneRecognitionMode(wireValueText: args[2]) else {
+                print("usage: track micro mode mono-heuristique|mono-hps|poly-latched[:N]|poly-glissant[:K]")
+                break
+            }
+            try session.setMicrophoneRecognitionMode(mode, for: id)
         default:
-            print("usage: track <id> on|off | track <id> son on|off | track <id> instrument <n|nom>")
+            print("usage: track <id> on|off | track <id> son on|off | track <id> instrument <n|nom> | track <id> mode <mode>")
         }
     case "pseudo":
         if args.isEmpty {
@@ -1732,6 +1777,11 @@ func buildMenuCategories(for lang: AppLanguage) -> [MenuCategory] {
             printNumberedTracks()
             guard let trackChoice = promptLine(L10n.string(.promptPourQuelInstrument, lang)), !trackChoice.isEmpty else { return }
             try promptChooseSoundForTrack(resolvedTrackIDText(trackChoice))
+        },
+        MenuItem(label: L10n.string(.menuChoisirModeReconnaissanceMicro, lang)) {
+            printNumberedTracks()
+            guard let trackChoice = promptLine(L10n.string(.promptPourQuelInstrument, lang)), !trackChoice.isEmpty else { return }
+            try promptChooseRecognitionModeForTrack(resolvedTrackIDText(trackChoice))
         },
         MenuItem.header(L10n.string(.headerFichierDeScene, lang)),
         MenuItem(label: L10n.string(.menuSauvegarderScene, lang)) {

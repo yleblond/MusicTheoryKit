@@ -84,6 +84,7 @@ Commandes communes à toutes les pistes :
 | `track <id> son on` | Fait sonner cette piste à travers l'application (impossible sur `micro`). |
 | `track <id> son off` | Coupe le son de cette piste (sans oublier l'instrument choisi). |
 | `track <id> instrument <n\|nom>` | Charge un instrument (voir §7) sur cette piste et active son son. |
+| `track micro mode <mode>` | Change le mode de reconnaissance du microphone (voir §3.3). |
 
 Écoute et son sont **indépendants** : on peut écouter une piste sans la faire sonner (par
 exemple un vrai clavier MIDI qui fait déjà son propre son), ou lui donner un instrument
@@ -156,13 +157,28 @@ d'aide apparaît automatiquement) :
 3. Si le niveau monte un peu mais reste toujours sous ~0.003, augmenter le volume d'entrée
    dans **Réglages Système > Son > Entrée**, ou se rapprocher/parler plus fort.
 
-**Limites assumées** : la détection est monophonique-ou-presque — une heuristique de pics
-spectraux, pas une vraie transcription d'accords. Elle fonctionne bien sur un accord clair
-(testé avec un vrai accord de Do majeur joué physiquement), mais peut se tromper sur des
-sons plus denses ou riches en harmoniques (peut confondre une harmonique avec une vraie
-note). Cette piste ne peut **jamais** avoir de son (`track micro son on` échoue
-volontairement) : elle capte déjà un vrai son acoustique, et la faire aussi sonner à travers
-l'application risquerait un effet larsen (le micro capterait le haut-parleur en boucle).
+**Limites assumées** : par défaut (mode polyphonique, voir plus bas) la détection reste une
+heuristique de pics spectraux, pas une vraie transcription d'accords — elle fonctionne bien
+sur un accord clair (testé avec un vrai accord de Do majeur joué physiquement), mais peut se
+tromper sur des sons plus denses ou riches en harmoniques. Cette piste ne peut **jamais**
+avoir de son (`track micro son on` échoue volontairement) : elle capte déjà un vrai son
+acoustique, et la faire aussi sonner à travers l'application risquerait un effet larsen (le
+micro capterait le haut-parleur en boucle).
+
+**Mode de reconnaissance du microphone** (`track micro mode <mode>`, ou menu Scène >
+"Choisir le mode de reconnaissance du microphone") — à choisir selon l'instrument capté :
+
+| Mode (à taper) | Pour quel usage | Ce qu'il fait |
+|---|---|---|
+| `mono-heuristique` | Instrument monophonique (flûte, voix, clarinette, saxophone...) | Une seule note à la fois ; corrige les cas où l'algorithme verrouille sur une harmonique forte plutôt que la fondamentale faible, via une heuristique légère (comparaison des 2-3 pics les plus forts). |
+| `mono-hps` | Idem, variante plus robuste | Même objectif que ci-dessus, via la technique DSP standard "Harmonic Product Spectrum" — un peu plus de calcul, plus fiable sur des sons riches en harmoniques. |
+| `poly-latched[:N]` | Instrument polyphonique (piano, guitare...) | Plusieurs notes à la fois ; une note n'est confirmée (allumage ou extinction) qu'après `N` fenêtres d'analyse **consécutives** d'accord (défaut N=2, ~93ms chacune) — amortit le scintillement fondamentale/harmonique au prix d'un léger délai. |
+| `poly-glissant[:K]` | Idem, variante plus tolérante | Une note est confirmée par **vote majoritaire** sur les `K` dernières fenêtres (défaut K=3) — tolère une fenêtre isolée qui ne serait pas d'accord, sans exiger une suite strictement consécutive. |
+
+Les deux variantes polyphoniques sont volontairement gardées côte à côte plutôt que
+tranchées à l'avance : elles s'essaient et se comparent en situation réelle. Sans choix
+explicite, une piste micro démarre en `poly-latched` (N=2) — un léger lissage par défaut,
+pas le comportement brut d'origine.
 
 ## 4. Simuler des notes sans matériel
 
@@ -1027,6 +1043,7 @@ midi-mode <fusionne|individuel>  MIDI en une piste fusionnée, ou une piste par 
 track <id> on|off       démarre/arrête l'écoute d'une piste (id: midi, midi:<n>, clavier, micro)
 track <id> son on|off   active/désactive le son d'une piste (impossible pour 'micro')
 track <id> instrument <n|nom>  charge un instrument sur cette piste (active son son)
+track micro mode <mode>     mode de reconnaissance du micro (mono-heuristique|mono-hps|poly-latched[:N]|poly-glissant[:K])
 record start [<id> ...] demarre l'enregistrement (toutes les pistes en ecoute, ou celles listees)
 record stop             arrete l'enregistrement en cours
 play-soundtrack         joue la soundtrack courante (mode temporel)

@@ -667,6 +667,7 @@ function renderTrack(track, index) {
   let html = `<h2>${swatch}${track.label}${owner}</h2>`;
   if (track.microphoneLevel !== null && track.microphoneLevel !== undefined) {
     html += `<div class="field">${t('fieldMicro')}: <b>${track.microphoneLevel.toFixed(4)}</b></div>`;
+    html += `<div class="field">${t('fieldModeReconnaissance')}: <b>${track.recognitionMode || t('fallbackTiret')}</b></div>`;
   }
   html += keyboardHTML(track.heldPitches, track.chordRoot, track.chordTones, track.modeTones);
   html += renderStaffSVG(track.recentChordEvents || [], KEYBOARD_TOTAL_WIDTH);
@@ -847,6 +848,15 @@ const MENU_ACTIONS = [
     { action: 'track-instrument', labelKey: 'menuChoisirSonPourInstrument', fields: [
         { name: 'track', kind: 'select-track', labelKey: 'fieldInstrument' },
         { name: 'value', kind: 'select', list: 'sampleFiles', labelKey: 'fieldSon' },
+      ] },
+    { action: 'track-recognition-mode', labelKey: 'menuChoisirModeReconnaissanceMicro', fields: [
+        { name: 'track', kind: 'select-track', labelKey: 'fieldInstrument' },
+        { name: 'value', kind: 'select', labelKey: 'fieldModeReconnaissance', options: [
+            { value: 'mono-heuristique', labelKey: 'optionMonoHeuristique' },
+            { value: 'mono-hps', labelKey: 'optionMonoHPS' },
+            { value: 'poly-latched', labelKey: 'optionPolyLatched' },
+            { value: 'poly-glissant', labelKey: 'optionPolySliding' },
+          ] },
       ] },
     { action: 'scene-save', labelKey: 'menuSauvegarderScene', fields: [{ name: 'value', kind: 'text', placeholderKey: 'placeholderNom' }] },
     { action: 'scene-load', labelKey: 'menuChargerScene', fields: [{ name: 'value', kind: 'select', list: 'sceneFiles' }] },

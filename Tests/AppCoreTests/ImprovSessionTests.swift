@@ -368,6 +368,67 @@ final class ImprovSessionTests: XCTestCase {
         }
     }
 
+    func testSetMicrophoneRecognitionModeRejectsNonMicrophoneTrack() {
+        let session = ImprovSession()
+        XCTAssertThrowsError(try session.setMicrophoneRecognitionMode(.monophonicHPS, for: .computerKeyboard)) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .recognitionModeOnlyForMicrophone)
+        }
+    }
+
+    func testSetMicrophoneRecognitionModeRejectsInvalidWindowCount() {
+        let session = ImprovSession()
+        XCTAssertThrowsError(try session.setMicrophoneRecognitionMode(.polyphonicLatched(windows: 0), for: .microphone)) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .invalidRecognitionWindowCount)
+        }
+        XCTAssertThrowsError(try session.setMicrophoneRecognitionMode(.polyphonicSliding(windows: 0), for: .microphone)) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .invalidRecognitionWindowCount)
+        }
+    }
+
+    func testSetMicrophoneRecognitionModeSurvivesTrackRestart() throws {
+        let session = ImprovSession()
+        try session.setMicrophoneRecognitionMode(.monophonicHPS, for: .microphone)
+        try session.startTrack(.microphone)
+        XCTAssertEqual(session.tracks.first { $0.id == .microphone }?.microphoneRecognitionMode, .monophonicHPS)
+        // Changing mode while listening restarts the track — should still end up listening,
+        // now under the new mode.
+        try session.setMicrophoneRecognitionMode(.polyphonicSliding(windows: 4), for: .microphone)
+        let track = session.tracks.first { $0.id == .microphone }
+        XCTAssertEqual(track?.microphoneRecognitionMode, .polyphonicSliding(windows: 4))
+        XCTAssertEqual(track?.isListening, true)
+    }
+
+    func testMicrophonePolyLatchedDoesNotConfirmAFlickeringNote() throws {
+        let session = ImprovSession()
+        try session.setMicrophoneRecognitionMode(.polyphonicLatched(windows: 3), for: .microphone)
+        try session.startTrack(.microphone)
+        let pitch = DetectedPitch(frequencyHz: 261.63, midiPitch: 60)
+        session.simulateMicrophoneDetection([pitch], level: 0.1, track: .microphone)
+        session.simulateMicrophoneDetection([], level: 0.1, track: .microphone)
+        session.simulateMicrophoneDetection([pitch], level: 0.1, track: .microphone)
+        XCTAssertFalse(session.tracks.first { $0.id == .microphone }!.heldPitches.contains(60))
+    }
+
+    func testMicrophonePolySlidingConfirmsUnderMajorityDespiteOneDropout() throws {
+        let session = ImprovSession()
+        try session.setMicrophoneRecognitionMode(.polyphonicSliding(windows: 3), for: .microphone)
+        try session.startTrack(.microphone)
+        let pitch = DetectedPitch(frequencyHz: 261.63, midiPitch: 60)
+        session.simulateMicrophoneDetection([pitch], level: 0.1, track: .microphone)
+        session.simulateMicrophoneDetection([], level: 0.1, track: .microphone)
+        session.simulateMicrophoneDetection([pitch], level: 0.1, track: .microphone)
+        XCTAssertTrue(session.tracks.first { $0.id == .microphone }!.heldPitches.contains(60))
+    }
+
+    func testMicrophoneMonophonicModeConfirmsImmediately() throws {
+        let session = ImprovSession()
+        try session.setMicrophoneRecognitionMode(.monophonicHeuristic, for: .microphone)
+        try session.startTrack(.microphone)
+        let pitch = DetectedPitch(frequencyHz: 261.63, midiPitch: 60)
+        session.simulateMicrophoneDetection([pitch], level: 0.1, track: .microphone)
+        XCTAssertTrue(session.tracks.first { $0.id == .microphone }!.heldPitches.contains(60))
+    }
+
     func testEnablingSoundOnATrackSoundsIncomingNotes() throws {
         let session = ImprovSession()
         try session.start() // needed before the track's own sampler is exercised below
