@@ -175,17 +175,25 @@ struct WebConsoleGuideState: Codable {
     /// Degree-ordered, empty when `isActive` is `false`.
     var currentModeTones: [Int]
     /// Aggregated held pitches across every listening track, for the Guide panel's own
-    /// keyboard — the guide has no chord of its own, so there's no root/tone coloring here.
+    /// keyboard.
     var heldPitches: [Int]
     /// The current step's attached chord progression (see `PieceModel.GuideStep`), if any —
-    /// `nil`/empty otherwise. Display-only: just enough to show "this step has a X
-    /// progression attached" under the guide's title; there's no playback of it yet.
+    /// `nil`/empty otherwise. `nil` if the guide has no chord "proposed" right now (no
+    /// progression on this step, or nothing navigated to yet — see
+    /// `ImprovSession.currentGuideChordIndex`); otherwise the index of the current entry in
+    /// `currentChordProgression`, so the client can mark it without a second lookup.
     var currentChordProgressionName: String?
     /// In progression order — same "server already formatted it, client just shows the
     /// string" convention as `WebConsoleTrackState.chordLabel`, plus `root`/`quality` so the
     /// client can also mark matching wheel cells (same shape as the `trackLabels` match in
     /// `WebConsoleWheelCellState`).
     var currentChordProgression: [WebConsoleChordProgressionEntry]
+    var currentChordIndex: Int?
+    /// The proposed chord's own root/tones, for the Guide panel's keyboard to color —
+    /// same shape as `WebConsolePlaybackState.chordRoot`/`chordTones`. Empty/nil whenever
+    /// `currentChordIndex` is nil.
+    var currentChordRoot: Int?
+    var currentChordTones: [Int]
 }
 
 struct WebConsoleChordProgressionEntry: Codable {

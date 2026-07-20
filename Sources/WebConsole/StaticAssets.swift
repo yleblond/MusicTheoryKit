@@ -221,7 +221,11 @@ const BLACK_AFTER_WHITE_SLOT = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };
 // narrower than the keyboard drawn right above it (see `renderStaffSVG`'s own comment).
 const KEYBOARD_TOTAL_WIDTH = Math.ceil((MAX_MIDI - MIN_MIDI + 1) / 12) * 7 * WHITE_KEY_WIDTH;
 
-function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones) {
+// `alwaysShowChord`: color chordRoot/chordTones even on keys that aren't currently held —
+// used only by the Guide panel, whose chord is a *proposed* one to play next, not something
+// already sounding (every other caller shows chord coloring only on held pitches, matching
+// "here's what's actually playing").
+function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones, alwaysShowChord) {
   const held = new Set(heldPitches || []);
   const tones = new Set(chordTones || []);
   // pitch class -> {degree, color, textColor} — `modeTones` is degree-ordered (index 0 =
@@ -239,11 +243,15 @@ function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones) {
     const role = roles[pc];
     const badge = role ? `<span class="degree-badge" style="background:${role.color};color:${role.textColor}">${role.degree}</span>` : '';
     let cls = '';
+    const isChordRoot = chordRoot !== null && chordRoot !== undefined && pc === chordRoot;
     if (held.has(pitch)) {
-      if (chordRoot !== null && chordRoot !== undefined && pc === chordRoot) cls = 'root';
+      if (isChordRoot) cls = 'root';
       else if (tones.has(pc)) cls = 'tone';
       else if (chordRoot !== null && chordRoot !== undefined) cls = 'outside';
       else cls = 'held';
+    } else if (alwaysShowChord) {
+      if (isChordRoot) cls = 'root';
+      else if (tones.has(pc)) cls = 'tone';
     }
     if (WHITE_SLOT_BY_SEMITONE[pc] !== undefined) {
       const slot = octave * 7 + WHITE_SLOT_BY_SEMITONE[pc];
@@ -648,9 +656,12 @@ function renderGuide(guide) {
   const progression = guide.currentChordProgression || [];
   if (progression.length) {
     const prefix = guide.currentChordProgressionName ? t('formatSuiteAccordsNamed', guide.currentChordProgressionName) : t('fieldSuiteAccords');
-    html += `<div class="field">${prefix}: ${progression.map(c => c.label).join(' - ')}</div>`;
+    const chordsHTML = progression.map(
+      (c, i) => i === guide.currentChordIndex ? `<b>[${c.label}]</b>` : c.label
+    ).join(' - ');
+    html += `<div class="field">${prefix}: ${chordsHTML}</div>`;
   }
-  html += keyboardHTML(guide.heldPitches, null, [], guide.currentModeTones);
+  html += keyboardHTML(guide.heldPitches, guide.currentChordRoot ?? null, guide.currentChordTones || [], guide.currentModeTones, true);
   // The guide's own step is prescribed, not "recently played" — a single current snapshot,
   // not a rolling history like a live track's own staff below.
   html += renderStaffSVG([{ pitches: guide.heldPitches, chordRoot: null, chordTones: [] }], KEYBOARD_TOTAL_WIDTH);

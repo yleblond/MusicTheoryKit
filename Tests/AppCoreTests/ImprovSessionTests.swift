@@ -1136,6 +1136,55 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertEqual(detail.steps?[1].mode.tonicName, "G")
     }
 
+    func testAdvanceGuideChordNavigatesWithinAndAcrossSteps() throws {
+        let session = ImprovSession()
+        session.newGuideSequence(title: "Chord Nav Test")
+        // Step 0: 2 chords. Step 1: no chord progression at all (must be skipped through
+        // entirely). Step 2: 2 chords.
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"), chordProgression: ChordProgressionTemplate(name: "step0", degrees: ["I", "V"]))
+        try session.addGuideStep(ModeReference(tonic: 2, scaleID: "dorian"))
+        try session.addGuideStep(ModeReference(tonic: 7, scaleID: "mixolydian"), chordProgression: ChordProgressionTemplate(name: "step2", degrees: ["I", "IV"]))
+        try session.startGuide()
+
+        XCTAssertNil(session.currentGuideChordIndex)
+
+        session.advanceGuideChord(by: 1)
+        XCTAssertEqual(session.currentGuideStepIndex, 0)
+        XCTAssertEqual(session.currentGuideChordIndex, 0)
+
+        session.advanceGuideChord(by: 1)
+        XCTAssertEqual(session.currentGuideStepIndex, 0)
+        XCTAssertEqual(session.currentGuideChordIndex, 1)
+
+        session.advanceGuideChord(by: 1) // past step 0's last chord: skips chord-less step 1
+        XCTAssertEqual(session.currentGuideStepIndex, 2)
+        XCTAssertEqual(session.currentGuideChordIndex, 0)
+
+        session.advanceGuideChord(by: 1)
+        XCTAssertEqual(session.currentGuideStepIndex, 2)
+        XCTAssertEqual(session.currentGuideChordIndex, 1)
+
+        session.advanceGuideChord(by: 1) // end of the whole sequence: no-op
+        XCTAssertEqual(session.currentGuideStepIndex, 2)
+        XCTAssertEqual(session.currentGuideChordIndex, 1)
+
+        session.advanceGuideChord(by: -1)
+        session.advanceGuideChord(by: -1) // skips chord-less step 1 backward too
+        XCTAssertEqual(session.currentGuideStepIndex, 0)
+        XCTAssertEqual(session.currentGuideChordIndex, 1) // step 0's LAST chord, not its first
+
+        session.advanceGuideStep(by: 1)
+        XCTAssertNil(session.currentGuideChordIndex, "advanceGuideStep resets currentGuideChordIndex")
+    }
+
+    func testAdvanceGuideChordDoesNothingWhenGuideIsNotRunning() throws {
+        let session = ImprovSession()
+        session.newGuideSequence(title: "Not Running")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"), chordProgression: ChordProgressionTemplate(name: "s", degrees: ["I", "V"]))
+        session.advanceGuideChord(by: 1)
+        XCTAssertNil(session.currentGuideChordIndex)
+    }
+
     func testBuildSoundTrackDetailReflectsEventsAndTrackIDs() throws {
         let session = ImprovSession()
         XCTAssertFalse(session.buildSoundTrackDetail().loaded)

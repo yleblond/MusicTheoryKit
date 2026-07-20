@@ -1445,7 +1445,9 @@ async function refresh() {
         ? t('formatSuiteAccordsNamed', state.guide.currentChordProgressionName)
         : t('fieldSuiteAccords');
       const progressionHTML = progression.length
-        ? `<div class="field">${progressionPrefix}: ${progression.map(c => c.label).join(' - ')}</div>`
+        ? `<div class="field">${progressionPrefix}: ${progression.map(
+            (c, i) => i === state.guide.currentChordIndex ? `<b>[${c.label}]</b>` : c.label
+          ).join(' - ')}</div>`
         : '';
       guideInfoHTML = `<h2>${t('vkHeadingGuide')}</h2>` + `<div class="field">${steps}</div>` + progressionHTML;
     } else {

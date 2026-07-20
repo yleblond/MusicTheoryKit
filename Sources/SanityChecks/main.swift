@@ -1864,6 +1864,67 @@ func testVirtualKeyboardGuideAdvanceMovesTheSharedGuideStep() {
 }
 testVirtualKeyboardGuideAdvanceMovesTheSharedGuideStep()
 
+func testAdvanceGuideChordNavigatesWithinAndAcrossSteps() {
+    let session = ImprovSession()
+    session.newGuideSequence(title: "Chord Nav Test")
+    do {
+        // Step 0: 2 chords. Step 1: no chord progression at all (must be skipped through
+        // entirely). Step 2: 2 chords.
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"), chordProgression: ChordProgressionTemplate(name: "step0", degrees: ["I", "V"]))
+        try session.addGuideStep(ModeReference(tonic: 2, scaleID: "dorian"))
+        try session.addGuideStep(ModeReference(tonic: 7, scaleID: "mixolydian"), chordProgression: ChordProgressionTemplate(name: "step2", degrees: ["I", "IV"]))
+        try session.startGuide()
+
+        check(session.currentGuideChordIndex, nil, "no chord selected right after starting the guide")
+
+        session.advanceGuideChord(by: 1)
+        check(session.currentGuideStepIndex, 0, "first right-press stays on step 0")
+        check(session.currentGuideChordIndex, 0, "first right-press selects step 0's first chord, not a neighbor's")
+
+        session.advanceGuideChord(by: 1)
+        check(session.currentGuideStepIndex, 0, "second right-press stays on step 0")
+        check(session.currentGuideChordIndex, 1, "second right-press selects step 0's second chord")
+
+        session.advanceGuideChord(by: 1)
+        check(session.currentGuideStepIndex, 2, "right-press past step 0's last chord skips the chord-less step 1 entirely")
+        check(session.currentGuideChordIndex, 0, "...landing on step 2's first chord")
+
+        session.advanceGuideChord(by: 1)
+        check(session.currentGuideStepIndex, 2, "another right-press stays on step 2")
+        check(session.currentGuideChordIndex, 1, "...selecting step 2's second (last) chord")
+
+        session.advanceGuideChord(by: 1)
+        check(session.currentGuideStepIndex, 2, "right-press at the sequence's very end is a no-op (step)")
+        check(session.currentGuideChordIndex, 1, "right-press at the sequence's very end is a no-op (chord)")
+
+        session.advanceGuideChord(by: -1)
+        session.advanceGuideChord(by: -1)
+        check(session.currentGuideStepIndex, 0, "left-presses skip the chord-less step 1 backward too")
+        check(session.currentGuideChordIndex, 1, "...landing on step 0's LAST chord (not its first)")
+
+        session.advanceGuideStep(by: 1)
+        check(session.currentGuideChordIndex, nil, "advanceGuideStep (up/down) resets currentGuideChordIndex")
+    } catch {
+        failures += 1
+        print("FAIL [advanceGuideChord]: threw \(error)")
+    }
+}
+testAdvanceGuideChordNavigatesWithinAndAcrossSteps()
+
+func testAdvanceGuideChordDoesNothingWhenGuideIsNotRunning() {
+    let session = ImprovSession()
+    session.newGuideSequence(title: "Not Running")
+    do {
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"), chordProgression: ChordProgressionTemplate(name: "s", degrees: ["I", "V"]))
+        session.advanceGuideChord(by: 1)
+        check(session.currentGuideChordIndex, nil, "advanceGuideChord is a no-op when the guide hasn't been started")
+    } catch {
+        failures += 1
+        print("FAIL [advanceGuideChord not running]: threw \(error)")
+    }
+}
+testAdvanceGuideChordDoesNothingWhenGuideIsNotRunning()
+
 func testVirtualKeyboardStateExposesCurrentStepChordProgression() {
     checks += 1
     do {

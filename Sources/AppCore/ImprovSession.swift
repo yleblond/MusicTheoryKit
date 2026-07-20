@@ -83,6 +83,13 @@ public final class ImprovSession: @unchecked Sendable {
     public private(set) var currentGuideFilePath: String?
     /// `nil` means the guide is loaded (or absent) but not started — see `startGuide`/`stopGuide`.
     public private(set) var currentGuideStepIndex: Int?
+    /// Which chord of the current step's `chordProgression` is "proposed" right now — `nil`
+    /// whenever the guide isn't running, the current step has no progression attached, or no
+    /// chord has been navigated to yet. See `advanceGuideChord`/`currentGuideChordReference`.
+    /// Deliberately a separate axis from `currentGuideStepIndex` (up/down moves steps/modes,
+    /// left/right moves chords within one) rather than one flat "position in the whole
+    /// guide" — a step with no chords still needs to be a normal stop for up/down navigation.
+    public private(set) var currentGuideChordIndex: Int?
     /// The folder last listed with `listGuideFiles`, and the `.json` guide-sequence files
     /// found in it — mirrors `pieceFolder`/`pieceFiles`.
     public private(set) var guideFolder: String?
@@ -1030,6 +1037,7 @@ public final class ImprovSession: @unchecked Sendable {
         guard let currentGuide else { throw SessionError.noGuideSequence }
         guard currentGuide.steps.indices.contains(index) else { throw SessionError.invalidGuideStepIndex }
         currentGuideStepIndex = index
+        currentGuideChordIndex = nil
         append("Guide started at step \(index + 1)/\(currentGuide.steps.count).")
         syncLumiGuideDisplayIfActive()
     }
@@ -1037,18 +1045,77 @@ public final class ImprovSession: @unchecked Sendable {
     public func stopGuide() {
         guard currentGuideStepIndex != nil else { return }
         currentGuideStepIndex = nil
+        currentGuideChordIndex = nil
         append("Guide stopped.")
         syncLumiGuideDisplayIfActive()
     }
 
-    /// Moves the guide's current step by `delta` (±1 for left/right), clamped to the
+    /// Moves the guide's current step by `delta` (±1 for up/down), clamped to the
     /// sequence's bounds — no wraparound, so repeatedly pressing the same arrow at either
-    /// end is a safe no-op. Does nothing if the guide isn't running.
+    /// end is a safe no-op. Does nothing if the guide isn't running. Resets
+    /// `currentGuideChordIndex` unconditionally: a chord index from the previous step has no
+    /// meaning against the new one's (possibly absent, possibly shorter) progression.
     public func advanceGuideStep(by delta: Int) {
         guard let currentGuide, let currentGuideStepIndex else { return }
         let clamped = max(0, min(currentGuide.steps.count - 1, currentGuideStepIndex + delta))
         self.currentGuideStepIndex = clamped
+        currentGuideChordIndex = nil
         syncLumiGuideDisplayIfActive()
+    }
+
+    /// Moves `abs(delta)` positions (±1 for left/right) within the current step's chord
+    /// progression, crossing into the next/previous step's own progression once the current
+    /// one runs out — a step with no progression at all is skipped through entirely, as if
+    /// already exhausted, rather than stopping navigation dead. Clamps (no wraparound) only
+    /// at the very start/end of the whole guide sequence. Does nothing if the guide isn't
+    /// running.
+    public func advanceGuideChord(by delta: Int) {
+        guard currentGuide != nil, currentGuideStepIndex != nil, delta != 0 else { return }
+        let direction = delta > 0 ? 1 : -1
+        for _ in 0..<abs(delta) {
+            guard advanceGuideChordOneStep(direction: direction) else { break }
+        }
+    }
+
+    /// Moves exactly one position in `direction` (+1/-1). Returns `false` if there's nowhere
+    /// left to go (start/end of the whole sequence), leaving state unchanged — see
+    /// `advanceGuideChord`'s doc comment for the cross-step/skip-empty-steps behavior this
+    /// implements.
+    @discardableResult
+    private func advanceGuideChordOneStep(direction: Int) -> Bool {
+        guard let currentGuide, let stepIndex = currentGuideStepIndex else { return false }
+        let progression = currentGuide.steps[stepIndex].chordProgression ?? []
+
+        if let chordIndex = currentGuideChordIndex {
+            if progression.indices.contains(chordIndex) {
+                let nextChordIndex = chordIndex + direction
+                if progression.indices.contains(nextChordIndex) {
+                    currentGuideChordIndex = nextChordIndex
+                    return true
+                }
+                // Ran off this step's progression — fall through to search neighbors below.
+            }
+        } else if !progression.isEmpty {
+            // Nothing selected yet, and the CURRENT step does have a progression — enter it
+            // at whichever end matches `direction`, before considering neighbors at all (a
+            // bare first press must land on this step's own chord, not skip past it).
+            currentGuideChordIndex = direction > 0 ? 0 : progression.count - 1
+            return true
+        }
+        // Either the current step's progression just ran out, or it has none at all (and
+        // nothing was selected) — look for the next step in `direction` that actually has
+        // one, skipping empty steps entirely rather than stopping on them.
+        var candidateStepIndex = stepIndex + direction
+        while currentGuide.steps.indices.contains(candidateStepIndex) {
+            let candidateProgression = currentGuide.steps[candidateStepIndex].chordProgression ?? []
+            if !candidateProgression.isEmpty {
+                currentGuideStepIndex = candidateStepIndex
+                currentGuideChordIndex = direction > 0 ? 0 : candidateProgression.count - 1
+                return true
+            }
+            candidateStepIndex += direction
+        }
+        return false
     }
 
     /// The currently-active guide step's resolved mode, or `nil` if the guide isn't running
@@ -1056,6 +1123,15 @@ public final class ImprovSession: @unchecked Sendable {
     public func currentGuideStepMode() -> Mode? {
         guard let currentGuide, let currentGuideStepIndex, currentGuide.steps.indices.contains(currentGuideStepIndex) else { return nil }
         return currentGuide.steps[currentGuideStepIndex].mode.resolve()
+    }
+
+    /// The chord `currentGuideChordIndex` points at, or `nil` if nothing's selected (guide
+    /// not running, current step has no progression, or nothing navigated to yet).
+    public func currentGuideChordReference() -> ChordReference? {
+        guard let currentGuide, let stepIndex = currentGuideStepIndex, let chordIndex = currentGuideChordIndex,
+              let progression = currentGuide.steps[stepIndex].chordProgression, progression.indices.contains(chordIndex)
+        else { return nil }
+        return progression[chordIndex]
     }
 
     // MARK: - Scenes (declared musical "roles", each optionally attached to a live instrument)
@@ -3481,10 +3557,15 @@ public final class ImprovSession: @unchecked Sendable {
         guard let mode = currentGuideStepMode() else {
             return WebConsoleGuideState(
                 isActive: false, steps: steps, currentStepIndex: nil, currentModeTones: [], heldPitches: [],
-                currentChordProgressionName: nil, currentChordProgression: []
+                currentChordProgressionName: nil, currentChordProgression: [],
+                currentChordIndex: nil, currentChordRoot: nil, currentChordTones: []
             )
         }
         let heldPitches = liveInputQueue.sync { Array(Set(tracks.filter(\.isListening).flatMap(\.heldPitches))) }
+        let guideChord = currentGuideChordReference()
+        let (guideChordTones, _) = Self.pitchClassSets(
+            forChordRoot: guideChord?.root, chordTemplateID: guideChord?.chordTemplateID, modeTonic: nil, scaleID: nil
+        )
         return WebConsoleGuideState(
             isActive: true, steps: steps, currentStepIndex: currentGuideStepIndex,
             currentModeTones: mode.pitchClasses.map(\.value), heldPitches: heldPitches,
@@ -3495,7 +3576,8 @@ public final class ImprovSession: @unchecked Sendable {
                     root: $0.root,
                     quality: Self.chordQuality(templateID: $0.chordTemplateID)?.rawValue
                 )
-            }
+            },
+            currentChordIndex: currentGuideChordIndex, currentChordRoot: guideChord?.root, currentChordTones: guideChordTones
         )
     }
 

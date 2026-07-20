@@ -1102,7 +1102,11 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
                let progression = currentGuide.steps[currentIndex].chordProgression,
                !progression.isEmpty {
                 let name = currentGuide.steps[currentIndex].chordProgressionName
-                let chords = progression.map { $0.resolve()?.displayName ?? "?" }.joined(separator: " - ")
+                let chords = progression.enumerated().map { chordIndex, reference -> String in
+                    let display = reference.resolve()?.displayName ?? "?"
+                    return chordIndex == session.currentGuideChordIndex
+                        ? "\(KeyboardColor.chordRoot)[\(display)]\(KeyboardColor.reset)" : display
+                }.joined(separator: " - ")
                 line(TextStyle.field(name.map { L10n.string(.formatSuiteAccordsNamed, lang, $0) } ?? L10n.string(.fieldSuiteAccords, lang), chords))
             }
             line()
@@ -1138,10 +1142,27 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
             line()
             line(TextStyle.heading(L10n.string(.headingClavierGuide, lang)))
             let guideHeldPitches = Set(session.tracks.filter(\.isListening).flatMap(\.heldPitches))
+            // The proposed chord's tones are shown whether or not they're currently held —
+            // unlike `renderTrackKeyboard`'s coloring (which only distinguishes chord-vs-not
+            // among already-held pitches), this is meant to suggest what to play next, not
+            // just annotate what's already sounding.
+            let guideChord = session.currentGuideChordReference()
+            let guideChordPitchClasses: Set<Int>? = guideChord.flatMap { chord in
+                ChordVocabulary.byID(chord.chordTemplateID).map { template in
+                    Set(template.intervalsFromRoot.map { (chord.root + $0) % 12 })
+                }
+            }
             for row in renderKeyboard(
                 startMIDI: 48, octaveCount: 3, blackZoneRows: 2, whiteZoneRows: 1,
                 modeMarker: degreeMarker(for: guideMode),
-                colorFor: { pitch in guideHeldPitches.contains(pitch) ? KeyboardColor.heldNoChord : nil }
+                colorFor: { pitch in
+                    let pitchClass = ((pitch % 12) + 12) % 12
+                    if let guideChord, let guideChordPitchClasses {
+                        if pitchClass == guideChord.root { return KeyboardColor.chordRoot }
+                        if guideChordPitchClasses.contains(pitchClass) { return KeyboardColor.chordTone }
+                    }
+                    return guideHeldPitches.contains(pitch) ? KeyboardColor.heldNoChord : nil
+                }
             ) { line(row) }
         }
     }
@@ -1184,10 +1205,14 @@ func runConsoleScreen(mode initialMode: ConsoleScreenMode) {
                 let nextIndex = (allModes.firstIndex(of: mode)! + 1) % allModes.count
                 mode = allModes[nextIndex]
                 session.notifyActiveScreen(mode.lumiAutoPropagationScreen)
-            case .left where mode == .guide && openMenuIndex == nil:
+            case .up where mode == .guide && openMenuIndex == nil:
                 session.advanceGuideStep(by: -1)
-            case .right where mode == .guide && openMenuIndex == nil:
+            case .down where mode == .guide && openMenuIndex == nil:
                 session.advanceGuideStep(by: 1)
+            case .left where mode == .guide && openMenuIndex == nil:
+                session.advanceGuideChord(by: -1)
+            case .right where mode == .guide && openMenuIndex == nil:
+                session.advanceGuideChord(by: 1)
             case .char(" ") where mode == .guide && openMenuIndex == nil && !computerKeyboardSourceActive:
                 if session.currentGuideStepIndex != nil {
                     session.stopGuide()
