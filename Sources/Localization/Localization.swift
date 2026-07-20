@@ -42,6 +42,14 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case menuDemarrerConsoleWeb, menuArreterConsoleWeb
     case menuDemarrerClavierVirtuel, menuArreterClavierVirtuel
     case menuLangueFr, menuLangueEn, menuLangueDe
+    case headerReglagesLumi
+    case menuLumiCouleurRacine, menuLumiCouleurGamme, menuLumiLuminosite
+    case menuLumiAutoRunActiver, menuLumiAutoRunDesactiver
+    case menuLumiAutoGuideActiver, menuLumiAutoGuideDesactiver
+    case menuRefreshMidi
+    case promptLumiCouleurRacineHex, promptLumiCouleurGammeHex, promptLumiLuminosite0100
+    case fieldLumiAutoRun, fieldLumiAutoGuide
+    case fieldLumiCouleurRacine, fieldLumiCouleurGamme, fieldLumiLuminosite
     case menuQuitter
 
     // MARK: - "Scene" category items
@@ -150,6 +158,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case placeholderNom, placeholderTitreCourt, placeholderIndicationsCourt
     case placeholderPistesSepareesParEspace, placeholderSectionNum, placeholderPisteNum
     case placeholderPseudoCourt, placeholderHoteCourt, placeholderUn
+    case placeholderLumiCouleurHex, placeholderLumiLuminosite
 
     // MARK: - Web console: MENU_ACTIONS item labels with no terminal equivalent (worded
     // differently from — or simply absent from — the terminal's own menu)

@@ -262,6 +262,9 @@ final class ImprovSessionTests: XCTestCase {
 
     func testHandlingIncomingMIDIEventsDetectsChordPerTrack() throws {
         let session = ImprovSession()
+        // Default fusion mode is now `.individual` (no `.midiMerged` track exists until
+        // switched) — this test exercises `.midiMerged` specifically, not the default.
+        session.setMIDIFusionMode(.merged)
         // Sound stays off on this track, so this never touches the (unstarted) audio engine.
         try session.startTrack(.midiMerged)
         for pitch in [60, 64, 67, 71] { // C E G B -> Cmaj7
@@ -285,6 +288,7 @@ final class ImprovSessionTests: XCTestCase {
     /// around here.
     func testRecentChordEventsLogsChangesAndSkipsRestsOnFullRelease() throws {
         let session = ImprovSession()
+        session.setMIDIFusionMode(.merged) // default is now .individual; this test needs .midiMerged specifically
         try session.startTrack(.midiMerged)
         func events() -> [WebConsoleChordEvent] {
             session.buildWebConsoleState().tracks.first { $0.id == "midi" }?.recentChordEvents ?? []
@@ -316,6 +320,7 @@ final class ImprovSessionTests: XCTestCase {
 
     func testRecentChordEventsCapsAtTwentyEntries() throws {
         let session = ImprovSession()
+        session.setMIDIFusionMode(.merged) // default is now .individual; this test needs .midiMerged specifically
         try session.startTrack(.midiMerged)
         func events() -> [WebConsoleChordEvent] {
             session.buildWebConsoleState().tracks.first { $0.id == "midi" }?.recentChordEvents ?? []
@@ -335,8 +340,10 @@ final class ImprovSessionTests: XCTestCase {
 
     func testStartTrackOnAnUnlistedMIDIPortThrows() {
         let session = ImprovSession()
-        // Default fusion mode is `.merged`, so `.midiSource(0)` isn't one of `tracks` yet.
-        XCTAssertThrowsError(try session.startTrack(.midiSource(0))) { error in
+        // A huge index, not 0: default fusion mode is `.individual`, and a real machine may
+        // well have a real MIDI source at index 0 — an index this large guarantees no
+        // matching track regardless of how many real MIDI ports happen to be attached.
+        XCTAssertThrowsError(try session.startTrack(.midiSource(9999))) { error in
             guard case .unknownTrack = error as? ImprovSession.SessionError else {
                 XCTFail("expected .unknownTrack, got \(error)")
                 return
@@ -344,10 +351,13 @@ final class ImprovSessionTests: XCTestCase {
         }
     }
 
-    func testDefaultMIDIFusionModeIsMergedWithASingleMIDITrack() {
+    func testDefaultMIDIFusionModeIsIndividual() {
+        // See `midiFusionMode`'s own doc comment for why the default is `.individual`, not
+        // `.merged` — a per-port track is what lets the LUMI run-mode integration single out
+        // the LUMI's own track by name. No MIDI hardware is attached in this environment, so
+        // `.midiSource` tracks are simply absent rather than assertable one way or the other.
         let session = ImprovSession()
-        XCTAssertEqual(session.midiFusionMode, .merged)
-        XCTAssertTrue(session.tracks.contains { $0.id == .midiMerged })
+        XCTAssertEqual(session.midiFusionMode, .individual)
         XCTAssertTrue(session.tracks.contains { $0.id == .computerKeyboard })
         XCTAssertTrue(session.tracks.contains { $0.id == .microphone })
     }

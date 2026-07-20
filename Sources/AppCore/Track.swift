@@ -67,9 +67,10 @@ public enum TrackID: Hashable, Sendable {
     }
 }
 
-/// Whether MIDI is heard as one merged stream (`.midiMerged`, the historical/default
-/// behavior) or as one independent track per visible port (`.individual`) — see
-/// `ImprovSession.setMIDIFusionMode`.
+/// Whether MIDI is heard as one merged stream (`.midiMerged`, this app's original behavior)
+/// or as one independent track per visible port (`.individual`, the default since a per-port
+/// track is what lets the LUMI-run-mode integration identify the LUMI's own track by name
+/// — see `ImprovSession.setMIDIFusionMode`/`midiFusionMode`).
 public enum MIDIFusionMode: Sendable, Equatable {
     case merged
     case individual
@@ -186,6 +187,13 @@ public struct TrackInfo: Identifiable, Sendable {
     /// Lets a UI show "whose track is this" instead of just the opaque `remote:<uuid>@...` id
     /// — see `printTracks`/`renderConsoleFrame`/the web console's `owner` field.
     public var ownerName: String?
+    /// The MIDI channel (0...15) of the most recent note event seen on this track — `nil`
+    /// until at least one has arrived (or always, for a track kind that isn't MIDI at all).
+    /// Purely diagnostic (see `printTracks`): a MIDI port has no channel of its own, only
+    /// individual messages do, so this can only ever reflect "whatever channel this device
+    /// last sent on", useful for spotting/resolving a channel conflict between two devices —
+    /// not a filter or a guarantee every message on this track shares one channel.
+    public var lastChannel: Int?
 
     public init(
         id: TrackID, label: String, isListening: Bool = false, canHaveSound: Bool,
@@ -193,7 +201,8 @@ public struct TrackInfo: Identifiable, Sendable {
         recognizedChord: RecognizedChord? = nil, recognizedModes: [RecognizedMode] = [],
         lastDetectedPitches: [DetectedPitch] = [], microphoneInputLevel: Float = 0,
         microphoneRecognitionMode: MicrophoneRecognitionMode = .default,
-        remoteChordDisplay: String? = nil, remoteModesDisplay: String? = nil, ownerName: String? = nil
+        remoteChordDisplay: String? = nil, remoteModesDisplay: String? = nil, ownerName: String? = nil,
+        lastChannel: Int? = nil
     ) {
         self.id = id
         self.label = label
@@ -210,5 +219,6 @@ public struct TrackInfo: Identifiable, Sendable {
         self.remoteChordDisplay = remoteChordDisplay
         self.remoteModesDisplay = remoteModesDisplay
         self.ownerName = ownerName
+        self.lastChannel = lastChannel
     }
 }

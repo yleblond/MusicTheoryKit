@@ -26,8 +26,11 @@ public final class ImprovSession: @unchecked Sendable {
     /// "Dernier evt MIDI" status field); per-track recognition state lives in `tracks`.
     public private(set) var lastMIDIEvent: MIDINoteEvent?
     /// Whether MIDI is currently heard as one merged stream or as one track per visible
-    /// port — see `setMIDIFusionMode`. Changing it rebuilds `tracks`.
-    public private(set) var midiFusionMode: MIDIFusionMode = .merged
+    /// port — see `setMIDIFusionMode`. Changing it rebuilds `tracks`. Defaults to
+    /// `.individual`: a per-port track is what lets `ImprovSession.LumiLiveModeLastState
+    /// .current` single out the LUMI's own track by name when other MIDI devices are also
+    /// attached, rather than guessing from "whichever track happens to be listening".
+    public private(set) var midiFusionMode: MIDIFusionMode = .individual
     /// Every live-input track — MIDI (merged or one per port, per `midiFusionMode`), the
     /// computer keyboard, and the microphone — each with its own independent listening/
     /// sound/recognition state. Rebuilt by `refreshTracks()` (also called automatically
@@ -181,6 +184,22 @@ public final class ImprovSession: @unchecked Sendable {
     private let player = PiecePlayer()
     private let soundTrackPlayer = SoundTrackPlayer()
     private var midiListeners: [TrackID: MIDIInputListener] = [:]
+    /// Purely diagnostic — one lightweight `MIDIInputListener` per currently-visible MIDI
+    /// source, kept connected regardless of whether that source's corresponding track is
+    /// actually being listened to (unlike `midiListeners`, which only exists for a *started*
+    /// track). Lets `printTracks`/`scene-tree` show a device's MIDI channel (see
+    /// `observedChannel(forMIDISourceIndex:)`) just from having it plugged in, without
+    /// requiring "ecouter l'instrument" first — a channel can only ever be learned once a
+    /// message actually arrives, but there's no reason that has to be the track's own real
+    /// listening path. Rebuilt from scratch by `refreshPassiveChannelSniffers()` (called
+    /// wherever `refreshTracks()` is), same all-or-nothing rebuild as `tracks` itself. Keyed
+    /// by the same index `TrackID.midiSource(Int)` uses — meaningless in merged mode, where
+    /// there's no single physical source a track maps to.
+    private var passiveChannelSniffers: [Int: MIDIInputListener] = [:]
+    /// Written from whichever CoreMIDI callback thread each sniffer above happens to fire
+    /// on, so every read/write goes through `liveInputQueue` like every other piece of state
+    /// touched by both a live callback and the main thread — see `observedChannel(forMIDISourceIndex:)`.
+    private var passiveObservedChannels: [Int: Int] = [:]
     private var microphoneListener: MicrophonePitchListener?
     /// One independent chord/mode recognizer per track — created the first time a track
     /// starts listening, kept (not discarded) across a stop so `reset()` on the next start
@@ -243,6 +262,27 @@ public final class ImprovSession: @unchecked Sendable {
     /// `nil` when inactive — the port the interactive browser keyboard (see
     /// `startVirtualKeyboard`) is currently listening on.
     public private(set) var virtualKeyboardPort: Int?
+    /// `nil` when LUMI "live display" mode (see `startLumiLiveDisplay`) is off. Written and
+    /// read only inside `liveInputQueue` — it's consulted from `syncLumiLiveModeIfActive()`,
+    /// which runs on whatever thread delivered the live MIDI/microphone event that just
+    /// happened, same as every other piece of per-track state this queue already guards.
+    private var lumiLiveModeConfig: LumiDisplayConfig?
+    /// The last state actually pushed to the LUMI, so `syncLumiLiveModeIfActive()` only
+    /// sends new SysEx when the recognized mode (or lack thereof) really changed — without
+    /// this, every single note-on/off while live mode is active would re-send the full
+    /// guide-map/`.piano` message set, most of the time for no visible change. `.none` is a
+    /// pure "nothing pushed yet" sentinel (distinct from `.piano`, an actual pushed state)
+    /// so `startLumiLiveDisplay` reliably pushes an initial state instead of silently no-op'ing
+    /// if the first computed state happens to be `.piano`.
+    private var lumiLiveModeLastState: LumiLiveModeLastState = .none
+    /// `nil` when LUMI "guide display" sync (see `startLumiGuideDisplay`) is off. Unlike
+    /// `lumiLiveModeConfig`, this is only ever touched from the main thread (guide-step
+    /// navigation is driven by the terminal's own key handling, not a background MIDI/
+    /// microphone callback), so it needs no queue of its own.
+    private var lumiGuideDisplayConfig: LumiDisplayConfig?
+    /// Same "avoid resending identical SysEx" purpose as `lumiLiveModeLastState`, for the
+    /// guide screen's current step instead of live recognition.
+    private var lumiGuideDisplayLastState: LumiGuideDisplayLastState = .none
     /// Server-side only: which participant (`clientID`) each live TCP connection belongs
     /// to, learned from that connection's `hello` message — needed because `onDisconnect`
     /// only ever reports the connection's own transient id, not the participant identity.
@@ -315,6 +355,9 @@ public final class ImprovSession: @unchecked Sendable {
         case invalidColorPaletteIndex
         case emptyColorPaletteFile
         case emptyChordProgressionTemplateFile
+        case lumiDestinationNotFound
+        case invalidLumiColorHex
+        case invalidLumiBrightness
         public var description: String {
             switch self {
             case .noPieceLoaded: return "no piece loaded — try 'load-demo' or 'load <path>'"
@@ -365,6 +408,9 @@ public final class ImprovSession: @unchecked Sendable {
             case .invalidColorPaletteIndex: return "no color palette at that index"
             case .emptyColorPaletteFile: return "that file has no palettes in it"
             case .emptyChordProgressionTemplateFile: return "that file has no chord progression templates in it"
+            case .lumiDestinationNotFound: return "couldn't auto-detect a single LUMI MIDI destination — pass destinationIndex explicitly (see MIDIOutputPort.destinationDescriptors())"
+            case .invalidLumiColorHex: return "color must be a 6-digit hex string, e.g. #FF0000"
+            case .invalidLumiBrightness: return "brightness must be 0...100"
             }
         }
     }
@@ -633,6 +679,7 @@ public final class ImprovSession: @unchecked Sendable {
         try loadOrCreateColorPalettes(fromJSONFile: (folderPath as NSString).appendingPathComponent("palettes.json"))
         try loadOrCreateChordProgressionTemplates(fromJSONFile: (folderPath as NSString).appendingPathComponent("chordprogressions.json"))
         try loadOrCreateLanguageSetting(fromJSONFile: (folderPath as NSString).appendingPathComponent("language.json"))
+        try loadOrCreateLumiSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("lumi.json"))
         settingsFolder = folderPath
         append("Dossier de reglages: \(folderPath).")
     }
@@ -984,12 +1031,14 @@ public final class ImprovSession: @unchecked Sendable {
         guard currentGuide.steps.indices.contains(index) else { throw SessionError.invalidGuideStepIndex }
         currentGuideStepIndex = index
         append("Guide started at step \(index + 1)/\(currentGuide.steps.count).")
+        syncLumiGuideDisplayIfActive()
     }
 
     public func stopGuide() {
         guard currentGuideStepIndex != nil else { return }
         currentGuideStepIndex = nil
         append("Guide stopped.")
+        syncLumiGuideDisplayIfActive()
     }
 
     /// Moves the guide's current step by `delta` (±1 for left/right), clamped to the
@@ -999,6 +1048,7 @@ public final class ImprovSession: @unchecked Sendable {
         guard let currentGuide, let currentGuideStepIndex else { return }
         let clamped = max(0, min(currentGuide.steps.count - 1, currentGuideStepIndex + delta))
         self.currentGuideStepIndex = clamped
+        syncLumiGuideDisplayIfActive()
     }
 
     /// The currently-active guide step's resolved mode, or `nil` if the guide isn't running
@@ -1661,7 +1711,35 @@ public final class ImprovSession: @unchecked Sendable {
         })
         updated.append(preservedOrNewTrack(.microphone, label: "Microphone", canHaveSound: false))
         tracks = updated
+        refreshPassiveChannelSniffers()
         reconcileSceneAttachmentsAfterTrackRefresh()
+    }
+
+    /// Tears down every existing passive sniffer and reconnects one per currently-visible
+    /// MIDI source — see `passiveChannelSniffers`'s doc comment. A fresh, disposable
+    /// `MIDIInputListener`/CoreMIDI client per source is simpler than teaching that class to
+    /// tell several connected sources apart on one shared port (it doesn't track source
+    /// identity per packet today), and there are only ever a handful of MIDI sources in
+    /// practice — the extra CoreMIDI clients this creates are not a real cost here.
+    private func refreshPassiveChannelSniffers() {
+        passiveChannelSniffers.removeAll()
+        for index in 0..<availableMIDISources().count {
+            let handler: MIDIInputListener.Handler = { [weak self] event in
+                guard let self else { return }
+                self.liveInputQueue.async { self.passiveObservedChannels[index] = event.channel }
+            }
+            guard let listener = try? MIDIInputListener(clientName: "MusicImprovAssistant-ChannelSniffer", handler: handler) else { continue }
+            listener.connectSource(atIndex: index)
+            passiveChannelSniffers[index] = listener
+        }
+    }
+
+    /// The last MIDI channel (0...15) observed on the source at `index` in
+    /// `availableMIDISources()`'s order — regardless of whether the corresponding
+    /// `.midiSource(index)` track is actually being listened to. `nil` until at least one
+    /// message has arrived from it since the last `refreshTracks()`/`refreshPassiveChannelSniffers()`.
+    public func observedChannel(forMIDISourceIndex index: Int) -> Int? {
+        liveInputQueue.sync { passiveObservedChannels[index] }
     }
 
     private func preservedOrNewTrack(_ id: TrackID, label: String, canHaveSound: Bool = true) -> TrackInfo {
@@ -1927,6 +2005,7 @@ public final class ImprovSession: @unchecked Sendable {
     private func updateRecognitionState(pitch: Int, isNoteOn: Bool, velocity: Int, channel: Int, track: TrackID) {
         guard let index = tracks.firstIndex(where: { $0.id == track }) else { return }
         lastMIDIEvent = MIDINoteEvent(kind: isNoteOn ? .noteOn : .noteOff, pitch: pitch, velocity: isNoteOn ? velocity : 0, channel: channel)
+        tracks[index].lastChannel = channel
         append("\(tracks[index].label) \(isNoteOn ? "on " : "off")pitch=\(pitch) vel=\(isNoteOn ? velocity : 0) ch=\(channel)")
 
         let recognizer = recognizers[track] ?? RecognitionEngine()
@@ -1962,6 +2041,7 @@ public final class ImprovSession: @unchecked Sendable {
         liveInputQueue.sync {
             updateRecognitionState(pitch: event.pitch, isNoteOn: event.kind == .noteOn, velocity: event.velocity, channel: event.channel, track: track)
         }
+        syncLumiLiveModeIfActive()
     }
 
     /// Turns a stream of "here are the pitches right now, or empty for silence" reports into
@@ -1986,6 +2066,7 @@ public final class ImprovSession: @unchecked Sendable {
                 )
             }
         }
+        syncLumiLiveModeIfActive()
     }
 
     /// Public forwarder to `handleDetectedPitches` for `SanityChecks` (a separate executable
@@ -2221,7 +2302,12 @@ public final class ImprovSession: @unchecked Sendable {
             wheel: buildWebConsoleWheelState(listeningTracks: listeningTracks),
             guide: buildWebConsoleGuideState(),
             palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors,
-            scene: buildWebConsoleSceneState(), language: currentLanguage.rawValue
+            scene: buildWebConsoleSceneState(), language: currentLanguage.rawValue,
+            lumi: WebConsoleLumiState(
+                rootColorHex: lumiSettings.rootColorHex, scaleColorHex: lumiSettings.scaleColorHex,
+                brightnessPercentage: lumiSettings.brightnessPercentage,
+                autoPropagateRunMode: lumiSettings.autoPropagateRunMode, autoPropagateGuideMode: lumiSettings.autoPropagateGuideMode
+            )
         )
     }
 
@@ -2410,6 +2496,16 @@ public final class ImprovSession: @unchecked Sendable {
         case "web-console-stop": stopWebConsole(); return ok("Console web arretee.")
         case "vk-start": try startVirtualKeyboard(port: Int(value) ?? 8081); return ok("Clavier virtuel demarre.")
         case "vk-stop": stopVirtualKeyboard(); return ok("Clavier virtuel arrete.")
+        case "lumi-root-color": try setLumiRootColor(hex: value); return ok("Couleur racine LUMI : \(value).")
+        case "lumi-scale-color": try setLumiScaleColor(hex: value); return ok("Couleur gamme LUMI : \(value).")
+        case "lumi-brightness":
+            guard let percentage = Int(value) else { throw MenuActionError.invalidValue }
+            try setLumiBrightness(percentage); return ok("Luminosite LUMI : \(percentage)%.")
+        case "lumi-auto-run-on": try setLumiAutoPropagateRunMode(true); return ok("Propagation auto LUMI (mode run) activee.")
+        case "lumi-auto-run-off": try setLumiAutoPropagateRunMode(false); return ok("Propagation auto LUMI (mode run) desactivee.")
+        case "lumi-auto-guide-on": try setLumiAutoPropagateGuideMode(true); return ok("Propagation auto LUMI (mode guide) activee.")
+        case "lumi-auto-guide-off": try setLumiAutoPropagateGuideMode(false); return ok("Propagation auto LUMI (mode guide) desactivee.")
+        case "refresh-midi": refreshTracks(); return ok("Liste des instruments MIDI rafraichie.")
 
         // --- Scene ---
         case "track-on":
@@ -2852,6 +2948,349 @@ public final class ImprovSession: @unchecked Sendable {
         virtualKeyboardPort = nil
         liveInputQueue.sync { removeAllWebKeyboardTracks() }
         append("Clavier virtuel arrete.")
+    }
+
+    // MARK: - LUMI Keys settings (persisted colors/brightness/auto-propagation)
+
+    /// See `LumiSettingsFile`'s own doc comment for defaults/persistence shape.
+    public private(set) var lumiSettings = LumiSettingsFile()
+
+    public func loadLumiSettings(fromJSONFile path: String) throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        lumiSettings = try JSONDecoder().decode(LumiSettingsFile.self, from: data)
+    }
+
+    /// Mirrors `loadOrCreateLanguageSetting(fromJSONFile:)`: writes the defaults first if
+    /// nothing is there yet, then loads it either way.
+    public func loadOrCreateLumiSettings(fromJSONFile path: String) throws {
+        if !FileManager.default.fileExists(atPath: path) {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(LumiSettingsFile())
+            try data.write(to: URL(fileURLWithPath: path))
+        }
+        try loadLumiSettings(fromJSONFile: path)
+    }
+
+    private func saveLumiSettings() throws {
+        guard let settingsFolder else { return }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(lumiSettings)
+        try data.write(to: URL(fileURLWithPath: (settingsFolder as NSString).appendingPathComponent("lumi.json")))
+    }
+
+    public func setLumiRootColor(hex: String) throws {
+        guard LumiColorHex.rgb(hex) != nil else { throw SessionError.invalidLumiColorHex }
+        lumiSettings.rootColorHex = hex
+        try saveLumiSettings()
+        append("Couleur racine LUMI : \(hex).")
+    }
+
+    public func setLumiScaleColor(hex: String) throws {
+        guard LumiColorHex.rgb(hex) != nil else { throw SessionError.invalidLumiColorHex }
+        lumiSettings.scaleColorHex = hex
+        try saveLumiSettings()
+        append("Couleur gamme LUMI : \(hex).")
+    }
+
+    public func setLumiBrightness(_ percentage: Int) throws {
+        guard (0...100).contains(percentage) else { throw SessionError.invalidLumiBrightness }
+        lumiSettings.brightnessPercentage = percentage
+        try saveLumiSettings()
+        append("Luminosite LUMI : \(percentage)%.")
+    }
+
+    public func setLumiAutoPropagateRunMode(_ enabled: Bool) throws {
+        lumiSettings.autoPropagateRunMode = enabled
+        try saveLumiSettings()
+        append("Propagation auto LUMI (mode run) : \(enabled ? "activee" : "desactivee").")
+    }
+
+    public func setLumiAutoPropagateGuideMode(_ enabled: Bool) throws {
+        lumiSettings.autoPropagateGuideMode = enabled
+        try saveLumiSettings()
+        append("Propagation auto LUMI (mode guide) : \(enabled ? "activee" : "desactivee").")
+    }
+
+    /// Which console screen is active, for `notifyActiveScreen` — deliberately just a 3-way
+    /// hint (not the terminal's own `ConsoleScreenMode`, which `AppCore` shouldn't know
+    /// about): "run", "guide", or "anything else" is all the auto-propagation decision needs.
+    public enum LumiAutoPropagationScreen: Equatable {
+        case run
+        case guide
+        case other
+    }
+
+    /// Called whenever the active console screen changes (see `JamShack`'s
+    /// `runConsoleScreen`) so the LUMI automatically follows `lumiSettings
+    /// .autoPropagateRunMode`/`autoPropagateGuideMode` without the user needing to type
+    /// `lumi-run`/`lumi-guide-sync` by hand every session. Falls back to `.piano` (via
+    /// `stopLumiLiveDisplay`/`stopLumiGuideDisplay`, both of which push it on the way out —
+    /// see their doc comments) whenever the relevant toggle is off, no LUMI is detected, or
+    /// the active screen is neither Run nor Guide. Safe to call repeatedly with the same
+    /// screen: each `start.../stop...` call underneath is itself a no-op once already in
+    /// that state.
+    public func notifyActiveScreen(_ screen: LumiAutoPropagationScreen) {
+        switch screen {
+        case .run where lumiSettings.autoPropagateRunMode:
+            stopLumiGuideDisplay()
+            guard let rootColor = LumiColorHex.rgb(lumiSettings.rootColorHex),
+                  let scaleColor = LumiColorHex.rgb(lumiSettings.scaleColorHex) else { return }
+            try? startLumiLiveDisplay(rootColor: rootColor, scaleColor: scaleColor, brightnessPercentage: lumiSettings.brightnessPercentage)
+        case .guide where lumiSettings.autoPropagateGuideMode:
+            stopLumiLiveDisplay()
+            guard let rootColor = LumiColorHex.rgb(lumiSettings.rootColorHex),
+                  let scaleColor = LumiColorHex.rgb(lumiSettings.scaleColorHex) else { return }
+            try? startLumiGuideDisplay(rootColor: rootColor, scaleColor: scaleColor, brightnessPercentage: lumiSettings.brightnessPercentage)
+        default:
+            stopLumiLiveDisplay()
+            stopLumiGuideDisplay()
+        }
+    }
+
+    // MARK: - LUMI Keys guide map (static root/scale color map, see LumiGuideMap)
+
+    /// Pushes a static "guide" color map to a LUMI Keys BLOCK: root note in `rootColor`,
+    /// every other key in `scaleColor` — reacting to nothing, just showing the chosen
+    /// tonic/scale until pushed again. Never touches `liveInputQueue`/any track state: this
+    /// is pure outbound MIDI to an external device, not a mutation of this session's own
+    /// held-note/recognition state, so it needs none of that queue's synchronization.
+    ///
+    /// `destinationIndex` defaults to auto-detecting the single CoreMIDI destination whose
+    /// name contains "LUMI" (same heuristic as the `LumiSpike` diagnostic CLI) — pass an
+    /// explicit index (from `MIDIOutputPort.destinationDescriptors()`) if that's ambiguous
+    /// or wrong (e.g. more than one class-compliant MIDI device attached).
+    public func pushLumiGuideMap(
+        destinationIndex: Int? = nil,
+        mode: ModeReference,
+        rootColor: (red: UInt8, green: UInt8, blue: UInt8),
+        scaleColor: (red: UInt8, green: UInt8, blue: UInt8),
+        brightnessPercentage: Int = 100
+    ) throws {
+        guard mode.resolve() != nil else { throw SessionError.invalidModeReference }
+        guard let index = destinationIndex ?? MIDIOutputPort.autoDetectedDestinationIndex(nameContains: "lumi") else {
+            throw SessionError.lumiDestinationNotFound
+        }
+        try sendLumiMessages(
+            LumiGuideMap.messages(mode: mode, rootColor: rootColor, scaleColor: scaleColor, brightnessPercentage: brightnessPercentage),
+            toDestinationIndex: index
+        )
+        append("Carte LUMI envoyee : tonique \(PitchClass(mode.tonic).name()), gamme \(mode.scaleID).")
+    }
+
+    private func sendLumiMessages(_ messages: [[UInt8]], toDestinationIndex index: Int) throws {
+        let output = try MIDIOutputPort()
+        for message in messages {
+            try output.send(message, toDestinationAtIndex: index)
+        }
+    }
+
+    // MARK: - LUMI Keys live display ("run" mode — follow live recognition, else piano)
+
+    private struct LumiDisplayConfig {
+        let destinationIndex: Int
+        let rootColor: (red: UInt8, green: UInt8, blue: UInt8)
+        let scaleColor: (red: UInt8, green: UInt8, blue: UInt8)
+        let brightnessPercentage: Int
+    }
+
+    /// What the LUMI should currently show while live display mode is on. `.none` is an
+    /// internal-only "nothing pushed yet" sentinel; the real states pushed to hardware are
+    /// `.piano` (nothing recognized — LUMI's own built-in piano-style display, `ColorMode
+    /// .piano`) and `.mode` (a recognized mode — `LumiGuideMap`'s root/scale color map).
+    enum LumiLiveModeLastState: Equatable {
+        case none
+        case piano
+        case mode(RecognizedMode)
+
+        /// Picks whichever track's recognition actually reflects what's played on the LUMI:
+        /// the merged MIDI track if that's listening (`.midiMerged` folds every connected
+        /// MIDI source, LUMI included, into one stream), otherwise — under
+        /// `MIDIFusionMode.individual`, where each port gets its own track labeled with its
+        /// real device name (see `refreshTracks`'s `"MIDI : \(name)"`) — specifically the
+        /// `.midiSource` track whose label names the LUMI. Deliberately NOT "the first
+        /// listening track": with several MIDI devices attached in individual mode, an
+        /// unrelated keyboard that happens to sort earlier must never drive the LUMI's own
+        /// display. No match (LUMI not connected, or its track isn't currently listening)
+        /// falls through to `.piano` — the honest "nothing to show" state — rather than
+        /// silently substituting some other device's recognition.
+        static func current(for tracks: [TrackInfo]) -> LumiLiveModeLastState {
+            let candidate = referenceTrack(in: tracks)?.recognizedModes.first
+            return candidate.map(LumiLiveModeLastState.mode) ?? .piano
+        }
+
+        private static func referenceTrack(in tracks: [TrackInfo]) -> TrackInfo? {
+            if let merged = tracks.first(where: { $0.id == .midiMerged && $0.isListening }) {
+                return merged
+            }
+            return tracks.first { track in
+                guard case .midiSource = track.id, track.isListening else { return false }
+                return track.label.localizedCaseInsensitiveContains("lumi")
+            }
+        }
+    }
+
+    /// Starts following live recognition on the LUMI: whenever the reference mode (see
+    /// `LumiLiveModeLastState.current`) changes, push its root/scale color map; when nothing
+    /// is recognized, fall back to LUMI's own `.piano` display instead of leaving stale
+    /// colors on screen. Pushes an initial state immediately (usually `.piano`, since
+    /// nothing's been played yet) rather than waiting for the first note.
+    public func startLumiLiveDisplay(
+        destinationIndex: Int? = nil,
+        rootColor: (red: UInt8, green: UInt8, blue: UInt8),
+        scaleColor: (red: UInt8, green: UInt8, blue: UInt8),
+        brightnessPercentage: Int = 100
+    ) throws {
+        guard let index = destinationIndex ?? MIDIOutputPort.autoDetectedDestinationIndex(nameContains: "lumi") else {
+            throw SessionError.lumiDestinationNotFound
+        }
+        liveInputQueue.sync {
+            lumiLiveModeConfig = LumiDisplayConfig(destinationIndex: index, rootColor: rootColor, scaleColor: scaleColor, brightnessPercentage: brightnessPercentage)
+            lumiLiveModeLastState = .none
+        }
+        syncLumiLiveModeIfActive()
+        append("Mode run LUMI active.")
+    }
+
+    /// Pushes `.piano` on the way out (if it was actually active — a no-op if it wasn't),
+    /// so "run mode off" always means "honest piano display", never stale leftover colors.
+    public func stopLumiLiveDisplay() {
+        let previousIndex: Int? = liveInputQueue.sync {
+            let index = lumiLiveModeConfig?.destinationIndex
+            lumiLiveModeConfig = nil
+            lumiLiveModeLastState = .none
+            return index
+        }
+        guard let previousIndex else { return }
+        do {
+            try sendLumiMessages([LumiSysex.setColorMode(.piano)], toDestinationIndex: previousIndex)
+        } catch {
+            append("Erreur envoi LUMI (arret mode run): \(error)")
+        }
+        append("Mode run LUMI arrete.")
+    }
+
+    /// Called after every live MIDI/microphone event (outside `liveInputQueue.sync`, never
+    /// inside it — see `lumiLiveModeConfig`'s doc comment): snapshots whatever's needed from
+    /// `tracks` inside a short `liveInputQueue.sync`, decides if the reference mode actually
+    /// changed, and only then does the (potentially slower) MIDI I/O outside the queue.
+    private func syncLumiLiveModeIfActive() {
+        let pending: (config: LumiDisplayConfig, state: LumiLiveModeLastState)? = liveInputQueue.sync {
+            guard let config = lumiLiveModeConfig else { return nil }
+            let newState = LumiLiveModeLastState.current(for: tracks)
+            guard newState != lumiLiveModeLastState else { return nil }
+            lumiLiveModeLastState = newState
+            return (config, newState)
+        }
+        guard let pending else { return }
+        do {
+            switch pending.state {
+            case .mode(let mode):
+                try sendLumiMessages(
+                    LumiGuideMap.messages(
+                        mode: ModeReference(tonic: mode.tonic.value, scaleID: mode.scaleID),
+                        rootColor: pending.config.rootColor, scaleColor: pending.config.scaleColor,
+                        brightnessPercentage: pending.config.brightnessPercentage
+                    ),
+                    toDestinationIndex: pending.config.destinationIndex
+                )
+            case .piano:
+                try sendLumiMessages([LumiSysex.setColorMode(.piano)], toDestinationIndex: pending.config.destinationIndex)
+            case .none:
+                break
+            }
+        } catch {
+            append("Erreur envoi LUMI (mode run): \(error)")
+        }
+    }
+
+    // MARK: - LUMI Keys guide-screen sync (follow the Guide Musical screen's current step)
+
+    /// What the LUMI should show for a given guide step, if any. `.none` is the internal
+    /// "nothing pushed yet" sentinel (see `LumiLiveModeLastState`'s analogous doc comment);
+    /// `.piano` covers both "the guide isn't running" and "the current step's scale has no
+    /// native LUMI equivalent" — in both cases there's nothing sensible to color, so LUMI's
+    /// own built-in piano display is the honest fallback rather than a possibly-misleading
+    /// chromatic map.
+    enum LumiGuideDisplayLastState: Equatable {
+        case none
+        case piano
+        case guideMap(ModeReference)
+
+        static func current(forStepMode reference: ModeReference?) -> LumiGuideDisplayLastState {
+            guard let reference, LumiColorMap.lumiScale(forScaleID: reference.scaleID) != nil else { return .piano }
+            return .guideMap(reference)
+        }
+    }
+
+    /// The raw `ModeReference` (not the resolved `Mode`) of the guide's current step, if the
+    /// guide is running and the step index is in range — mirrors `currentGuideStepMode()`'s
+    /// exact guard, but returns the reference itself since that's what `LumiGuideDisplayLastState
+    /// .current`/`LumiGuideMap.messages` need (the resolved `Mode` has already lost `scaleID`
+    /// as a plain string by the time it's a `ScaleDefinition`).
+    private func currentGuideStepReference() -> ModeReference? {
+        guard let currentGuide, let currentGuideStepIndex, currentGuide.steps.indices.contains(currentGuideStepIndex) else { return nil }
+        return currentGuide.steps[currentGuideStepIndex].mode
+    }
+
+    /// Starts following the Guide Musical screen on the LUMI: whenever the current step (or
+    /// "no guide running") changes, push its root/scale color map, or LUMI's own `.piano`
+    /// display if the step's scale has no native equivalent. Only ever called from the main
+    /// thread (see `lumiGuideDisplayConfig`'s doc comment), so — unlike the live/"run" mode
+    /// sibling above — no `liveInputQueue` involvement is needed here.
+    public func startLumiGuideDisplay(
+        destinationIndex: Int? = nil,
+        rootColor: (red: UInt8, green: UInt8, blue: UInt8),
+        scaleColor: (red: UInt8, green: UInt8, blue: UInt8),
+        brightnessPercentage: Int = 100
+    ) throws {
+        guard let index = destinationIndex ?? MIDIOutputPort.autoDetectedDestinationIndex(nameContains: "lumi") else {
+            throw SessionError.lumiDestinationNotFound
+        }
+        lumiGuideDisplayConfig = LumiDisplayConfig(destinationIndex: index, rootColor: rootColor, scaleColor: scaleColor, brightnessPercentage: brightnessPercentage)
+        lumiGuideDisplayLastState = .none
+        syncLumiGuideDisplayIfActive()
+        append("Mode guide LUMI actif.")
+    }
+
+    /// Pushes `.piano` on the way out (if it was actually active — a no-op if it wasn't),
+    /// same reasoning as `stopLumiLiveDisplay`'s own doc comment.
+    public func stopLumiGuideDisplay() {
+        guard let previousIndex = lumiGuideDisplayConfig?.destinationIndex else { return }
+        lumiGuideDisplayConfig = nil
+        lumiGuideDisplayLastState = .none
+        do {
+            try sendLumiMessages([LumiSysex.setColorMode(.piano)], toDestinationIndex: previousIndex)
+        } catch {
+            append("Erreur envoi LUMI (arret mode guide): \(error)")
+        }
+        append("Mode guide LUMI arrete.")
+    }
+
+    /// Call after anything that changes `currentGuideStepIndex` (`startGuide`, `stopGuide`,
+    /// `advanceGuideStep`) — non-throwing (catches/logs its own errors) so those methods'
+    /// existing signatures don't need to become `throws` just for this.
+    private func syncLumiGuideDisplayIfActive() {
+        guard let config = lumiGuideDisplayConfig else { return }
+        let newState = LumiGuideDisplayLastState.current(forStepMode: currentGuideStepReference())
+        guard newState != lumiGuideDisplayLastState else { return }
+        lumiGuideDisplayLastState = newState
+        do {
+            switch newState {
+            case .guideMap(let reference):
+                try sendLumiMessages(
+                    LumiGuideMap.messages(mode: reference, rootColor: config.rootColor, scaleColor: config.scaleColor, brightnessPercentage: config.brightnessPercentage),
+                    toDestinationIndex: config.destinationIndex
+                )
+            case .piano:
+                try sendLumiMessages([LumiSysex.setColorMode(.piano)], toDestinationIndex: config.destinationIndex)
+            case .none:
+                break
+            }
+        } catch {
+            append("Erreur envoi LUMI (mode guide): \(error)")
+        }
     }
 
     /// `/` and `/app.js` need no identity (the page hasn't loaded/run its own script yet, so

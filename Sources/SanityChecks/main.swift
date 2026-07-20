@@ -1231,8 +1231,12 @@ func testStartTrackOnAnUnlistedMIDIPortThrows() {
     let session = ImprovSession()
     checks += 1
     do {
-        // Default fusion mode is `.merged`, so `.midiSource(0)` isn't one of `tracks` yet.
-        try session.startTrack(.midiSource(0))
+        // A huge index, not 0: default fusion mode is `.individual` now, and this machine
+        // does have at least one real MIDI source visible to CoreMIDI, so `.midiSource(0)`
+        // can legitimately already be a listed track — the point of this test is "an index
+        // with no matching track throws", which an index this large guarantees regardless
+        // of how many real MIDI ports happen to be attached.
+        try session.startTrack(.midiSource(9999))
         failures += 1
         print("FAIL [start-track on unlisted MIDI port throws]: did not throw")
     } catch ImprovSession.SessionError.unknownTrack {
@@ -1243,10 +1247,13 @@ func testStartTrackOnAnUnlistedMIDIPortThrows() {
     }
 }
 
-func testDefaultMIDIFusionModeIsMergedWithASingleMIDITrack() {
+func testDefaultMIDIFusionModeIsIndividual() {
+    // Individual (one track per visible MIDI port), not merged — see `midiFusionMode`'s own
+    // doc comment for why: a per-port track is what lets the LUMI run-mode integration
+    // single out the LUMI's own track by name. This machine has no MIDI hardware attached,
+    // so `.midiSource` tracks are simply absent rather than assertable one way or the other.
     let session = ImprovSession()
-    check(session.midiFusionMode, MIDIFusionMode.merged, "default MIDI fusion mode is merged")
-    check(session.tracks.contains { $0.id == .midiMerged }, true, "merged mode lists a single midiMerged track")
+    check(session.midiFusionMode, MIDIFusionMode.individual, "default MIDI fusion mode is individual")
     check(session.tracks.contains { $0.id == .computerKeyboard }, true, "tracks always include the computer keyboard")
     check(session.tracks.contains { $0.id == .microphone }, true, "tracks always include the microphone")
 }
@@ -1896,6 +1903,7 @@ testVirtualKeyboardStateExposesCurrentStepChordProgression()
 
 func testReleaseAllKeysClearsHeldPitchesForOneTrackOnly() {
     let session = ImprovSession()
+    session.setMIDIFusionMode(.merged) // default is now .individual; this test needs .midiMerged specifically
     checks += 1
     do {
         try session.startTrack(.computerKeyboard)
@@ -3603,7 +3611,7 @@ testSetPieceChordInstrumentWithInvalidSectionIndexThrows()
 testPlayWarnsWhenATracksInstrumentFileIsNotFound()
 testPlayWithoutAnyTrackInstrumentLogsNoInstrumentWarning()
 testStartTrackOnAnUnlistedMIDIPortThrows()
-testDefaultMIDIFusionModeIsMergedWithASingleMIDITrack()
+testDefaultMIDIFusionModeIsIndividual()
 testSetMIDIFusionModeSwitchesTrackList()
 testMicrophoneTrackCannotHaveSound()
 testSetMicrophoneRecognitionModeRejectsNonMicrophoneTrack()
@@ -3646,6 +3654,9 @@ func testHandlingIncomingMIDIEventsDetectsChordPerTrack() {
     checks += 1
     do {
         let session = ImprovSession()
+        // Default fusion mode is now `.individual` (no `.midiMerged` track exists until
+        // switched) — this test exercises `.midiMerged` specifically, not the default.
+        session.setMIDIFusionMode(.merged)
         // Sound stays off on this track, so this never touches the (unstarted) audio engine.
         try session.startTrack(.midiMerged)
         for pitch in [60, 64, 67, 71] {
@@ -3669,6 +3680,23 @@ func testHandlingIncomingMIDIEventsDetectsChordPerTrack() {
 }
 testHandlingIncomingMIDIEventsDetectsChordPerTrack()
 
+func testTrackRecordsMostRecentMIDIChannel() {
+    let session = ImprovSession()
+    session.setMIDIFusionMode(.merged)
+    do {
+        try session.startTrack(.midiMerged)
+        check(session.tracks.first { $0.id == .midiMerged }?.lastChannel, nil, "lastChannel is nil before any note event")
+        session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: 60, velocity: 100, channel: 3), track: .midiMerged)
+        check(session.tracks.first { $0.id == .midiMerged }?.lastChannel, 3, "lastChannel reflects the most recent note event's channel")
+        session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: 62, velocity: 100, channel: 7), track: .midiMerged)
+        check(session.tracks.first { $0.id == .midiMerged }?.lastChannel, 7, "lastChannel updates on a later event with a different channel")
+    } catch {
+        failures += 1
+        print("FAIL [track records most recent MIDI channel]: threw \(error)")
+    }
+}
+testTrackRecordsMostRecentMIDIChannel()
+
 // Deliberately single notes throughout (not a 3-note chord built one pitch at a time) to keep
 // the expected event count unambiguous — playing a chord note by note legitimately produces
 // one event per intermediate held-pitches snapshot (1 note, then 2, then 3), the whole point of
@@ -3677,6 +3705,7 @@ func testRecentChordEventsLogsChangesAndSkipsRestsOnFullRelease() {
     checks += 1
     do {
         let session = ImprovSession()
+        session.setMIDIFusionMode(.merged) // default is now .individual; this test needs .midiMerged specifically
         try session.startTrack(.midiMerged)
         func events() -> [WebConsoleChordEvent] {
             session.buildWebConsoleState().tracks.first { $0.id == "midi" }?.recentChordEvents ?? []
@@ -3731,6 +3760,7 @@ func testRecentChordEventsCapsAtTwentyEntries() {
     checks += 1
     do {
         let session = ImprovSession()
+        session.setMIDIFusionMode(.merged) // default is now .individual; this test needs .midiMerged specifically
         try session.startTrack(.midiMerged)
         func events() -> [WebConsoleChordEvent] {
             session.buildWebConsoleState().tracks.first { $0.id == "midi" }?.recentChordEvents ?? []
@@ -4304,6 +4334,290 @@ func testSetLanguageUpdatesCurrentLanguageAndWebConsoleState() {
 testEveryL10nKeyHasAllThreeLanguages()
 testLoadOrCreateLanguageSettingDefaultsToFrenchAndRoundTrips()
 testSetLanguageUpdatesCurrentLanguageAndWebConsoleState()
+
+// MARK: - LumiSysexTests (mirrors Tests/MIDIEngineTests/LumiSysexTests.swift) — every
+// expected byte array below was generated by running the actual reverse-engineered
+// `lumi_sysex.js` (github.com/benob/LUMI-lights) under Node with `send_sysex` stubbed to
+// capture its output, not hand-derived, and cross-checked against `SYSEX.txt`'s own
+// captured-from-ROLI-Dashboard examples for the six named colors and the 0/25/50/75/100%
+// brightness steps — this is a from-scratch Swift port, not a translation reviewed line by
+// line, so byte-for-byte agreement with an independent JS run is the real assurance here.
+// Device-id byte updated from that JS's `0x37` to `0x34` after capturing a real ROLI
+// Dashboard session with MIDI Monitor against actual hardware — see LumiSysex.envelope's
+// doc comment. The checksum bytes below were untouched by that fix (checksum only covers
+// the 8-byte payload, not the device-id byte) and matched the live capture exactly.
+
+func testLumiSetColorAllKeysRed() {
+    check(LumiSysex.setColor(.allKeys, red: 255, green: 0, blue: 0),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x20, 0x04, 0x00, 0x00, 0x7F, 0x7F, 0x03, 0x1B, 0xF7],
+          "lumi setColor(.allKeys, red) matches reference JS")
+}
+
+func testLumiSetColorAllKeysGreen() {
+    check(LumiSysex.setColor(.allKeys, red: 0, green: 255, blue: 0),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x20, 0x04, 0x40, 0x7F, 0x00, 0x7E, 0x03, 0x46, 0xF7],
+          "lumi setColor(.allKeys, green) matches reference JS")
+}
+
+func testLumiSetColorAllKeysBlue() {
+    check(LumiSysex.setColor(.allKeys, red: 0, green: 0, blue: 255),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x20, 0x64, 0x3F, 0x00, 0x00, 0x7E, 0x03, 0x30, 0xF7],
+          "lumi setColor(.allKeys, blue) matches reference JS")
+}
+
+func testLumiSetColorRootArbitraryRGB() {
+    check(LumiSysex.setColor(.root, red: 128, green: 64, blue: 32),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x30, 0x04, 0x08, 0x20, 0x00, 0x7F, 0x03, 0x1C, 0xF7],
+          "lumi setColor(.root, ...) matches reference JS — also confirms .root really sends 0x30, not 0x20")
+}
+
+func testLumiSetColorAllKeysArbitraryRGB() {
+    check(LumiSysex.setColor(.allKeys, red: 17, green: 200, blue: 99),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x20, 0x64, 0x18, 0x64, 0x11, 0x7E, 0x03, 0x7E, 0xF7],
+          "lumi setColor non-saturated RGB matches reference JS (exercises the bit packer's carry-over path)")
+}
+
+func testLumiSetBrightnessZeroPercent() {
+    check(LumiSysex.setBrightness(0),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x40, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x44, 0xF7],
+          "lumi setBrightness(0) matches SYSEX.txt's 0% example")
+}
+
+func testLumiSetBrightnessFiftyPercent() {
+    check(LumiSysex.setBrightness(50),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x40, 0x44, 0x0C, 0x00, 0x00, 0x00, 0x00, 0x50, 0xF7],
+          "lumi setBrightness(50) matches SYSEX.txt's 50% example")
+}
+
+func testLumiSetBrightnessHundredPercent() {
+    check(LumiSysex.setBrightness(100),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x40, 0x04, 0x19, 0x00, 0x00, 0x00, 0x00, 0x2D, 0xF7],
+          "lumi setBrightness(100) matches SYSEX.txt's 100% example")
+}
+
+func testLumiSetColorModeAllFiveVariants() {
+    // Expected bytes are a live MIDI Monitor capture of ROLI Dashboard's own five mode
+    // menu entries against the real hardware (2026-07-20) — see LumiSysex.ColorMode's
+    // doc comment for why these replaced SYSEX.txt's four-mode table.
+    check(LumiSysex.setColorMode(.user),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x40, 0x2C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3C, 0xF7],
+          "lumi setColorMode(.user) matches live Dashboard capture")
+    check(LumiSysex.setColorMode(.pro),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x40, 0x0C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x5C, 0xF7],
+          "lumi setColorMode(.pro) matches live Dashboard capture")
+    check(LumiSysex.setColorMode(.stage),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x40, 0x6C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7C, 0xF7],
+          "lumi setColorMode(.stage) matches live Dashboard capture")
+    check(LumiSysex.setColorMode(.piano),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x40, 0x4C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1C, 0xF7],
+          "lumi setColorMode(.piano) matches live Dashboard capture")
+    check(LumiSysex.setColorMode(.rainbow),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x40, 0x0C, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2D, 0xF7],
+          "lumi setColorMode(.rainbow) matches live Dashboard capture")
+}
+
+func testLumiSetScaleSamples() {
+    // `.blues` and `.lydian` are the two entries independently confirmed byte-for-byte via
+    // live Dashboard capture (2026-07-20) — see LumiSysex.Scale's doc comment. The rest are
+    // SYSEX.txt's own table, trusted on that table's strength (this checksum algorithm has
+    // been right every other time it's been checked against real hardware).
+    check(LumiSysex.setScale(.major),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x60, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7E, 0xF7],
+          "lumi setScale(.major)")
+    check(LumiSysex.setScale(.dorian),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x60, 0x62, 0x01, 0x00, 0x00, 0x00, 0x00, 0x6F, 0xF7],
+          "lumi setScale(.dorian)")
+    check(LumiSysex.setScale(.blues),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x60, 0x42, 0x01, 0x00, 0x00, 0x00, 0x00, 0x0F, 0xF7],
+          "lumi setScale(.blues) matches live Dashboard capture")
+    check(LumiSysex.setScale(.lydian),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x60, 0x22, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7],
+          "lumi setScale(.lydian) matches live Dashboard capture")
+    check(LumiSysex.setScale(.chromatic),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x60, 0x42, 0x04, 0x00, 0x00, 0x00, 0x00, 0x02, 0xF7],
+          "lumi setScale(.chromatic)")
+}
+
+// MARK: - LumiColorMapTests (mirrors Tests/AppCoreTests/LumiColorMapTests.swift)
+
+func testLumiColorMapDirectlyMappedScales() {
+    check(LumiColorMap.lumiScale(forScaleID: "ionian"), .major, "lumi color map ionian->major")
+    check(LumiColorMap.lumiScale(forScaleID: "aeolian"), .minor, "lumi color map aeolian->minor")
+    check(LumiColorMap.lumiScale(forScaleID: "harmonic_minor"), .harmonicMinor, "lumi color map harmonic_minor")
+    check(LumiColorMap.lumiScale(forScaleID: "dorian"), .dorian, "lumi color map dorian")
+    check(LumiColorMap.lumiScale(forScaleID: "phrygian"), .phrygian, "lumi color map phrygian")
+    check(LumiColorMap.lumiScale(forScaleID: "lydian"), .lydian, "lumi color map lydian")
+    check(LumiColorMap.lumiScale(forScaleID: "mixolydian"), .mixolydian, "lumi color map mixolydian")
+    check(LumiColorMap.lumiScale(forScaleID: "locrian"), .locrian, "lumi color map locrian")
+    check(LumiColorMap.lumiScale(forScaleID: "whole_tone"), .wholeTone, "lumi color map whole_tone")
+}
+
+func testLumiColorMapFallsBackToChromaticForUnmappedScales() {
+    check(LumiColorMap.lumiScale(forScaleID: "melodic_minor"), nil, "lumi color map melodic_minor has no native equivalent")
+    check(LumiColorMap.lumiScale(forScaleID: "altered"), nil, "lumi color map altered has no native equivalent")
+    check(LumiColorMap.lumiScale(forScaleID: "diminished"), nil, "lumi color map diminished has no native equivalent")
+    check(LumiColorMap.lumiScale(forScaleID: "augmented"), nil, "lumi color map augmented has no native equivalent")
+    check(LumiColorMap.lumiScale(forScaleID: "not_a_real_scale_id"), nil, "lumi color map unknown id has no native equivalent")
+}
+
+func testLumiSetKeyAllTwelvePitchClasses() {
+    // C, C#, D, D#, A, A#, B confirmed byte-for-byte via live Dashboard capture
+    // (2026-07-20); E, F, F#, G, G# are derived from the same BitPacker fed the pattern
+    // that fit all 7 confirmed notes — see LumiSysex.setKey's doc comment.
+    check(LumiSysex.setKey(pitchClass: 0),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x30, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0xF7],
+          "lumi setKey(C) matches live Dashboard capture")
+    check(LumiSysex.setKey(pitchClass: 1),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x30, 0x23, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0xF7],
+          "lumi setKey(C#) matches live Dashboard capture")
+    check(LumiSysex.setKey(pitchClass: 2),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x30, 0x43, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xF7],
+          "lumi setKey(D) matches live Dashboard capture")
+    check(LumiSysex.setKey(pitchClass: 3),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x30, 0x63, 0x00, 0x00, 0x00, 0x00, 0x00, 0x61, 0xF7],
+          "lumi setKey(D#) matches live Dashboard capture")
+    check(LumiSysex.setKey(pitchClass: 4),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x30, 0x03, 0x01, 0x00, 0x00, 0x00, 0x00, 0x12, 0xF7],
+          "lumi setKey(E) — derived, not directly captured")
+    check(LumiSysex.setKey(pitchClass: 5),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x30, 0x23, 0x01, 0x00, 0x00, 0x00, 0x00, 0x72, 0xF7],
+          "lumi setKey(F) — derived, not directly captured")
+    check(LumiSysex.setKey(pitchClass: 6),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x30, 0x43, 0x01, 0x00, 0x00, 0x00, 0x00, 0x52, 0xF7],
+          "lumi setKey(F#) — derived, not directly captured")
+    check(LumiSysex.setKey(pitchClass: 7),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x30, 0x63, 0x01, 0x00, 0x00, 0x00, 0x00, 0x32, 0xF7],
+          "lumi setKey(G) — derived, not directly captured")
+    check(LumiSysex.setKey(pitchClass: 8),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x30, 0x03, 0x02, 0x00, 0x00, 0x00, 0x00, 0x63, 0xF7],
+          "lumi setKey(G#) — derived, not directly captured")
+    check(LumiSysex.setKey(pitchClass: 9),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x30, 0x23, 0x02, 0x00, 0x00, 0x00, 0x00, 0x43, 0xF7],
+          "lumi setKey(A) matches live Dashboard capture")
+    check(LumiSysex.setKey(pitchClass: 10),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x30, 0x43, 0x02, 0x00, 0x00, 0x00, 0x00, 0x23, 0xF7],
+          "lumi setKey(A#) matches live Dashboard capture")
+    check(LumiSysex.setKey(pitchClass: 11),
+          [0xF0, 0x00, 0x21, 0x10, 0x77, 0x34, 0x10, 0x30, 0x63, 0x02, 0x00, 0x00, 0x00, 0x00, 0x03, 0xF7],
+          "lumi setKey(B) matches live Dashboard capture")
+}
+
+testLumiSetColorAllKeysRed()
+testLumiSetColorAllKeysGreen()
+testLumiSetColorAllKeysBlue()
+testLumiSetColorRootArbitraryRGB()
+testLumiSetColorAllKeysArbitraryRGB()
+testLumiSetBrightnessZeroPercent()
+testLumiSetBrightnessFiftyPercent()
+testLumiSetBrightnessHundredPercent()
+testLumiSetColorModeAllFiveVariants()
+testLumiSetScaleSamples()
+testLumiColorMapDirectlyMappedScales()
+testLumiColorMapFallsBackToChromaticForUnmappedScales()
+testLumiSetKeyAllTwelvePitchClasses()
+
+// MARK: - LumiGuideMapTests (mirrors Tests/AppCoreTests/LumiGuideMapTests.swift)
+
+func testLumiGuideMapMessagesOrderAndContentForADirectlyMappedScale() {
+    let messages = LumiGuideMap.messages(
+        mode: ModeReference(tonic: 0, scaleID: "ionian"),
+        rootColor: (red: 255, green: 0, blue: 0),
+        scaleColor: (red: 0, green: 0, blue: 255),
+        brightnessPercentage: 75
+    )
+    check(messages.count, 6, "lumi guide map produces 6 ordered messages")
+    check(messages[0], LumiSysex.setColorMode(.user), "lumi guide map message 0 is setColorMode(.user)")
+    check(messages[1], LumiSysex.setKey(pitchClass: 0), "lumi guide map message 1 is setKey for the tonic")
+    check(messages[2], LumiSysex.setScale(.major), "lumi guide map message 2 is setScale mapped from ionian")
+    check(messages[3], LumiSysex.setColor(.root, red: 255, green: 0, blue: 0), "lumi guide map message 3 is the root color")
+    check(messages[4], LumiSysex.setColor(.allKeys, red: 0, green: 0, blue: 255), "lumi guide map message 4 is the scale color")
+    check(messages[5], LumiSysex.setBrightness(75), "lumi guide map message 5 is brightness")
+}
+
+func testLumiGuideMapFallsBackToChromaticForAnUnmappedScale() {
+    let messages = LumiGuideMap.messages(
+        mode: ModeReference(tonic: 4, scaleID: "melodic_minor"),
+        rootColor: (red: 10, green: 20, blue: 30),
+        scaleColor: (red: 40, green: 50, blue: 60)
+    )
+    check(messages[1], LumiSysex.setKey(pitchClass: 4), "lumi guide map normalizes tonic through PitchClass")
+    check(messages[2], LumiSysex.setScale(.chromatic), "lumi guide map falls back to chromatic for melodic_minor")
+}
+
+testLumiGuideMapMessagesOrderAndContentForADirectlyMappedScale()
+testLumiGuideMapFallsBackToChromaticForAnUnmappedScale()
+
+// MARK: - LumiLiveModeLastState (mirrors Tests/AppCoreTests/LumiLiveModeTests.swift) — pure
+// "which state should the LUMI show" decision logic, extracted from the liveInputQueue/
+// CoreMIDI plumbing around it in ImprovSession.syncLumiLiveModeIfActive so it's testable
+// without real hardware or live playing.
+
+func testLumiLiveModeStateFallsBackToPianoWithNoTracks() {
+    check(ImprovSession.LumiLiveModeLastState.current(for: []), .piano, "lumi live state: no tracks -> piano")
+}
+
+func testLumiLiveModeStateUsesTheMergedTrackWhenItIsListening() {
+    let mode = RecognizedMode(tonic: PitchClass(0), scaleID: "ionian", confidence: 0.9)
+    let tracks = [
+        TrackInfo(id: .computerKeyboard, label: "t1", isListening: false, canHaveSound: true, recognizedModes: [mode]),
+        TrackInfo(id: .midiMerged, label: "MIDI (fusionne)", isListening: true, canHaveSound: true, recognizedModes: [mode]),
+    ]
+    check(ImprovSession.LumiLiveModeLastState.current(for: tracks), .mode(mode), "lumi live state: merged track drives the display when listening")
+}
+
+func testLumiLiveModeStateFallsBackToPianoWhenListeningTrackHasNoRecognizedMode() {
+    let tracks = [TrackInfo(id: .midiMerged, label: "MIDI (fusionne)", isListening: true, canHaveSound: true, recognizedModes: [])]
+    check(ImprovSession.LumiLiveModeLastState.current(for: tracks), .piano, "lumi live state: listening track with no recognized mode -> piano")
+}
+
+// The bug this guards against: under MIDIFusionMode.individual, several MIDI devices can
+// each have their own listening track (refreshTracks labels them "MIDI : <name>") — picking
+// "the first listening track" would let an unrelated keyboard that happens to sort earlier
+// drive the LUMI's own display. Only the track whose label names the LUMI should count.
+func testLumiLiveModeStateIndividualModePicksTheLumiNamedTrack() {
+    let otherKeyboardMode = RecognizedMode(tonic: PitchClass(2), scaleID: "dorian", confidence: 0.9)
+    let lumiMode = RecognizedMode(tonic: PitchClass(0), scaleID: "ionian", confidence: 0.9)
+    let tracks = [
+        TrackInfo(id: .midiSource(0), label: "MIDI : Some Other Keyboard", isListening: true, canHaveSound: true, recognizedModes: [otherKeyboardMode]),
+        TrackInfo(id: .midiSource(1), label: "MIDI : LUMI Keys BLOCK", isListening: true, canHaveSound: true, recognizedModes: [lumiMode]),
+    ]
+    check(ImprovSession.LumiLiveModeLastState.current(for: tracks), .mode(lumiMode), "lumi live state: LUMI-named track wins even when it doesn't sort first")
+}
+
+func testLumiLiveModeStateIndividualModeFallsBackToPianoWhenTheLumiTrackIsntListening() {
+    let otherKeyboardMode = RecognizedMode(tonic: PitchClass(2), scaleID: "dorian", confidence: 0.9)
+    let tracks = [
+        TrackInfo(id: .midiSource(0), label: "MIDI : Some Other Keyboard", isListening: true, canHaveSound: true, recognizedModes: [otherKeyboardMode]),
+        TrackInfo(id: .midiSource(1), label: "MIDI : LUMI Keys BLOCK", isListening: false, canHaveSound: true, recognizedModes: []),
+    ]
+    check(ImprovSession.LumiLiveModeLastState.current(for: tracks), .piano, "lumi live state: a non-listening LUMI track never falls back to another device's recognition")
+}
+
+testLumiLiveModeStateFallsBackToPianoWithNoTracks()
+testLumiLiveModeStateUsesTheMergedTrackWhenItIsListening()
+testLumiLiveModeStateFallsBackToPianoWhenListeningTrackHasNoRecognizedMode()
+testLumiLiveModeStateIndividualModePicksTheLumiNamedTrack()
+testLumiLiveModeStateIndividualModeFallsBackToPianoWhenTheLumiTrackIsntListening()
+
+// MARK: - LumiGuideDisplayLastState (mirrors Tests/AppCoreTests/LumiLiveModeTests.swift)
+
+func testLumiGuideDisplayStateFallsBackToPianoWhenNoStepReference() {
+    check(ImprovSession.LumiGuideDisplayLastState.current(forStepMode: nil), .piano, "lumi guide display state: no step -> piano")
+}
+
+func testLumiGuideDisplayStateShowsGuideMapForAMappedScale() {
+    let reference = ModeReference(tonic: 0, scaleID: "ionian")
+    check(ImprovSession.LumiGuideDisplayLastState.current(forStepMode: reference), .guideMap(reference), "lumi guide display state: mapped scale -> guideMap")
+}
+
+func testLumiGuideDisplayStateFallsBackToPianoForAnUnmappedScale() {
+    let reference = ModeReference(tonic: 0, scaleID: "melodic_minor")
+    check(ImprovSession.LumiGuideDisplayLastState.current(forStepMode: reference), .piano, "lumi guide display state: unmapped scale -> piano")
+}
+
+testLumiGuideDisplayStateFallsBackToPianoWhenNoStepReference()
+testLumiGuideDisplayStateShowsGuideMapForAMappedScale()
+testLumiGuideDisplayStateFallsBackToPianoForAnUnmappedScale()
 
 print("\(checks) checks, \(failures) failures")
 if failures > 0 {

@@ -42,6 +42,21 @@ public struct WebConsoleState: Codable {
     /// terminal must be visible in an already-open browser tab within one refresh cycle, no
     /// reload needed.
     var language: String
+    /// See `ImprovSession.lumiSettings`/`LumiSettingsFile` — sent so the web console's LUMI
+    /// settings form shows the current values (and reflects a change made from the terminal
+    /// menu within one refresh cycle), same reasoning as `palette`/`language`.
+    var lumi: WebConsoleLumiState
+}
+
+/// See `WebConsoleState.lumi`'s doc comment. A flat mirror of `LumiSettingsFile` — kept as
+/// its own type (not reusing `LumiSettingsFile` directly as `Codable` here) so this file's
+/// JSON-over-the-wire shape can evolve independently of the on-disk settings format.
+struct WebConsoleLumiState: Codable {
+    var rootColorHex: String
+    var scaleColorHex: String
+    var brightnessPercentage: Int
+    var autoPropagateRunMode: Bool
+    var autoPropagateGuideMode: Bool
 }
 
 /// See `WebConsoleState.scene`'s doc comment.

@@ -57,6 +57,10 @@ let package = Package(
         .target(name: "AppCore", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "AudioEngine", "MIDIEngine", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole", "Localization"]),
         .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit", "LLMEngine", "NetEngine", "SoundTrackModel"]),
         .executableTarget(name: "JamShack", dependencies: ["AppCore", "Localization"]),
+        // Standalone hardware-validation CLI for the ROLI LUMI Keys' reverse-engineered LED
+        // SysEx protocol (see MIDIEngine's LumiSysex/MIDIOutputPort) — kept separate from
+        // JamShack so poking at real hardware never risks ImprovSession's state/concurrency.
+        .executableTarget(name: "LumiSpike", dependencies: ["MIDIEngine"]),
         .executableTarget(name: "SanityChecks", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "AudioEngine", "MIDIEngine", "AppCore", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole", "Localization"]),
     ]
 )

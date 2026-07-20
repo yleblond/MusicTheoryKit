@@ -83,6 +83,14 @@ func printHelp() {
       virtual-keyboard [port]    demarre le clavier virtuel (piano interactif souris/tactile/clavier dans un navigateur, piste 'clavier-web', defaut port 8081)
       virtual-keyboard stop      arrete le clavier virtuel
       use-palette <n ou nom>     choisit la palette de couleur active (console web + clavier virtuel, propre a cette instance)
+      lumi-guide <tonique> <gamme> <rootR> <rootG> <rootB> <scaleR> <scaleG> <scaleB> [luminosite]
+                                 envoie une carte de couleurs statique (racine + gamme) a un clavier ROLI LUMI Keys BLOCK connecte en USB
+      lumi-run <rootR> <rootG> <rootB> <scaleR> <scaleG> <scaleB> [luminosite]
+                                 mode run LUMI : suit le mode reconnu en jouant (racine/gamme), sinon affichage piano natif du LUMI
+      lumi-run stop              arrete le mode run LUMI
+      lumi-guide-sync <rootR> <rootG> <rootB> <scaleR> <scaleG> <scaleB> [luminosite]
+                                 suit l'etape active de l'ecran Guide Musical (racine/gamme), sinon affichage piano natif si la gamme n'est pas geree par LUMI
+      lumi-guide-sync stop       arrete la synchronisation LUMI avec le Guide Musical
       quit                       quitte
 
     Morceaux (Piece Model — mesures/accords)
@@ -406,6 +414,17 @@ func virtualKeyboardStatusText() -> String {
 
 /// One line per track — shared by the `tracks` command and the Source/Reseau menus'
 /// prompts, so picking a track id to act on always shows the same up-to-date list first.
+/// The MIDI channel to show for `track` (see `TrackInfo.lastChannel`'s doc comment): the
+/// real, actually-observed-through-listening value if there is one, else the passive
+/// sniffer's own observation (`ImprovSession.observedChannel(forMIDISourceIndex:)`) for a
+/// `.midiSource` track — meaningless (so always `nil`) for anything else, including
+/// `.midiMerged`, which has no single physical source of its own to sniff.
+func displayedChannel(for track: TrackInfo) -> Int? {
+    if let channel = track.lastChannel { return channel }
+    guard case .midiSource(let index) = track.id else { return nil }
+    return session.observedChannel(forMIDISourceIndex: index)
+}
+
 func printTracks() {
     let lang = session.currentLanguage
     print(TextStyle.field(L10n.string(.fieldReseau, lang), networkRoleText()))
@@ -415,6 +434,9 @@ func printTracks() {
         if track.canHaveSound {
             line += ", son: \(TextStyle.flag(track.soundEnabled))"
             if let instrument = track.instrumentName { line += " (\(instrument))" }
+        }
+        if let channel = displayedChannel(for: track) {
+            line += ", canal: \(channel + 1)" // 1-indexed for display, matching how MIDI channels are conventionally shown to musicians
         }
         print(line)
     }
@@ -490,6 +512,9 @@ func printSceneTree() {
             if track.canHaveSound {
                 line += ", son: \(TextStyle.flag(track.soundEnabled))"
                 if let instrument = track.instrumentName { line += " (\(instrument))" }
+            }
+            if let channel = displayedChannel(for: track) {
+                line += ", canal: \(channel + 1)"
             }
             printTreeLine(line, ancestorIsLast: [false], isLast: index == localTracks.count - 1)
         }
@@ -895,6 +920,17 @@ enum ConsoleScreenMode: CaseIterable {
         case .guide: return L10n.string(.tabGuideMusical, lang)
         }
     }
+
+    /// What `ImprovSession.notifyActiveScreen` needs to know to auto-propagate the LUMI
+    /// display — `AppCore` shouldn't know about this terminal's own screen enum, so this is
+    /// the one place that translates between the two.
+    var lumiAutoPropagationScreen: ImprovSession.LumiAutoPropagationScreen {
+        switch self {
+        case .run: return .run
+        case .guide: return .guide
+        case .config: return .other
+        }
+    }
 }
 
 /// A persistent tab-bar-style indicator of which of the 3 screens is currently showing —
@@ -946,6 +982,11 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
             line(TextStyle.field(L10n.string(.fieldClavierVirtuel, lang), virtualKeyboardStatusText()))
             line(TextStyle.field(L10n.string(.fieldPaletteDeCouleur, lang), session.activeColorPalette.name))
             line(TextStyle.field(L10n.string(.fieldModeMidi, lang), session.midiFusionMode == .merged ? "fusionne" : "individuel"))
+            line(TextStyle.field(L10n.string(.fieldLumiCouleurRacine, lang), session.lumiSettings.rootColorHex))
+            line(TextStyle.field(L10n.string(.fieldLumiCouleurGamme, lang), session.lumiSettings.scaleColorHex))
+            line(TextStyle.field(L10n.string(.fieldLumiLuminosite, lang), "\(session.lumiSettings.brightnessPercentage)%"))
+            line(TextStyle.field(L10n.string(.fieldLumiAutoRun, lang), TextStyle.flag(session.lumiSettings.autoPropagateRunMode)))
+            line(TextStyle.field(L10n.string(.fieldLumiAutoGuide, lang), TextStyle.flag(session.lumiSettings.autoPropagateGuideMode)))
             line()
             line(TextStyle.heading(L10n.string(.headingDetailMorceauActif, lang)))
             for row in pieceDetailLines() { line(row) }
@@ -1127,6 +1168,10 @@ func runConsoleScreen(mode initialMode: ConsoleScreenMode) {
     print("\u{1B}[?25l", terminator: "") // hide cursor
     print("\u{1B}[2J", terminator: "")   // clear once up front
     setRawMode(true)
+    // Auto-propagate the LUMI display for whichever screen we're opening on (usually `.run`,
+    // per the top-level call site's own comment) — without this, LUMI stays whatever it last
+    // showed until the user happens to Tab through screens once.
+    session.notifyActiveScreen(mode.lumiAutoPropagationScreen)
     while !consoleShouldStop {
         if let key = readKey() {
             switch key {
@@ -1138,6 +1183,7 @@ func runConsoleScreen(mode initialMode: ConsoleScreenMode) {
                 let allModes = ConsoleScreenMode.allCases
                 let nextIndex = (allModes.firstIndex(of: mode)! + 1) % allModes.count
                 mode = allModes[nextIndex]
+                session.notifyActiveScreen(mode.lumiAutoPropagationScreen)
             case .left where mode == .guide && openMenuIndex == nil:
                 session.advanceGuideStep(by: -1)
             case .right where mode == .guide && openMenuIndex == nil:
@@ -1240,6 +1286,25 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         case "individuel", "individual": session.setMIDIFusionMode(.individual)
         default: print("usage: midi-mode fusionne|individuel")
         }
+    case "lumi-set-root-color":
+        guard let hex = args.first else { print("usage: lumi-set-root-color <#RRGGBB>"); break }
+        try session.setLumiRootColor(hex: hex)
+    case "lumi-set-scale-color":
+        guard let hex = args.first else { print("usage: lumi-set-scale-color <#RRGGBB>"); break }
+        try session.setLumiScaleColor(hex: hex)
+    case "lumi-set-brightness":
+        guard let percentage = args.first.flatMap(Int.init) else { print("usage: lumi-set-brightness <0-100>"); break }
+        try session.setLumiBrightness(percentage)
+    case "lumi-auto-run":
+        guard let arg = args.first?.lowercased() else { print("usage: lumi-auto-run on|off"); break }
+        try session.setLumiAutoPropagateRunMode(arg == "on")
+    case "lumi-auto-guide":
+        guard let arg = args.first?.lowercased() else { print("usage: lumi-auto-guide on|off"); break }
+        try session.setLumiAutoPropagateGuideMode(arg == "on")
+    case "refresh-midi":
+        session.refreshTracks()
+        print("Liste des instruments MIDI rafraichie.")
+        printTracks()
     case "track":
         guard args.count >= 2, let id = parseTrackID(args[0]) else {
             print("usage: track <id> on|off | track <id> son on|off | track <id> instrument <n|nom> | track <id> mode <mode>")
@@ -1325,6 +1390,61 @@ func executeCommand(_ command: String, _ args: [String]) throws {
             let port = args.first.flatMap(Int.init) ?? 8081
             try session.startVirtualKeyboard(port: port)
         }
+    case "lumi-guide":
+        let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+        guard args.count >= 8,
+              let tonic = noteNames.firstIndex(where: { $0.caseInsensitiveCompare(args[0]) == .orderedSame }),
+              let rootR = UInt8(args[2]), let rootG = UInt8(args[3]), let rootB = UInt8(args[4]),
+              let scaleR = UInt8(args[5]), let scaleG = UInt8(args[6]), let scaleB = UInt8(args[7])
+        else {
+            print("usage: lumi-guide <tonique C..B> <gamme, ex: ionian> <rootR> <rootG> <rootB> <scaleR> <scaleG> <scaleB> [luminosite 0-100]")
+            break
+        }
+        let brightness = args.count >= 9 ? (Int(args[8]) ?? 100) : 100
+        try session.pushLumiGuideMap(
+            mode: ModeReference(tonic: tonic, scaleID: args[1]),
+            rootColor: (red: rootR, green: rootG, blue: rootB),
+            scaleColor: (red: scaleR, green: scaleG, blue: scaleB),
+            brightnessPercentage: brightness
+        )
+    case "lumi-run":
+        if args.first == "stop" {
+            session.stopLumiLiveDisplay()
+            break
+        }
+        guard args.count >= 6,
+              let rootR = UInt8(args[0]), let rootG = UInt8(args[1]), let rootB = UInt8(args[2]),
+              let scaleR = UInt8(args[3]), let scaleG = UInt8(args[4]), let scaleB = UInt8(args[5])
+        else {
+            print("usage: lumi-run <rootR> <rootG> <rootB> <scaleR> <scaleG> <scaleB> [luminosite 0-100]")
+            print("       lumi-run stop")
+            break
+        }
+        let brightness = args.count >= 7 ? (Int(args[6]) ?? 100) : 100
+        try session.startLumiLiveDisplay(
+            rootColor: (red: rootR, green: rootG, blue: rootB),
+            scaleColor: (red: scaleR, green: scaleG, blue: scaleB),
+            brightnessPercentage: brightness
+        )
+    case "lumi-guide-sync":
+        if args.first == "stop" {
+            session.stopLumiGuideDisplay()
+            break
+        }
+        guard args.count >= 6,
+              let rootR = UInt8(args[0]), let rootG = UInt8(args[1]), let rootB = UInt8(args[2]),
+              let scaleR = UInt8(args[3]), let scaleG = UInt8(args[4]), let scaleB = UInt8(args[5])
+        else {
+            print("usage: lumi-guide-sync <rootR> <rootG> <rootB> <scaleR> <scaleG> <scaleB> [luminosite 0-100]")
+            print("       lumi-guide-sync stop")
+            break
+        }
+        let brightness = args.count >= 7 ? (Int(args[6]) ?? 100) : 100
+        try session.startLumiGuideDisplay(
+            rootColor: (red: rootR, green: rootG, blue: rootB),
+            scaleColor: (red: scaleR, green: scaleG, blue: scaleB),
+            brightnessPercentage: brightness
+        )
     case "press":
         guard let pitch = args.first.flatMap(Int.init) else { print("usage: press <pitch 0-127>"); break }
         session.pressKey(pitch: pitch)
@@ -1725,6 +1845,7 @@ func buildMenuCategories(for lang: AppLanguage) -> [MenuCategory] {
         MenuItem.separator,
         MenuItem(label: L10n.string(.menuMidiModeFusionne, lang)) { try executeCommand("midi-mode", ["fusionne"]) },
         MenuItem(label: L10n.string(.menuMidiModeIndividuel, lang)) { try executeCommand("midi-mode", ["individuel"]) },
+        MenuItem(label: L10n.string(.menuRefreshMidi, lang)) { try executeCommand("refresh-midi", []) },
         MenuItem.separator,
         MenuItem(label: L10n.string(.menuDemarrerConsoleWeb, lang)) {
             let portText = promptLine(L10n.string(.promptPortDefaut8080, lang)) ?? ""
@@ -1741,6 +1862,24 @@ func buildMenuCategories(for lang: AppLanguage) -> [MenuCategory] {
         MenuItem(label: L10n.string(.menuLangueFr, lang)) { try executeCommand("language", ["fr"]) },
         MenuItem(label: L10n.string(.menuLangueEn, lang)) { try executeCommand("language", ["en"]) },
         MenuItem(label: L10n.string(.menuLangueDe, lang)) { try executeCommand("language", ["de"]) },
+        MenuItem.separator,
+        MenuItem.header(L10n.string(.headerReglagesLumi, lang)),
+        MenuItem(label: L10n.string(.menuLumiCouleurRacine, lang)) {
+            guard let hex = promptLine(L10n.string(.promptLumiCouleurRacineHex, lang)), !hex.isEmpty else { return }
+            try executeCommand("lumi-set-root-color", [hex])
+        },
+        MenuItem(label: L10n.string(.menuLumiCouleurGamme, lang)) {
+            guard let hex = promptLine(L10n.string(.promptLumiCouleurGammeHex, lang)), !hex.isEmpty else { return }
+            try executeCommand("lumi-set-scale-color", [hex])
+        },
+        MenuItem(label: L10n.string(.menuLumiLuminosite, lang)) {
+            guard let text = promptLine(L10n.string(.promptLumiLuminosite0100, lang)), !text.isEmpty else { return }
+            try executeCommand("lumi-set-brightness", [text])
+        },
+        MenuItem(label: L10n.string(.menuLumiAutoRunActiver, lang)) { try executeCommand("lumi-auto-run", ["on"]) },
+        MenuItem(label: L10n.string(.menuLumiAutoRunDesactiver, lang)) { try executeCommand("lumi-auto-run", ["off"]) },
+        MenuItem(label: L10n.string(.menuLumiAutoGuideActiver, lang)) { try executeCommand("lumi-auto-guide", ["on"]) },
+        MenuItem(label: L10n.string(.menuLumiAutoGuideDesactiver, lang)) { try executeCommand("lumi-auto-guide", ["off"]) },
         MenuItem.separator,
         MenuItem(label: L10n.string(.menuQuitter, lang)) { try executeCommand("quit", []) },
     ]),
