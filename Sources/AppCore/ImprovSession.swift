@@ -2318,6 +2318,17 @@ public final class ImprovSession: @unchecked Sendable {
         case "/composition-detail": return handleCompositionDetailRequest()
         case "/guide-detail": return handleGuideDetailRequest()
         case "/soundtrack-detail": return handleSoundTrackDetailRequest()
+        case "/guide-advance-step":
+            // Global session state, like the virtual keyboard's own `/guide-advance` — any
+            // browser tab's arrow keys move the SAME guide everyone sees, mirroring the
+            // terminal's own up/down arrows on its `.guide` screen.
+            guard let delta = query["delta"].flatMap(Int.init) else { return .text("bad delta", contentType: "text/plain", status: 400) }
+            advanceGuideStep(by: delta)
+            return .text("", contentType: "text/plain")
+        case "/guide-advance-chord":
+            guard let delta = query["delta"].flatMap(Int.init) else { return .text("bad delta", contentType: "text/plain", status: 400) }
+            advanceGuideChord(by: delta)
+            return .text("", contentType: "text/plain")
         default: return .notFound()
         }
     }

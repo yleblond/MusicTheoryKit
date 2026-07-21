@@ -1452,6 +1452,9 @@ async function refreshMenuLists() {
 }
 
 let activeTab = 'run'; // 'run' | 'scene' | 'observer' | 'infos' | 'menu'
+// Updated every poll in `refresh()` — read by the guide-navigation keydown handler below, so
+// arrow keys only drive the guide while one is actually running (see that handler's own comment).
+let guideIsActive = false;
 function renderTabBar() {
   return '<div class="tab-bar">' +
     `<a class="tab${activeTab === 'run' ? ' active' : ''}" onclick="setTab('run')">Run</a>` +
@@ -1510,6 +1513,7 @@ async function refresh() {
   if (state.palette && state.palette.length === 12) PITCH_CLASS_COLORS = state.palette;
   if (state.paletteTextColors && state.paletteTextColors.length === 12) PITCH_CLASS_TEXT_COLORS = state.paletteTextColors;
   applyNoteColors(state.noteColors);
+  guideIsActive = !!(state.guide && state.guide.isActive);
   if (state.language && state.language !== currentLanguage) {
     currentLanguage = state.language;
     document.documentElement.lang = currentLanguage;
@@ -1522,6 +1526,47 @@ async function refresh() {
     : renderInfosTab();
   document.getElementById('app').innerHTML = renderTabBar() + tabHTML;
 }
+
+// Guide navigation from the keyboard — up/down move between modes (steps), left/right between
+// chords within the current step's progression, mirroring the terminal's own arrow-key mapping
+// on its `.guide` screen (and the virtual keyboard page's own `Tab`/`Shift+Tab` step navigation
+// — see `VirtualKeyboardAssets.swift`'s own `sendGuideAdvance`). Global session state, not
+// scoped to any one client: any browser tab's arrow keys move the SAME guide everyone sees.
+// `/guide-advance-step`/`/guide-advance-chord` are this file's own new endpoints (the virtual
+// keyboard page's existing `/guide-advance` only moves the step, and additionally requires a
+// `?client=` identity query this page has no equivalent of).
+function sendGuideAdvanceStep(delta) {
+  fetch('/guide-advance-step?delta=' + delta).catch(() => {});
+}
+function sendGuideAdvanceChord(delta) {
+  fetch('/guide-advance-chord?delta=' + delta).catch(() => {});
+}
+// Only while a guide is actually running (`guideIsActive`, refreshed every poll) AND the
+// currently active tab actually shows the guide panel (Run/Observer — Scene/Commandes/Infos
+// don't render it at all, so hijacking arrows there would be surprising); and never while focus
+// is in a form control (the Observer tab's own track picklist, the Menu tab's text inputs), so
+// typing/selecting there keeps working normally. `downActionCodes` debounces a held key's
+// auto-repeat into a single action per physical press, same technique as the virtual keyboard
+// page's own octave-shift/Tab handling.
+const downActionCodes = new Set();
+const GUIDE_STEP_DELTA = { ArrowUp: -1, ArrowDown: 1 };
+const GUIDE_CHORD_DELTA = { ArrowLeft: -1, ArrowRight: 1 };
+document.addEventListener('keydown', e => {
+  if (!guideIsActive || (activeTab !== 'run' && activeTab !== 'observer')) return;
+  const tag = document.activeElement ? document.activeElement.tagName : '';
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (downActionCodes.has(e.code)) return;
+  if (GUIDE_STEP_DELTA[e.code] !== undefined) {
+    downActionCodes.add(e.code);
+    e.preventDefault();
+    sendGuideAdvanceStep(GUIDE_STEP_DELTA[e.code]);
+  } else if (GUIDE_CHORD_DELTA[e.code] !== undefined) {
+    downActionCodes.add(e.code);
+    e.preventDefault();
+    sendGuideAdvanceChord(GUIDE_CHORD_DELTA[e.code]);
+  }
+});
+document.addEventListener('keyup', e => { downActionCodes.delete(e.code); });
 
 refresh();
 setInterval(refresh, 250);
