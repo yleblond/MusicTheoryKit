@@ -13,6 +13,7 @@ enum L10nTable {
         .tabConfig: [.fr: "Config", .en: "Config", .de: "Konfig"],
         .tabGuideMusical: [.fr: "Guide Musical", .en: "Music Guide", .de: "Musik-Guide"],
         .tabScene: [.fr: "Scene", .en: "Scene", .de: "Szene"],
+        .tabObserver: [.fr: "Observer", .en: "Observe", .de: "Beobachten"],
         .tabCommandes: [.fr: "Commandes", .en: "Commands", .de: "Befehle"],
         .tabInfos: [.fr: "Infos", .en: "Info", .de: "Infos"],
         .tabClavier: [.fr: "Clavier", .en: "Keyboard", .de: "Tastatur"],

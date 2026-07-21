@@ -168,6 +168,14 @@ public let webConsoleIndexHTML = """
   .instrument-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.4em; }
   .layout-columns { display: flex; flex-wrap: wrap; gap: 2rem; align-items: flex-start; }
   .layout-col-left, .layout-col-right { flex: 1 1 380px; min-width: 0; }
+  /* Observer tab's own octave-shift row — same look as `VirtualKeyboardAssets.swift`'s copy
+     (no mini-piano overview here, per feedback: nothing else in this read-only tab is
+     clickable either, so a clickable jump-to-octave shortcut isn't worth porting). */
+  .observer-track-select { background: #1a1a1a; color: #ddd; border: 1px solid #444; border-radius: 3px; padding: 0.3rem 0.5rem; margin-bottom: 0.6rem; }
+  .octave-controls { color: #888; font-size: 0.85rem; margin: 0.4rem 0; display: flex; align-items: center; gap: 0.5rem; }
+  .octave-controls b { color: #ddd; }
+  .octave-arrow { cursor: pointer; user-select: none; font-size: 1.3rem; line-height: 1; color: #ddd; padding: 0 0.2rem; position: relative; top: 0.12em; }
+  .octave-arrow:hover { color: #fff; }
   /* Guide panel's own inner layout: notation (left) — the two stacked keyboards (middle) —
      guitar tab (right). A distinct set of classes from `.layout-columns` above (that one is
      the whole-page wheel/mode split) since this nests one level deeper and has 3 columns, not 2. */
@@ -299,11 +307,20 @@ const GUIDE_ROW_WIDTH_ESTIMATE = 110 + 16 + (2 * 7 * WHITE_KEY_WIDTH) + 16 + 150
 // index 0 is always the tonic) vs. its other notes, with dedicated `.mode-root`/`.mode-tone`
 // classes distinct from chord root/tone — used only by the Guide panel's mode keyboard, so
 // "this is the mode's tonic" is never visually confused with "this is the chord's root".
+// `options.bigKeys`: use the same bigger key size as `VirtualKeyboardAssets.swift`'s real
+// interactive piano (44/144/26/92) instead of this file's own small 22/72/13/46 — used only by
+// the Observer tab's own keyboard (see `renderObserverTab`), which wants the same visual scale
+// as the virtual keyboard page even though it isn't interactive itself. Every other caller
+// omits it and keeps this file's own small size unchanged.
 function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones, alwaysShowChord, options) {
   options = options || {};
   const minMidi = options.minMidi !== undefined ? options.minMidi : MIN_MIDI;
   const maxMidi = options.maxMidi !== undefined ? options.maxMidi : MAX_MIDI;
   const showModeColoring = !!options.showModeColoring;
+  const whiteW = options.bigKeys ? 44 : WHITE_KEY_WIDTH;
+  const whiteH = options.bigKeys ? 144 : WHITE_KEY_HEIGHT;
+  const blackW = options.bigKeys ? 26 : BLACK_KEY_WIDTH;
+  const blackH = options.bigKeys ? 92 : BLACK_KEY_HEIGHT;
   const modeRootPC = (modeTones && modeTones.length) ? modeTones[0] : null;
 
   const held = new Set(heldPitches || []);
@@ -314,7 +331,7 @@ function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones, alwaysShowC
   (modeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc], textColor: PITCH_CLASS_TEXT_COLORS[pc] }; });
 
   const octaveCount = Math.ceil((maxMidi - minMidi + 1) / 12);
-  const totalWidth = octaveCount * 7 * WHITE_KEY_WIDTH;
+  const totalWidth = octaveCount * 7 * whiteW;
   let whiteHTML = '', blackHTML = '';
 
   for (let pitch = minMidi; pitch <= maxMidi; pitch++) {
@@ -339,20 +356,20 @@ function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones, alwaysShowC
     }
     if (WHITE_SLOT_BY_SEMITONE[pc] !== undefined) {
       const slot = octave * 7 + WHITE_SLOT_BY_SEMITONE[pc];
-      const x = slot * WHITE_KEY_WIDTH;
-      whiteHTML += `<div class="pkey white ${cls}" style="left:${x}px; width:${WHITE_KEY_WIDTH}px; height:${WHITE_KEY_HEIGHT}px;">${badge}</div>`;
+      const x = slot * whiteW;
+      whiteHTML += `<div class="pkey white ${cls}" style="left:${x}px; width:${whiteW}px; height:${whiteH}px;">${badge}</div>`;
     } else {
       const whiteSlotBefore = BLACK_AFTER_WHITE_SLOT[pc];
       const slot = octave * 7 + whiteSlotBefore + 1;
-      const x = slot * WHITE_KEY_WIDTH - BLACK_KEY_WIDTH / 2;
-      blackHTML += `<div class="pkey black ${cls}" style="left:${x}px; width:${BLACK_KEY_WIDTH}px; height:${BLACK_KEY_HEIGHT}px;">${badge}</div>`;
+      const x = slot * whiteW - blackW / 2;
+      blackHTML += `<div class="pkey black ${cls}" style="left:${x}px; width:${blackW}px; height:${blackH}px;">${badge}</div>`;
     }
   }
   // The keyboard itself is necessarily a fixed pixel width (`.pkey` children are absolutely
   // positioned, which a percentage-based layout can't drive) — wrapped in its own scrolling
   // container so a narrow browser window scrolls just this widget horizontally instead of
   // the whole page (see `.keyboard-scroll` in the CSS above).
-  return `<div class="keyboard-scroll"><div class="keyboard" style="width:${totalWidth}px; height:${WHITE_KEY_HEIGHT}px;">${whiteHTML}${blackHTML}</div></div>`;
+  return `<div class="keyboard-scroll"><div class="keyboard" style="width:${totalWidth}px; height:${whiteH}px;">${whiteHTML}${blackHTML}</div></div>`;
 }
 
 // Grand staff (treble + bass), a fixed G2..C6 natural-row window (one natural step of margin
@@ -570,6 +587,13 @@ function circularLabelRotation(index, count) {
 // side C,G,D,A,E,B,F# stays sharp; the remaining 5 black keys are spelled flat: Db,Ab,Eb,
 // Bb,F), not a single global sharps-only or flats-only table.
 const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+// "C4", "F#3", etc. — the Observer tab's own octave-shift range readout (same as
+// `VirtualKeyboardAssets.swift`'s copy).
+function noteLabel(pitch) {
+  const pc = ((pitch % 12) + 12) % 12;
+  const octave = Math.floor(pitch / 12) - 1;
+  return NOTE_NAMES[pc] + octave;
+}
 const CHORD_SUFFIX = { major: '', minor: 'm', diminished: '°' };
 // Raises a trailing "°" (diminished-ring degree labels, e.g. "iv°") to a proper superscript —
 // SVG text has no <sup>, so this splits it into its own smaller, baseline-shifted <tspan>.
@@ -906,6 +930,62 @@ function renderTrack(track, index) {
   html += `<div class="field">${t('fieldAccordWeb')}: <b>${track.chordLabel || t('fallbackTiret')}</b></div>`;
   html += `<div class="field">${t('fieldModes')}: <b>${track.modesLabel || t('fallbackTiret')}</b></div>`;
   return html;
+}
+
+// Observer tab's own persistent (across-poll) client state — the octave window and which
+// track is selected. Unlike the Menu tab's own DOM-persistence dance (see `refreshMenuLists`'s
+// own comment), a full per-poll HTML rebuild is safe here: neither of these two pieces of state
+// is ever read back FROM the DOM, so rebuilding this tab from scratch every ~250ms (exactly
+// like Run/Scene/Infos already do) never loses anything.
+let observerMinMidi = MIN_MIDI, observerMaxMidi = MAX_MIDI;
+let observerSelectedTrackID = null; // null = "not chosen yet" -> falls back to tracks[0]
+function shiftObserverOctave(delta) {
+  observerMinMidi += delta * 12;
+  observerMaxMidi += delta * 12;
+  refresh();
+}
+
+// Same rich layout as the virtual keyboard page (guide left, keyboard+wheel+staff right) but
+// for spectating any OTHER already-connected instrument instead of playing one's own — a
+// picklist over `state.tracks` (already fetched every poll here, no separate endpoint needed)
+// picks which track's held notes/chord/mode drive the keyboard below it (bigger than this
+// file's own default — see `keyboardHTML`'s `options.bigKeys`). Purely read-only: no click
+// handlers anywhere in this function's own output, unlike the virtual keyboard page's piano.
+function renderObserverTab(state) {
+  const tracks = state.tracks || [];
+  if (!tracks.length) {
+    return `<p class="empty">${t('placeholderAucunePisteEnEcouteWeb')}</p>`;
+  }
+  // Falls back to the first track WITHOUT mutating `observerSelectedTrackID` itself — if the
+  // previously-selected track just disconnected, the `<select>`'s own `selected` attribute
+  // below reflects this fallback so the picklist always shows what's actually on screen,
+  // without silently "forgetting" a still-valid choice for whenever that track reconnects.
+  const selectedID = tracks.some(tr => tr.id === observerSelectedTrackID) ? observerSelectedTrackID : tracks[0].id;
+  const track = tracks.find(tr => tr.id === selectedID);
+
+  const pickerHTML = '<select class="observer-track-select" onchange="observerSelectedTrackID=this.value; refresh();">' +
+    tracks.map(tr => `<option value="${tr.id}"${tr.id === selectedID ? ' selected' : ''}>${tr.label}${tr.owner ? ' — ' + tr.owner : ''}</option>`).join('') +
+    '</select>';
+
+  const octaveHTML = `<div class="octave-controls"><b>${noteLabel(observerMinMidi)}</b>` +
+    `<a class="octave-arrow" onclick="shiftObserverOctave(-1)">◂</a>` +
+    `<a class="octave-arrow" onclick="shiftObserverOctave(1)">▸</a>` +
+    `<b>${noteLabel(observerMaxMidi)}</b></div>`;
+
+  // Matches the big keyboard's own actual on-screen width (see `keyboardHTML`'s `bigKeys`
+  // dimensions), not `KEYBOARD_TOTAL_WIDTH` (sized for this file's small default keys) — same
+  // "staff never narrower than the keyboard above it" principle as every other caller here.
+  const bigKeyboardWidth = Math.ceil((observerMaxMidi - observerMinMidi + 1) / 12) * 7 * 44;
+  const keyboardOptions = { minMidi: observerMinMidi, maxMidi: observerMaxMidi, bigKeys: true };
+  const rightHTML = pickerHTML + octaveHTML
+    + keyboardHTML(track.heldPitches, track.chordRoot, track.chordTones, track.modeTones, false, keyboardOptions)
+    + `<div class="field">${t('fieldAccordWeb')}: <b>${track.chordLabel || t('fallbackTiret')}</b></div>`
+    + `<div class="field">${t('fieldModes')}: <b>${track.modesLabel || t('fallbackTiret')}</b></div>`
+    + renderWheelSection(state.wheel, tracks, state.guide)
+    + renderStaffSVG(track.recentChordEvents || [], bigKeyboardWidth);
+
+  const leftHTML = renderGuide(state.guide);
+  return `<div class="layout-columns"><div class="layout-col-left">${leftHTML}</div><div class="layout-col-right">${rightHTML}</div></div>`;
 }
 
 function renderPlayback(playback) {
@@ -1371,11 +1451,12 @@ async function refreshMenuLists() {
   });
 }
 
-let activeTab = 'run'; // 'run' | 'scene' | 'infos' | 'menu'
+let activeTab = 'run'; // 'run' | 'scene' | 'observer' | 'infos' | 'menu'
 function renderTabBar() {
   return '<div class="tab-bar">' +
     `<a class="tab${activeTab === 'run' ? ' active' : ''}" onclick="setTab('run')">Run</a>` +
     `<a class="tab${activeTab === 'scene' ? ' active' : ''}" onclick="setTab('scene')">${t('tabScene')}</a>` +
+    `<a class="tab${activeTab === 'observer' ? ' active' : ''}" onclick="setTab('observer')">${t('tabObserver')}</a>` +
     `<a class="tab${activeTab === 'menu' ? ' active' : ''}" onclick="setTab('menu')">${t('tabCommandes')}</a>` +
     `<a class="tab${activeTab === 'infos' ? ' active' : ''}" onclick="setTab('infos')">${t('tabInfos')}</a>` +
     '</div>';
@@ -1437,6 +1518,7 @@ async function refresh() {
   }
   const tabHTML = activeTab === 'run' ? renderRunTab(state)
     : activeTab === 'scene' ? renderSceneTree(state.scene)
+    : activeTab === 'observer' ? renderObserverTab(state)
     : renderInfosTab();
   document.getElementById('app').innerHTML = renderTabBar() + tabHTML;
 }

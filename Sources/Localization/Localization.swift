@@ -27,7 +27,7 @@ public struct LanguageSettingFile: Codable {
 /// persistent screen elements, and `printHelp()`'s command-reference dump.
 public enum L10nKey: String, CaseIterable, Sendable {
     // MARK: - Screen tabs (terminal console + web console tab bar)
-    case tabRun, tabConfig, tabGuideMusical, tabScene, tabCommandes, tabInfos, tabClavier
+    case tabRun, tabConfig, tabGuideMusical, tabScene, tabObserver, tabCommandes, tabInfos, tabClavier
 
     // MARK: - Menu category titles (shared by terminal `menuCategories` and web `MENU_ACTIONS`)
     case catJamShack, catScene, catGuideMusicaux, catEnregistrement, catMorceaux, catComposition, catJamSession
