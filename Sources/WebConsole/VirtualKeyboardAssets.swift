@@ -214,6 +214,14 @@ public let virtualKeyboardIndexHTML = """
   .pkey.tone { background: var(--chord-tone-color) !important; }
   .pkey.outside { background: var(--held-outside-color) !important; }
   .pkey.held { background: var(--held-no-chord-color) !important; }
+  /* The default held/outside colors (white/green) barely show up on a WHITE key that's already
+     near-white itself — per feedback. A plain dark gray, not a `--held-*-color` custom
+     property: this is a fixed legibility fix, not something meant to follow the user's own
+     configurable note-color settings. No `.big-keys` scoping needed here (unlike
+     `StaticAssets.swift`'s own copy of this rule) — every keyboard on this page is already the
+     real interactive one. Black keys get the SAME gray (not left at the default white/green)
+     per follow-up feedback, for one consistent "played, no chord role" look either way. */
+  .pkey.held, .pkey.outside { background: #555 !important; }
   .pkey.pressed { filter: brightness(0.7); }
   /* Guide panel's own static mode/chord reference keyboards only (see
      `guideReferenceKeyboardHTML`) — same meaning/colors as `StaticAssets.swift`'s. */

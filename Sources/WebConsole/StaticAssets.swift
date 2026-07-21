@@ -111,6 +111,15 @@ public let webConsoleIndexHTML = """
   .pkey.tone { background: var(--chord-tone-color) !important; }
   .pkey.outside { background: var(--held-outside-color) !important; }
   .pkey.held { background: var(--held-no-chord-color) !important; }
+  /* The default held/outside colors (white/green) barely show up on a WHITE key that's
+     already near-white itself — per feedback, only really a problem on the Observer tab's own
+     big keyboard (`keyboardHTML`'s `bigKeys` — see `.big-keys` there for why this is scoped to
+     it and not every small keyboard this same function draws elsewhere on the console). A
+     plain dark gray, not a `--held-*-color` custom property: this is a fixed legibility fix,
+     not something meant to follow the user's own configurable note-color settings. Black keys
+     get the SAME gray (not left at the default white/green) per follow-up feedback, for one
+     consistent "played, no chord role" look regardless of which key it lands on. */
+  .keyboard.big-keys .pkey.held, .keyboard.big-keys .pkey.outside { background: #555 !important; }
   /* Guide panel's mode keyboard only (see keyboardHTML's `showModeColoring`) — root vs.
      rest of the mode, deliberately distinct from chord root/tone above so the two concepts
      are never visually confused when both keyboards are on screen together. Mirrors the
@@ -176,6 +185,21 @@ public let webConsoleIndexHTML = """
   .octave-controls b { color: #ddd; }
   .octave-arrow { cursor: pointer; user-select: none; font-size: 1.3rem; line-height: 1; color: #ddd; padding: 0 0.2rem; position: relative; top: 0.12em; }
   .octave-arrow:hover { color: #fff; }
+  /* Observer tab's own mini-piano overview — same look as `VirtualKeyboardAssets.swift`'s copy,
+     minus `cursor: pointer` (this one isn't clickable — see `renderObserverMiniPianoOverview`'s
+     own comment). Outline-only highlight ("entourer"), no fill, sits on top of the mini
+     keyboard's own keys to mark which slice is currently shown on the big keyboard below. */
+  .mini-piano { display: block; flex: 0 0 auto; }
+  .mini-key-white { fill: #f5f5f5; stroke: #555; stroke-width: 0.5; }
+  .mini-key-black { fill: #1a1a1a; }
+  .mini-piano-active { fill: none; stroke: #e91e63; stroke-width: 1.5; }
+  /* Small dots marking exactly where the observed track's currently-held notes are, same
+     colors as the big keyboard's own `.pkey.*` (root/tone use the user's configurable note
+     colors; held/outside use the same fixed dark gray as the big keyboard's own held/outside
+     keys — see that rule's own comment for why it's not a `--held-*-color` custom property). */
+  .mini-note-root { fill: var(--chord-root-color); }
+  .mini-note-tone { fill: var(--chord-tone-color); }
+  .mini-note-held, .mini-note-outside { fill: #555; }
   /* Guide panel's own inner layout: notation (left) — the two stacked keyboards (middle) —
      guitar tab (right). A distinct set of classes from `.layout-columns` above (that one is
      the whole-page wheel/mode split) since this nests one level deeper and has 3 columns, not 2. */
@@ -369,7 +393,12 @@ function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones, alwaysShowC
   // positioned, which a percentage-based layout can't drive) — wrapped in its own scrolling
   // container so a narrow browser window scrolls just this widget horizontally instead of
   // the whole page (see `.keyboard-scroll` in the CSS above).
-  return `<div class="keyboard-scroll"><div class="keyboard" style="width:${totalWidth}px; height:${whiteH}px;">${whiteHTML}${blackHTML}</div></div>`;
+  // `big-keys` class (only when `options.bigKeys`) — scopes the held/outside visibility fix
+  // (see `.keyboard.big-keys .pkey.white.held` etc. in the CSS above) to the Observer tab's own
+  // big keyboard, without changing every other (small) keyboard this same function draws
+  // elsewhere on the console (Run tab tracks, Guide panel).
+  const bigKeysClass = options.bigKeys ? ' big-keys' : '';
+  return `<div class="keyboard-scroll"><div class="keyboard${bigKeysClass}" style="width:${totalWidth}px; height:${whiteH}px;">${whiteHTML}${blackHTML}</div></div>`;
 }
 
 // Grand staff (treble + bass), a fixed G2..C6 natural-row window (one natural step of margin
@@ -945,6 +974,98 @@ function shiftObserverOctave(delta) {
   refresh();
 }
 
+// Mini full-piano overview above the Observer tab's own big keyboard — a read-only port of
+// `VirtualKeyboardAssets.swift`'s own `renderMiniPianoOverview` (see there for why the natural
+// width is derived from the actual rightmost drawn key rather than a round octave count): same
+// spanning range/key size, but no click-to-jump handler (nothing else in this tab is clickable
+// either — see `keyboardHTML`'s own `bigKeys` doc comment), and the highlighted "you are here"
+// window is passed in explicitly (`highlightMinMidi`/`MaxMidi`) rather than read from module
+// globals, since this file's own `MIN_MIDI`/`MAX_MIDI` mean something different (this file's
+// small default keyboard range, not the Observer tab's own dynamic window).
+const MINI_PIANO_MIN = 0, MINI_PIANO_MAX = 108;
+const MINI_WHITE_WIDTH = 5, MINI_WHITE_HEIGHT = 22, MINI_BLACK_WIDTH = 3, MINI_BLACK_HEIGHT = 14;
+const MINI_OCTAVE_BASE = Math.floor(MINI_PIANO_MIN / 12);
+function miniWhiteSlot(pitch) {
+  const pc = ((pitch % 12) + 12) % 12;
+  const octave = Math.floor(pitch / 12) - MINI_OCTAVE_BASE;
+  return octave * 7 + WHITE_SLOT_BY_SEMITONE[pc];
+}
+// Center-x of `pitch`'s own key on the mini overview, white OR black — unlike `miniWhiteSlot`
+// (which only locates white-key boundaries, enough for the highlight rectangle), note markers
+// need the exact center of ANY key so a held black-key note doesn't get drawn sitting on top of
+// its white neighbor.
+function miniNoteX(pitch) {
+  const pc = ((pitch % 12) + 12) % 12;
+  const octave = Math.floor(pitch / 12) - MINI_OCTAVE_BASE;
+  if (WHITE_SLOT_BY_SEMITONE[pc] !== undefined) {
+    return (octave * 7 + WHITE_SLOT_BY_SEMITONE[pc]) * MINI_WHITE_WIDTH + MINI_WHITE_WIDTH / 2;
+  }
+  return (octave * 7 + BLACK_AFTER_WHITE_SLOT[pc] + 1) * MINI_WHITE_WIDTH;
+}
+// Same root/tone/outside/held classification `keyboardHTML` uses for an actually-held pitch
+// (its `alwaysShowChord`/`showModeColoring` branches don't apply here — the mini overview only
+// ever marks REAL held notes, never a merely-proposed chord or mode overlay).
+function heldNoteClass(pitch, chordRoot, chordTones) {
+  const pc = ((pitch % 12) + 12) % 12;
+  if (chordRoot !== null && chordRoot !== undefined && pc === chordRoot) return 'root';
+  if (chordTones && chordTones.includes(pc)) return 'tone';
+  if (chordRoot !== null && chordRoot !== undefined) return 'outside';
+  return 'held';
+}
+// `heldPitches`/`chordRoot`/`chordTones`: marks each currently-held note with a small dot at its
+// own position, colored the same way as the big keyboard below (via the shared `.pkey.*`
+// background colors) — not just the highlighted "window" rectangle, so it's clear exactly where
+// the notes themselves are relative to that window (in particular if the observed track's own
+// span is ever wider than the window and something falls outside it).
+function renderObserverMiniPianoOverview(svgTargetWidth, highlightMinMidi, highlightMaxMidi, heldPitches, chordRoot, chordTones) {
+  const naturalWidth = (miniWhiteSlot(MINI_PIANO_MAX) + 1) * MINI_WHITE_WIDTH;
+  const displayWidth = svgTargetWidth || naturalWidth;
+  const displayHeight = MINI_WHITE_HEIGHT * (displayWidth / naturalWidth);
+  let svg = `<svg class="mini-piano" width="${displayWidth}" height="${displayHeight}" viewBox="0 0 ${naturalWidth} ${MINI_WHITE_HEIGHT}">`;
+  for (let pitch = MINI_PIANO_MIN; pitch <= MINI_PIANO_MAX; pitch++) {
+    const pc = ((pitch % 12) + 12) % 12;
+    if (WHITE_SLOT_BY_SEMITONE[pc] === undefined) continue;
+    const x = miniWhiteSlot(pitch) * MINI_WHITE_WIDTH;
+    svg += `<rect class="mini-key-white" x="${x}" y="0" width="${MINI_WHITE_WIDTH}" height="${MINI_WHITE_HEIGHT}" />`;
+  }
+  for (let pitch = MINI_PIANO_MIN; pitch <= MINI_PIANO_MAX; pitch++) {
+    const pc = ((pitch % 12) + 12) % 12;
+    if (WHITE_SLOT_BY_SEMITONE[pc] !== undefined) continue;
+    const octave = Math.floor(pitch / 12) - MINI_OCTAVE_BASE;
+    const slot = octave * 7 + BLACK_AFTER_WHITE_SLOT[pc] + 1;
+    const x = slot * MINI_WHITE_WIDTH - MINI_BLACK_WIDTH / 2;
+    svg += `<rect class="mini-key-black" x="${x}" y="0" width="${MINI_BLACK_WIDTH}" height="${MINI_BLACK_HEIGHT}" />`;
+  }
+  const highlightX1 = miniWhiteSlot(highlightMinMidi) * MINI_WHITE_WIDTH;
+  const highlightX2 = (miniWhiteSlot(highlightMaxMidi) + 1) * MINI_WHITE_WIDTH;
+  svg += `<rect class="mini-piano-active" x="${highlightX1}" y="0" width="${highlightX2 - highlightX1}" height="${MINI_WHITE_HEIGHT}" />`;
+  (heldPitches || []).forEach(pitch => {
+    if (pitch < MINI_PIANO_MIN || pitch > MINI_PIANO_MAX) return;
+    const cls = heldNoteClass(pitch, chordRoot, chordTones);
+    svg += `<circle class="mini-note mini-note-${cls}" cx="${miniNoteX(pitch)}" cy="${MINI_WHITE_HEIGHT / 2}" r="2.2" />`;
+  });
+  svg += '</svg>';
+  return svg;
+}
+
+// Anchors the window on the LOWEST held note — its own left edge is the nearest C at or below
+// that note (so it's always inside the window, never clipped low), which in turn fixes where
+// the window sits; every other held note just falls wherever it falls relative to that. Much
+// simpler than (and replaces) an earlier "maximize how many notes are covered, then center on
+// the covered span" approach — that one re-centered on the AVERAGE of the lowest/highest notes,
+// which could still push the lowest note away from the window's own edge depending on the
+// spread of everything else. `nearestOctaveStopAtOrBelow` (not "nearest") is deliberate here:
+// rounding to the nearest C could round UP past the lowest note itself, clipping exactly the
+// note this is supposed to anchor on.
+function nearestOctaveStopAtOrBelow(pitch) {
+  return pitch - (((pitch % 12) + 12) % 12);
+}
+function bestObserverWindow(heldPitches, windowWidth) {
+  const lowest = Math.min(...heldPitches);
+  const min = Math.max(0, Math.min(127 - windowWidth + 1, nearestOctaveStopAtOrBelow(lowest)));
+  return { min, max: min + windowWidth - 1 };
+}
+
 // Same rich layout as the virtual keyboard page (guide left, keyboard+wheel+staff right) but
 // for spectating any OTHER already-connected instrument instead of playing one's own — a
 // picklist over `state.tracks` (already fetched every poll here, no separate endpoint needed)
@@ -963,19 +1084,39 @@ function renderObserverTab(state) {
   const selectedID = tracks.some(tr => tr.id === observerSelectedTrackID) ? observerSelectedTrackID : tracks[0].id;
   const track = tracks.find(tr => tr.id === selectedID);
 
+  // Auto-follow: re-center the octave window on wherever the MOST of the observed track's
+  // currently-held notes are — recomputed every poll a note is held (not just once notes
+  // escape the current window), so the view keeps tracking the best-centered position as the
+  // performer's hands move, rather than only reacting once they wander off-screen. An observer
+  // isn't the one playing, so they can't anticipate where the performer is about to go the way
+  // the virtual keyboard's own player always knows their own hands are. Left untouched only
+  // when nothing at all is held, so the last view doesn't snap away during a silent moment.
+  if (track.heldPitches && track.heldPitches.length) {
+    const windowWidth = observerMaxMidi - observerMinMidi + 1;
+    const best = bestObserverWindow(track.heldPitches, windowWidth);
+    observerMinMidi = best.min;
+    observerMaxMidi = best.max;
+  }
+
   const pickerHTML = '<select class="observer-track-select" onchange="observerSelectedTrackID=this.value; refresh();">' +
     tracks.map(tr => `<option value="${tr.id}"${tr.id === selectedID ? ' selected' : ''}>${tr.label}${tr.owner ? ' — ' + tr.owner : ''}</option>`).join('') +
     '</select>';
-
-  const octaveHTML = `<div class="octave-controls"><b>${noteLabel(observerMinMidi)}</b>` +
-    `<a class="octave-arrow" onclick="shiftObserverOctave(-1)">◂</a>` +
-    `<a class="octave-arrow" onclick="shiftObserverOctave(1)">▸</a>` +
-    `<b>${noteLabel(observerMaxMidi)}</b></div>`;
 
   // Matches the big keyboard's own actual on-screen width (see `keyboardHTML`'s `bigKeys`
   // dimensions), not `KEYBOARD_TOTAL_WIDTH` (sized for this file's small default keys) — same
   // "staff never narrower than the keyboard above it" principle as every other caller here.
   const bigKeyboardWidth = Math.ceil((observerMaxMidi - observerMinMidi + 1) / 12) * 7 * 44;
+  // `- 90`: a plain estimate of the arrows'/labels' own combined width, not a DOM-measured value
+  // like `VirtualKeyboardAssets.swift`'s own copy computes (that needs a post-render measuring
+  // pass this file's own per-poll string-rendering convention doesn't otherwise do) — close
+  // enough for a purely informational overview, not pixel-critical the way the interactive
+  // piano's own flush-edge alignment was.
+  const octaveHTML = `<div class="octave-controls"><b>${noteLabel(observerMinMidi)}</b>` +
+    `<a class="octave-arrow" onclick="shiftObserverOctave(-1)">◂</a>` +
+    renderObserverMiniPianoOverview(Math.max(200, bigKeyboardWidth - 90), observerMinMidi, observerMaxMidi, track.heldPitches, track.chordRoot, track.chordTones) +
+    `<a class="octave-arrow" onclick="shiftObserverOctave(1)">▸</a>` +
+    `<b>${noteLabel(observerMaxMidi)}</b></div>`;
+
   const keyboardOptions = { minMidi: observerMinMidi, maxMidi: observerMaxMidi, bigKeys: true };
   const rightHTML = pickerHTML + octaveHTML
     + keyboardHTML(track.heldPitches, track.chordRoot, track.chordTones, track.modeTones, false, keyboardOptions)
