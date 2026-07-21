@@ -189,18 +189,11 @@ public let webConsoleIndexHTML = """
   .guide-col-keyboards { padding-bottom: 8px; }
   /* Wraps everything under a column's own heading (the staff/tab graphic). */
   .guide-col-fill { flex: 1 1 auto; display: flex; flex-direction: column; }
-  /* Tab: bottom-align its (fixed-size) diagram — so a short guitar-diagram box's bottom edge
-     lines up with the keyboards column's own bottom (its second keyboard) instead of floating
-     wherever its own natural height happens to end. */
-  .guide-col-tab .guide-col-fill { justify-content: flex-end; }
-  /* Notation: stretch the staff itself to fill the whole available height, top to bottom,
-     instead of bottom-aligning a small fixed-size box — flex-grow assigns the svg's own main
-     size directly (no percentage-height chain needed), and since an <svg> is a replaced element
-     with its own intrinsic aspect ratio (from `viewBox`), the browser derives its width from
-     that ratio as the height grows, so it keeps the same narrow proportions instead of
-     stretching sideways too. */
-  .guide-col-notation .guide-col-fill .staff-scroll { flex: 1 1 auto; display: flex; overflow: visible; }
-  .guide-col-notation .guide-col-fill .staff-scroll svg.staff { flex: 1 1 auto; height: auto; width: auto; }
+  /* Notation and tab both bottom-align their own (fixed-size — see `renderStaffSVG`'s
+     `displayHeightPx` and `guitarChordDiagramHTML`'s own dimensions) graphic — so a shorter
+     box's bottom edge lines up with the keyboards column's own bottom (its second keyboard)
+     instead of floating wherever its own natural height happens to end. */
+  .guide-col-tab .guide-col-fill, .guide-col-notation .guide-col-fill { justify-content: flex-end; }
   .tab-bar { display: flex; gap: 1.2rem; border-bottom: 1px solid #333; margin-bottom: 1rem; }
   .tab { color: #888; cursor: pointer; padding: 0.3rem 0; user-select: none; }
   .tab.active { color: #fff; border-bottom: 2px solid #6cf; }
@@ -476,16 +469,29 @@ const STAFF_DISPLAY_HEIGHT_PX = 130;
 // Guide panel's own single-chord notation passes a (negative) value here, per feedback that its
 // notes sat too far from the clef once that staff got rendered much larger than the shared
 // default; every other caller omits it (0), keeping their own note placement unchanged.
-function renderStaffSVG(history, minWidthPx, firstColOffset) {
+// `displayHeightPx`: overrides the shared `STAFF_DISPLAY_HEIGHT_PX` (130) for THIS call only,
+// via an inline `style` (higher specificity than the `.staff` class's own `height: 130px`) —
+// only the Guide panel's own notation column passes one (bigger, to look properly sized next
+// to the keyboards/tab rather than a small fixed-130px box). Tried making it flex-grow to
+// exactly match the keyboards column's own rendered height first — checked empirically with a
+// real headless-Chromium instance (Playwright), not assumed — but `aspect-ratio` on a flex
+// item inside a shrink-to-fit (`flex: 0 0 auto`) ancestor doesn't reliably derive its width from
+// a flex-grown height in current Chromium; it fell back to unrelated default/fallback sizing
+// instead. A fixed, generously-sized display height + bottom-alignment (see
+// `.guide-col-notation .guide-col-fill`'s own comment) is less "perfect" (won't always reach
+// the very top) but is actually reliable.
+function renderStaffSVG(history, minWidthPx, firstColOffset, displayHeightPx) {
   const events = (history || []).filter(e => e.pitches && e.pitches.length);
   const colOffset = firstColOffset || 0;
   const height = STAFF_MARGIN_TOP + STAFF_MARGIN_BOTTOM + (STAFF_ROWS.length - 1) * STAFF_ROW_HEIGHT;
   const contentWidth = STAFF_FIRST_COL_X + colOffset + Math.max(events.length - 1, 0) * STAFF_COL_WIDTH + STAFF_MARGIN_RIGHT;
-  const minViewBoxWidth = minWidthPx ? minWidthPx * (height / STAFF_DISPLAY_HEIGHT_PX) : 0;
+  const targetHeightPx = displayHeightPx || STAFF_DISPLAY_HEIGHT_PX;
+  const minViewBoxWidth = minWidthPx ? minWidthPx * (height / targetHeightPx) : 0;
   const width = Math.max(contentWidth, minViewBoxWidth);
   const y = i => STAFF_MARGIN_TOP + i * STAFF_ROW_HEIGHT;
 
-  let svg = `<svg class="staff" viewBox="0 0 ${width} ${height}">`;
+  const heightStyle = displayHeightPx ? ` style="height: ${displayHeightPx}px;"` : '';
+  let svg = `<svg class="staff" viewBox="0 0 ${width} ${height}"${heightStyle}>`;
   svg += `<rect class="staff-paper" x="0" y="0" width="${width}" height="${height}" rx="4" />`;
   for (let i = STAFF_TREBLE_TOP; i <= STAFF_TREBLE_BOTTOM; i++) {
     if (STAFF_ROWS[i].isLine) svg += `<line class="staff-line" x1="${STAFF_LINES_LEFT_X}" y1="${y(i)}" x2="${width - 4}" y2="${y(i)}" />`;
@@ -856,14 +862,14 @@ function renderGuide(guide) {
   // has anything to show for a mode-only step (no progression, or nothing navigated to yet).
   // Each heading sits as a plain first child of its column (flush with the other two, all 3
   // starting the row at the same top line) with the actual graphic wrapped in `.guide-col-fill`
-  // below it. The CSS stretches the staff to fill the column's own height (see
-  // `.guide-col-notation .guide-col-fill svg.staff`'s comment) — `minWidthPx: 84` (was 60,
-  // widened ~40% per feedback) sets how much wider than its bare minimum content width the
-  // viewBox is, i.e. how much breathing room shows on the right. `-10` shifts the chord's own
-  // notes a bit closer to the clef, per feedback.
+  // below it, bottom-aligned like the tab (see `.guide-col-tab .guide-col-fill`'s comment).
+  // `minWidthPx: 84` sets how much wider than its bare minimum content width the viewBox is;
+  // `-10` shifts the chord's own notes a bit closer to the clef; `380` is a fixed display
+  // height, sized to look properly proportioned next to the keyboards/tab (see
+  // `renderStaffSVG`'s `displayHeightPx` comment for why this isn't dynamically computed).
   const notationHTML = hasChord
     ? `<h3>${t('headingPartitionGuideWeb')}</h3><div class="guide-col-fill">`
-      + renderStaffSVG([chordStaffEvent(guide.currentChordRoot, guide.currentChordTones)], 84, -10) + `</div>`
+      + renderStaffSVG([chordStaffEvent(guide.currentChordRoot, guide.currentChordTones)], 84, -10, 380) + `</div>`
     : '';
   const tabHTML = hasChord
     ? `<h3>${t('headingTablatureGuideWeb')}</h3><div class="guide-col-fill">${guitarChordDiagramHTML(guide.currentChordGuitarDiagram)}</div>`

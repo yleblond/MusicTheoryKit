@@ -180,7 +180,12 @@ public let virtualKeyboardIndexHTML = """
      this explicit, every element sharing one left edge rather than being centered relative to
      each other. */
   .keyboard-scroll { display: flex; justify-content: flex-start; overflow-x: auto; max-width: 100%; }
-  .wheel { margin: 0.5rem 0 1rem; display: block; width: 100%; max-width: 624px; height: auto; } /* 520px + 20% */
+  /* `margin: ... auto ...` (not `0`) centers the wheel horizontally — its own `max-width: 624px`
+     caps it well below `#wheel-container`'s width (stretched by `.keyboard-align-wrapper`'s
+     `align-items: stretch` to match the piano, which is comfortably wider), so without
+     auto-margins it just sat flush left under the (now much wider) keyboard instead of centered
+     beneath it. */
+  .wheel { margin: 0.5rem auto 1rem; display: block; width: 100%; max-width: 624px; height: auto; } /* 520px + 20% */
   .wheel-disk { fill: #fff; }
   .wheel-grid-line { stroke: #000; stroke-width: 1; }
   .wheel-cell-shape { stroke: #333; stroke-width: 1; cursor: pointer; }
@@ -217,7 +222,12 @@ public let virtualKeyboardIndexHTML = """
   .guide-keyboard-small .pkey { cursor: default; }
   /* Guide panel's guitar-tab diagram — same rules/colors as StaticAssets.swift's own copy. */
   .guitar-diagram { display: block; margin: 0.3rem 0 0.6rem; }
-  .guitar-diagram-label { font-size: 1.5rem; font-weight: bold; color: #ddd; margin: 0 0 -8px; line-height: 1.1; text-align: center; }
+  /* Doubled from `StaticAssets.swift`'s own 1.5rem/-8px — matches the tab diagram's own
+     doubled display size on this page (see `guitarChordDiagramHTML`'s comment). */
+  /* ~1.36x (not 2x) of `StaticAssets.swift`'s own 1.5rem/-8px — matches the guide's own
+     reference-keyboard scale (`GUIDE_WHITE_KEY_WIDTH` 30 vs. the console's 22), now that this
+     page's guide panel is deliberately smaller than its real piano, not matched to it. */
+  .guitar-diagram-label { font-size: 2rem; font-weight: bold; color: #ddd; margin: 0 0 -11px; line-height: 1.1; text-align: center; }
   .guitar-string { stroke: #666; stroke-width: 1.5; }
   .guitar-fret { stroke: #666; stroke-width: 1.5; }
   .guitar-fret-label { font-size: 11px; fill: #888; }
@@ -236,11 +246,13 @@ public let virtualKeyboardIndexHTML = """
   .guide-col-notation, .guide-col-keyboards, .guide-col-tab { flex: 0 0 auto; display: flex; flex-direction: column; }
   .guide-col-keyboards { padding-bottom: 8px; }
   .guide-col-fill { flex: 1 1 auto; display: flex; flex-direction: column; }
-  .guide-col-tab .guide-col-fill { justify-content: flex-end; }
-  .guide-col-notation .guide-col-fill .staff-scroll { flex: 1 1 auto; display: flex; overflow: visible; }
-  .guide-col-notation .guide-col-fill .staff-scroll svg.staff { flex: 1 1 auto; height: auto; width: auto; }
+  .guide-col-tab .guide-col-fill, .guide-col-notation .guide-col-fill { justify-content: flex-end; }
   .staff-scroll { overflow-x: auto; max-width: 100%; }
   .staff { display: block; margin: 0.4rem 0 0.8rem; width: auto; height: 130px; }
+  /* The "melody played" staff, moved OUTSIDE `#responsive-scale-clip` (see `renderKeyboard`'s
+     own comment) so it spans the page's own full width below both columns instead of the
+     narrower keyboard column it used to sit in. */
+  .staff-full-width { margin-top: 1rem; }
   .staff-paper { fill: #fff; }
   .staff-line, .staff-ledger { stroke: #333; stroke-width: 1; }
   .staff-clef { fill: #333; }
@@ -550,16 +562,21 @@ const STAFF_DISPLAY_HEIGHT_PX = 130;
 // Guide panel's own single-chord notation passes a (negative) value here, per feedback that its
 // notes sat too far from the clef once that staff got rendered much larger than the shared
 // default; every other caller omits it (0), keeping their own note placement unchanged.
-function renderStaffSVG(history, minWidthPx, firstColOffset) {
+// `displayHeightPx`: overrides the shared `STAFF_DISPLAY_HEIGHT_PX` for THIS call only — see
+// `StaticAssets.swift`'s own copy of this function for why (a flex-grow + `aspect-ratio`
+// approach was tried first and found unreliable in real Chromium, checked with Playwright).
+function renderStaffSVG(history, minWidthPx, firstColOffset, displayHeightPx) {
   const events = (history || []).filter(e => e.pitches && e.pitches.length);
   const colOffset = firstColOffset || 0;
   const height = STAFF_MARGIN_TOP + STAFF_MARGIN_BOTTOM + (STAFF_ROWS.length - 1) * STAFF_ROW_HEIGHT;
   const contentWidth = STAFF_FIRST_COL_X + colOffset + Math.max(events.length - 1, 0) * STAFF_COL_WIDTH + STAFF_MARGIN_RIGHT;
-  const minViewBoxWidth = minWidthPx ? minWidthPx * (height / STAFF_DISPLAY_HEIGHT_PX) : 0;
+  const targetHeightPx = displayHeightPx || STAFF_DISPLAY_HEIGHT_PX;
+  const minViewBoxWidth = minWidthPx ? minWidthPx * (height / targetHeightPx) : 0;
   const width = Math.max(contentWidth, minViewBoxWidth);
   const y = i => STAFF_MARGIN_TOP + i * STAFF_ROW_HEIGHT;
 
-  let svg = `<svg class="staff" viewBox="0 0 ${width} ${height}">`;
+  const heightStyle = displayHeightPx ? ` style="height: ${displayHeightPx}px;"` : '';
+  let svg = `<svg class="staff" viewBox="0 0 ${width} ${height}"${heightStyle}>`;
   svg += `<rect class="staff-paper" x="0" y="0" width="${width}" height="${height}" rx="4" />`;
   for (let i = STAFF_TREBLE_TOP; i <= STAFF_TREBLE_BOTTOM; i++) {
     if (STAFF_ROWS[i].isLine) svg += `<line class="staff-line" x1="${STAFF_LINES_LEFT_X}" y1="${y(i)}" x2="${width - 4}" y2="${y(i)}" />`;
@@ -810,6 +827,12 @@ let PITCH_CLASS_TEXT_COLORS = [
 const WHITE_KEY_WIDTH = 44, WHITE_KEY_HEIGHT = 144, BLACK_KEY_WIDTH = 26, BLACK_KEY_HEIGHT = 92;
 const WHITE_SLOT_BY_SEMITONE = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
 const BLACK_AFTER_WHITE_SLOT = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };
+// Own (smaller) size for the Guide panel's own reference keyboards — deliberately NOT the same
+// as the real interactive piano's `WHITE_KEY_WIDTH` etc. above: the guide panel's own footprint
+// was taking up nearly half the page's total width (measured directly), leaving the real piano
+// and circle of fifths comparatively squeezed — per feedback, shrinking the guide as a whole
+// to give the piano/wheel more room. Ratio 30/44 ≈ 0.68 applied to all 4 real-piano constants.
+const GUIDE_WHITE_KEY_WIDTH = 30, GUIDE_WHITE_KEY_HEIGHT = 98, GUIDE_BLACK_KEY_WIDTH = 18, GUIDE_BLACK_KEY_HEIGHT = 63;
 
 // Small, non-interactive 2-octave reference diagram for the Guide panel's own mode/chord
 // keyboards (see `guideInfoHTML`'s assembly) — deliberately its own fixed range, independent
@@ -822,7 +845,7 @@ const BLACK_AFTER_WHITE_SLOT = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };
 function guideReferenceKeyboardHTML(minMidi, maxMidi, rootPC, tonesPCs, rootClass, toneClass) {
   const tones = new Set(tonesPCs || []);
   const octaveCount = Math.ceil((maxMidi - minMidi + 1) / 12);
-  const totalWidth = octaveCount * 7 * WHITE_KEY_WIDTH;
+  const totalWidth = octaveCount * 7 * GUIDE_WHITE_KEY_WIDTH;
   let whiteHTML = '', blackHTML = '';
   for (let pitch = minMidi; pitch <= maxMidi; pitch++) {
     const pc = ((pitch % 12) + 12) % 12;
@@ -832,15 +855,15 @@ function guideReferenceKeyboardHTML(minMidi, maxMidi, rootPC, tonesPCs, rootClas
     else if (tones.has(pc)) cls = toneClass;
     if (WHITE_SLOT_BY_SEMITONE[pc] !== undefined) {
       const slot = octave * 7 + WHITE_SLOT_BY_SEMITONE[pc];
-      const x = slot * WHITE_KEY_WIDTH;
-      whiteHTML += `<div class="pkey white ${cls}" style="left:${x}px; width:${WHITE_KEY_WIDTH}px; height:${WHITE_KEY_HEIGHT}px;"></div>`;
+      const x = slot * GUIDE_WHITE_KEY_WIDTH;
+      whiteHTML += `<div class="pkey white ${cls}" style="left:${x}px; width:${GUIDE_WHITE_KEY_WIDTH}px; height:${GUIDE_WHITE_KEY_HEIGHT}px;"></div>`;
     } else {
       const slot = octave * 7 + BLACK_AFTER_WHITE_SLOT[pc] + 1;
-      const x = slot * WHITE_KEY_WIDTH - BLACK_KEY_WIDTH / 2;
-      blackHTML += `<div class="pkey black ${cls}" style="left:${x}px; width:${BLACK_KEY_WIDTH}px; height:${BLACK_KEY_HEIGHT}px;"></div>`;
+      const x = slot * GUIDE_WHITE_KEY_WIDTH - GUIDE_BLACK_KEY_WIDTH / 2;
+      blackHTML += `<div class="pkey black ${cls}" style="left:${x}px; width:${GUIDE_BLACK_KEY_WIDTH}px; height:${GUIDE_BLACK_KEY_HEIGHT}px;"></div>`;
     }
   }
-  return `<div class="keyboard-scroll guide-keyboard-small"><div class="keyboard" style="width:${totalWidth}px; height:${WHITE_KEY_HEIGHT}px;">${whiteHTML}${blackHTML}</div></div>`;
+  return `<div class="keyboard-scroll guide-keyboard-small"><div class="keyboard" style="width:${totalWidth}px; height:${GUIDE_WHITE_KEY_HEIGHT}px;">${whiteHTML}${blackHTML}</div></div>`;
 }
 
 // Same rendering as `StaticAssets.swift`'s own `guitarChordDiagramHTML` — see that copy's
@@ -852,12 +875,19 @@ function guitarChordDiagramHTML(diagram) {
   const fingers = diagram.fingers || [];
   const stringCount = 6;
   const shownFrets = 4;
-  // Dimensions/margins match `StaticAssets.swift`'s own copy (enlarged a bit, and marginTop
-  // tightened, per feedback there — see that copy's own comments for the exact reasoning).
+  // Internal geometry/viewBox identical to `StaticAssets.swift`'s own copy — only the ON-SCREEN
+  // display size (`displayWidth`/`displayHeight`) is scaled below, by the SAME ratio as the
+  // guide's own reference keyboards (`GUIDE_WHITE_KEY_WIDTH` 30 vs. the console's 22 — ~1.36x,
+  // not 2x: this page's guide panel is deliberately smaller than its real piano, not matched to
+  // it, per feedback that the guide's own footprint was crowding out the piano/wheel). Without
+  // this the tab diagram (a fixed absolute size, unlike the mode/chord keyboards or the notation
+  // staff, both of which size themselves relative to the row) would look mismatched next to them.
+  const SCALE = GUIDE_WHITE_KEY_WIDTH / 22;
   const width = 150, height = 172, marginLeft = 24, marginTop = 22, marginBottom = 16;
+  const displayWidth = width * SCALE, displayHeight = height * SCALE;
   const stringSpacing = (width - marginLeft * 2) / (stringCount - 1);
   const fretSpacing = (height - marginTop - marginBottom) / shownFrets;
-  let svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" class="guitar-diagram">`;
+  let svg = `<svg width="${displayWidth}" height="${displayHeight}" viewBox="0 0 ${width} ${height}" class="guitar-diagram">`;
   for (let s = 0; s < stringCount; s++) {
     const x = marginLeft + s * stringSpacing;
     svg += `<line x1="${x}" y1="${marginTop}" x2="${x}" y2="${marginTop + shownFrets * fretSpacing}" class="guitar-string" />`;
@@ -1114,42 +1144,47 @@ let keyboardBuilt = false;
 // enough history yet to need that much width on its own — see `renderStaffSVG`'s own comment.
 let keyboardPixelWidth = 0;
 
-// Fits the whole two-column layout (wheel + keyboard/staff/etc.) into whatever viewport width
+// Fits the whole two-column layout (guide + keyboard/wheel/etc.) into whatever viewport width
 // is actually available, then grows it proportionally on a bigger screen instead of a fixed
 // pixel design that just needs horizontal scrolling on a 13" MacBook/11" iPad and stays small
 // on a large monitor — "usable on a 13"/11" screen, and grows on anything bigger" was the
 // explicit ask (a phone-sized redesign is a separate, later pass).
 //
-// The wheel's own rendered width can't be measured directly and trusted as "natural": `.wheel`
-// is `width: 100%; max-width: 624px`, and that 100% resolves against whatever space the
-// CURRENT viewport happens to leave `.layout-col-left` — a real trap found via measurement,
-// not by inspection: resetting `#layout-columns`' transform to `none` and reading
-// `getBoundingClientRect().width` back kept coming back suspiciously close to the CURRENT
-// viewport's own available width at every window size tried, instead of one fixed
-// viewport-independent number — because the wheel's 100% had already shrunk/grown to fit
-// whatever the page's actual current width was, so "resetting the transform" never actually
-// removed the viewport's influence on the measurement. `#keyboard-align-wrapper`'s own width
-// has no such trap (its children are all fixed-pixel or content-driven, no `%`-of-viewport
-// sizing anywhere in that subtree), so it's measured directly; the wheel's contribution uses
-// its own `WHEEL_MAX_WIDTH_PX` constant instead — the size it would actually render at once
-// this whole block is scaled to fit (the transform applies uniformly to the whole subtree, so
-// the wheel ends up the right proportional size regardless of what its `100%` resolved to at
-// measurement time).
-const WHEEL_MAX_WIDTH_PX = 624; // matches `.wheel`'s own CSS max-width
+// Left column (guide) width IS measured directly — safe to do here since nothing inside the
+// guide panel uses viewport-relative (`%`) sizing (every dimension there is a fixed-px
+// constant or content-driven — see `StaticAssets.swift`'s own copy this was ported from).
+//
+// Right column width is NOT measured, even though it now also holds the wheel: `.wheel` is
+// `width: 100%; max-width: 624px`, and that 100% resolves against whatever space the CURRENT
+// viewport happens to leave its container — a real trap found via measurement, not by
+// inspection, back when the wheel lived in the left column: resetting the transform to `none`
+// and reading `getBoundingClientRect().width` back kept coming suspiciously close to the
+// CURRENT viewport's own available width at every window size tried, instead of one fixed,
+// viewport-independent number. Sidestepped entirely by using `keyboardPixelWidth` (a plain
+// already-known JS number, not a DOM measurement) as the right column's width instead — the
+// piano is always by far the widest thing in that column (the octave-overview strip is sized
+// to fit under it, the wheel is capped at 624px, the chord/mode text is short), so it stands
+// in safely for "how wide is the right column" without ever touching the wheel's own box.
 const LAYOUT_GAP_PX = 32; // matches `.layout-columns`' `gap: 2rem` (1rem = 16px default)
 const BODY_MAX_WIDTH_PX = 1600, BODY_HORIZONTAL_PADDING_PX = 48; // matches `body`'s own CSS
 const RESPONSIVE_MIN_SCALE = 0.5, RESPONSIVE_MAX_SCALE = 1.6;
+// The page's own available content width — also used to size the full-width "melody played"
+// staff below both columns (see `refresh()`): that staff is deliberately OUTSIDE the scaled
+// subtree now, so it needs its own width target instead of `keyboardPixelWidth` (sized for
+// the piano alone, not the whole page).
+let pageContentWidthPx = 0;
 function applyResponsiveScale() {
   const columns = document.getElementById('layout-columns');
   const clip = document.getElementById('responsive-scale-clip');
-  const wrapper = document.getElementById('keyboard-align-wrapper');
-  if (!columns || !clip || !wrapper) return;
-  columns.style.transform = 'none';
-  const wrapperWidth = wrapper.getBoundingClientRect().width;
-  const naturalHeight = columns.getBoundingClientRect().height;
-  if (!wrapperWidth) return;
-  const naturalWidth = WHEEL_MAX_WIDTH_PX + LAYOUT_GAP_PX + wrapperWidth;
+  const guideCol = document.querySelector('.layout-col-left');
+  if (!columns || !clip) return;
   const available = Math.max(1, Math.min(window.innerWidth, BODY_MAX_WIDTH_PX) - BODY_HORIZONTAL_PADDING_PX);
+  pageContentWidthPx = available;
+  if (!keyboardPixelWidth) return; // nothing built yet (before the first `ensureKeyboardBuilt()`)
+  columns.style.transform = 'none';
+  const guideWidth = guideCol ? guideCol.getBoundingClientRect().width : 0;
+  const naturalHeight = columns.getBoundingClientRect().height;
+  const naturalWidth = guideWidth + LAYOUT_GAP_PX + keyboardPixelWidth;
   const scale = Math.max(RESPONSIVE_MIN_SCALE, Math.min(RESPONSIVE_MAX_SCALE, available / naturalWidth));
   columns.style.transformOrigin = 'top left';
   columns.style.transform = `scale(${scale})`;
@@ -1345,7 +1380,6 @@ function renderKeyboard() {
       '<div id="layout-columns" class="layout-columns">' +
       '<div class="layout-col-left">' +
       '<div id="guide-container"></div>' +
-      '<div id="wheel-container"></div>' +
       '</div>' +
       '<div class="layout-col-right">' +
       '<div id="keyboard-align-wrapper" class="keyboard-align-wrapper">' +
@@ -1357,12 +1391,17 @@ function renderKeyboard() {
       '<b id="octave-max-label"></b>' +
       '</div>' +
       '<div id="keyboard-container"></div>' +
-      '<div id="staff-container"></div>' +
+      '<div id="wheel-container"></div>' +
       '<div id="info-container"></div>' +
       '</div>' +
       '</div>' +
       '</div>' +
       '</div>' +
+      // `#staff-container` is deliberately OUTSIDE `#responsive-scale-clip`/`#layout-columns`
+      // now — see `applyResponsiveScale`'s and `pageContentWidthPx`'s own comments: the melody
+      // played spans the page's own full available width, below both columns, rather than
+      // being scaled/clipped along with the guide+keyboard subtree above it.
+      '<div id="staff-container" class="staff-full-width"></div>' +
       '</div>' +
       '<div id="infos-tab" style="display:none">' +
       `<h1>${t('vkHeading')}</h1>` +
@@ -1581,12 +1620,14 @@ async function refresh() {
       (track.modeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc], textColor: PITCH_CLASS_TEXT_COLORS[pc] }; });
       chordLine = track.chordLabel || `<span class="empty">${t('placeholderAucunAccordVK')}</span>`;
       modeLine = track.modesLabel || '';
-      staffHTML = renderStaffSVG(track.recentChordEvents || [], keyboardPixelWidth);
+      // `pageContentWidthPx` (not `keyboardPixelWidth`) — the staff is now full-width, below
+      // both columns, rather than matched to the piano's own width (see its own doc comment).
+      staffHTML = renderStaffSVG(track.recentChordEvents || [], pageContentWidthPx);
     } else {
       heldPitches = new Set(); chordRoot = null; chordTones = new Set(); roles = {};
       chordLine = `<span class="empty">${t('placeholderPisteNonInitialisee')}</span>`;
       modeLine = '';
-      staffHTML = renderStaffSVG([], keyboardPixelWidth);
+      staffHTML = renderStaffSVG([], pageContentWidthPx);
     }
     // While a guide is running, the degree-line (degree badges) switches to ITS mode's notes
     // instead of this track's own recognized mode — "présente le clavier avec les notes du
@@ -1623,9 +1664,15 @@ async function refresh() {
         keyboardsHTML += guideReferenceKeyboardHTML(60, 83, state.guide.currentChordRoot ?? null, state.guide.currentChordTones || [], 'root', 'tone');
       }
 
+      // ~1.36x (not 2x) of `StaticAssets.swift`'s own `84`/`-10`/`380` — matches the guide's own
+      // reference-keyboard scale (see `GUIDE_WHITE_KEY_WIDTH`'s comment: this page's guide panel
+      // is now deliberately smaller than its real piano, to leave the piano/wheel more room).
+      // `270` for the display height was re-verified (Playwright) to stay safely under this
+      // page's own (now smaller) keyboards column height, so the bottom-alignment (see
+      // `.guide-col-notation .guide-col-fill`'s own comment) doesn't force the row taller.
       const notationHTML = hasChord
         ? `<h3>${t('headingPartitionGuideWeb')}</h3><div class="guide-col-fill">`
-          + renderStaffSVG([chordStaffEvent(state.guide.currentChordRoot, state.guide.currentChordTones)], 84, -10) + `</div>`
+          + renderStaffSVG([chordStaffEvent(state.guide.currentChordRoot, state.guide.currentChordTones)], 115, -14, 270) + `</div>`
         : '';
       const tabHTML = hasChord
         ? `<h3>${t('headingTablatureGuideWeb')}</h3><div class="guide-col-fill">${guitarChordDiagramHTML(state.guide.currentChordGuitarDiagram)}</div>`
