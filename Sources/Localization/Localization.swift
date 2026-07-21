@@ -100,7 +100,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
     // MARK: - Headings
     case headingDetailMorceauActif, headingDerouleComposition
     case headingClavierComposeEnCours, headingClavierSoundtrackEnCours
-    case headingSequence, headingClavierGuide
+    case headingSequence, headingClavierGuide, headingClavierAccordGuide
+    case headingTablatureGuide, placeholderPasDePositionGuitareStandard
 
     // MARK: - Placeholders / fallback text
     case placeholderAucun, placeholderAucune, placeholderLibre, placeholderInactive, placeholderInactif
@@ -179,6 +180,15 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case labelOui, labelNon, labelEcoutePrefix, labelSonPrefix, labelAucunInstrumentEncore
     case textInfosTab
     case headingCercleDesQuintes, headingGuide, headingMorceauEnCoursDeLecture, headingEnregistrementEnCoursDeLecture
+    /// Web console's own Guide panel headings — plain (no baked-in arrow hint), unlike the
+    /// terminal's `headingClavierGuide`/`headingClavierAccordGuide` which still carry theirs
+    /// inline. `hintNavigationGuideWeb` is the single italic line shown once beneath the mode+
+    /// chord detail text instead, consolidating both hints in one place.
+    case headingModeEtAccordGuideWeb, hintNavigationGuideWeb
+    case headingPartitionGuideWeb
+    /// Shorter than the terminal/virtual-keyboard page's own `headingTablatureGuide` ("Tablature
+    /// guitare:") — web-console-only wording, doesn't affect either of those.
+    case headingTablatureGuideWeb
     case fallbackTiret, fallbackConnexionPerdue, fallbackConnexionPerdueDetail
 
     // MARK: - Web page titles

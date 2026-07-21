@@ -845,6 +845,23 @@ func degreeMarker(for mode: Mode?) -> (Int) -> (degree: Int, color: String)? {
     }
 }
 
+/// A simple, standard "text tab" chord box (the format familiar from songbook/tab-site plain
+/// text chord charts): one line per string, high e at top down to low E at bottom, showing
+/// either the absolute fret to play or "x" for a muted string. Deliberately not a full
+/// grid/box-drawing diagram (unlike the web console's own graphical version) — this reads
+/// fine as plain lines and needs no multi-column layout support this renderer doesn't have.
+func renderGuitarChordDiagramLines(_ diagram: GuitarChordShape.Diagram) -> [String] {
+    let stringLabels = ["e", "B", "G", "D", "A", "E"] // string 1 (high e) ... string 6 (low E)
+    var lines = [diagram.label]
+    for (labelIndex, label) in stringLabels.enumerated() {
+        let dataIndex = diagram.positions.count - 1 - labelIndex // positions[] is string 6...string 1, reversed
+        let position = diagram.positions[dataIndex]
+        let cell = position.relativeFret.map { String(diagram.barreFret + $0) } ?? "x"
+        lines.append("\(label)|--\(cell)--")
+    }
+    return lines
+}
+
 /// Renders one track's keyboard (its own held pitches / recognized chord+mode, not any
 /// other track's) — the console screen shows one of these per currently-listening track.
 /// A `.remote` track mirrored on a client only carries `heldPitches` plus display-string
@@ -1140,30 +1157,47 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
                 line(TextStyle.placeholder(L10n.string(.placeholderRoueNonDisponible, lang)))
             }
             line()
+            // Two separate one-octave keyboards, not one combined 3-octave one: the mode
+            // keyboard shows root-vs-rest of the mode (mirroring the LUMI integration's own
+            // two-color `.user` display, not `degreeColors`' 7-way rainbow — the degree
+            // badges above the keys still use that, unaffected), the chord keyboard shows
+            // root-vs-rest of the currently-proposed chord. Neither shows currently-held
+            // pitches anymore — these are static reference diagrams for what's suggested,
+            // not live-performance feedback (that's what the Run screen is for).
             line(TextStyle.heading(L10n.string(.headingClavierGuide, lang)))
-            let guideHeldPitches = Set(session.tracks.filter(\.isListening).flatMap(\.heldPitches))
-            // The proposed chord's tones are shown whether or not they're currently held —
-            // unlike `renderTrackKeyboard`'s coloring (which only distinguishes chord-vs-not
-            // among already-held pitches), this is meant to suggest what to play next, not
-            // just annotate what's already sounding.
-            let guideChord = session.currentGuideChordReference()
-            let guideChordPitchClasses: Set<Int>? = guideChord.flatMap { chord in
-                ChordVocabulary.byID(chord.chordTemplateID).map { template in
-                    Set(template.intervalsFromRoot.map { (chord.root + $0) % 12 })
-                }
-            }
+            let guideModePitchClasses = Set(guideMode.pitchClasses.map(\.value))
             for row in renderKeyboard(
-                startMIDI: 48, octaveCount: 3, blackZoneRows: 2, whiteZoneRows: 1,
+                startMIDI: 60, octaveCount: 2, blackZoneRows: 2, whiteZoneRows: 1,
                 modeMarker: degreeMarker(for: guideMode),
                 colorFor: { pitch in
                     let pitchClass = ((pitch % 12) + 12) % 12
-                    if let guideChord, let guideChordPitchClasses {
-                        if pitchClass == guideChord.root { return KeyboardColor.chordRoot }
-                        if guideChordPitchClasses.contains(pitchClass) { return KeyboardColor.chordTone }
-                    }
-                    return guideHeldPitches.contains(pitch) ? KeyboardColor.heldNoChord : nil
+                    if pitchClass == guideMode.tonic.value { return KeyboardColor.modeRoot }
+                    return guideModePitchClasses.contains(pitchClass) ? KeyboardColor.modeOther : nil
                 }
             ) { line(row) }
+
+            if let guideChord = session.currentGuideChordReference(),
+               let template = ChordVocabulary.byID(guideChord.chordTemplateID) {
+                let guideChordPitchClasses = Set(template.intervalsFromRoot.map { (guideChord.root + $0) % 12 })
+                line()
+                line(TextStyle.heading(L10n.string(.headingClavierAccordGuide, lang)))
+                for row in renderKeyboard(
+                    startMIDI: 60, octaveCount: 2, blackZoneRows: 2, whiteZoneRows: 1,
+                    colorFor: { pitch in
+                        let pitchClass = ((pitch % 12) + 12) % 12
+                        if pitchClass == guideChord.root { return KeyboardColor.chordRoot }
+                        return guideChordPitchClasses.contains(pitchClass) ? KeyboardColor.chordTone : nil
+                    }
+                ) { line(row) }
+
+                line()
+                line(TextStyle.heading(L10n.string(.headingTablatureGuide, lang)))
+                if let tabDiagram = GuitarChordShape.diagram(forRoot: guideChord.root, chordTemplateID: guideChord.chordTemplateID) {
+                    for row in renderGuitarChordDiagramLines(tabDiagram) { line(row) }
+                } else {
+                    line(TextStyle.placeholder(L10n.string(.placeholderPasDePositionGuitareStandard, lang)))
+                }
+            }
         }
     }
 

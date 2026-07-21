@@ -179,7 +179,10 @@ enum L10nTable {
         .headingClavierComposeEnCours: [.fr: "Clavier compose, en cours de jeu (C3-B5):", .en: "Composed keyboard, now playing (C3-B5):", .de: "Komponierte Tastatur, spielt gerade (C3-B5):"],
         .headingClavierSoundtrackEnCours: [.fr: "Clavier soundtrack, en cours de jeu (C3-B5):", .en: "Soundtrack keyboard, now playing (C3-B5):", .de: "Soundtrack-Tastatur, spielt gerade (C3-B5):"],
         .headingSequence: [.fr: "Sequence: %@", .en: "Sequence: %@", .de: "Sequenz: %@"], // format key: static prefix + dynamic guide title
-        .headingClavierGuide: [.fr: "Clavier (fleches gauche/droite: etape precedente/suivante):", .en: "Keyboard (left/right arrows: previous/next step):", .de: "Tastatur (Pfeiltasten links/rechts: vorheriger/nächster Schritt):"],
+        .headingClavierGuide: [.fr: "Mode (fleches haut/bas: etape precedente/suivante):", .en: "Mode (up/down arrows: previous/next step):", .de: "Modus (Pfeiltasten hoch/runter: vorheriger/nächster Schritt):"],
+        .headingClavierAccordGuide: [.fr: "Accord (fleches gauche/droite: accord precedent/suivant):", .en: "Chord (left/right arrows: previous/next chord):", .de: "Akkord (Pfeiltasten links/rechts: vorheriger/nächster Akkord):"],
+        .headingTablatureGuide: [.fr: "Tablature guitare:", .en: "Guitar tab:", .de: "Gitarrentabulatur:"],
+        .placeholderPasDePositionGuitareStandard: [.fr: "pas de position standard connue pour cet accord", .en: "no known standard position for this chord", .de: "keine bekannte Standardposition für diesen Akkord"],
 
         // MARK: - Placeholders / fallback text
         .placeholderAucun: [.fr: "(aucun)", .en: "(none)", .de: "(keiner)"],
@@ -341,6 +344,14 @@ enum L10nTable {
         .headingGuide: [.fr: "Guide", .en: "Guide", .de: "Guide"],
         .headingMorceauEnCoursDeLecture: [.fr: "Morceau en cours de lecture", .en: "Piece now playing", .de: "Stück spielt gerade"],
         .headingEnregistrementEnCoursDeLecture: [.fr: "Enregistrement en cours de lecture", .en: "Recording now playing", .de: "Aufnahme spielt gerade"],
+        .headingModeEtAccordGuideWeb: [.fr: "Mode et accord", .en: "Mode and chord", .de: "Modus und Akkord"],
+        .hintNavigationGuideWeb: [
+            .fr: "Fleches haut/bas : etape precedente/suivante — fleches gauche/droite : accord precedent/suivant",
+            .en: "Up/down arrows: previous/next step — left/right arrows: previous/next chord",
+            .de: "Pfeiltasten hoch/runter: vorheriger/nächster Schritt — Pfeiltasten links/rechts: vorheriger/nächster Akkord",
+        ],
+        .headingPartitionGuideWeb: [.fr: "Partition", .en: "Notation", .de: "Notenblatt"],
+        .headingTablatureGuideWeb: [.fr: "Tablature", .en: "Tab", .de: "Tabulatur"],
         .fallbackTiret: [.fr: "-", .en: "-", .de: "-"],
         .fallbackConnexionPerdue: [.fr: "connexion perdue", .en: "connection lost", .de: "Verbindung verloren"],
         .fallbackConnexionPerdueDetail: [.fr: "(connexion perdue — l'application est-elle toujours lancee ?)", .en: "(connection lost — is the application still running?)", .de: "(Verbindung verloren — läuft die Anwendung noch?)"],

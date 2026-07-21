@@ -86,6 +86,17 @@ public let webConsoleIndexHTML = """
 <meta charset="utf-8">
 <title>JamShack — Console Web</title>
 <style>
+  /* Defaults match NoteColorSettingsFile's own — overwritten from `state.noteColors` by
+     `applyNoteColors()` on first load and every poll after, so a `note-colors.json` change
+     shows up here within one refresh cycle without needing this stylesheet regenerated. */
+  :root {
+    --mode-root-color: #ff9800;
+    --mode-tone-color: #00bcd4;
+    --chord-root-color: #e91e63;
+    --chord-tone-color: #fdd835;
+    --held-outside-color: #4caf50;
+    --held-no-chord-color: #ffffff;
+  }
   body { background: #111; color: #ddd; font-family: -apple-system, sans-serif; box-sizing: border-box; margin: 1.5rem auto; max-width: 1600px; padding: 0 1.5rem; }
   h1 { font-size: 1.1rem; color: #888; font-weight: normal; }
   h2 { font-size: 1rem; margin: 1.5rem 0 0.4rem; }
@@ -96,10 +107,28 @@ public let webConsoleIndexHTML = """
   .pkey { position: absolute; top: 0; box-sizing: border-box; border: 1px solid #333; border-radius: 0 0 4px 4px; }
   .pkey.white { background: #f5f5f5; z-index: 1; }
   .pkey.black { background: #1a1a1a; z-index: 2; box-shadow: 0 2px 3px rgba(0,0,0,0.5); }
-  .pkey.root { background: #e91e63 !important; }
-  .pkey.tone { background: #fdd835 !important; }
-  .pkey.outside { background: #4caf50 !important; }
-  .pkey.held { background: #bbb !important; }
+  .pkey.root { background: var(--chord-root-color) !important; }
+  .pkey.tone { background: var(--chord-tone-color) !important; }
+  .pkey.outside { background: var(--held-outside-color) !important; }
+  .pkey.held { background: var(--held-no-chord-color) !important; }
+  /* Guide panel's mode keyboard only (see keyboardHTML's `showModeColoring`) — root vs.
+     rest of the mode, deliberately distinct from chord root/tone above so the two concepts
+     are never visually confused when both keyboards are on screen together. Mirrors the
+     terminal's KeyboardColor.modeRoot/modeOther. */
+  .pkey.mode-root { background: var(--mode-root-color) !important; }
+  .pkey.mode-tone { background: var(--mode-tone-color) !important; }
+  /* Guide panel's guitar-tab diagram (see guitarChordDiagramHTML) — root color for the
+     barre/dots, deliberately reusing --chord-root-color/--chord-tone-color so a fingered
+     note's color is consistent with the chord keyboard right above it. */
+  .guitar-diagram { display: block; margin: 0.3rem 0 0.6rem; }
+  .guitar-diagram-label { font-size: 1.5rem; font-weight: bold; color: #ddd; margin: 0 0 -8px; line-height: 1.1; text-align: center; }
+  .guitar-string { stroke: #666; stroke-width: 1.5; }
+  .guitar-fret { stroke: #666; stroke-width: 1.5; }
+  .guitar-fret-label { font-size: 11px; fill: #888; }
+  .guitar-barre { stroke: var(--chord-root-color); stroke-width: 9; stroke-linecap: round; }
+  .guitar-dot { fill: var(--chord-tone-color); }
+  .guitar-finger { font-size: 10px; fill: #111; text-anchor: middle; }
+  .guitar-muted { font-size: 13px; fill: #e57373; text-anchor: middle; }
   .staff-scroll { overflow-x: auto; max-width: 100%; }
   /* width: auto (not a fixed px) — the SVG's viewBox now grows with history length, so its
      natural aspect ratio (preserved by leaving width unset) is what should scale, not a fixed
@@ -120,6 +149,10 @@ public let webConsoleIndexHTML = """
     font-size: 9px; line-height: 14px; text-align: center; font-weight: bold;
   }
   .empty { color: #666; font-style: italic; }
+  /* Same look as `.empty` (grey, italic) but semantically distinct: a permanent navigation
+     hint, not a "nothing here yet" placeholder — e.g. the Guide panel's consolidated
+     arrow-key hint below its mode+chord detail text. */
+  .hint { color: #666; font-style: italic; }
   .wheel { margin: 0.5rem 0 1rem; display: block; width: 100%; max-width: 820px; height: auto; }
   .wheel-disk { fill: #fff; }
   .wheel-grid-line { stroke: #000; stroke-width: 1; }
@@ -135,6 +168,39 @@ public let webConsoleIndexHTML = """
   .instrument-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.4em; }
   .layout-columns { display: flex; flex-wrap: wrap; gap: 2rem; align-items: flex-start; }
   .layout-col-left, .layout-col-right { flex: 1 1 380px; min-width: 0; }
+  /* Guide panel's own inner layout: notation (left) — the two stacked keyboards (middle) —
+     guitar tab (right). A distinct set of classes from `.layout-columns` above (that one is
+     the whole-page wheel/mode split) since this nests one level deeper and has 3 columns, not 2. */
+  /* `align-items: stretch` so all 3 columns share the row's tallest height (the keyboards
+     column, which always has 2 stacked keyboards whenever notation/tab exist at all — see
+     `renderGuide`'s `hasChord` gate). Each column is its own flex-column with the `<h3>`
+     heading as a plain first child (so all 3 headings sit flush at the same top row — see the
+     `.guide-col-fill` comment below for why the graphic underneath needs a second wrapper).
+     Every column is `flex: 0 0 auto` (natural content width, no grow) — `guide-col-keyboards`
+     used to be `flex: 1 1 260px`, which grew to soak up the row's leftover width (the page's
+     wide max-width vs. a ~310px 2-octave keyboard), pushing the tab column far to the right of
+     the actual keyboard graphic despite sitting right next to the column's own edge. With none
+     of the 3 columns growing, one single shared `gap` puts equal space on both sides, and the
+     whole row now hugs the left like everything else on the page instead of stretching wide. */
+  .guide-layout { display: flex; flex-wrap: wrap; gap: 1rem; align-items: stretch; margin-top: 0.4rem; }
+  .guide-col-notation, .guide-col-keyboards, .guide-col-tab { flex: 0 0 auto; display: flex; flex-direction: column; }
+  /* A little extra room below the 2nd keyboard, per feedback — purely cosmetic breathing room,
+     not needed for the bottom-alignment mechanism itself (that's `.guide-col-fill` below). */
+  .guide-col-keyboards { padding-bottom: 8px; }
+  /* Wraps everything under a column's own heading (the staff/tab graphic). */
+  .guide-col-fill { flex: 1 1 auto; display: flex; flex-direction: column; }
+  /* Tab: bottom-align its (fixed-size) diagram — so a short guitar-diagram box's bottom edge
+     lines up with the keyboards column's own bottom (its second keyboard) instead of floating
+     wherever its own natural height happens to end. */
+  .guide-col-tab .guide-col-fill { justify-content: flex-end; }
+  /* Notation: stretch the staff itself to fill the whole available height, top to bottom,
+     instead of bottom-aligning a small fixed-size box — flex-grow assigns the svg's own main
+     size directly (no percentage-height chain needed), and since an <svg> is a replaced element
+     with its own intrinsic aspect ratio (from `viewBox`), the browser derives its width from
+     that ratio as the height grows, so it keeps the same narrow proportions instead of
+     stretching sideways too. */
+  .guide-col-notation .guide-col-fill .staff-scroll { flex: 1 1 auto; display: flex; overflow: visible; }
+  .guide-col-notation .guide-col-fill .staff-scroll svg.staff { flex: 1 1 auto; height: auto; width: auto; }
   .tab-bar { display: flex; gap: 1.2rem; border-bottom: 1px solid #333; margin-bottom: 1rem; }
   .tab { color: #888; cursor: pointer; padding: 0.3rem 0; user-select: none; }
   .tab.active { color: #fff; border-bottom: 2px solid #6cf; }
@@ -220,12 +286,33 @@ const BLACK_AFTER_WHITE_SLOT = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };
 // something that needs recomputing per poll; passed into `renderStaffSVG` so a staff is never
 // narrower than the keyboard drawn right above it (see `renderStaffSVG`'s own comment).
 const KEYBOARD_TOTAL_WIDTH = Math.ceil((MAX_MIDI - MIN_MIDI + 1) / 12) * 7 * WHITE_KEY_WIDTH;
+// Approximates the Guide panel's own 3-column row width (2-octave keyboard + guitar-tab svg +
+// their gaps + a rough allowance for the notation column) — used only for the Guide panel's own
+// "held pitches" staff below that row, so its right edge reaches roughly as far as the
+// tablature's own right edge instead of stopping at the unrelated `KEYBOARD_TOTAL_WIDTH` (sized
+// for the Run tab's much wider 3-octave keyboard). The notation column's actual on-screen width
+// is flex-grow/aspect-ratio-derived from the row's rendered height, which isn't knowable from
+// plain string-building JS — the `110` below is a best-effort estimate, not an exact figure.
+const GUIDE_ROW_WIDTH_ESTIMATE = 110 + 16 + (2 * 7 * WHITE_KEY_WIDTH) + 16 + 150;
 
 // `alwaysShowChord`: color chordRoot/chordTones even on keys that aren't currently held —
-// used only by the Guide panel, whose chord is a *proposed* one to play next, not something
-// already sounding (every other caller shows chord coloring only on held pitches, matching
-// "here's what's actually playing").
-function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones, alwaysShowChord) {
+// used only by the Guide panel's chord keyboard, whose chord is a *proposed* one to play
+// next, not something already sounding (every other caller shows chord coloring only on
+// held pitches, matching "here's what's actually playing").
+// `options.minMidi`/`options.maxMidi` override the default 3-octave `MIN_MIDI`/`MAX_MIDI`
+// range — used by the Guide panel's own two 2-octave keyboards (mode, chord), which don't
+// need or want the full range every other caller shows.
+// `options.showModeColoring`: color the mode's root (`modeTones[0]` — degree-ordered, so
+// index 0 is always the tonic) vs. its other notes, with dedicated `.mode-root`/`.mode-tone`
+// classes distinct from chord root/tone — used only by the Guide panel's mode keyboard, so
+// "this is the mode's tonic" is never visually confused with "this is the chord's root".
+function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones, alwaysShowChord, options) {
+  options = options || {};
+  const minMidi = options.minMidi !== undefined ? options.minMidi : MIN_MIDI;
+  const maxMidi = options.maxMidi !== undefined ? options.maxMidi : MAX_MIDI;
+  const showModeColoring = !!options.showModeColoring;
+  const modeRootPC = (modeTones && modeTones.length) ? modeTones[0] : null;
+
   const held = new Set(heldPitches || []);
   const tones = new Set(chordTones || []);
   // pitch class -> {degree, color, textColor} — `modeTones` is degree-ordered (index 0 =
@@ -233,13 +320,13 @@ function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones, alwaysShowC
   const roles = {};
   (modeTones || []).forEach((pc, index) => { roles[pc] = { degree: index + 1, color: PITCH_CLASS_COLORS[pc], textColor: PITCH_CLASS_TEXT_COLORS[pc] }; });
 
-  const octaveCount = Math.ceil((MAX_MIDI - MIN_MIDI + 1) / 12);
+  const octaveCount = Math.ceil((maxMidi - minMidi + 1) / 12);
   const totalWidth = octaveCount * 7 * WHITE_KEY_WIDTH;
   let whiteHTML = '', blackHTML = '';
 
-  for (let pitch = MIN_MIDI; pitch <= MAX_MIDI; pitch++) {
+  for (let pitch = minMidi; pitch <= maxMidi; pitch++) {
     const pc = ((pitch % 12) + 12) % 12;
-    const octave = Math.floor((pitch - MIN_MIDI) / 12);
+    const octave = Math.floor((pitch - minMidi) / 12);
     const role = roles[pc];
     const badge = role ? `<span class="degree-badge" style="background:${role.color};color:${role.textColor}">${role.degree}</span>` : '';
     let cls = '';
@@ -252,6 +339,10 @@ function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones, alwaysShowC
     } else if (alwaysShowChord) {
       if (isChordRoot) cls = 'root';
       else if (tones.has(pc)) cls = 'tone';
+    }
+    if (!cls && showModeColoring) {
+      if (pc === modeRootPC) cls = 'mode-root';
+      else if (role) cls = 'mode-tone';
     }
     if (WHITE_SLOT_BY_SEMITONE[pc] !== undefined) {
       const slot = octave * 7 + WHITE_SLOT_BY_SEMITONE[pc];
@@ -381,10 +472,15 @@ const STAFF_DISPLAY_HEIGHT_PX = 130;
 // even before there's enough history to need that much room on its own (same mechanism as the
 // virtual keyboard's `keyboardPixelWidth`, just a constant here since this page has no
 // per-track octave shifting).
-function renderStaffSVG(history, minWidthPx) {
+// `firstColOffset`: shifts every note column left/right from `STAFF_FIRST_COL_X` — only the
+// Guide panel's own single-chord notation passes a (negative) value here, per feedback that its
+// notes sat too far from the clef once that staff got rendered much larger than the shared
+// default; every other caller omits it (0), keeping their own note placement unchanged.
+function renderStaffSVG(history, minWidthPx, firstColOffset) {
   const events = (history || []).filter(e => e.pitches && e.pitches.length);
+  const colOffset = firstColOffset || 0;
   const height = STAFF_MARGIN_TOP + STAFF_MARGIN_BOTTOM + (STAFF_ROWS.length - 1) * STAFF_ROW_HEIGHT;
-  const contentWidth = STAFF_FIRST_COL_X + Math.max(events.length - 1, 0) * STAFF_COL_WIDTH + STAFF_MARGIN_RIGHT;
+  const contentWidth = STAFF_FIRST_COL_X + colOffset + Math.max(events.length - 1, 0) * STAFF_COL_WIDTH + STAFF_MARGIN_RIGHT;
   const minViewBoxWidth = minWidthPx ? minWidthPx * (height / STAFF_DISPLAY_HEIGHT_PX) : 0;
   const width = Math.max(contentWidth, minViewBoxWidth);
   const y = i => STAFF_MARGIN_TOP + i * STAFF_ROW_HEIGHT;
@@ -416,7 +512,7 @@ function renderStaffSVG(history, minWidthPx) {
       previousRow = n.row;
       previousShifted = shift;
     });
-    const colX = STAFF_FIRST_COL_X + colIndex * STAFF_COL_WIDTH;
+    const colX = STAFF_FIRST_COL_X + colOffset + colIndex * STAFF_COL_WIDTH;
     held.forEach(n => {
       const pc = ((n.pitch % 12) + 12) % 12;
       let cls = 'held';
@@ -430,7 +526,11 @@ function renderStaffSVG(history, minWidthPx) {
       const name = NOTE_NAMES[pc];
       if (name.length > 1) {
         const glyph = name[1] === '#' ? '♯' : '♭';
-        svg += `<text class="staff-accidental staff-note-${cls}" x="${cx - 15}" y="${y(n.row) + 4}">${glyph}</text>`;
+        // -18 (not -15) — with `.staff-accidental`'s `text-anchor: middle`, the glyph is
+        // centered on this x, so -15 left almost no gap before the notehead's own left edge
+        // (`cx - STAFF_NOTE_RX`) once the guide's own single-chord staff got rendered much
+        // larger than the shared default — visually cramped/overlapping per feedback.
+        svg += `<text class="staff-accidental staff-note-${cls}" x="${cx - 18}" y="${y(n.row) + 4}">${glyph}</text>`;
       }
       svg += `<ellipse class="staff-note staff-note-${cls}" cx="${cx}" cy="${y(n.row)}" rx="${STAFF_NOTE_RX}" ry="${STAFF_NOTE_RY}" />`;
     });
@@ -647,9 +747,82 @@ function renderWheel(wheel, tracks, progressionChords) {
   return svg;
 }
 
+// Renders the proposed chord's guitar-tab diagram (see `WebConsoleGuitarChordDiagram`) as a
+// small SVG fretboard box — a "no standard position" message (see `GuitarChordShape`'s own
+// doc comment for why not every chord quality is covered) if `diagram` is null despite a
+// chord being selected (the caller only invokes this once a chord IS selected at all).
+// String order left-to-right matches `diagram.frets`/`fingers`: index 0 = string 6 (low E)
+// on the left, index 5 = string 1 (high e) on the right — the same orientation as looking at
+// a right-handed guitar's fretboard face-on.
+function guitarChordDiagramHTML(diagram) {
+  if (!diagram) return `<div class="field empty">${t('placeholderPasDePositionGuitareStandard')}</div>`;
+  const frets = diagram.frets || [];
+  const fingers = diagram.fingers || [];
+  const stringCount = 6;
+  const shownFrets = 4; // barre fret + 3 more — enough for every covered shape's highest offset (+3)
+  // marginTop reduced from its original 28 — just enough room left for the muted-string "×"
+  // markers/fret-number label above the first fret line, per feedback that the gap between the
+  // chord-name label above and the grid itself read as too tall.
+  const width = 150, height = 172, marginLeft = 24, marginTop = 22, marginBottom = 16;
+  const stringSpacing = (width - marginLeft * 2) / (stringCount - 1);
+  const fretSpacing = (height - marginTop - marginBottom) / shownFrets;
+  let svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" class="guitar-diagram">`;
+  for (let s = 0; s < stringCount; s++) {
+    const x = marginLeft + s * stringSpacing;
+    svg += `<line x1="${x}" y1="${marginTop}" x2="${x}" y2="${marginTop + shownFrets * fretSpacing}" class="guitar-string" />`;
+  }
+  for (let f = 0; f <= shownFrets; f++) {
+    const y = marginTop + f * fretSpacing;
+    svg += `<line x1="${marginLeft}" y1="${y}" x2="${marginLeft + (stringCount - 1) * stringSpacing}" y2="${y}" class="guitar-fret" />`;
+  }
+  svg += `<text x="${marginLeft - 14}" y="${marginTop + fretSpacing / 2 + 4}" class="guitar-fret-label">${diagram.barreFret}</text>`;
+  const barredIndices = frets.map((f, i) => f === 0 ? i : null).filter(i => i !== null);
+  if (barredIndices.length > 1) {
+    const x1 = marginLeft + Math.min(...barredIndices) * stringSpacing;
+    const x2 = marginLeft + Math.max(...barredIndices) * stringSpacing;
+    const y = marginTop + fretSpacing / 2;
+    svg += `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" class="guitar-barre" />`;
+  }
+  frets.forEach((relativeFret, i) => {
+    const x = marginLeft + i * stringSpacing;
+    if (relativeFret === null || relativeFret === undefined) {
+      svg += `<text x="${x}" y="${marginTop - 10}" class="guitar-muted">×</text>`;
+      return;
+    }
+    if (relativeFret === 0) return; // already covered by the barre bar (or a lone barre dot below)
+    const y = marginTop + (relativeFret + 0.5) * fretSpacing;
+    svg += `<circle cx="${x}" cy="${y}" r="8" class="guitar-dot" />`;
+    if (fingers[i] !== null && fingers[i] !== undefined) {
+      svg += `<text x="${x}" y="${y + 4}" class="guitar-finger">${fingers[i]}</text>`;
+    }
+  });
+  // A single barred string with no other string sharing the barre fret still needs its own dot.
+  if (barredIndices.length === 1) {
+    const x = marginLeft + barredIndices[0] * stringSpacing;
+    const y = marginTop + fretSpacing / 2;
+    svg += `<circle cx="${x}" cy="${y}" r="8" class="guitar-dot" />`;
+  }
+  svg += '</svg>';
+  return `<div class="guitar-diagram-label">${diagram.label}</div>${svg}`;
+}
+
+// Builds a single `renderStaffSVG` event for the guide's proposed chord (root + tones), for the
+// Guide panel's "partition" column — a static snapshot, not a live-performance event. `tones`
+// already includes the root itself as its first entry (offset 0 — see
+// `ImprovSession.pitchClassSets`'s `intervalsFromRoot` mapping) and every template's intervals
+// are guaranteed < 12 (no chord spans more than an octave), so `(pc - root + 12) % 12` recovers
+// each tone's exact original semitone offset from the root with no ambiguity, letting every
+// tone be placed as a simple close-position voicing stacked up from one fixed anchor octave
+// (`60` = middle C) rather than needing any real per-note octave data the server doesn't send.
+function chordStaffEvent(root, tones) {
+  const rootMidi = 60 + root;
+  const pitches = (tones || []).map(pc => rootMidi + (((pc - root) % 12) + 12) % 12);
+  return { pitches, chordRoot: root, chordTones: tones || [] };
+}
+
 function renderGuide(guide) {
   if (!guide || !guide.isActive) return '';
-  let html = `<h2>${t('headingGuide')}</h2>`;
+  let html = `<h2>${t('headingGuide')}</h2><br>`;
   html += '<div class="field">' + (guide.steps || []).map(
     step => step.isCurrent ? `<b>[${step.label}]</b>` : step.label
   ).join(' ') + '</div>';
@@ -661,10 +834,52 @@ function renderGuide(guide) {
     ).join(' - ');
     html += `<div class="field">${prefix}: ${chordsHTML}</div>`;
   }
-  html += keyboardHTML(guide.heldPitches, guide.currentChordRoot ?? null, guide.currentChordTones || [], guide.currentModeTones, true);
+  // Both arrow hints consolidated into one italic line here, shown once — the plain headings
+  // below no longer carry either hint inline the way the terminal's own
+  // `headingClavierGuide`/`headingClavierAccordGuide` still do.
+  html += `<div class="field hint">${t('hintNavigationGuideWeb')}</div>`;
+
+  const hasChord = guide.currentChordIndex !== null && guide.currentChordIndex !== undefined;
+
+  // One heading for both keyboards (not one per keyboard) — the mode keyboard shows root-vs-
+  // rest of the mode (`.mode-root`/`.mode-tone`, not the chord's `.root`/`.tone`), the chord
+  // keyboard shows root-vs-rest of the currently-proposed chord. Neither shows held pitches —
+  // static reference diagrams for what's suggested, not live-performance feedback.
+  const guideKeyboardRange = { minMidi: 60, maxMidi: 83 };
+  let keyboardsHTML = `<h3>${t('headingModeEtAccordGuideWeb')}</h3>`;
+  keyboardsHTML += keyboardHTML([], null, [], guide.currentModeTones, false, { ...guideKeyboardRange, showModeColoring: true });
+  if (hasChord) {
+    keyboardsHTML += keyboardHTML([], guide.currentChordRoot ?? null, guide.currentChordTones || [], [], true, guideKeyboardRange);
+  }
+
+  // Notation (left) and tab (right) both depend on a chord actually being selected — neither
+  // has anything to show for a mode-only step (no progression, or nothing navigated to yet).
+  // Each heading sits as a plain first child of its column (flush with the other two, all 3
+  // starting the row at the same top line) with the actual graphic wrapped in `.guide-col-fill`
+  // below it. The CSS stretches the staff to fill the column's own height (see
+  // `.guide-col-notation .guide-col-fill svg.staff`'s comment) — `minWidthPx: 84` (was 60,
+  // widened ~40% per feedback) sets how much wider than its bare minimum content width the
+  // viewBox is, i.e. how much breathing room shows on the right. `-10` shifts the chord's own
+  // notes a bit closer to the clef, per feedback.
+  const notationHTML = hasChord
+    ? `<h3>${t('headingPartitionGuideWeb')}</h3><div class="guide-col-fill">`
+      + renderStaffSVG([chordStaffEvent(guide.currentChordRoot, guide.currentChordTones)], 84, -10) + `</div>`
+    : '';
+  const tabHTML = hasChord
+    ? `<h3>${t('headingTablatureGuideWeb')}</h3><div class="guide-col-fill">${guitarChordDiagramHTML(guide.currentChordGuitarDiagram)}</div>`
+    : '';
+
+  html += `<div class="guide-layout">`
+    + `<div class="guide-col-notation">${notationHTML}</div>`
+    + `<div class="guide-col-keyboards">${keyboardsHTML}</div>`
+    + `<div class="guide-col-tab">${tabHTML}</div>`
+    + `</div>`;
+
   // The guide's own step is prescribed, not "recently played" — a single current snapshot,
-  // not a rolling history like a live track's own staff below.
-  html += renderStaffSVG([{ pitches: guide.heldPitches, chordRoot: null, chordTones: [] }], KEYBOARD_TOTAL_WIDTH);
+  // not a rolling history like a live track's own staff below. `GUIDE_ROW_WIDTH_ESTIMATE` (not
+  // `KEYBOARD_TOTAL_WIDTH`, sized for the Run tab's own wider 3-octave keyboard) so this staff's
+  // right edge reaches roughly as far as the tablature's own right edge above it.
+  html += renderStaffSVG([{ pitches: guide.heldPitches, chordRoot: null, chordTones: [] }], GUIDE_ROW_WIDTH_ESTIMATE);
   return html;
 }
 
@@ -1170,6 +1385,20 @@ function setTab(tab) {
   refresh();
 }
 
+// Mirrors `state.noteColors` (see `WebConsoleState.noteColors`'s doc comment) onto the CSS
+// custom properties `.pkey.*` rules above read from — cheap and idempotent to call every
+// poll even when nothing changed, so no separate "did this change" tracking is needed.
+function applyNoteColors(noteColors) {
+  if (!noteColors) return;
+  const style = document.documentElement.style;
+  style.setProperty('--mode-root-color', noteColors.modeRootHex);
+  style.setProperty('--mode-tone-color', noteColors.modeOtherHex);
+  style.setProperty('--chord-root-color', noteColors.chordRootHex);
+  style.setProperty('--chord-tone-color', noteColors.chordToneHex);
+  style.setProperty('--held-outside-color', noteColors.heldOutsideChordHex);
+  style.setProperty('--held-no-chord-color', noteColors.heldNoChordHex);
+}
+
 async function refresh() {
   // The "Menu" tab never touches `/state` at all (see `buildMenuTab`'s own doc comment) — its
   // DOM is built once per visit and then left alone so in-progress form input survives this
@@ -1193,6 +1422,7 @@ async function refresh() {
   }
   if (state.palette && state.palette.length === 12) PITCH_CLASS_COLORS = state.palette;
   if (state.paletteTextColors && state.paletteTextColors.length === 12) PITCH_CLASS_TEXT_COLORS = state.paletteTextColors;
+  applyNoteColors(state.noteColors);
   if (state.language && state.language !== currentLanguage) {
     currentLanguage = state.language;
     document.documentElement.lang = currentLanguage;

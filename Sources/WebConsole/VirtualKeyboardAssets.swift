@@ -90,6 +90,16 @@ public let virtualKeyboardIndexHTML = """
 <title>JamShack — Clavier virtuel</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <style>
+  /* Defaults match NoteColorSettingsFile's own — overwritten from `state.noteColors` by
+     `applyNoteColors()` every poll, same as `StaticAssets.swift`'s own copy of this block. */
+  :root {
+    --mode-root-color: #ff9800;
+    --mode-tone-color: #00bcd4;
+    --chord-root-color: #e91e63;
+    --chord-tone-color: #fdd835;
+    --held-outside-color: #4caf50;
+    --held-no-chord-color: #ffffff;
+  }
   body { background: #111; color: #ddd; font-family: -apple-system, sans-serif; box-sizing: border-box; margin: 1.5rem auto; max-width: 1600px; padding: 0 1.5rem; }
   h1 { font-size: 1.1rem; color: #888; font-weight: normal; }
   .field { color: #888; }
@@ -195,11 +205,40 @@ public let virtualKeyboardIndexHTML = """
   .pkey { position: absolute; top: 0; box-sizing: border-box; border: 1px solid #333; border-radius: 0 0 4px 4px; cursor: pointer; }
   .pkey.white { background: #f5f5f5; z-index: 1; }
   .pkey.black { background: #1a1a1a; z-index: 2; box-shadow: 0 2px 3px rgba(0,0,0,0.5); }
-  .pkey.root { background: #e91e63 !important; }
-  .pkey.tone { background: #fdd835 !important; }
-  .pkey.outside { background: #4caf50 !important; }
-  .pkey.held { background: #bbb !important; }
+  .pkey.root { background: var(--chord-root-color) !important; }
+  .pkey.tone { background: var(--chord-tone-color) !important; }
+  .pkey.outside { background: var(--held-outside-color) !important; }
+  .pkey.held { background: var(--held-no-chord-color) !important; }
   .pkey.pressed { filter: brightness(0.7); }
+  /* Guide panel's own static mode/chord reference keyboards only (see
+     `guideReferenceKeyboardHTML`) — same meaning/colors as `StaticAssets.swift`'s. */
+  .pkey.mode-root { background: var(--mode-root-color) !important; }
+  .pkey.mode-tone { background: var(--mode-tone-color) !important; }
+  .guide-keyboard-small .pkey { cursor: default; }
+  /* Guide panel's guitar-tab diagram — same rules/colors as StaticAssets.swift's own copy. */
+  .guitar-diagram { display: block; margin: 0.3rem 0 0.6rem; }
+  .guitar-diagram-label { font-size: 1.5rem; font-weight: bold; color: #ddd; margin: 0 0 -8px; line-height: 1.1; text-align: center; }
+  .guitar-string { stroke: #666; stroke-width: 1.5; }
+  .guitar-fret { stroke: #666; stroke-width: 1.5; }
+  .guitar-fret-label { font-size: 11px; fill: #888; }
+  .guitar-barre { stroke: var(--chord-root-color); stroke-width: 9; stroke-linecap: round; }
+  .guitar-dot { fill: var(--chord-tone-color); }
+  .guitar-finger { font-size: 10px; fill: #111; text-anchor: middle; }
+  .guitar-muted { font-size: 13px; fill: #e57373; text-anchor: middle; }
+  /* Guide panel's own inner layout — ported from `StaticAssets.swift`'s own copy (see there for
+     the full reasoning): notation (left) — the two stacked keyboards (middle) — guitar tab
+     (right), all 3 columns `flex: 0 0 auto` (natural content width, no grow) sharing one `gap`
+     so both sides read as equal, and `align-items: stretch` so all 3 share the row's tallest
+     height (the keyboards column). A dedicated `.guide-hint` (not the page's own `.hint`, whose
+     look is already spoken for by `vkHint`) for the single consolidated arrow-key hint line. */
+  .guide-hint { color: #666; font-style: italic; }
+  .guide-layout { display: flex; flex-wrap: wrap; gap: 1rem; align-items: stretch; margin-top: 0.4rem; }
+  .guide-col-notation, .guide-col-keyboards, .guide-col-tab { flex: 0 0 auto; display: flex; flex-direction: column; }
+  .guide-col-keyboards { padding-bottom: 8px; }
+  .guide-col-fill { flex: 1 1 auto; display: flex; flex-direction: column; }
+  .guide-col-tab .guide-col-fill { justify-content: flex-end; }
+  .guide-col-notation .guide-col-fill .staff-scroll { flex: 1 1 auto; display: flex; overflow: visible; }
+  .guide-col-notation .guide-col-fill .staff-scroll svg.staff { flex: 1 1 auto; height: auto; width: auto; }
   .staff-scroll { overflow-x: auto; max-width: 100%; }
   .staff { display: block; margin: 0.4rem 0 0.8rem; width: auto; height: 130px; }
   .staff-paper { fill: #fff; }
@@ -507,10 +546,15 @@ const STAFF_DISPLAY_HEIGHT_PX = 130;
 // history yet to need that much room on its own. Omit/0 to size purely from content, as the
 // read-only console's own per-track staff still does (it has no single "the keyboard" to
 // match widths against).
-function renderStaffSVG(history, minWidthPx) {
+// `firstColOffset`: shifts every note column left/right from `STAFF_FIRST_COL_X` — only the
+// Guide panel's own single-chord notation passes a (negative) value here, per feedback that its
+// notes sat too far from the clef once that staff got rendered much larger than the shared
+// default; every other caller omits it (0), keeping their own note placement unchanged.
+function renderStaffSVG(history, minWidthPx, firstColOffset) {
   const events = (history || []).filter(e => e.pitches && e.pitches.length);
+  const colOffset = firstColOffset || 0;
   const height = STAFF_MARGIN_TOP + STAFF_MARGIN_BOTTOM + (STAFF_ROWS.length - 1) * STAFF_ROW_HEIGHT;
-  const contentWidth = STAFF_FIRST_COL_X + Math.max(events.length - 1, 0) * STAFF_COL_WIDTH + STAFF_MARGIN_RIGHT;
+  const contentWidth = STAFF_FIRST_COL_X + colOffset + Math.max(events.length - 1, 0) * STAFF_COL_WIDTH + STAFF_MARGIN_RIGHT;
   const minViewBoxWidth = minWidthPx ? minWidthPx * (height / STAFF_DISPLAY_HEIGHT_PX) : 0;
   const width = Math.max(contentWidth, minViewBoxWidth);
   const y = i => STAFF_MARGIN_TOP + i * STAFF_ROW_HEIGHT;
@@ -537,7 +581,7 @@ function renderStaffSVG(history, minWidthPx) {
       previousRow = n.row;
       previousShifted = shift;
     });
-    const colX = STAFF_FIRST_COL_X + colIndex * STAFF_COL_WIDTH;
+    const colX = STAFF_FIRST_COL_X + colOffset + colIndex * STAFF_COL_WIDTH;
     held.forEach(n => {
       const pc = ((n.pitch % 12) + 12) % 12;
       let cls = 'held';
@@ -551,7 +595,11 @@ function renderStaffSVG(history, minWidthPx) {
       const name = NOTE_NAMES[pc];
       if (name.length > 1) {
         const glyph = name[1] === '#' ? '♯' : '♭';
-        svg += `<text class="staff-accidental staff-note-${cls}" x="${cx - 15}" y="${y(n.row) + 4}">${glyph}</text>`;
+        // -18 (not -15) — with `.staff-accidental`'s `text-anchor: middle`, the glyph is
+        // centered on this x, so -15 left almost no gap before the notehead's own left edge
+        // once the guide's own single-chord staff got rendered much larger than the shared
+        // default — visually cramped/overlapping per feedback.
+        svg += `<text class="staff-accidental staff-note-${cls}" x="${cx - 18}" y="${y(n.row) + 4}">${glyph}</text>`;
       }
       svg += `<ellipse class="staff-note staff-note-${cls}" cx="${cx}" cy="${y(n.row)}" rx="${STAFF_NOTE_RX}" ry="${STAFF_NOTE_RY}" />`;
     });
@@ -559,6 +607,18 @@ function renderStaffSVG(history, minWidthPx) {
 
   svg += '</svg>';
   return `<div class="staff-scroll">${svg}</div>`;
+}
+
+// Builds a single `renderStaffSVG` event for the guide's proposed chord (root + tones), for the
+// Guide panel's "partition" column — a static snapshot, not a live-performance event. Ported
+// verbatim from `StaticAssets.swift`'s own copy — see there for the full reasoning (`tones`
+// already includes the root itself as its first entry, and every chord template's intervals are
+// guaranteed < 12, so `(pc - root + 12) % 12` recovers each tone's exact semitone offset from
+// the root with no ambiguity).
+function chordStaffEvent(root, tones) {
+  const rootMidi = 60 + root;
+  const pitches = (tones || []).map(pc => rootMidi + (((pc - root) % 12) + 12) % 12);
+  return { pitches, chordRoot: root, chordTones: tones || [] };
 }
 
 // Plain triads (root/third/fifth), rooted at a fixed C4-based octave regardless of
@@ -750,6 +810,91 @@ let PITCH_CLASS_TEXT_COLORS = [
 const WHITE_KEY_WIDTH = 44, WHITE_KEY_HEIGHT = 144, BLACK_KEY_WIDTH = 26, BLACK_KEY_HEIGHT = 92;
 const WHITE_SLOT_BY_SEMITONE = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
 const BLACK_AFTER_WHITE_SLOT = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };
+
+// Small, non-interactive 2-octave reference diagram for the Guide panel's own mode/chord
+// keyboards (see `guideInfoHTML`'s assembly) — deliberately its own fixed range, independent
+// of `MIN_MIDI`/`MAX_MIDI` (which move with `shiftOctave`/the interactive keyboard below):
+// the guide's reference diagrams shouldn't scroll away just because the player moved their
+// own playing range. `rootPC`/`tonesPCs` are pitch classes (0-11), not absolute pitches —
+// `rootClass`/`toneClass` pick which CSS classes color them (`.mode-root`/`.mode-tone` for
+// the mode keyboard, `.root`/`.tone` for the chord keyboard — same meaning as everywhere
+// else `.pkey` is used, just applied unconditionally here since there's no "held" state).
+function guideReferenceKeyboardHTML(minMidi, maxMidi, rootPC, tonesPCs, rootClass, toneClass) {
+  const tones = new Set(tonesPCs || []);
+  const octaveCount = Math.ceil((maxMidi - minMidi + 1) / 12);
+  const totalWidth = octaveCount * 7 * WHITE_KEY_WIDTH;
+  let whiteHTML = '', blackHTML = '';
+  for (let pitch = minMidi; pitch <= maxMidi; pitch++) {
+    const pc = ((pitch % 12) + 12) % 12;
+    const octave = Math.floor((pitch - minMidi) / 12);
+    let cls = '';
+    if (rootPC !== null && rootPC !== undefined && pc === rootPC) cls = rootClass;
+    else if (tones.has(pc)) cls = toneClass;
+    if (WHITE_SLOT_BY_SEMITONE[pc] !== undefined) {
+      const slot = octave * 7 + WHITE_SLOT_BY_SEMITONE[pc];
+      const x = slot * WHITE_KEY_WIDTH;
+      whiteHTML += `<div class="pkey white ${cls}" style="left:${x}px; width:${WHITE_KEY_WIDTH}px; height:${WHITE_KEY_HEIGHT}px;"></div>`;
+    } else {
+      const slot = octave * 7 + BLACK_AFTER_WHITE_SLOT[pc] + 1;
+      const x = slot * WHITE_KEY_WIDTH - BLACK_KEY_WIDTH / 2;
+      blackHTML += `<div class="pkey black ${cls}" style="left:${x}px; width:${BLACK_KEY_WIDTH}px; height:${BLACK_KEY_HEIGHT}px;"></div>`;
+    }
+  }
+  return `<div class="keyboard-scroll guide-keyboard-small"><div class="keyboard" style="width:${totalWidth}px; height:${WHITE_KEY_HEIGHT}px;">${whiteHTML}${blackHTML}</div></div>`;
+}
+
+// Same rendering as `StaticAssets.swift`'s own `guitarChordDiagramHTML` — see that copy's
+// doc comment for the data shape/orientation. Kept as a duplicate rather than shared: these
+// two pages are otherwise independent JS bundles (see this file's own header comment).
+function guitarChordDiagramHTML(diagram) {
+  if (!diagram) return `<div class="field empty">${t('placeholderPasDePositionGuitareStandard')}</div>`;
+  const frets = diagram.frets || [];
+  const fingers = diagram.fingers || [];
+  const stringCount = 6;
+  const shownFrets = 4;
+  // Dimensions/margins match `StaticAssets.swift`'s own copy (enlarged a bit, and marginTop
+  // tightened, per feedback there — see that copy's own comments for the exact reasoning).
+  const width = 150, height = 172, marginLeft = 24, marginTop = 22, marginBottom = 16;
+  const stringSpacing = (width - marginLeft * 2) / (stringCount - 1);
+  const fretSpacing = (height - marginTop - marginBottom) / shownFrets;
+  let svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" class="guitar-diagram">`;
+  for (let s = 0; s < stringCount; s++) {
+    const x = marginLeft + s * stringSpacing;
+    svg += `<line x1="${x}" y1="${marginTop}" x2="${x}" y2="${marginTop + shownFrets * fretSpacing}" class="guitar-string" />`;
+  }
+  for (let f = 0; f <= shownFrets; f++) {
+    const y = marginTop + f * fretSpacing;
+    svg += `<line x1="${marginLeft}" y1="${y}" x2="${marginLeft + (stringCount - 1) * stringSpacing}" y2="${y}" class="guitar-fret" />`;
+  }
+  svg += `<text x="${marginLeft - 14}" y="${marginTop + fretSpacing / 2 + 4}" class="guitar-fret-label">${diagram.barreFret}</text>`;
+  const barredIndices = frets.map((f, i) => f === 0 ? i : null).filter(i => i !== null);
+  if (barredIndices.length > 1) {
+    const x1 = marginLeft + Math.min(...barredIndices) * stringSpacing;
+    const x2 = marginLeft + Math.max(...barredIndices) * stringSpacing;
+    const y = marginTop + fretSpacing / 2;
+    svg += `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" class="guitar-barre" />`;
+  }
+  frets.forEach((relativeFret, i) => {
+    const x = marginLeft + i * stringSpacing;
+    if (relativeFret === null || relativeFret === undefined) {
+      svg += `<text x="${x}" y="${marginTop - 10}" class="guitar-muted">×</text>`;
+      return;
+    }
+    if (relativeFret === 0) return;
+    const y = marginTop + (relativeFret + 0.5) * fretSpacing;
+    svg += `<circle cx="${x}" cy="${y}" r="8" class="guitar-dot" />`;
+    if (fingers[i] !== null && fingers[i] !== undefined) {
+      svg += `<text x="${x}" y="${y + 4}" class="guitar-finger">${fingers[i]}</text>`;
+    }
+  });
+  if (barredIndices.length === 1) {
+    const x = marginLeft + barredIndices[0] * stringSpacing;
+    const y = marginTop + fretSpacing / 2;
+    svg += `<circle cx="${x}" cy="${y}" r="8" class="guitar-dot" />`;
+  }
+  svg += '</svg>';
+  return `<div class="guitar-diagram-label">${diagram.label}</div>${svg}`;
+}
 
 // --- Mini full-piano overview, above the real keyboard — a tiny "you are here" strip
 // spanning C-1..C8 (comfortably past every extreme `OCTAVE_STOPS`/`BASS_WHITE_OFFSETS` can
@@ -1394,12 +1539,26 @@ document.addEventListener('keyup', e => {
   noteOff(pitch);
 });
 
+// Mirrors `state.noteColors` onto the CSS custom properties `.pkey.*` rules above read from
+// — same as `StaticAssets.swift`'s own copy of this function.
+function applyNoteColors(noteColors) {
+  if (!noteColors) return;
+  const style = document.documentElement.style;
+  style.setProperty('--mode-root-color', noteColors.modeRootHex);
+  style.setProperty('--mode-tone-color', noteColors.modeOtherHex);
+  style.setProperty('--chord-root-color', noteColors.chordRootHex);
+  style.setProperty('--chord-tone-color', noteColors.chordToneHex);
+  style.setProperty('--held-outside-color', noteColors.heldOutsideChordHex);
+  style.setProperty('--held-no-chord-color', noteColors.heldNoChordHex);
+}
+
 async function refresh() {
   try {
     const response = await fetch('/state?' + identityQuery(), { cache: 'no-store' });
     const state = await response.json();
     if (state.palette && state.palette.length === 12) PITCH_CLASS_COLORS = state.palette;
     if (state.paletteTextColors && state.paletteTextColors.length === 12) PITCH_CLASS_TEXT_COLORS = state.paletteTextColors;
+    applyNoteColors(state.noteColors);
     // Unlike `StaticAssets.swift` (which only ever rebuilds its Menu tab from a `menuBuilt`
     // flag), THIS page's whole tab bar/hint/heading skeleton is built once and never revisited
     // (see `renderKeyboard()`'s own `!document.getElementById('keyboard-container')` guard) — so
@@ -1449,7 +1608,36 @@ async function refresh() {
             (c, i) => i === state.guide.currentChordIndex ? `<b>[${c.label}]</b>` : c.label
           ).join(' - ')}</div>`
         : '';
-      guideInfoHTML = `<h2>${t('vkHeadingGuide')}</h2>` + `<div class="field">${steps}</div>` + progressionHTML;
+      // Layout ported from `StaticAssets.swift`'s own `renderGuide` (see there for the full
+      // reasoning): one heading for both keyboards (not one per keyboard), both arrow hints
+      // consolidated into a single italic line, and a 3-column row — notation (left) — the two
+      // stacked keyboards (middle) — guitar tab (right) — instead of everything stacked
+      // top-to-bottom.
+      const modeTones = state.guide.currentModeTones || [];
+      const modeRootPC = modeTones.length ? modeTones[0] : null;
+      const hasChord = state.guide.currentChordIndex !== null && state.guide.currentChordIndex !== undefined;
+
+      let keyboardsHTML = `<h3>${t('headingModeEtAccordGuideWeb')}</h3>`
+        + guideReferenceKeyboardHTML(60, 83, modeRootPC, modeTones, 'mode-root', 'mode-tone');
+      if (hasChord) {
+        keyboardsHTML += guideReferenceKeyboardHTML(60, 83, state.guide.currentChordRoot ?? null, state.guide.currentChordTones || [], 'root', 'tone');
+      }
+
+      const notationHTML = hasChord
+        ? `<h3>${t('headingPartitionGuideWeb')}</h3><div class="guide-col-fill">`
+          + renderStaffSVG([chordStaffEvent(state.guide.currentChordRoot, state.guide.currentChordTones)], 84, -10) + `</div>`
+        : '';
+      const tabHTML = hasChord
+        ? `<h3>${t('headingTablatureGuideWeb')}</h3><div class="guide-col-fill">${guitarChordDiagramHTML(state.guide.currentChordGuitarDiagram)}</div>`
+        : '';
+      const guideLayoutHTML = `<div class="guide-layout">`
+        + `<div class="guide-col-notation">${notationHTML}</div>`
+        + `<div class="guide-col-keyboards">${keyboardsHTML}</div>`
+        + `<div class="guide-col-tab">${tabHTML}</div>`
+        + `</div>`;
+
+      guideInfoHTML = `<h2>${t('vkHeadingGuide')}</h2><br>` + `<div class="field">${steps}</div>` + progressionHTML
+        + `<div class="field guide-hint">${t('hintNavigationGuideWeb')}</div>` + guideLayoutHTML;
     } else {
       guideInfoHTML = '';
     }

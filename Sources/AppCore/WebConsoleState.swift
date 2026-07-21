@@ -46,6 +46,22 @@ public struct WebConsoleState: Codable {
     /// settings form shows the current values (and reflects a change made from the terminal
     /// menu within one refresh cycle), same reasoning as `palette`/`language`.
     var lumi: WebConsoleLumiState
+    /// See `ImprovSession.noteColorSettings`/`NoteColorSettingsFile` — the client applies
+    /// these as CSS custom properties (`app.js`'s `applyNoteColors`) rather than baking them
+    /// into the static embedded stylesheet, so a settings-file change is visible within one
+    /// refresh cycle without needing the page's own CSS regenerated per request.
+    var noteColors: WebConsoleNoteColorsState
+}
+
+/// See `WebConsoleState.noteColors`'s doc comment. A flat mirror of `NoteColorSettingsFile`,
+/// same "own type, not reused directly" reasoning as `WebConsoleLumiState`.
+struct WebConsoleNoteColorsState: Codable {
+    var modeRootHex: String
+    var modeOtherHex: String
+    var chordRootHex: String
+    var chordToneHex: String
+    var heldNoChordHex: String
+    var heldOutsideChordHex: String
 }
 
 /// See `WebConsoleState.lumi`'s doc comment. A flat mirror of `LumiSettingsFile` — kept as
@@ -194,6 +210,22 @@ struct WebConsoleGuideState: Codable {
     /// `currentChordIndex` is nil.
     var currentChordRoot: Int?
     var currentChordTones: [Int]
+    /// The proposed chord's guitar-tab diagram (see `GuitarChordShape`) — `nil` whenever
+    /// `currentChordIndex` is nil, OR when it isn't (a chord IS selected) but that quality
+    /// has no verified standard shape (`GuitarChordShape.diagram` itself returned `nil`) —
+    /// the client shows a "no standard position" message for the latter case specifically
+    /// (see `renderGuide`'s own handling), not silently nothing.
+    var currentChordGuitarDiagram: WebConsoleGuitarChordDiagram?
+}
+
+/// A flat, wire-friendly mirror of `GuitarChordShape.Diagram` — `frets`/`fingers` are
+/// string 6 (low E) ... string 1 (high e), same order as `GuitarChordShape.Diagram
+/// .positions`, `nil` entries meaning a muted string.
+struct WebConsoleGuitarChordDiagram: Codable {
+    var label: String
+    var barreFret: Int
+    var frets: [Int?]
+    var fingers: [Int?]
 }
 
 struct WebConsoleChordProgressionEntry: Codable {
@@ -283,4 +315,7 @@ struct VirtualKeyboardStateResponse: Codable {
     var paletteTextColors: [String]
     /// See `WebConsoleState.language`'s doc comment.
     var language: String
+    /// Always present, same reasoning as `palette` — see `WebConsoleState.noteColors`'s doc
+    /// comment.
+    var noteColors: WebConsoleNoteColorsState
 }

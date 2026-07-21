@@ -1925,6 +1925,64 @@ func testAdvanceGuideChordDoesNothingWhenGuideIsNotRunning() {
 }
 testAdvanceGuideChordDoesNothingWhenGuideIsNotRunning()
 
+// MARK: - GuitarChordShapeTests (mirrors Tests/AppCoreTests/GuitarChordShapeTests.swift) —
+// every covered shape's ACTUAL sounded pitch classes are recomputed here and compared
+// against ChordVocabulary's own intervalsFromRoot, independent of the hand-verification that
+// went into transcribing Sources/AppCore/GuitarChordShapes.swift in the first place — this
+// is what would catch a future transcription slip (a wrong fret/finger number) even though
+// the shape data itself is a fixed literal table, not something computed from theory.
+
+/// Open strings' pitch classes, string 6 (low E) ... string 1 (high e).
+private let openStringPitchClasses = [4, 9, 2, 7, 11, 4]
+
+/// The set of pitch classes (relative to `root`, i.e. matching `ChordTemplate
+/// .intervalsFromRoot`'s own convention) actually sounded by `diagram` — recomputed
+/// independently of `GuitarChordShape` itself, from nothing but open-string tuning + fret
+/// arithmetic, so this only agrees with the shape table if that table is really correct.
+func soundedRelativePitchClasses(_ diagram: GuitarChordShape.Diagram, root: Int) -> Set<Int> {
+    var result: Set<Int> = []
+    for (index, position) in diagram.positions.enumerated() {
+        guard let relativeFret = position.relativeFret else { continue }
+        let fret = diagram.barreFret + relativeFret
+        let sounded = (openStringPitchClasses[index] + fret) % 12
+        result.insert(((sounded - root) % 12 + 12) % 12)
+    }
+    return result
+}
+
+func testGuitarChordShapesSoundTheRightIntervalsForEveryCoveredQuality() {
+    let coveredTemplateIDs = ["Ma", "mi", "7", "Ma7", "mi7", "mi7b5", "dim7", "aug", "dim", "miMa7", "7#5", "7b5"]
+    for templateID in coveredTemplateIDs {
+        guard let template = ChordVocabulary.byID(templateID) else {
+            failures += 1
+            checks += 1
+            print("FAIL [guitar chord shape \(templateID)]: no such ChordTemplate")
+            continue
+        }
+        let expected = Set(template.intervalsFromRoot.map { (($0 % 12) + 12) % 12 })
+        for root in [0, 5, 7, 11] { // F and G specifically double-check the well-known "F/G barre chord" fret positions
+            guard let diagram = GuitarChordShape.diagram(forRoot: root, chordTemplateID: templateID) else {
+                failures += 1
+                checks += 1
+                print("FAIL [guitar chord shape \(templateID) root \(root)]: diagram(forRoot:chordTemplateID:) returned nil for a supposedly-covered quality")
+                continue
+            }
+            check(soundedRelativePitchClasses(diagram, root: root), expected, "guitar shape \(templateID) at root \(root) sounds exactly \(template.intervalsFromRoot)")
+        }
+    }
+    // The two well-known reference positions from real guitar knowledge: F barre chord at
+    // fret 1, G barre chord at fret 3 (both root-position major shapes).
+    check(GuitarChordShape.diagram(forRoot: 5, chordTemplateID: "Ma")?.barreFret, 1, "F major barre chord sits at fret 1")
+    check(GuitarChordShape.diagram(forRoot: 7, chordTemplateID: "Ma")?.barreFret, 3, "G major barre chord sits at fret 3")
+}
+testGuitarChordShapesSoundTheRightIntervalsForEveryCoveredQuality()
+
+func testGuitarChordShapeReturnsNilForAnUncoveredQuality() {
+    check(GuitarChordShape.diagram(forRoot: 0, chordTemplateID: "Ma7#5"), nil, "Ma7#5 has no verified standard shape, so diagram(forRoot:chordTemplateID:) returns nil")
+    check(GuitarChordShape.diagram(forRoot: 0, chordTemplateID: "not-a-real-template"), nil, "unknown chordTemplateID also returns nil")
+}
+testGuitarChordShapeReturnsNilForAnUncoveredQuality()
+
 func testVirtualKeyboardStateExposesCurrentStepChordProgression() {
     checks += 1
     do {

@@ -1,19 +1,30 @@
+import AppCore
 import Foundation
 
 /// ANSI colors used on the keyboard: a held note explained by no chord at all (too few
 /// notes, or nothing recognized), a held note that IS accompanied by a recognized chord
-/// but isn't itself part of it, and a recognized chord's root vs. its other tones.
+/// but isn't itself part of it, a recognized chord's root vs. its other tones, and the
+/// Guide screen's mode keyboard's root vs. every other in-mode note.
+///
+/// `heldNoChord`/`heldOutsideChord`/`chordRoot`/`chordTone`/`modeRoot`/`modeOther` read live
+/// from `session.noteColorSettings` (`Sources/AppCore/NoteColorSettings.swift`) — see that
+/// type's own doc comment for why they're 24-bit truecolor now instead of the fixed 16-color
+/// codes these used to be hardcoded as, and why `degreeColors` below is deliberately NOT
+/// included (a separate, more involved system, left for later).
 enum KeyboardColor {
     static let reset = "\u{1B}[0m"
-    static let heldNoChord = "\u{1B}[1;37m"      // bold white
-    static let heldOutsideChord = "\u{1B}[1;32m" // bold green
-    static let chordRoot = "\u{1B}[1;35m"        // bold magenta
-    static let chordTone = "\u{1B}[1;33m"        // bold yellow
+    static var heldNoChord: String { ansi(session.noteColorSettings.heldNoChordHex) }
+    static var heldOutsideChord: String { ansi(session.noteColorSettings.heldOutsideChordHex) }
+    static var chordRoot: String { ansi(session.noteColorSettings.chordRootHex) }
+    static var chordTone: String { ansi(session.noteColorSettings.chordToneHex) }
+    static var modeRoot: String { ansi(session.noteColorSettings.modeRootHex) }
+    static var modeOther: String { ansi(session.noteColorSettings.modeOtherHex) }
 
     /// One color per scale degree (index 0 = degree 1 ... index 6 = degree 7) for the
     /// mode degree-line — 256-color ANSI, deliberately distinct from the basic-16-color
     /// root/tone/outside highlights above (which can appear on the same frame) so a
-    /// degree-line color is never mistaken for a chord-highlight color.
+    /// degree-line color is never mistaken for a chord-highlight color. Not yet part of
+    /// `NoteColorSettingsFile` — see this enum's own doc comment.
     static let degreeColors: [String] = [
         "\u{1B}[1;38;5;208m", // 1 tonic — orange
         "\u{1B}[1;38;5;39m",  // 2 — sky blue
@@ -23,6 +34,14 @@ enum KeyboardColor {
         "\u{1B}[1;38;5;75m",  // 6 — light blue
         "\u{1B}[1;38;5;245m", // 7 — grey (deliberately desaturated)
     ]
+
+    /// `#RRGGBB` -> bold 24-bit-truecolor ANSI foreground — `reset` (i.e. no visible
+    /// highlight) for anything that doesn't parse, rather than crashing on a hand-edited
+    /// `note-colors.json` with a typo'd hex value.
+    private static func ansi(_ hex: String) -> String {
+        guard let (r, g, b) = LumiColorHex.rgb(hex) else { return reset }
+        return "\u{1B}[1;38;2;\(r);\(g);\(b)m"
+    }
 }
 
 private let blackSemitones: Set<Int> = [1, 3, 6, 8, 10]

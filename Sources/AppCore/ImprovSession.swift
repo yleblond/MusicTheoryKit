@@ -687,6 +687,7 @@ public final class ImprovSession: @unchecked Sendable {
         try loadOrCreateChordProgressionTemplates(fromJSONFile: (folderPath as NSString).appendingPathComponent("chordprogressions.json"))
         try loadOrCreateLanguageSetting(fromJSONFile: (folderPath as NSString).appendingPathComponent("language.json"))
         try loadOrCreateLumiSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("lumi.json"))
+        try loadOrCreateNoteColorSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("note-colors.json"))
         settingsFolder = folderPath
         append("Dossier de reglages: \(folderPath).")
     }
@@ -2383,6 +2384,11 @@ public final class ImprovSession: @unchecked Sendable {
                 rootColorHex: lumiSettings.rootColorHex, scaleColorHex: lumiSettings.scaleColorHex,
                 brightnessPercentage: lumiSettings.brightnessPercentage,
                 autoPropagateRunMode: lumiSettings.autoPropagateRunMode, autoPropagateGuideMode: lumiSettings.autoPropagateGuideMode
+            ),
+            noteColors: WebConsoleNoteColorsState(
+                modeRootHex: noteColorSettings.modeRootHex, modeOtherHex: noteColorSettings.modeOtherHex,
+                chordRootHex: noteColorSettings.chordRootHex, chordToneHex: noteColorSettings.chordToneHex,
+                heldNoChordHex: noteColorSettings.heldNoChordHex, heldOutsideChordHex: noteColorSettings.heldOutsideChordHex
             )
         )
     }
@@ -3026,6 +3032,29 @@ public final class ImprovSession: @unchecked Sendable {
         append("Clavier virtuel arrete.")
     }
 
+    // MARK: - Note color settings (persisted role colors, see NoteColorSettingsFile)
+
+    /// See `NoteColorSettingsFile`'s own doc comment for defaults/persistence shape/why
+    /// there's no editing UI yet.
+    public private(set) var noteColorSettings = NoteColorSettingsFile()
+
+    public func loadNoteColorSettings(fromJSONFile path: String) throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        noteColorSettings = try JSONDecoder().decode(NoteColorSettingsFile.self, from: data)
+    }
+
+    /// Mirrors `loadOrCreateLumiSettings(fromJSONFile:)`: writes the defaults first if
+    /// nothing is there yet, then loads it either way.
+    public func loadOrCreateNoteColorSettings(fromJSONFile path: String) throws {
+        if !FileManager.default.fileExists(atPath: path) {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(NoteColorSettingsFile())
+            try data.write(to: URL(fileURLWithPath: path))
+        }
+        try loadNoteColorSettings(fromJSONFile: path)
+    }
+
     // MARK: - LUMI Keys settings (persisted colors/brightness/auto-propagation)
 
     /// See `LumiSettingsFile`'s own doc comment for defaults/persistence shape.
@@ -3402,7 +3431,15 @@ public final class ImprovSession: @unchecked Sendable {
             // client-side while no guide is running — see `app.js`'s own `renderWheel`.
             let listeningTracks: [TrackInfo] = liveInputQueue.sync { tracks.filter(\.isListening) }
             let wheelState = buildWebConsoleWheelState(listeningTracks: listeningTracks)
-            let response = VirtualKeyboardStateResponse(track: info.map(self.webConsoleTrackState), guide: isGuideActive ? guideState : nil, wheel: wheelState, palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors, language: currentLanguage.rawValue)
+            let response = VirtualKeyboardStateResponse(
+                track: info.map(self.webConsoleTrackState), guide: isGuideActive ? guideState : nil, wheel: wheelState,
+                palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors, language: currentLanguage.rawValue,
+                noteColors: WebConsoleNoteColorsState(
+                    modeRootHex: noteColorSettings.modeRootHex, modeOtherHex: noteColorSettings.modeOtherHex,
+                    chordRootHex: noteColorSettings.chordRootHex, chordToneHex: noteColorSettings.chordToneHex,
+                    heldNoChordHex: noteColorSettings.heldNoChordHex, heldOutsideChordHex: noteColorSettings.heldOutsideChordHex
+                )
+            )
             guard let data = try? JSONEncoder().encode(response) else { return .notFound() }
             return HTTPResponse(contentType: "application/json", body: data)
         case "/note-on":
@@ -3558,7 +3595,7 @@ public final class ImprovSession: @unchecked Sendable {
             return WebConsoleGuideState(
                 isActive: false, steps: steps, currentStepIndex: nil, currentModeTones: [], heldPitches: [],
                 currentChordProgressionName: nil, currentChordProgression: [],
-                currentChordIndex: nil, currentChordRoot: nil, currentChordTones: []
+                currentChordIndex: nil, currentChordRoot: nil, currentChordTones: [], currentChordGuitarDiagram: nil
             )
         }
         let heldPitches = liveInputQueue.sync { Array(Set(tracks.filter(\.isListening).flatMap(\.heldPitches))) }
@@ -3566,6 +3603,7 @@ public final class ImprovSession: @unchecked Sendable {
         let (guideChordTones, _) = Self.pitchClassSets(
             forChordRoot: guideChord?.root, chordTemplateID: guideChord?.chordTemplateID, modeTonic: nil, scaleID: nil
         )
+        let guitarDiagram = guideChord.flatMap { GuitarChordShape.diagram(forRoot: $0.root, chordTemplateID: $0.chordTemplateID) }
         return WebConsoleGuideState(
             isActive: true, steps: steps, currentStepIndex: currentGuideStepIndex,
             currentModeTones: mode.pitchClasses.map(\.value), heldPitches: heldPitches,
@@ -3577,7 +3615,13 @@ public final class ImprovSession: @unchecked Sendable {
                     quality: Self.chordQuality(templateID: $0.chordTemplateID)?.rawValue
                 )
             },
-            currentChordIndex: currentGuideChordIndex, currentChordRoot: guideChord?.root, currentChordTones: guideChordTones
+            currentChordIndex: currentGuideChordIndex, currentChordRoot: guideChord?.root, currentChordTones: guideChordTones,
+            currentChordGuitarDiagram: guitarDiagram.map {
+                WebConsoleGuitarChordDiagram(
+                    label: $0.label, barreFret: $0.barreFret,
+                    frets: $0.positions.map(\.relativeFret), fingers: $0.positions.map(\.finger)
+                )
+            }
         )
     }
 
