@@ -21,6 +21,22 @@ couleur, progressions d'accords, connexions LLM), `User/` (morceaux, scènes, gu
 soundtracks, composition IA), `Library/` (SoundFonts). Tape `help` pour la liste des commandes,
 ou utilise les menus (`run`/`config`, voir plus bas).
 
+**Options de démarrage en ligne de commande**, pour lancer directement sans passer par les
+commandes interactives :
+
+```sh
+swift run JamShack --web-console 8080 --virtual-keyboard 8081 --guide "Autumn Leaves.json" --scene "Piano solo.json"
+```
+
+- `--web-console [port]` — démarre la console web (port par défaut 8080 si omis).
+- `--virtual-keyboard [port]` — démarre le clavier virtuel interactif (port par défaut 8081).
+- `--guide <nom ou chemin>` — charge un guide musical (nom de fichier dans `User/Sequences/`,
+  ou chemin explicite).
+- `--scene <nom ou chemin>` — charge une scène (nom de fichier dans `User/Scenes/`, ou chemin
+  explicite) ; remplace alors la proposition interactive de scène au démarrage.
+
+Chaque option est indépendante et facultative — elles peuvent se combiner ou s'utiliser seules.
+
 **Environnement requis** : macOS, les Command Line Tools suffisent (Xcode complet non
 nécessaire pour utiliser l'application — seulement pour lancer `swift test`, voir plus bas).
 

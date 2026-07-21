@@ -6,6 +6,66 @@ import PieceModel
 
 setvbuf(stdout, nil, _IONBF, 0)
 
+// Command-line startup flags — e.g. `swift run JamShack --web-console 8080 --guide "Autumn
+// Leaves.json"` — for scripted/headless launches that shouldn't have to drive the interactive
+// REPL just to get the web console or a scene/guide going. Parsed up front (pure, no
+// dependency on `session`); acted on further below once the session/default folders are fully
+// configured, right where the equivalent interactive commands (`web-console`, `virtual-keyboard`,
+// `use-scene`, `use-guide`) already live.
+struct StartupOptions {
+    var webConsolePort: Int?
+    var virtualKeyboardPort: Int?
+    var scenePath: String?
+    var guidePath: String?
+}
+
+func parseStartupOptions(_ arguments: [String]) -> StartupOptions {
+    var options = StartupOptions()
+    var index = 1 // arguments[0] is the executable path itself
+    while index < arguments.count {
+        switch arguments[index] {
+        case "--web-console":
+            index += 1
+            if index < arguments.count, let port = Int(arguments[index]) {
+                options.webConsolePort = port
+                index += 1
+            } else {
+                options.webConsolePort = 8080
+            }
+        case "--virtual-keyboard":
+            index += 1
+            if index < arguments.count, let port = Int(arguments[index]) {
+                options.virtualKeyboardPort = port
+                index += 1
+            } else {
+                options.virtualKeyboardPort = 8081
+            }
+        case "--scene":
+            index += 1
+            if index < arguments.count {
+                options.scenePath = arguments[index]
+                index += 1
+            } else {
+                print("--scene necessite un chemin ou un nom de fichier")
+            }
+        case "--guide":
+            index += 1
+            if index < arguments.count {
+                options.guidePath = arguments[index]
+                index += 1
+            } else {
+                print("--guide necessite un chemin ou un nom de fichier")
+            }
+        default:
+            print("Argument ligne de commande ignore : \(arguments[index])")
+            index += 1
+        }
+    }
+    return options
+}
+
+let startupOptions = parseStartupOptions(CommandLine.arguments)
+
 // A blocking `readLine()` REPL never pumps the main run loop / main dispatch queue, so
 // anything that needs to run on a genuinely different thread (the live log poller below,
 // MIDI/playback callbacks in AppCore) must not be routed through `@MainActor` — it would
@@ -46,11 +106,52 @@ try? FileManager.default.createDirectory(at: userFolder.appendingPathComponent("
 try? session.listSceneFiles(in: userFolder.appendingPathComponent("Scenes").path)
 try? session.setPromptsFolder(userFolder.appendingPathComponent("Composition IA").path) // creates its fixed subfolders if absent
 
+// Act on `startupOptions` (see its own doc comment above) now that the session/default folders
+// are fully configured — same calls as the `web-console`/`virtual-keyboard`/`use-scene`/
+// `use-guide` REPL commands, just driven by CLI flags instead of a typed command.
+if let port = startupOptions.webConsolePort {
+    do { try session.startWebConsole(port: port) } catch { print("Erreur console web : \(error)") }
+}
+if let port = startupOptions.virtualKeyboardPort {
+    do { try session.startVirtualKeyboard(port: port) } catch { print("Erreur clavier virtuel : \(error)") }
+}
+// Drives which screen `runConsoleScreen` opens on further below — a guide loaded from the
+// command line should show up already running on its own screen, not silently loaded behind
+// the (default) Run screen where nothing about it would be visible.
+var guideLoadedFromCommandLine = false
+if let guidePath = startupOptions.guidePath {
+    do {
+        // A bare name (no such file relative to the current directory) resolves against the
+        // default guide folder, exactly like the interactive `use-guide <nom>` command — an
+        // explicit/relative/absolute path that does exist is loaded as-is.
+        if FileManager.default.fileExists(atPath: guidePath) {
+            try session.loadGuideSequence(fromJSONFile: guidePath)
+        } else {
+            try session.loadGuideSequence(named: guidePath)
+        }
+        try session.startGuide(atStepIndex: 0) // same default step as the interactive `guide-start` command with no argument
+        guideLoadedFromCommandLine = true
+    } catch { print("Erreur chargement guide : \(error)") }
+}
+// `--scene` supersedes the interactive scene prompt just below (see `sceneLoadedFromCommandLine`)
+// — no point offering to pick one interactively right after one was just loaded from a flag.
+var sceneLoadedFromCommandLine = false
+if let scenePath = startupOptions.scenePath {
+    do {
+        if FileManager.default.fileExists(atPath: scenePath) {
+            try session.loadScene(fromJSONFile: scenePath)
+        } else {
+            try session.loadScene(named: scenePath)
+        }
+        sceneLoadedFromCommandLine = true
+    } catch { print("Erreur chargement scene : \(error)") }
+}
+
 // If any scenes are already sitting in the default folder, offer to load one right away —
 // picking up a known instrument setup (e.g. "piano solo") shouldn't require knowing the
 // `use-scene`/menu path exists on a first launch. Purely optional: leaving the prompt blank
 // (or any answer that doesn't resolve) just moves on to the normal REPL with nothing loaded.
-if !session.sceneFiles.isEmpty {
+if !sceneLoadedFromCommandLine, !session.sceneFiles.isEmpty {
     print("\nScenes disponibles dans \(session.sceneFolder ?? "?"):")
     for (index, name) in session.sceneFiles.enumerated() { print("  \(index + 1). \(name)") }
     if let choice = promptLine(L10n.string(.promptChargerSceneDemarrage, session.currentLanguage)), !choice.isEmpty {
@@ -2279,7 +2380,10 @@ func tokenizeCommandLine(_ line: String) -> [String] {
 // dropping into the plain Command REPL first — the run screen is where playing actually
 // happens, so it shouldn't need an extra `run` command every time. Ctrl+C/`q` falls back
 // to this same Command REPL exactly as it always has when leaving `run` explicitly.
-runConsoleScreen(mode: .run)
+// Exception: a guide loaded via `--guide` (see `guideLoadedFromCommandLine` above) already
+// started running, so it opens directly on its own screen instead of the Run screen, where
+// none of it would be visible.
+runConsoleScreen(mode: guideLoadedFromCommandLine ? .guide : .run)
 
 print(L10n.string(.replModeCommand, session.currentLanguage))
 print(L10n.string(.replTapeAide, session.currentLanguage))
