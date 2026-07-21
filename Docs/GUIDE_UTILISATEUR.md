@@ -1,7 +1,7 @@
 # Guide utilisateur — Music Improv Assistant
 
 Manuel d'utilisation de l'application en ligne de commande, dans son état à la fin de la
-session du 2026-07-12. Un terme ambigu ou peu clair ? Voir `Docs/GLOSSAIRE.md`.
+session du 2026-07-21. Un terme ambigu ou peu clair ? Voir `Docs/GLOSSAIRE.md`.
 
 ## Lancer l'application
 
@@ -28,6 +28,25 @@ Trois modes d'utilisation (voir §8) :
   morceau chargé. Commande `config`, touche **q** pour sortir.
 
 Tape `help` à tout moment pour la liste des commandes.
+
+**Options de démarrage en ligne de commande**, pour lancer directement sans passer par les
+commandes interactives (utile pour un lancement scripté, ou pour retrouver le même réglage à
+chaque fois) :
+
+```sh
+swift run JamShack --web-console 8080 --virtual-keyboard 8081 --guide "Autumn Leaves.json" --scene "Piano solo.json"
+```
+
+- `--web-console [port]` — démarre la console web (port par défaut 8080 si omis, voir §11).
+- `--virtual-keyboard [port]` — démarre le clavier virtuel interactif (port par défaut 8081,
+  voir §12).
+- `--guide <nom ou chemin>` — charge un guide musical (nom de fichier dans `User/Sequences/`,
+  ou chemin explicite) et le démarre aussitôt à sa première étape ; le terminal s'ouvre alors
+  directement sur l'écran Guide Musical plutôt que sur l'écran `run` par défaut.
+- `--scene <nom ou chemin>` — charge une scène (nom de fichier dans `User/Scenes/`, ou chemin
+  explicite) ; remplace alors la proposition interactive de scène au démarrage.
+
+Chaque option est indépendante et facultative — elles peuvent se combiner ou s'utiliser seules.
 
 ---
 
@@ -666,13 +685,35 @@ clavier du mode" — celui du guide musical s'il est en cours (menu **Guide Musi
 celui du morceau/de l'enregistrement en cours de lecture — puis chaque piste active, la
 sienne. Cette disposition est désormais la même que le guide soit actif ou non.
 
-**Quatre onglets** : `Run` (ce qui précède — l'activité musicale en cours), `Scene` — le même
+**Cinq onglets** : `Run` (ce qui précède — l'activité musicale en cours), `Scene` — le même
 plan de scène qu'affiche `scene-tree` dans le terminal (voir §9), mais en liste imbriquée
 plutôt qu'en dessin ASCII : l'application, ses instruments locaux, l'état de la console web et
 du clavier virtuel, en mode serveur la liste des clients connectés avec leurs propres
-instruments, et depuis peu les **rôles de la scène active** (voir §15) — `Commandes`, une
-télécommande complète de l'application depuis le navigateur (voir §16) — et `Infos`, une
-simple description statique de la page. Basculer d'un onglet à l'autre ne recharge pas la page.
+instruments, et depuis peu les **rôles de la scène active** (voir §15) — `Observer` (voir plus
+bas) — `Commandes`, une télécommande complète de l'application depuis le navigateur (voir §16)
+— et `Infos`, une simple description statique de la page. Basculer d'un onglet à l'autre ne
+recharge pas la page.
+
+**Guide musical en cours** : les onglets `Run` et `Observer` affichent, au-dessus du reste, un
+panneau à trois colonnes — le clavier de référence du mode et de l'accord proposé par l'étape
+courante, une portée montrant cet accord, et un diagramme de tablature guitare (position
+barrée standard, quand la qualité de l'accord en a une — sinon un message "pas de position
+standard") — identique à celui déjà décrit pour le clavier virtuel (§12). Flèches **Haut/Bas**
+au clavier de l'ordinateur : étape précédente/suivante du guide ; flèches **Gauche/Droite** :
+accord précédent/suivant dans la progression de l'étape courante — action globale (le même
+guide pour tout le monde qui regarde), désactivée automatiquement si le focus est dans un champ
+de l'onglet Commandes ou si aucun guide ne tourne.
+
+**Onglet Observer — regarder n'importe quel instrument connecté** : comme `Run`, mais avec le
+clavier en grande taille du clavier virtuel (§12) plutôt que les petits claviers par piste, et
+sur la piste de TON choix — une liste déroulante en haut propose toutes les pistes actuellement
+en écoute (les tiennes, celles d'un autre appareil, une piste distante d'un participant de la
+Jam Session...). Entièrement en lecture seule, comme le reste de la console web (aucun clic ne
+joue de note). Une petite vue d'ensemble du clavier complet (Do-1 à Do8) surplombe le grand
+clavier, avec un point de couleur pour chaque note réellement tenue sur la piste observée ; la
+zone visible se recentre automatiquement sur la note la plus grave tenue à chaque fois qu'une
+note change, pour toujours montrer l'accord complet sans avoir à faire défiler manuellement. Si
+la piste choisie se déconnecte, l'onglet retombe sur une autre piste disponible sans planter.
 
 **Largeur adaptative** : la page s'élargit pour profiter de l'espace disponible sur un grand
 écran (cercle des quintes agrandi, largeur totale plafonnée pour rester lisible plutôt que de
@@ -805,6 +846,12 @@ détecté, mais tout le monde voit les mêmes degrés de référence et le même
 avance d'une étape, **Maj+Tab** recule — une action globale (le même guide pour tout le
 monde), comme les flèches gauche/droite de l'écran `.guide` du terminal.
 
+Ce même panneau de guide affiche aussi, à côté des claviers de référence, une petite portée
+montrant l'accord proposé par l'étape courante et un diagramme de tablature guitare (position
+barrée standard pour cet accord — pas toutes les qualités d'accord en ont une, auquel cas un
+message l'indique) — exactement le même panneau à trois colonnes que celui désormais affiché
+sur la console web (§11, onglets `Run`/`Observer`).
+
 **Touche non relâchée** : `GET /note-on`/`GET /note-off` sont deux connexions HTTP
 indépendantes (pas de garantie d'ordre entre elles) — une frappe très rapide peut, rarement,
 laisser une note affichée comme tenue alors qu'elle a bien été relâchée. **Échap** relâche
@@ -840,6 +887,17 @@ l'application** — jamais écrit dans `palettes.json` (qui ne liste que ce qui 
 chaque relance. S'applique aussitôt à la console web et au clavier virtuel de cette même
 instance, sans recharger la page (le changement apparaît dans les ~250ms du prochain
 sondage).
+
+**À ne pas confondre avec les couleurs de rôle** (`note-colors.json`, dossier de réglages) :
+la palette ci-dessus donne une couleur par **note** (Do, Do#, Ré...), la même partout où cette
+note apparaît. Un second réglage, distinct, donne une couleur par **rôle** — racine du mode,
+reste du mode, racine d'accord, autre note d'accord, note tenue sans accord reconnu, note tenue
+hors accord reconnu — indépendamment de quelle note c'est. Pas encore d'écran/menu pour le
+modifier : éditer `note-colors.json` à la main (dans le dossier de réglages) puis recharger le
+dossier de réglages ou relancer l'application. Les couleurs "note tenue sans accord"/"note
+tenue hors accord" par défaut (blanc/vert) restent peu lisibles sur le grand clavier du
+clavier virtuel et de l'onglet Observer (§12/§11) : ces deux-là utilisent un gris foncé fixe
+pour ces deux états, volontairement pas relié à ce fichier de réglages.
 
 ## 14. Progressions d'accords — bibliothèque pour le guide musical
 
@@ -1008,6 +1066,59 @@ d'abord). **Jamais traduits** : les noms/la syntaxe des commandes elles-mêmes
 (`scene-role-attach` reste `scene-role-attach` dans les trois langues), ainsi que les noms
 « JamShack »/« Jam Session » et l'onglet « Run » de la console web.
 
+## 19. LUMI Keys — clavier lumineux ROLI (optionnel)
+
+Si un clavier ROLI LUMI Keys BLOCK est branché en MIDI, l'application peut allumer ses touches
+selon la tonique/gamme jouée ou celle du guide musical en cours — entièrement optionnel, le
+reste de l'application fonctionne à l'identique sans lui.
+
+**Deux modes, jamais actifs en même temps**, tous deux avec repli automatique sur l'affichage
+natif du LUMI (pas de couleur laissée figée) dès qu'il n'y a rien de pertinent à montrer :
+
+- **Mode "run"** : suit en direct l'accord/mode reconnu sur la piste MIDI du LUMI lui-même —
+  s'active automatiquement en passant sur l'écran `run` du terminal (voir plus bas pour la
+  bascule), ou manuellement avec :
+  ```
+  lumi-run <rougeRacine> <vertRacine> <bleuRacine> <rougeGamme> <vertGamme> <bleuGamme> [luminosite]
+  lumi-run stop
+  ```
+- **Mode "guide"** : suit l'étape courante du guide musical actif — s'active automatiquement en
+  passant sur l'écran Guide Musical, ou manuellement avec :
+  ```
+  lumi-guide-sync <rougeRacine> <vertRacine> <bleuRacine> <rougeGamme> <vertGamme> <bleuGamme> [luminosite]
+  lumi-guide-sync stop
+  ```
+- **Carte statique ponctuelle** (sans suivi, juste "allume maintenant selon cette tonique/
+  gamme") :
+  ```
+  lumi-guide <tonique C..B> <gamme, ex: ionian> <rougeRacine> <vertRacine> <bleuRacine> <rougeGamme> <vertGamme> <bleuGamme> [luminosite]
+  ```
+
+**Réglages persistés** (couleur racine, couleur du reste de la gamme, luminosité, et deux
+bascules d'auto-propagation run/guide — activées par défaut sur une installation neuve, pour
+qu'un LUMI branché s'allume automatiquement sans rien configurer) :
+
+```
+lumi-set-root-color <#RRGGBB>
+lumi-set-scale-color <#RRGGBB>
+lumi-set-brightness <0-100>
+lumi-auto-run on|off       # active/desactive l'allumage automatique en passant sur l'ecran 'run'
+lumi-auto-guide on|off     # idem pour l'ecran Guide Musical
+```
+
+Menu **JamShack > Réglages LUMI** propose les mêmes réglages. L'écran `config` (§8) affiche
+les 5 valeurs courantes.
+
+**Détection automatique** : l'application cherche elle-même une destination MIDI dont le nom
+contient "lumi" — pas besoin de connaître un numéro de port dans le cas courant (un seul LUMI
+branché).
+
+**Limite connue** : la bibliothèque de gammes du LUMI est plus restreinte que celle de
+l'application (33 gammes) — seules 9 d'entre elles (modes majeur/mineur naturels, mineur
+harmonique, dorien, phrygien, lydien, mixolydien, locrien, ton entier) ont une correspondance
+directe sur le LUMI ; les autres s'affichent en couleur uniforme (racine correcte, mais sans
+distinction dans/hors gamme) plutôt que de risquer une correspondance trompeuse.
+
 ## Liste complète des commandes
 
 `help` les affiche déjà regroupées par catégorie (Général / Morceaux / Pistes d'entrée /
@@ -1108,8 +1219,19 @@ virtual-keyboard [port] demarre le clavier virtuel (piano interactif dans un nav
 virtual-keyboard stop   arrete le clavier virtuel
 use-palette <n ou nom>  choisit la palette de couleur active (console web + clavier virtuel, propre a cette instance)
 language <fr|en|de>     change la langue de l'interface (menus, en-têtes, libellés) — persiste dans Settings/language.json
+lumi-set-root-color <#RRGGBB>    couleur racine persistee pour le LUMI Keys (voir §19)
+lumi-set-scale-color <#RRGGBB>   couleur du reste de la gamme persistee pour le LUMI Keys
+lumi-set-brightness <0-100>      luminosite persistee pour le LUMI Keys
+lumi-auto-run on|off             allumage automatique du LUMI en passant sur l'ecran 'run'
+lumi-auto-guide on|off           allumage automatique du LUMI en passant sur l'ecran Guide Musical
+lumi-run <r g b> <r g b> [lum]   demarre le suivi en direct sur le LUMI (ou 'lumi-run stop')
+lumi-guide-sync <r g b> <r g b> [lum]  demarre le suivi du guide musical sur le LUMI (ou '... stop')
+lumi-guide <tonique> <gamme> <r g b> <r g b> [lum]  carte statique ponctuelle sur le LUMI
 quit                    quitte
 ```
+
+Voir aussi les options de démarrage en ligne de commande (`--web-console`/`--virtual-keyboard`/
+`--guide`/`--scene`), en tête de ce guide (§"Lancer l'application").
 
 ## Dépannage rapide
 
