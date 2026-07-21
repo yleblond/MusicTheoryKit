@@ -87,6 +87,25 @@ jouer (`GET /note-on`/`GET /note-off`, piste dédiée `TrackID.webKeyboard(clien
 navigateur connecté, voir `ImprovSession.ensureWebKeyboardTrack`). Choix délibéré pour garder
 la Console Web simple plutôt que d'y ajouter un mode « clavier actif ».
 
+## `ColorPalette` vs `NoteColorSettingsFile` — deux axes de couleur indépendants
+
+Faciles à confondre car les deux affectent l'apparence des mêmes claviers, mais ce sont deux
+réglages orthogonaux, jamais mélangés dans le code :
+
+- **`ColorPalette`** (`palettes.json`, menu **JamShack > Choisir palette de couleur...**, voir
+  `GUIDE_UTILISATEUR.md` §13) — une couleur par **classe de hauteur** (Do, Do#, Ré...) : la
+  même couleur partout où cette note apparaît, quel que soit son rôle du moment.
+- **`NoteColorSettingsFile`** (`note-colors.json`, pas encore d'écran/menu — édition à la main
+  du fichier) — une couleur par **rôle** (racine de mode, reste du mode, racine d'accord, autre
+  note d'accord, note tenue sans accord reconnu, note tenue hors accord reconnu) :
+  indépendant de quelle note c'est, seulement de ce qu'elle représente à l'instant présent.
+
+Les deux s'appliquent en fait à des éléments visuels DIFFÉRENTS, jamais superposés sur le même
+pixel : le fond des touches d'un clavier (`.pkey.root`/`.pkey.tone`/`.pkey.mode-root`...) suit
+toujours les couleurs de RÔLE ; la pastille de degré au-dessus de chaque touche du mode et les
+cases du cercle des quintes suivent, elles, toujours la couleur de la NOTE elle-même
+(`PITCH_CLASS_COLORS`, dérivée de la palette active).
+
 ## `MenuItem.separator` vs `MenuItem.header(_:)`
 
 Deux façons de structurer un menu déroulant plat (ce système de menus n'a pas de sous-menus

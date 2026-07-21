@@ -61,7 +61,12 @@ nécessaire pour utiliser l'application — seulement pour lancer `swift test`, 
   recevoir une **progression d'accords** choisie dans une bibliothèque de templates en
   notation relative (chiffres romains — blues, ii-V-I, cadence andalouse…), résolue contre le
   mode de l'étape — presque un mini-morceau, à ceci près qu'il manque encore les lignes
-  mélodiques.
+  mélodiques. Sur la console web et le clavier virtuel, chaque accord proposé s'accompagne
+  d'une portée et, quand la qualité de l'accord a une position standard, d'un diagramme de
+  tablature guitare (barré, mobile sur les 12 tonalités).
+- **LUMI Keys (ROLI, optionnel)** : si un clavier LUMI Keys BLOCK est branché en MIDI, ses
+  touches peuvent s'allumer selon la tonique/gamme jouée ou celle du guide musical, en suivant
+  automatiquement les écrans `run`/Guide Musical — protocole SysEx propriétaire rétro-ingénierié.
 - **Cercle des quintes visuel** (console web) : les 12 tonalités, 3 anneaux d'accords
   (majeur/mineur/diminué), le contour des 7 accords diatoniques de la tonalité active, et le
   nom du mode en cours — recalculé automatiquement selon la piste/le morceau/le guide actif.
@@ -106,6 +111,10 @@ nécessaire pour utiliser l'application — seulement pour lancer `swift test`, 
   mode serveur la liste des clients connectés avec leurs propres instruments. Disponible en
   ASCII dans le terminal (`scene-tree`) et dans un onglet dédié de la console web, à côté de
   l'onglet `Run`.
+- **Onglet Observer (console web)** : regarder n'importe quelle piste actuellement en écoute
+  (la tienne, celle d'un autre appareil, celle d'un participant distant), au même format grande
+  taille que le clavier virtuel — lecture seule, avec une vue d'ensemble du clavier complet qui
+  se recentre automatiquement sur les notes tenues.
 - **Console Web** : un miroir en lecture seule de l'activité musicale, dans un navigateur —
   utile pour l'afficher sur un second écran, via un petit serveur HTTP fait main (aucune
   dépendance tierce). Mise en page adaptative (deux colonnes, profite de l'espace sur un grand

@@ -152,6 +152,103 @@ des deux symptômes rapportés (l'autre, "une note jouée en affiche deux", rest
 mode MIDI individuel si le clavier physique expose plus d'une source CoreMIDI visible, mais
 dépend du matériel de l'utilisateur et n'a pas été corrigé ici faute de pouvoir le reproduire).
 
+## LUMI Keys — éclairage RGB par touche (protocole SysEx rétro-ingénierié)
+
+Intégration optionnelle avec un clavier ROLI LUMI Keys BLOCK connecté en MIDI, pour que ses
+touches s'allument selon la tonique/gamme jouée ou celle du guide musical — aucune dépendance
+matérielle obligatoire, tout le reste de l'application fonctionne à l'identique sans lui.
+
+- **`MIDIEngine/LumiSysex.swift`** : encodage pur (octets en entrée/sortie, aucune dépendance
+  CoreMIDI, donc testable sans matériel) des messages SysEx propriétaires que ROLI Dashboard
+  utilise pour piloter le rétroéclairage — **non documentés officiellement par ROLI**,
+  reconstruits par rétro-ingénierie et recoupés octet par octet contre des captures connues
+  (`github.com/benob/LUMI-lights`) ainsi que par capture MIDI Monitor directe d'un vrai LUMI
+  Keys BLOCK (2026-07-20). Plusieurs corrections de la documentation externe existante ont été
+  nécessaires en cours de route (pas seulement une implémentation directe d'un spec déjà fiable) :
+  - `deviceID` réel confirmé à `0x34`, pas le `0x37` documenté par `SYSEX.txt`/`lumi_sysex.js`.
+  - Les 5 préréglages `ColorMode` (`user`/`pro`/`stage`/`piano`/`rainbow`) suivent un sélecteur
+    `12 + modeIndex * 32` (un tag 5 bits + un index d'au moins 3 bits), pas le tag 5 bits +
+    2 bits que suggérait la table documentée existante — chaque payload de 8 octets est donc
+    reproduit littéralement plutôt que via le bit-packer générique.
+  - `setBrightness` prend un vrai pourcentage 0...100, pas un compte de paliers de 25.
+  - `Scale.arabicB`/`.lydian` : l'entrée "arabic (a)" de la doc externe est exclue (bytes
+    identiques à `.lydian`, presque certainement une erreur de copier-coller dans la source
+    d'origine).
+  - `ColorTarget` n'expose PAS un index de touche arbitraire (contrairement à ce que
+    `lumi_sysex.js`'s `set_color(id, r, g, b)` peut laisser croire) : `id` n'est en réalité
+    testé que sur son bit de poids faible, pour choisir entre deux cibles fixes seulement —
+    "toutes les touches hors racine" et "la touche racine" — il n'existe aucun adressage
+    touche-par-touche (des 24 touches) dans ce protocole rétro-ingénierié.
+  - `Scale` (le vocabulaire d'échelles intégré du LUMI — major/minor/dorian/blues/etc., ~17
+    entrées) est une liste bien plus restreinte que les 33 gammes de `MusicTheoryKit.ScaleLibrary`
+    — voir `LumiColorMap` ci-dessous pour l'association entre les deux.
+- **`AppCore/LumiColorMap.swift`** : associe le vocabulaire de gammes de l'app (`ScaleLibrary`,
+  33 gammes) au vocabulaire fixe du LUMI (9 correspondances directes seulement — ionien,
+  éolien, mineur harmonique, dorien, phrygien, lydien, mixolydien, locrien, ton entier) ; toute
+  autre gamme (familles mineur mélodique/majeur harmonique/diminuée/augmentée, altérations
+  jazz) retombe sur `nil` — à charge de l'appelant de décider quoi en faire (voir `LumiGuideMap`
+  et `ImprovSession` ci-dessous, deux réponses différentes au même `nil`).
+- **`AppCore/LumiGuideMap.swift`** : construit la séquence ordonnée de messages SysEx pour un
+  affichage **statique** "carte de gamme" (tonique/gamme choisies, indépendant de ce qui est
+  réellement joué) — mode `.user`, tonique, gamme (repli sur `.chromatic` si `LumiColorMap` ne
+  trouve pas de correspondance — coloration uniforme, racine toujours correcte mais plus de
+  distinction dans/hors gamme), puis les deux couleurs (racine/reste) et la luminosité, dans cet
+  ordre précisément parce que le mode+la gamme doivent être posés avant que `setColor` ait un
+  sens.
+- **`AppCore/LumiSettings.swift`** : `LumiSettingsFile` — réglages persistés (`lumi.json` dans
+  le dossier de réglages, même schéma "fichier singleton" que `LanguageSettingFile`) : couleur
+  racine (rouge par défaut), couleur du reste de la gamme (bleu), luminosité (100% par défaut),
+  et **deux bascules d'auto-propagation indépendantes** (mode run / mode guide, toutes deux
+  activées par défaut) — voir juste en dessous. `LumiColorHex.rgb(_:)` convertit un `#RRGGBB`
+  en triplet `UInt8` (quasi-doublon du `rgb(fromHex:)` privé de `ColorPalette`, gardé séparé
+  plutôt que de changer la signature de celui-ci pour si peu).
+- **Deux modes d'affichage en direct, jamais simultanés, tous deux avec repli sur `.piano`**
+  (l'affichage natif du LUMI) **à l'arrêt ou en l'absence de correspondance** — `ImprovSession` :
+  - **Mode "run"** (`startLumiLiveDisplay`/`stopLumiLiveDisplay`/`syncLumiLiveModeIfActive`) :
+    suit la reconnaissance en direct de la piste MIDI qui correspond au LUMI lui-même
+    (`LumiLiveModeLastState.current(for:)` — la piste `.midiMerged` si active, sinon en mode
+    MIDI individuel la piste `.midiSource` dont le libellé contient "lumi", jamais "la première
+    piste qui écoute" au hasard) : dès qu'un mode y est reconnu, pousse sa carte
+    racine/gamme ; rien de reconnu → repli `.piano`. Appelée après chaque événement MIDI/micro
+    en direct (donc en dehors de `liveInputQueue.sync`, jamais dedans — la config/le dernier
+    état poussé sont eux-mêmes protégés par un court `liveInputQueue.sync` séparé, pour ne
+    faire l'E/S MIDI potentiellement plus lente qu'une fois la vraie décision prise).
+  - **Mode "guide"** (`startLumiGuideDisplay`/`stopLumiGuideDisplay`/
+    `syncLumiGuideDisplayIfActive`) : suit l'étape courante du guide musical actif — change de
+    carte à chaque changement d'étape (`startGuide`/`advanceGuideStep`/`stopGuide`), jamais
+    lié à un event MIDI (donc pas besoin de `liveInputQueue`, appelé seulement depuis le thread
+    principal).
+  - **`notifyActiveScreen(_:)`** (`LumiAutoPropagationScreen`, `.run`/`.guide`) : câblée
+    depuis `runConsoleScreen` — quand l'utilisateur bascule sur l'écran `run` ou l'écran
+    `Guide Musical` du terminal, active automatiquement le mode LUMI correspondant si sa
+    bascule d'auto-propagation est activée (comportement par défaut d'une installation neuve),
+    sans jamais avoir à taper `lumi-run`/`lumi-guide-sync` à la main. Change d'écran arrête
+    toujours l'AUTRE mode en premier (jamais les deux actifs à la fois).
+- **Commandes terminal** (`lumi-set-root-color`/`lumi-set-scale-color`/`lumi-set-brightness`/
+  `lumi-auto-run on|off`/`lumi-auto-guide on|off` pour les réglages persistés ;
+  `lumi-run <r g b> <r g b> [luminosité]`/`lumi-run stop`,
+  `lumi-guide-sync <r g b> <r g b> [luminosité]`/`lumi-guide-sync stop` pour déclencher les
+  modes manuellement ; `lumi-guide <tonique> <gamme> <r g b> <r g b> [luminosité]` pour une
+  carte statique ponctuelle sans suivi) et un groupe **JamShack > Réglages LUMI** correspondant
+  dans le menu déroulant — voir `Docs/GUIDE_UTILISATEUR.md` pour le détail de chaque commande.
+  Écran `config` : affiche les 5 réglages courants (couleur racine/gamme, luminosité, deux
+  bascules d'auto-propagation).
+- **Détection de destination** : `MIDIOutputPort.autoDetectedDestinationIndex(nameContains:
+  "lumi")` — pas d'index à connaître/saisir à la main dans le cas courant (un seul LUMI
+  branché) ; `destinationIndex` reste un paramètre explicite pour le cas contraire.
+- **Pas d'affichage note-par-note réactif pour l'instant** (au-delà de la carte
+  racine/gamme statique par mode/étape) — enverrait Note On/Off vers la destination LUMI en
+  plus de la carte de couleur, non construit dans cette livraison.
+- **`Sources/LumiSpike/main.swift`** : petit exécutable de diagnostic autonome, pour envoyer
+  des messages LUMI à la main depuis la ligne de commande sans repasser par `JamShack` —
+  utile pour capturer/comparer du trafic pendant la phase de rétro-ingénierie ci-dessus.
+- **Vérifié** : `Tests/MIDIEngineTests/LumiSysexTests.swift` (encodage/checksum contre les
+  exemples connus), `Tests/AppCoreTests/LumiColorMapTests.swift`/`LumiGuideMapTests.swift`/
+  `LumiLiveModeTests.swift` (association de gammes, ordre des messages, logique de repli
+  run/guide) — mirorés dans `SanityChecks` comme tout le reste du projet. La validation finale
+  du protocole lui-même (au-delà des tests unitaires) s'est faite sur un vrai LUMI Keys BLOCK
+  physique, pas seulement en théorie.
+
 ## AudioEngine — lecture audio et écoute
 
 - **`PiecePlayer`** : lecture non temps-réel d'un `Piece` (`play(_:instrumentURLs:)`) via un
@@ -697,6 +794,56 @@ correction doit être répercutée dans les deux.
   embarqué dans une constante Swift, hors de portée du compilateur Swift comme de
   `SanityChecks` (même convention déjà établie pour `keyboardHTML`/`renderWheel`).
 
+### Panneau Guide musical à trois colonnes (partition/claviers/tablature)
+
+Quand un guide musical est actif, la console web (onglet `Run`, et l'onglet `Observer` — voir
+plus bas) et le clavier virtuel affichent tous deux le même panneau `renderGuide(guide)` — code
+dupliqué à l'identique dans les deux fichiers, même convention que `renderStaffSVG` (voir
+plus haut) : aucun module JS partagé entre les deux pages. Disposé en trois colonnes
+(`.guide-layout` > `.guide-col-notation`/`.guide-col-keyboards`/`.guide-col-tab`), chacune avec
+son propre titre en première ligne (flush avec les deux autres) et son contenu réel dans un
+`.guide-col-fill` en dessous (aligné en bas — `justify-content: flex-end` — pour que les trois
+colonnes de hauteurs de contenu différentes gardent leurs titres alignés en haut) :
+
+- **Colonne "claviers"** (toujours affichée) : le clavier du mode (racine/reste du mode
+  courant, `showModeColoring: true`) puis, si un accord est sélectionné dans la progression de
+  l'étape, le clavier de cet accord — deux claviers de référence statiques (jamais les notes
+  réellement tenues), sur une fenêtre fixe `[60, 83]` (deux octaves depuis Do4).
+- **Colonne "partition"** : n'apparaît que si un accord est sélectionné — un instantané de
+  portée (`chordStaffEvent(root, tones)` + `renderStaffSVG`) montrant CET accord seul, en
+  position fermée à partir de Do4 (pas de vraies octaves par note, l'app ne les connaît pas
+  côté guide) ; `displayHeightPx` fixe (pas dérivé dynamiquement, voir `renderStaffSVG`'s
+  propre section plus haut pour pourquoi `aspect-ratio` a été abandonné pour ce genre de cas).
+- **Colonne "tablature"** (`guitarChordDiagramHTML`, `AppCore/GuitarChordShapes.swift`) :
+  n'apparaît que si un accord est sélectionné ET que sa qualité a une forme E-shape barrée
+  standard couverte (`GuitarChordShape.shape(forRoot:chordTemplateID:)`, 12 des qualités
+  d'accord les plus courantes, voir le commentaire de ce fichier pour les deux critères de
+  vérification appliqués à chaque forme et pour `Ma7#5`, seule qualité explicitement exclue
+  faute de forme standard trouvée) — sinon un message "pas de position standard"
+  (`placeholderPasDePositionGuitareStandard`). Diagramme SVG généré côté client : 6 cordes ×
+  4 cases affichées à partir de la frette barrée, doigtés 1 (barré) à 4, cordes muettes
+  marquées `×`, position de frette affichée à gauche de la première case.
+- Sous les trois colonnes, une **portée séparée** montre les notes RÉELLEMENT tenues sur la
+  piste observée (`guide.heldPitches`) — celle-ci n'est PAS un instantané de l'étape mais un
+  retour en direct de ce qui est joué, à la différence de la portée "partition" ci-dessus dans
+  la colonne de gauche.
+- Sous la barre d'étapes/de progression, une ligne d'indication rappelle les raccourcis clavier
+  de navigation (voir juste en dessous).
+
+**Navigation du guide au clavier, depuis la console web** (`onglet Run` ou `Observer`
+uniquement — nouveau ; le clavier virtuel avait déjà `Tab`/`Maj+Tab` pour l'étape, voir plus
+bas) : flèches Haut/Bas = étape précédente/suivante du guide, flèches Gauche/Droite = accord
+précédent/suivant dans la progression de l'étape courante. Deux nouvelles routes `GET` sur le
+serveur de la console (`ImprovSession.handleWebConsoleRequest`, pas une route par client comme
+`/guide-advance` du clavier virtuel — action globale, aucun `?client=` requis) :
+`/guide-advance-step?delta=±1` (`advanceGuideStep(by:)`) et `/guide-advance-chord?delta=±1`
+(`advanceGuideChord(by:)`). Côté client, `guideIsActive` (rafraîchi à chaque sondage
+`/state`) et l'onglet actif (`activeTab`) gardent ces raccourcis inactifs tant qu'aucun guide
+ne tourne ou qu'on n'est pas sur un onglet qui l'affiche, et un contrôle de focus (input/select/
+textarea) les désactive dans l'onglet Commandes — même garde anti-répétition
+(`downActionCodes`) que le clavier virtuel utilise déjà pour ses propres raccourcis d'octave/
+de guide.
+
 ### Second serveur : le Clavier virtuel (`VirtualKeyboardAssets.swift`)
 
 Une seconde instance d'`HTTPServer`, sur un port indépendant, pilotée par
@@ -946,6 +1093,55 @@ appelle `GET /guide-advance?delta=±1` — une nouvelle route dans
 convention comme sur chaque route) : n'importe quel client qui appuie sur Tab avance LE MÊME
 guide pour tout le monde qui regarde.
 
+### Onglet Observer — observer n'importe quelle piste connectée (console web uniquement)
+
+Cinquième onglet de la console web (`Run`/`Scene`/`Observer`/`Commandes`/`Infos`) : reprend le
+même rendu grande-taille que le clavier virtuel (`keyboardHTML`'s `options.bigKeys`, 44px de
+touche blanche plutôt que les 22px des petits claviers par piste de cette même page — pas de
+fonction dupliquée, juste un booléen supplémentaire, calculs de largeur locaux quand actif),
+mais purement en **lecture seule** (aucun clic ne joue de note) et pour **n'importe quelle
+piste actuellement en écoute**, choisie via une liste déroulante — pas seulement la piste locale
+de ce navigateur. Aucune nouvelle donnée serveur : `state.tracks` (déjà présent dans `GET
+/state`, déjà sondé ~4 fois/seconde par tous les onglets) porte déjà tout le nécessaire
+(`id`/`label`/`heldPitches`/`chordRoot`/`chordTones`/`modeTones`/`recentChordEvents`).
+
+- **Choix de piste** (`observerSelectedTrackID`, variable JS de module — pas reconstruite à
+  chaque poll) : si la piste choisie a disparu (déconnexion), retombe sur `tracks[0]` pour CE
+  rendu sans écraser la variable elle-même (le `<select>` reflète honnêtement ce qui est
+  montré). Aucune piste en écoute → message de repli existant, pas de clavier du tout.
+- **Composition identique au clavier virtuel** : guide à gauche (`renderGuide`, voir
+  ci-dessus, réutilisé tel quel), clavier + roue + portée à droite — mais entièrement reconstruit
+  à chaque sondage (`innerHTML` complet), sans la complexité "patch de sous-éléments" du clavier
+  virtuel (qui existe là-bas uniquement pour ne pas perturber un clic/toucher en cours — inutile
+  ici puisque rien n'est cliquable). Seuls deux bouts d'état survivent aux reconstructions
+  (piste choisie, fenêtre d'octave) — de simples variables `let` de module, pas un état à
+  restaurer depuis le DOM.
+- **Aperçu miniature du clavier complet** (`renderObserverMiniPianoOverview`, Do-1..Do8),
+  au-dessus du grand clavier, comme celui du clavier virtuel — mais sans interaction (pas de
+  clic pour sauter d'octave, rien n'étant cliquable dans cet onglet) : un rectangle de
+  surbrillance montre la fenêtre actuellement zoomée, et un petit point coloré marque CHAQUE
+  note réellement tenue sur la piste observée (`heldNoteClass`/`miniNoteX` — racine/ton
+  utilisent les couleurs de note configurables de l'utilisateur, tenue/hors-accord un gris fixe,
+  voir plus bas).
+- **Centrage automatique de la fenêtre** (`bestObserverWindow`, recalculé à chaque poll où au
+  moins une note est tenue — jamais retouché si rien n'est tenu) : ancre la note la plus grave
+  tenue sur le bord bas de la fenêtre — son Do le plus proche PAR EN DESSOUS
+  (`nearestOctaveStopAtOrBelow`, jamais "le plus proche tout court" ici précisément — arrondir
+  au plus proche pourrait arrondir AU-DESSUS de la note qu'on cherche justement à ancrer, la
+  coupant de la fenêtre). Une première version tentait plutôt de "maximiser la couverture des
+  notes tenues puis centrer sur leur étendue" — abandonnée après un retour utilisateur
+  ("centre trop à gauche, rate les dernières notes d'un accord", "ne centre pas du tout sur une
+  note seule") : un vrai biais systématique vers la gauche (arrondi toujours vers le bas, sur la
+  version antérieure du calcul), corrigé en changeant d'approche plutôt qu'en rustinant l'ancien
+  algorithme — voir la mémoire de vérification Playwright pour comment ce biais a été isolé.
+- **Correctif de lisibilité tenue/hors-accord** : les couleurs par défaut de ces deux rôles
+  (blanc/vert) étaient à peine visibles sur le fond quasi-blanc des touches — les DEUX claviers
+  grande-taille (celui de cet onglet et celui du clavier virtuel — pas les petits claviers par
+  piste/guide de cette même page, volontairement non concernés) utilisent désormais un gris
+  foncé fixe (`#555`) pour les touches blanches ET noires dans ces deux états spécifiquement —
+  un correctif de lisibilité codé en dur, délibérément PAS relié à `NoteColorSettingsFile` (voir
+  plus bas) : les couleurs configurables de l'utilisateur continuent de régir racine/ton.
+
 ### Palettes de couleur (`AppCore/ColorPalette.swift`)
 
 `ColorPalette` (`name` + 12 couleurs hex `colors` + 12 couleurs de texte `textColors`, même
@@ -982,6 +1178,26 @@ sans recharger la page — `app.js`/`vk.js` réaffectent leurs `PITCH_CLASS_COLO
 Une seule classe, `@Observable`, `@unchecked Sendable`, qui détient tout l'état de
 l'application et toute la logique — indépendante de toute présentation. Le CLI ne fait que
 l'appeler et lire son état ; une future interface SwiftUI pourrait s'y brancher directement.
+
+### `NoteColorSettingsFile` — couleurs de rôle, un axe distinct de `ColorPalette`
+
+`AppCore/NoteColorSettings.swift` — à ne pas confondre avec `ColorPalette` ci-dessus : celle-ci
+donne une couleur par **classe de hauteur** (0=Do...11=Si), la même partout où cette note
+apparaît ; `NoteColorSettingsFile` donne une couleur par **rôle** (racine du mode, reste du
+mode, racine d'accord, autre note d'accord, note tenue sans accord reconnu, note tenue hors
+accord reconnu) — indépendant de QUELLE note c'est, seulement de CE QU'ELLE REPRÉSENTE à
+l'instant. Deux axes orthogonaux, jamais mélangés dans le code. Persisté dans `note-colors.json`
+du dossier de réglages, même schéma "fichier singleton" que `LumiSettingsFile`/
+`LanguageSettingFile`. Valeurs par défaut choisies pour correspondre exactement à ce qui était
+déjà câblé en dur dans le CSS de la console web/du clavier virtuel (`.pkey.root` etc.) — ce
+sont ces valeurs CSS qui ont été conçues en premier, `NoteColorSettingsFile` les rend
+simplement configurables après coup, plutôt que l'inverse. Le terminal (`KeyboardColor`) rend
+désormais ces mêmes valeurs hex en ANSI 24 bits au lieu de ses anciens codes 16 couleurs fixes
+— un vrai changement de comportement, mineur mais réel : un dégradé "magenta gras"/"jaune gras"
+qui suivait auparavant le thème du terminal de l'utilisateur affiche maintenant une couleur
+exacte, identique quelle que soit la surface (terminal, console web, clavier virtuel).
+Pas encore d'interface d'édition (menu/action web) — modifier `note-colors.json` à la main puis
+recharger le dossier de réglages (ou relancer) pour l'instant.
 
 ### Localisation multilingue (FR/EN/DE) — module `Localization`
 
@@ -1653,6 +1869,34 @@ Trois modes d'affichage coexistent, tous alimentés par le même `ImprovSession`
   bug de scintillement, voir plus bas).
 - **`TextStyle.swift`** : mise en forme ANSI cohérente (libellé en gras/couleur, valeur en
   clair) pour lire un écran d'un coup d'œil.
+
+### Options de démarrage en ligne de commande (`StartupOptions`)
+
+`main.swift` accepte des drapeaux au lancement (`swift run JamShack --web-console 8080
+--virtual-keyboard 8081 --guide "Autumn Leaves.json" --scene "Piano solo.json"`) pour un
+lancement scripté/headless qui n'a pas besoin de passer par le REPL interactif juste pour
+démarrer la console web ou charger une scène/un guide. `StartupOptions` (struct)/
+`parseStartupOptions(_:)` (pure, sans dépendance à `session`) analysent `CommandLine.arguments`
+tout en haut du fichier ; les valeurs sont exploitées plus bas, une fois la session et les
+dossiers par défaut entièrement configurés, exactement là où vivent déjà les commandes
+interactives équivalentes (`web-console`, `virtual-keyboard`, `use-scene`, `use-guide`) :
+
+- **`--web-console [port]`** / **`--virtual-keyboard [port]`** : port par défaut 8080/8081 si
+  omis — appelle directement `session.startWebConsole(port:)`/`startVirtualKeyboard(port:)`.
+- **`--guide <nom ou chemin>`** : un nom sans fichier correspondant relatif au dossier courant
+  résout contre le dossier de guides par défaut (même résolution que la commande interactive
+  `use-guide`) ; un chemin qui existe déjà (absolu/relatif) est chargé tel quel. Démarre aussitôt
+  le guide à l'étape 0 (`startGuide(atStepIndex: 0)`, même défaut que `guide-start` sans
+  argument) — **et** ouvre directement le terminal sur l'écran Guide Musical
+  (`guideLoadedFromCommandLine`, contrôle quel écran `runConsoleScreen` choisit tout en bas du
+  fichier) plutôt que l'écran `run` par défaut, pour que le guide chargé soit immédiatement
+  visible plutôt que silencieusement actif en arrière-plan.
+- **`--scene <nom ou chemin>`** : même résolution nom/chemin que `--guide` ci-dessus, appelle
+  `loadScene`. Remplace l'invite interactive "charger une scène ?" proposée juste après (celle-ci
+  ne s'affiche que si `--scene` n'a pas déjà chargé quelque chose) — pas de double question.
+- Chaque option est indépendante et facultative, combinable librement. Un argument non reconnu
+  est simplement signalé (`"Argument ligne de commande ignore : ..."`) sans faire échouer le
+  démarrage.
 
 ### Écrans `run`/`config`
 
