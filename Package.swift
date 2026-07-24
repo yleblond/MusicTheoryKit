@@ -19,6 +19,7 @@ let package = Package(
         .library(name: "NetEngine", targets: ["NetEngine"]),
         .library(name: "WebConsole", targets: ["WebConsole"]),
         .library(name: "Localization", targets: ["Localization"]),
+        .library(name: "JamShackUI", targets: ["JamShackUI"]),
     ],
     targets: [
         .target(name: "MusicTheoryKit"),
@@ -62,5 +63,13 @@ let package = Package(
         // SysEx protocol (see MIDIEngine's LumiSysex/MIDIOutputPort) — kept separate from
         // JamShack so poking at real hardware never risks ImprovSession's state/concurrency.
         .executableTarget(name: "LumiSpike", dependencies: ["MIDIEngine"]),
+        // Shared SwiftUI component library (iOS + macOS, visionOS later) consumed by the
+        // JamShackApp Xcode project (App/JamShackApp.xcodeproj) — kept as a plain SPM target,
+        // not inside the app project itself, so it stays independently buildable/previewable
+        // and testable without opening Xcode. Named JamShackUI rather than "JamShack" since
+        // that name is already taken by the CLI executableTarget above (SPM target names must
+        // be unique) — same disambiguation-by-suffix convention as MusicTheoryKit itself.
+        .target(name: "JamShackUI", dependencies: ["AppCore", "Localization"]),
+        .testTarget(name: "JamShackUITests", dependencies: ["JamShackUI"]),
     ]
 )
