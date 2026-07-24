@@ -1182,15 +1182,19 @@ public final class ImprovSession: @unchecked Sendable {
     /// Sets a role's own sound — if an instrument is currently attached, reapplies it
     /// immediately, since the sound belongs to the ROLE, not to whichever instrument happens
     /// to occupy it right now (the whole point of moving `instrumentName` off the track).
+    /// Applies the underlying `setInstrument` FIRST and only commits `soundName` to the role
+    /// if that succeeds (real `try`, not `try?`) — this used to swallow a failed sample load,
+    /// leaving the role showing a "sound" that was never actually loaded onto any sampler:
+    /// the UI looked assigned, but nothing was reachable to explain total silence when played.
     public func setSceneRoleSound(_ roleID: SceneRole.ID, soundName: String?) throws {
         guard var scene = currentScene else { throw SessionError.noSceneLoaded }
         guard let index = scene.roles.firstIndex(where: { $0.id == roleID }) else { throw SessionError.unknownSceneRole }
-        scene.roles[index].soundName = soundName
         let attachedTrackID = scene.roles[index].attachedTrackID
-        currentScene = scene
         if let attachedTrackID, let soundName {
-            try? setInstrument(named: soundName, for: attachedTrackID)
+            try setInstrument(named: soundName, for: attachedTrackID)
         }
+        scene.roles[index].soundName = soundName
+        currentScene = scene
         append("Son du role '\(scene.roles[index].name)' : \(soundName ?? "aucun")")
     }
 

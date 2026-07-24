@@ -7,33 +7,48 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		004FEA93C2CC39453B77396B /* SourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D61157EE29A0F14F1047111 /* SourcesView.swift */; };
+		1481CD1EB22CC7D497D07C5A /* FolderPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */; };
 		38F537A45F6133BAC6560CE5 /* PlainDataDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */; };
+		499812C7FD4D8433B09B41AA /* FolderPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */; };
 		4B891030B381AABC680DEB7A /* JamShackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5998490361DA6721A074DBB /* JamShackApp.swift */; };
+		4BF48752328F746D8FCF5953 /* MicrophoneControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */; };
+		4EEAA109475539B7C1E920E4 /* JamShackMIDIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */; };
+		516781E2797147CAD075BE74 /* JamShackFoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1393183ADD7BD2ED1C60FA8 /* JamShackFoldersView.swift */; };
 		565F0AD0D4439E562FFECF4F /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85845D37B71BB8E94BC0A6E4 /* ContentView.swift */; };
 		5CBF610F3E1F2E9AEF2F0200 /* AppCore in Frameworks */ = {isa = PBXBuildFile; productRef = 69847B491F4CE42354F05B6F /* AppCore */; };
+		5E6F9AC439CDE09175FD0C3B /* MicrophoneControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */; };
+		6743E9D3C12B1E174E105531 /* JamSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44E28F5AF89E79FD7606B5CD /* JamSessionView.swift */; };
 		68C6FE5177D67E4E3CAC7446 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85845D37B71BB8E94BC0A6E4 /* ContentView.swift */; };
+		7B74DB06D966ACCF5A9FA659 /* JamShackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30A09EE36BD0499ABAC54DA1 /* JamShackView.swift */; };
 		8044ABB2BF2C4C7E282F75F7 /* SceneManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */; };
 		847D8A7872208ACF18F5A338 /* JamShackUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3A5A8CA68CCCCAA28A365476 /* JamShackUI */; };
 		8709F71477C329D65279EDAA /* Localization in Frameworks */ = {isa = PBXBuildFile; productRef = 263D3476D6FAF10646944B01 /* Localization */; };
 		95F0005F0AC3755B8AC07FB3 /* ServerControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE00B5478A71F5B75E67AE6 /* ServerControlsView.swift */; };
+		97872938F2A6A8A051657998 /* JamShackFoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1393183ADD7BD2ED1C60FA8 /* JamShackFoldersView.swift */; };
 		9BD7175879646171CA7BFB25 /* Localization in Frameworks */ = {isa = PBXBuildFile; productRef = E01C405FDA95346DCCD5782F /* Localization */; };
+		A135B25905830D87D3E6B8B0 /* JamShackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30A09EE36BD0499ABAC54DA1 /* JamShackView.swift */; };
 		B58D6F16866C835C999DFA92 /* JamShackUI in Frameworks */ = {isa = PBXBuildFile; productRef = 87F816FA700F02A4EAC0B7EC /* JamShackUI */; };
+		B59DF314E07D8821C2881B99 /* JamSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44E28F5AF89E79FD7606B5CD /* JamSessionView.swift */; };
 		BAB1C701AC9506CD9EF781D7 /* ServerControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE00B5478A71F5B75E67AE6 /* ServerControlsView.swift */; };
 		DE4436B33AD885B08B6E0E84 /* JamShackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5998490361DA6721A074DBB /* JamShackApp.swift */; };
+		E207723CD7F95E3114B11027 /* JamShackMIDIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */; };
 		EFC7F17F89F0B8DA703B4AD3 /* AppCore in Frameworks */ = {isa = PBXBuildFile; productRef = FAA934C8A384EC61D40B89BF /* AppCore */; };
 		F1B775220E08B345D98C1E69 /* PlainDataDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */; };
 		F6A508097CA52946658B6950 /* SceneManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */; };
-		F831B57B68B9CA12167D9C1C /* SourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D61157EE29A0F14F1047111 /* SourcesView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneManagementView.swift; sourceTree = "<group>"; };
 		11F2C88E605F1362E9CA1EEB /* MusicTheoryKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MusicTheoryKit; path = ..; sourceTree = SOURCE_ROOT; };
+		1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackMIDIView.swift; sourceTree = "<group>"; };
+		30A09EE36BD0499ABAC54DA1 /* JamShackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackView.swift; sourceTree = "<group>"; };
+		44E28F5AF89E79FD7606B5CD /* JamSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamSessionView.swift; sourceTree = "<group>"; };
 		61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlainDataDocument.swift; sourceTree = "<group>"; };
+		74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPickerRow.swift; sourceTree = "<group>"; };
+		83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrophoneControlsView.swift; sourceTree = "<group>"; };
 		85845D37B71BB8E94BC0A6E4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		8AE00B5478A71F5B75E67AE6 /* ServerControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerControlsView.swift; sourceTree = "<group>"; };
-		9D61157EE29A0F14F1047111 /* SourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourcesView.swift; sourceTree = "<group>"; };
+		A1393183ADD7BD2ED1C60FA8 /* JamShackFoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackFoldersView.swift; sourceTree = "<group>"; };
 		ACB2E6D6180EE0915C04B78D /* JamShackApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = JamShackApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C05344F7C49061FB32C682B1 /* JamShackApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JamShackApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D5998490361DA6721A074DBB /* JamShackApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackApp.swift; sourceTree = "<group>"; };
@@ -76,11 +91,16 @@
 			isa = PBXGroup;
 			children = (
 				85845D37B71BB8E94BC0A6E4 /* ContentView.swift */,
+				74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */,
+				44E28F5AF89E79FD7606B5CD /* JamSessionView.swift */,
 				D5998490361DA6721A074DBB /* JamShackApp.swift */,
+				A1393183ADD7BD2ED1C60FA8 /* JamShackFoldersView.swift */,
+				1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */,
+				30A09EE36BD0499ABAC54DA1 /* JamShackView.swift */,
+				83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */,
 				61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */,
 				0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */,
 				8AE00B5478A71F5B75E67AE6 /* ServerControlsView.swift */,
-				9D61157EE29A0F14F1047111 /* SourcesView.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -187,11 +207,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				68C6FE5177D67E4E3CAC7446 /* ContentView.swift in Sources */,
+				1481CD1EB22CC7D497D07C5A /* FolderPickerRow.swift in Sources */,
+				B59DF314E07D8821C2881B99 /* JamSessionView.swift in Sources */,
 				4B891030B381AABC680DEB7A /* JamShackApp.swift in Sources */,
+				516781E2797147CAD075BE74 /* JamShackFoldersView.swift in Sources */,
+				E207723CD7F95E3114B11027 /* JamShackMIDIView.swift in Sources */,
+				7B74DB06D966ACCF5A9FA659 /* JamShackView.swift in Sources */,
+				4BF48752328F746D8FCF5953 /* MicrophoneControlsView.swift in Sources */,
 				F1B775220E08B345D98C1E69 /* PlainDataDocument.swift in Sources */,
 				8044ABB2BF2C4C7E282F75F7 /* SceneManagementView.swift in Sources */,
 				95F0005F0AC3755B8AC07FB3 /* ServerControlsView.swift in Sources */,
-				004FEA93C2CC39453B77396B /* SourcesView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -200,11 +225,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				565F0AD0D4439E562FFECF4F /* ContentView.swift in Sources */,
+				499812C7FD4D8433B09B41AA /* FolderPickerRow.swift in Sources */,
+				6743E9D3C12B1E174E105531 /* JamSessionView.swift in Sources */,
 				DE4436B33AD885B08B6E0E84 /* JamShackApp.swift in Sources */,
+				97872938F2A6A8A051657998 /* JamShackFoldersView.swift in Sources */,
+				4EEAA109475539B7C1E920E4 /* JamShackMIDIView.swift in Sources */,
+				A135B25905830D87D3E6B8B0 /* JamShackView.swift in Sources */,
+				5E6F9AC439CDE09175FD0C3B /* MicrophoneControlsView.swift in Sources */,
 				38F537A45F6133BAC6560CE5 /* PlainDataDocument.swift in Sources */,
 				F6A508097CA52946658B6950 /* SceneManagementView.swift in Sources */,
 				BAB1C701AC9506CD9EF781D7 /* ServerControlsView.swift in Sources */,
-				F831B57B68B9CA12167D9C1C /* SourcesView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

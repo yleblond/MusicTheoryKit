@@ -32,6 +32,7 @@ public final class PiecePlayer {
     }
 
     public func start() throws {
+        PlaybackAudioSession.activateIfNeeded()
         try engine.start()
     }
 

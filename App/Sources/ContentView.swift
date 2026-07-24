@@ -11,22 +11,17 @@ struct ContentView: View {
         Group {
             if let bridge {
                 TabView {
+                    JamShackView(session: session)
+                        .tabItem { Label("JamShack", systemImage: "folder") }
+                    SceneManagementView(session: session)
+                        .tabItem { Label("Scene", systemImage: "theatermasks") }
                     RunScreen(
                         bridge: bridge,
                         interactiveTrackID: TrackID.computerKeyboard.wireIDText,
                         onNoteOn: { pitch in session.pressKey(pitch: pitch) },
                         onNoteOff: { pitch in session.releaseKey(pitch: pitch) }
                     )
-                        .tabItem { Label("Run", systemImage: "pianokeys") }
-                    CircleOfFifthsWheelView(wheel: bridge.state.wheel)
-                        .padding()
-                        .tabItem { Label("Roue", systemImage: "circle.grid.3x3") }
-                    SourcesView(session: session)
-                        .tabItem { Label("Sources", systemImage: "dot.radiowaves.left.and.right") }
-                    SceneManagementView(session: session)
-                        .tabItem { Label("Scene", systemImage: "theatermasks") }
-                    ServerControlsView(session: session)
-                        .tabItem { Label("Reseau", systemImage: "network") }
+                        .tabItem { Label("Live", systemImage: "pianokeys") }
                 }
                 .computerKeyboardInput(
                     onNoteOn: { pitch in session.pressKey(pitch: pitch) },

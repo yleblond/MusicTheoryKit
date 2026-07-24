@@ -71,7 +71,7 @@ public enum TrackID: Hashable, Sendable {
 /// or as one independent track per visible port (`.individual`, the default since a per-port
 /// track is what lets the LUMI-run-mode integration identify the LUMI's own track by name
 /// — see `ImprovSession.setMIDIFusionMode`/`midiFusionMode`).
-public enum MIDIFusionMode: Sendable, Equatable {
+public enum MIDIFusionMode: Sendable, Equatable, Hashable {
     case merged
     case individual
 }

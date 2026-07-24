@@ -1,10 +1,13 @@
 import SwiftUI
 import AppCore
 
-/// Equivalent of the console's/CLI's "Run" view: every currently-listening track, each showing
-/// its held notes on a `PitchKeyboardView` plus its recognized chord/mode labels — driven live
-/// by a `SessionUIBridge`. The first screen that proves the full chain end to end (bridge
-/// polling -> per-track adapter -> `PitchKeyboardView`).
+/// Equivalent of the console's/CLI's "Run" view: the circle-of-fifths wheel on the left
+/// (always present, same as `SessionUIBridge.state.wheel` itself — never gated behind an
+/// active guide), and every currently-listening track on the right, each showing its held
+/// notes on a `PitchKeyboardView` plus its recognized chord/mode labels — driven live by a
+/// `SessionUIBridge`. The first screen that proves the full chain end to end (bridge
+/// polling -> per-track adapter -> `PitchKeyboardView`); the wheel used to be its own tab,
+/// merged in here so both are visible together without switching tabs.
 public struct RunScreen: View {
     public let bridge: SessionUIBridge
     /// The `WebConsoleTrackState.id` (e.g. `"clavier"` for `.computerKeyboard`) allowed to be
@@ -28,17 +31,23 @@ public struct RunScreen: View {
     }
 
     public var body: some View {
-        List(bridge.state.tracks, id: \.id) { track in
-            let isInteractive = track.id == interactiveTrackID
-            TrackRunRow(
-                track: track,
-                onNoteOn: isInteractive ? onNoteOn : nil,
-                onNoteOff: isInteractive ? onNoteOff : nil
-            )
+        HStack(spacing: 0) {
+            CircleOfFifthsWheelView(wheel: bridge.state.wheel)
+                .padding()
+                .frame(width: 300)
+            Divider()
+            List(bridge.state.tracks, id: \.id) { track in
+                let isInteractive = track.id == interactiveTrackID
+                TrackRunRow(
+                    track: track,
+                    onNoteOn: isInteractive ? onNoteOn : nil,
+                    onNoteOff: isInteractive ? onNoteOff : nil
+                )
+            }
+            #if os(macOS)
+            .listStyle(.inset)
+            #endif
         }
-        #if os(macOS)
-        .listStyle(.inset)
-        #endif
     }
 }
 

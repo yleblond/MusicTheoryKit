@@ -1322,6 +1322,27 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertTrue(reloaded.log.contains { $0.contains("Basse") && $0.contains("libre") })
     }
 
+    /// Regression test for a real "assigned a sound but heard nothing" bug: `setSceneRoleSound`
+    /// used to swallow `setInstrument`'s error (`try?`), committing `role.soundName` to the
+    /// UI-visible value regardless of whether the underlying sampler actually loaded anything —
+    /// the picker looked like it worked even when it silently hadn't. It must now surface the
+    /// failure (a real `throw`) AND leave `role.soundName` untouched, not pointing at a sound
+    /// that was never actually loaded.
+    func testSetSceneRoleSoundThrowsAndLeavesRoleUnchangedWhenInstrumentLoadFails() throws {
+        let session = ImprovSession()
+        try session.start()
+        session.newScene(title: "Test")
+        let roleID = try session.addSceneRole(name: "Piano")
+        try session.attachInstrument(.computerKeyboard, toRole: roleID)
+
+        // No sample folder listed at all yet — `setInstrument` throws `.noSampleFolderListed`
+        // before ever touching a sampler, the simplest reliable way to force a failure here
+        // without needing a real .sf2/.dls/.aupreset fixture on disk.
+        XCTAssertThrowsError(try session.setSceneRoleSound(roleID, soundName: "some-sound.sf2"))
+        XCTAssertNil(session.currentScene?.roles.first { $0.id == roleID }?.soundName)
+        XCTAssertFalse(session.tracks.first { $0.id == .computerKeyboard }?.soundEnabled ?? true)
+    }
+
     func testLoadSceneMigratesLegacyFlatTrackFormat() throws {
         let legacyJSON = """
         {"title": "Ancienne Scene", "tracks": [

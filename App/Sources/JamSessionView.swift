@@ -2,17 +2,16 @@ import SwiftUI
 import AppCore
 import NetEngine
 
-/// Groups the input "sources" that aren't already covered by the Run tab's own always-on
-/// tracks (MIDI/computer keyboard, wired in `ContentView`): the microphone, and the
-/// collaborative jam session (server/client, with local-network discovery for the client
-/// side) — mirrors the terminal CLI's own "Jam Session" menu category
-/// (`server`/`stop-server`/`client`/`discover`/`disconnect` commands) plus its
-/// `microphone-source` command.
-struct SourcesView: View {
+/// Second sub-tab of the "JamShack" tab: the collaborative jam session (server/client, with
+/// local-network discovery for the client side) — mirrors the terminal CLI's own "Jam
+/// Session" menu category (`server`/`stop-server`/`client`/`discover`/`disconnect` commands).
+/// Used to live directly in the "Sources" tab; moved here so "Sources" stays about this
+/// device's own live-input sources (microphone, ...) and "JamShack" holds everything that
+/// used to be the CLI's top-level menu.
+struct JamSessionView: View {
     let session: ImprovSession
 
     @State private var pseudo = ""
-    @State private var microphoneError: String?
     @State private var serverPortText = "7777"
     @State private var clientHostText = ""
     @State private var clientPortText = "7777"
@@ -20,13 +19,8 @@ struct SourcesView: View {
     @State private var discoveredServers: [DiscoveredServer] = []
     @State private var networkError: String?
 
-    private var isMicrophoneListening: Bool {
-        session.tracks.first { $0.id == .microphone }?.isListening ?? false
-    }
-
     var body: some View {
         Form {
-            microphoneSection
             pseudoSection
             networkErrorSection
             jamSessionSections
@@ -35,32 +29,6 @@ struct SourcesView: View {
         .formStyle(.grouped)
         #endif
         .onAppear { pseudo = session.localClientName }
-    }
-
-    @ViewBuilder
-    private var microphoneSection: some View {
-        Section {
-            if let microphoneError {
-                Text(microphoneError).foregroundStyle(.red).font(.caption)
-            }
-            if isMicrophoneListening {
-                Text("Microphone actif").foregroundStyle(.green)
-                Button("Arreter", role: .destructive) { session.stopTrack(.microphone) }
-            } else {
-                Button("Demarrer l'ecoute du microphone") {
-                    microphoneError = nil
-                    do {
-                        try session.startTrack(.microphone)
-                    } catch {
-                        microphoneError = "\(error)"
-                    }
-                }
-            }
-        } header: {
-            Text("Microphone")
-        } footer: {
-            Text("Detection d'accords/notes jouees a la voix ou a un instrument acoustique, par analyse spectrale (FFT).")
-        }
     }
 
     private var pseudoSection: some View {
@@ -199,5 +167,5 @@ struct SourcesView: View {
 }
 
 #Preview {
-    SourcesView(session: ImprovSession())
+    JamSessionView(session: ImprovSession())
 }

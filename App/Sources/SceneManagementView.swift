@@ -7,15 +7,19 @@ import UniformTypeIdentifiers
 /// own sound, and save/load the whole thing — the GUI counterpart to the CLI's "Scene"
 /// menu category (`scene-new`/`scene-role-*`/`save-scene`/`use-scene` commands).
 ///
-/// File access (scene save/load, the sample-sound folder) goes through SwiftUI's
-/// `.fileExporter`/`.fileImporter` on BOTH platforms — NOT a typed path on macOS, even
-/// though that matches the CLI's own convention there. The CLI can type any path because
-/// it's a plain, unsandboxed process; this app has `com.apple.security.app-sandbox` enabled
-/// (a real security boundary, kept deliberately), and a sandboxed app can only reach a path
-/// it didn't create itself by going through an actual Open/Save panel (or a persisted
-/// security-scoped bookmark from a past one) — typing a path directly is silently/visibly
-/// refused regardless of what's typed. `.fileExporter`/`.fileImporter` are exactly "the
-/// panel," and they work identically well on macOS as on iOS.
+/// The sample-sound folder is no longer picked here — it's now the "Sons (samples)" row in
+/// the "JamShack" tab's "Dossiers" sub-tab (`JamShackFoldersView`), same place as every other
+/// folder the app needs. This screen just reads `session.sampleFiles` for the role sound
+/// picker, and `session.sceneFiles`/`sceneFolder` for the folder-based save/load section
+/// below (also picked from the same "Dossiers" sub-tab).
+///
+/// Single-file export/import still goes through SwiftUI's `.fileExporter`/`.fileImporter` on
+/// BOTH platforms — NOT a typed path on macOS, even though that matches the CLI's own
+/// convention there. The CLI can type any path because it's a plain, unsandboxed process;
+/// this app has `com.apple.security.app-sandbox` enabled (a real security boundary, kept
+/// deliberately), and a sandboxed app can only reach a path it didn't create itself by going
+/// through an actual Open/Save panel (or a persisted security-scoped bookmark from a past
+/// one) — typing a path directly is silently/visibly refused regardless of what's typed.
 struct SceneManagementView: View {
     let session: ImprovSession
 
@@ -28,19 +32,19 @@ struct SceneManagementView: View {
     @State private var pendingSceneExportData = Data()
     @State private var showSceneExporter = false
     @State private var showSceneImporter = false
-    @State private var showSampleFolderImporter = false
-    @State private var sampleFolderURL: URL?
 
     private var scene: AppCore.Scene? { session.currentScene }
 
     var body: some View {
         Form {
             sceneHeaderSection
+            // Reachable whether or not a scene is currently active: this is how you load one
+            // in the first place, not just how you switch away from an existing one.
+            sceneFolderSection
             if scene != nil {
-                // Sample folder BEFORE roles: a role's sound picker needs `session.sampleFiles`
-                // already populated to have anything to offer — listing it after roles left
-                // the picker with nothing to show until the user happened to scroll down first.
-                sampleFolderSection
+                // Sound-availability hint BEFORE roles: a role's sound picker needs
+                // `session.sampleFiles` already populated to have anything to offer.
+                sampleAvailabilitySection
                 rolesSection
                 unassignedInstrumentsSection
                 saveLoadSection
@@ -87,18 +91,6 @@ struct SceneManagementView: View {
                 actionError = "\(error)"
             }
         }
-        .fileImporter(isPresented: $showSampleFolderImporter, allowedContentTypes: [.folder]) { result in
-            switch result {
-            case .success(let url):
-                sampleFolderURL?.stopAccessingSecurityScopedResource()
-                if url.startAccessingSecurityScopedResource() {
-                    sampleFolderURL = url
-                    do { try session.listSampleFiles(in: url.path) } catch { actionError = "\(error)" }
-                }
-            case .failure(let error):
-                actionError = "\(error)"
-            }
-        }
     }
 
     @ViewBuilder
@@ -113,8 +105,24 @@ struct SceneManagementView: View {
                 Text("Aucune scene active.").foregroundStyle(.secondary)
             }
             Button("Nouvelle scene") { showNewSceneAlert = true }
+            // `currentSceneFilePath` also gets set by the "Exporter..." button below, which
+            // writes to (then deletes) a temp file — `fileExists` keeps this button from
+            // offering a reload of a path that no longer exists on disk.
+            if let path = session.currentSceneFilePath, FileManager.default.fileExists(atPath: path) {
+                Button("Recharger cette scene") {
+                    do {
+                        try session.loadScene(fromJSONFile: path)
+                    } catch {
+                        actionError = "\(error)"
+                    }
+                }
+            }
         } header: {
             Text("Scene")
+        } footer: {
+            if let path = session.currentSceneFilePath, FileManager.default.fileExists(atPath: path) {
+                Text("Recharge la scene depuis le disque, en perdant les changements non sauvegardes.")
+            }
         }
     }
 
@@ -164,30 +172,58 @@ struct SceneManagementView: View {
     }
 
     @ViewBuilder
-    private var sampleFolderSection: some View {
+    private var sampleAvailabilitySection: some View {
         Section {
-            Button(sampleFolderURL == nil ? "Choisir un dossier de sons" : "Changer de dossier de sons") {
-                showSampleFolderImporter = true
-            }
-            if let sampleFolderURL {
-                Text(sampleFolderURL.path).font(.caption).foregroundStyle(.secondary)
-            }
-            if !session.sampleFiles.isEmpty {
+            if session.sampleFiles.isEmpty {
+                Text("Aucun son disponible — choisis un dossier de sons dans l'onglet JamShack > Dossiers.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
                 Text("\(session.sampleFiles.count) son(s) trouve(s) — choisis-en un dans le menu 'Son' de chaque role ci-dessous.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         } header: {
             Text("Sons disponibles")
-        } footer: {
-            Text("Cet acces ne persiste que pendant que l'app tourne — a refaire au prochain lancement.")
+        }
+    }
+
+    @ViewBuilder
+    private var sceneFolderSection: some View {
+        Section {
+            if session.sceneFiles.isEmpty {
+                Text("Aucun dossier de scenes choisi — vas dans l'onglet JamShack > Dossiers.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(session.sceneFiles, id: \.self) { name in
+                    Button(name) {
+                        do {
+                            try session.loadScene(named: name)
+                        } catch {
+                            actionError = "\(error)"
+                        }
+                    }
+                }
+                if scene != nil {
+                    Button("Sauvegarder dans ce dossier") {
+                        do {
+                            try session.saveScene(title: scene?.title ?? "Scene", as: (scene?.title ?? "Scene") + ".json")
+                        } catch {
+                            actionError = "\(error)"
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("Dossier de scenes")
         }
     }
 
     @ViewBuilder
     private var saveLoadSection: some View {
         Section {
-            Button("Sauvegarder...") {
+            Button("Exporter...") {
                 do {
                     let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
                     try session.saveScene(title: scene?.title ?? "Scene", toJSONFile: tempURL.path)
@@ -198,9 +234,11 @@ struct SceneManagementView: View {
                     actionError = "\(error)"
                 }
             }
-            Button("Charger...") { showSceneImporter = true }
+            Button("Importer...") { showSceneImporter = true }
         } header: {
-            Text("Sauvegarde")
+            Text("Fichier unique")
+        } footer: {
+            Text("Pour partager une scene en dehors du dossier de scenes (AirDrop, Fichiers, etc).")
         }
     }
 }

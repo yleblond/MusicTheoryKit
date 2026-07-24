@@ -21,6 +21,7 @@ public final class SamplerUnit: @unchecked Sendable {
     }
 
     public func start() throws {
+        PlaybackAudioSession.activateIfNeeded()
         try engine.start()
     }
 
