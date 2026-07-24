@@ -160,7 +160,6 @@ NetEngine          transport réseau de la session collaborative (TCP fait main)
 WebConsole         serveur HTTP fait main pour la console web et le clavier virtuel
 AppCore            ImprovSession — tout l'état et la logique applicative
 JamShack          l'exécutable : REPL + écrans figés + menus
-SanityChecks       exécutable de test de secours (voir ci-dessous)
 ```
 
 Pour le détail complet (modules, concurrence, points de conception), voir
@@ -180,14 +179,9 @@ Pour le détail complet (modules, concurrence, points de conception), voir
 
 ```sh
 cd MusicTheoryKit
-swift build                 # compile tout
-swift run SanityChecks      # exécute tous les checks (540 a ce jour, 0 echec)
+swift build    # compile tout
+swift test     # execute tous les tests XCTest (312 a ce jour, 0 echec)
 ```
-
-Cette machine de développement n'a que les Command Line Tools (pas Xcode complet), donc
-`swift test` échoue (`XCTest` indisponible). De vrais fichiers `XCTest` existent dans `Tests/`
-pour le jour où Xcode sera installé ; en attendant, `SanityChecks` rejoue chaque cas à la main
-et reste le seul moyen de vérifier la logique dans cet environnement.
 
 ## Limites connues
 

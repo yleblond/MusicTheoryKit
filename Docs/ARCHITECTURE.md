@@ -12,14 +12,11 @@ commande (`JamShack`), mais dont toute la logique métier vit dans une couche
 présentation-agnostique (`AppCore`) pensée pour qu'une future interface SwiftUI puisse s'y
 brancher sans rien réécrire.
 
-**Contrainte d'environnement importante** : cette machine n'a que les Command Line Tools,
-pas Xcode complet. `swift test` échoue donc (`XCTest` indisponible). Deux filets de sécurité
-existent :
-- Chaque fonctionnalité a un vrai fichier `XCTest` dans `Tests/` (prêt pour le jour où Xcode
-  sera installé), **et**
-- Un exécutable `SanityChecks` qui reproduit chaque cas de test à la main (`check`/`checkNil`)
-  et s'exécute avec `swift run SanityChecks`. C'est le seul moyen de vérifier la logique dans
-  cet environnement — toujours le maintenir à jour en même temps que les vrais tests.
+Xcode complet est installé sur la machine de développement : `swift test` fonctionne
+nativement (312 tests XCTest à ce jour, répartis dans `Tests/`). L'ancien exécutable
+`SanityChecks` — un mimique manuel d'XCTest écrit à l'époque où seules les Command Line
+Tools étaient disponibles — a été entièrement migré vers de vrais fichiers `XCTest` puis
+supprimé (voir §Historique pour le détail de la migration).
 
 Le projet est versionné avec git (dépôt dans `MusicTheoryKit/`, avec un remote `origin`).
 
@@ -50,14 +47,11 @@ AudioEngine (lecture Piece + SoundTrack, micro/FFT)   MIDIEngine (CoreMIDI)   Ne
                                             (REPL + écrans "run"/"config" + menus DOS)
 ```
 
-`SanityChecks` (exécutable séparé) dépend de tout, pour pouvoir exécuter tous les cas de
-test manuellement.
-
 `Localization` (nouvelle cible, aucune dépendance — absente du schéma ci-dessus par souci de
 lisibilité) est utilisée par `AppCore` **et** par `WebConsole` : seul moyen de partager une
 table de traduction entre les deux sans inverser leur relation de dépendance (`AppCore` →
-`WebConsole`, jamais l'inverse) — voir §Localisation multilingue plus bas. `JamShack` et
-`SanityChecks` en dépendent aussi.
+`WebConsole`, jamais l'inverse) — voir §Localisation multilingue plus bas. `JamShack` en
+dépend aussi.
 
 ---
 
@@ -1991,22 +1985,17 @@ complète et à jour dans `Docs/GUIDE_UTILISATEUR.md`.
   par piste active, au lieu d'un unique clavier partagé — `renderTrackKeyboard(_:)` isole le
   rendu d'un clavier à partir de l'état d'une seule `TrackInfo`.
 
-## SanityChecks — le filet de sécurité sans Xcode
-
-Exécutable qui rejoue à la main chaque cas de test des vrais fichiers `XCTest`
-(`check`/`checkNil`), pour compenser l'absence d'Xcode. **Toujours mettre à jour ce fichier
-en même temps que tout nouveau test** — c'est le seul moyen de vérifier que le code
-fonctionne dans cet environnement. Se lance avec `swift run SanityChecks` depuis
-`MusicTheoryKit/`. Compteur de vérifications à jour : **1480 checks, 0 échec**, stable sur
-plusieurs exécutions répétées.
-
 ## Vérification/tests
+
+Xcode complet est installé — `swift test` fonctionne nativement, plus besoin de filet de
+secours. L'ancien exécutable `SanityChecks` (qui rejouait chaque cas de test à la main faute
+d'XCTest) a été entièrement migré vers de vrais fichiers `XCTest` puis supprimé.
 
 ```sh
 cd MusicTheoryKit
-swift build                 # compile tout
-swift run SanityChecks      # exécute tous les checks (seul moyen de "tester" ici)
-swift run JamShack         # lance l'application
+swift build       # compile tout
+swift test        # execute tous les tests XCTest (312 a ce jour, 0 echec)
+swift run JamShack # lance l'application
 ```
 
 ## Limites connues

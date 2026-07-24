@@ -1395,6 +1395,299 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertEqual(session.currentLanguage, .de)
         XCTAssertEqual(session.buildWebConsoleState().language, "de")
     }
+
+    // MARK: - releaseAllKeys
+
+    func testReleaseAllKeysClearsHeldPitchesForOneTrackOnly() throws {
+        let session = ImprovSession()
+        session.setMIDIFusionMode(.merged) // default is now .individual; this test needs .midiMerged specifically
+        try session.startTrack(.computerKeyboard)
+        try session.startTrack(.midiMerged)
+        session.pressKey(pitch: 60, track: .computerKeyboard)
+        session.pressKey(pitch: 64, track: .midiMerged)
+        session.pressKey(pitch: 67, track: .midiMerged)
+        session.releaseAllKeys(track: .midiMerged)
+        XCTAssertEqual(session.tracks.first { $0.id == .midiMerged }?.heldPitches, [])
+        XCTAssertEqual(session.tracks.first { $0.id == .computerKeyboard }?.heldPitches, Set([60]))
+    }
+
+    // MARK: - Guide sequence
+
+    func testNewGuideSequenceThenAddStepsThenStartAndAdvance() throws {
+        let session = ImprovSession()
+        XCTAssertNil(session.currentGuide)
+        session.newGuideSequence(title: "Practice")
+        XCTAssertEqual(session.currentGuide?.title, "Practice")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        try session.addGuideStep(ModeReference(tonic: 2, scaleID: "dorian"))
+        XCTAssertEqual(session.currentGuide?.steps.count, 2)
+
+        XCTAssertNil(session.currentGuideStepIndex)
+        XCTAssertNil(session.currentGuideStepMode())
+
+        try session.startGuide()
+        XCTAssertEqual(session.currentGuideStepIndex, 0)
+        XCTAssertEqual(session.currentGuideStepMode()?.displayName, "C Major")
+
+        session.advanceGuideStep(by: 1)
+        XCTAssertEqual(session.currentGuideStepIndex, 1)
+        XCTAssertEqual(session.currentGuideStepMode()?.displayName, "D Dorian")
+
+        session.advanceGuideStep(by: 1)
+        XCTAssertEqual(session.currentGuideStepIndex, 1, "advanceGuideStep clamps at the last step")
+
+        session.advanceGuideStep(by: -5)
+        XCTAssertEqual(session.currentGuideStepIndex, 0, "advanceGuideStep clamps at the first step")
+
+        session.stopGuide()
+        XCTAssertNil(session.currentGuideStepIndex)
+    }
+
+    func testAddGuideStepWithoutASequenceThrows() {
+        let session = ImprovSession()
+        XCTAssertThrowsError(try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian")))
+    }
+
+    func testAddGuideStepWithUnknownScaleIDThrowsAndDoesNotAppendAStep() {
+        let session = ImprovSession()
+        session.newGuideSequence(title: "Practice")
+        XCTAssertThrowsError(try session.addGuideStep(ModeReference(tonic: 0, scaleID: "majeur"))) // not a real ScaleLibrary id
+        XCTAssertEqual(session.currentGuide?.steps.count, 0, "an unresolvable reference doesn't leave a dangling step")
+    }
+
+    func testGuideSequenceSaveAndLoadRoundTrips() throws {
+        let session = ImprovSession()
+        session.newGuideSequence(title: "Round Trip")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        try session.addGuideStep(ModeReference(tonic: 7, scaleID: "mixolydian"))
+
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.saveGuideSequence(toJSONFile: tempFile.path)
+
+        let reloaded = ImprovSession()
+        try reloaded.loadGuideSequence(fromJSONFile: tempFile.path)
+        XCTAssertEqual(reloaded.currentGuide, session.currentGuide)
+        XCTAssertNil(reloaded.currentGuideStepIndex, "loading a guide sequence resets the current step index")
+    }
+
+    func testGuideStepWithChordProgressionRoundTripsThroughJSON() throws {
+        let session = ImprovSession()
+        session.newGuideSequence(title: "With Progression")
+        let blues = ChordProgressionTemplate.builtInDefaults[0] // "Blues 12 mesures"
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"), chordProgression: blues)
+
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.saveGuideSequence(toJSONFile: tempFile.path)
+
+        let reloaded = ImprovSession()
+        try reloaded.loadGuideSequence(fromJSONFile: tempFile.path)
+        XCTAssertEqual(reloaded.currentGuide?.steps.first?.chordProgressionName, "Blues 12 mesures")
+        XCTAssertEqual(reloaded.currentGuide?.steps.first?.chordProgression?.count, 12)
+    }
+
+    /// Every guide file saved before chord progressions existed stores each step as a bare
+    /// `ModeReference` (no "mode" key) — `GuideStep.init(from:)` must still load these.
+    func testGuideStepDecodesOldBareModeReferenceFormat() throws {
+        let json = #"{"title":"Old Format","steps":[{"scaleID":"dorian","tonic":2}]}"#.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(GuideSequence.self, from: json)
+        XCTAssertEqual(decoded.steps.count, 1)
+        XCTAssertEqual(decoded.steps.first?.mode, ModeReference(tonic: 2, scaleID: "dorian"))
+        XCTAssertNil(decoded.steps.first?.chordProgressionName)
+        XCTAssertNil(decoded.steps.first?.chordProgression)
+    }
+
+    // MARK: - Roman numeral / chord progression resolution
+
+    func testRomanNumeralChordParseHandlesUpperLowerAndDiminished() {
+        XCTAssertEqual(RomanNumeralChord.parse("I")?.quality, .major)
+        XCTAssertEqual(RomanNumeralChord.parse("I")?.degree, 1)
+        XCTAssertEqual(RomanNumeralChord.parse("vi")?.quality, .minor)
+        XCTAssertEqual(RomanNumeralChord.parse("vi")?.degree, 6)
+        XCTAssertEqual(RomanNumeralChord.parse("vii°")?.quality, .diminished)
+        XCTAssertEqual(RomanNumeralChord.parse("vii°")?.degree, 7)
+        XCTAssertNil(RomanNumeralChord.parse("VIII"), "VIII is not a valid roman numeral (out of range)")
+        XCTAssertNil(RomanNumeralChord.parse("xyz"))
+    }
+
+    func testResolveChordProgressionAppliesLiteralCaseAsQualityInCIonian() {
+        let session = ImprovSession()
+        let mode = Mode(tonic: PitchClass(0), scale: ScaleLibrary.byID("ionian")!)
+        let blues = ChordProgressionTemplate.builtInDefaults[0] // I I I I IV IV I I V IV I I
+        let resolved = session.resolveChordProgression(blues, in: mode)
+        XCTAssertEqual(resolved.count, 12)
+        XCTAssertEqual(resolved.first?.root, 0)
+        XCTAssertEqual(resolved.first?.chordTemplateID, "Ma", "I is taken literally as major")
+        XCTAssertEqual(resolved[4].root, 5, "5th chord (IV) is rooted on F")
+        XCTAssertEqual(resolved[8].root, 7, "9th chord (V) is rooted on G")
+    }
+
+    // MARK: - TrackID
+
+    func testTrackIDWireIDTextRoundTrips() throws {
+        for id: TrackID in [.midiMerged, .computerKeyboard, .webKeyboard(clientID: "abc-123"), .microphone, .midiSource(0), .midiSource(3)] {
+            let wireText = try XCTUnwrap(id.wireIDText, "\(id) has no wireIDText")
+            XCTAssertEqual(TrackID(wireIDText: wireText), id)
+        }
+        XCTAssertNil(TrackID(wireIDText: "not-a-real-id"))
+    }
+
+    func testTrackRecordsMostRecentMIDIChannel() throws {
+        let session = ImprovSession()
+        session.setMIDIFusionMode(.merged)
+        try session.startTrack(.midiMerged)
+        XCTAssertNil(session.tracks.first { $0.id == .midiMerged }?.lastChannel)
+        session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: 60, velocity: 100, channel: 3), track: .midiMerged)
+        XCTAssertEqual(session.tracks.first { $0.id == .midiMerged }?.lastChannel, 3)
+        session.handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: 62, velocity: 100, channel: 7), track: .midiMerged)
+        XCTAssertEqual(session.tracks.first { $0.id == .midiMerged }?.lastChannel, 7)
+    }
+
+    // MARK: - Scene (basic, non-role-based)
+
+    func testSceneSaveAndLoadRoundTripsTrackListeningAndSound() throws {
+        let session = ImprovSession()
+        try session.start()
+        try session.startTrack(.computerKeyboard)
+        try session.setSoundEnabled(true, for: .computerKeyboard)
+
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.saveScene(title: "Test Scene", toJSONFile: tempFile.path)
+
+        let reloaded = ImprovSession()
+        try reloaded.start()
+        let before = reloaded.tracks.first { $0.id == .computerKeyboard }
+        XCTAssertEqual(before?.isListening, false)
+
+        try reloaded.loadScene(fromJSONFile: tempFile.path)
+        let after = reloaded.tracks.first { $0.id == .computerKeyboard }
+        XCTAssertEqual(after?.isListening, true)
+        XCTAssertEqual(after?.soundEnabled, true)
+    }
+
+    func testLoadSceneLeavesTracksNotMentionedUntouched() throws {
+        let session = ImprovSession()
+        try session.start()
+        // An explicitly empty scene (built by hand, not via `saveScene` — which always
+        // captures every local track, including as "not listening") must not touch
+        // whatever's currently listening: only tracks it actually mentions are restored.
+        let emptyScene = Scene(title: "Empty", roles: [])
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try JSONEncoder().encode(emptyScene).write(to: tempFile)
+
+        try session.startTrack(.computerKeyboard)
+        try session.loadScene(fromJSONFile: tempFile.path)
+        XCTAssertEqual(session.tracks.first { $0.id == .computerKeyboard }?.isListening, true)
+    }
+
+    // MARK: - Color palettes
+
+    func testColorPaletteFileRoundTrips() throws {
+        let file = ColorPaletteFile(palettes: ColorPalette.builtInDefaults)
+        let data = try JSONEncoder().encode(file)
+        let decoded = try JSONDecoder().decode(ColorPaletteFile.self, from: data)
+        XCTAssertEqual(decoded.palettes, ColorPalette.builtInDefaults)
+    }
+
+    func testBuiltInDefaultPalettesAreThreeDistinctFullPalettes() {
+        XCTAssertEqual(ColorPalette.builtInDefaults.count, 3)
+        XCTAssertEqual(Set(ColorPalette.builtInDefaults.map(\.name)).count, 3)
+        for palette in ColorPalette.builtInDefaults {
+            XCTAssertEqual(palette.colors.count, 12, "\(palette.name) has 12 colors")
+            XCTAssertEqual(Set(palette.colors).count, 12, "\(palette.name)'s 12 colors are distinct")
+            XCTAssertEqual(palette.textColors.count, 12, "\(palette.name) has 12 text colors")
+            for textColor in palette.textColors {
+                XCTAssertTrue(textColor == "#ffffff" || textColor == "#111111", "\(palette.name)'s text colors are all either white or black")
+            }
+        }
+    }
+
+    // The user hand-specified this exact pattern (white for every note except A/E/B, which get
+    // black) — not something `legibleTextColors(for:)` is expected to reproduce on its own, so
+    // this is pinned literally rather than re-derived from `PitchClassPalette.hex`.
+    func testDefaultPaletteTextColorsMatchHandSpecifiedPattern() {
+        let palette = ColorPalette.builtInDefaults[0]
+        XCTAssertEqual(palette.name, "Default")
+        // index: 0=C 1=Db 2=D 3=Eb 4=E 5=F 6=F# 7=G 8=Ab 9=A 10=Bb 11=B
+        let expected = [
+            "#ffffff", "#ffffff", "#ffffff", "#ffffff", "#111111", "#ffffff",
+            "#ffffff", "#ffffff", "#ffffff", "#111111", "#ffffff", "#111111",
+        ]
+        XCTAssertEqual(palette.textColors, expected, "Default's text colors are white except A(9)/E(4)/B(11), which are black")
+    }
+
+    func testLegibleTextColorsUsesYIQBrightnessThreshold() {
+        let textColors = ColorPalette.legibleTextColors(for: ["#ffffff", "#000000", "#ffe119"])
+        XCTAssertEqual(textColors, ["#111111", "#ffffff", "#111111"])
+    }
+
+    func testSessionStartsWithDefaultPaletteMatchingPitchClassPalette() {
+        let session = ImprovSession()
+        XCTAssertEqual(session.colorPalettes.count, 1, "a fresh session starts with exactly one (fallback) palette")
+        XCTAssertEqual(session.activeColorPalette.name, "Default")
+        XCTAssertEqual(session.activeColorPalette.colors, PitchClassPalette.hex)
+    }
+
+    func testLoadOrCreateColorPalettesWritesBuiltInDefaultsOnFirstRunThenLoadsThem() throws {
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tempFile.path))
+
+        let session = ImprovSession()
+        try session.loadOrCreateColorPalettes(fromJSONFile: tempFile.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tempFile.path))
+        XCTAssertEqual(session.colorPalettes, ColorPalette.builtInDefaults)
+        XCTAssertEqual(session.activeColorPalette.name, "Default")
+
+        // A second session pointed at the SAME (now-existing) file must not overwrite it —
+        // only ever create it once.
+        try session.selectColorPalette(named: "Pastel")
+        let reloaded = ImprovSession()
+        try reloaded.loadOrCreateColorPalettes(fromJSONFile: tempFile.path)
+        XCTAssertEqual(reloaded.colorPalettes, ColorPalette.builtInDefaults, "loadOrCreateColorPalettes doesn't overwrite an existing file")
+    }
+
+    func testSelectColorPaletteByNameAndIndexAndRejectsInvalid() throws {
+        let session = ImprovSession()
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.loadOrCreateColorPalettes(fromJSONFile: tempFile.path)
+
+        try session.selectColorPalette(named: "Contraste")
+        XCTAssertEqual(session.activeColorPalette.name, "Contraste")
+
+        try session.selectColorPalette(atIndex: 2)
+        XCTAssertEqual(session.activeColorPalette.name, "Pastel", "selectColorPalette(atIndex:) is 0-based")
+
+        XCTAssertThrowsError(try session.selectColorPalette(named: "Not A Real Palette")) { error in
+            guard case ImprovSession.SessionError.invalidColorPaletteIndex = error else {
+                return XCTFail("expected invalidColorPaletteIndex, got \(error)")
+            }
+        }
+        XCTAssertThrowsError(try session.selectColorPalette(atIndex: 99)) { error in
+            guard case ImprovSession.SessionError.invalidColorPaletteIndex = error else {
+                return XCTFail("expected invalidColorPaletteIndex, got \(error)")
+            }
+        }
+    }
+
+    func testLoadColorPalettesThrowsOnEmptyPalettesFile() throws {
+        let session = ImprovSession()
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try JSONEncoder().encode(ColorPaletteFile(palettes: [])).write(to: tempFile)
+        XCTAssertThrowsError(try session.loadColorPalettes(fromJSONFile: tempFile.path)) { error in
+            guard case ImprovSession.SessionError.emptyColorPaletteFile = error else {
+                return XCTFail("expected emptyColorPaletteFile, got \(error)")
+            }
+        }
+        // The previous (fallback) palette must still be there — a failed load shouldn't
+        // have cleared anything.
+        XCTAssertEqual(session.colorPalettes.count, 1)
+    }
 }
 
 extension ImprovSession.SessionError: Equatable {

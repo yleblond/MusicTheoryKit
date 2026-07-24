@@ -6,24 +6,19 @@ CHANGELOG une fois traitée.
 
 ## Stabilisation de l'environnement (2026-07-11)
 
-1. **Installer Xcode complet.** `SanityChecks` est un miroir tenu à la main des fichiers
-   `Tests/*` (547 checks aujourd'hui) — le vrai risque n'est pas qu'il soit faux maintenant,
-   mais qu'il dérive silencieusement si un futur test XCTest est ajouté sans son pendant
-   `SanityChecks`. Installer Xcode permettrait de repasser sur `swift test` et de laisser
-   `SanityChecks` devenir obsolète comme prévu à l'origine (voir `Docs/ARCHITECTURE.md` et
-   la limite documentée dans le README).
-2. **Remplacer les queues série manuelles de `ImprovSession` par un `actor`.** La concurrence
+1. **Remplacer les queues série manuelles de `ImprovSession` par un `actor`.** La concurrence
    repose aujourd'hui sur la discipline (queues dédiées + compteur `playbackGeneration` à
    vérifier à chaque nouvelle feature touchant l'état partagé), pas sur le compilateur. Trois
    crashs réels ont déjà eu lieu sur exactement ce pattern (voir l'historique de
    `ImprovSession.swift`). Passer l'état mutable en `actor` ferait respecter l'isolation par
-   le type-system plutôt que par une règle à se rappeler.
-3. **Ajouter des stress-tests automatisés dans `SanityChecks`** pour les scénarios déjà connus
-   fragiles (notes rapprochées au clavier ordinateur, `play()` appelé en chevauchement) — un
-   seul run propre ne prouve rien pour ce genre de bug de concurrence intermittente. Une
-   variante "répéter N fois" de ces checks transformerait une vérification manuelle par
-   session pty en filet permanent, exécuté à chaque `swift run SanityChecks`.
-4. **Revérifier le binding réseau avant tout usage hors LAN de confiance.** Console web,
+   le type-system plutôt que par une règle à se rappeler. À faire une fois le point 2
+   ci-dessous en place (filet de sécurité avant refactor).
+2. **Ajouter des stress-tests automatisés dans `Tests/AppCoreTests`** pour les scénarios déjà
+   connus fragiles (notes rapprochées au clavier ordinateur, `play()` appelé en
+   chevauchement) — un seul run propre ne prouve rien pour ce genre de bug de concurrence
+   intermittente. Une variante "répéter N fois" transformerait une vérification manuelle par
+   session pty en filet permanent, exécuté à chaque `swift test`.
+3. **Revérifier le binding réseau avant tout usage hors LAN de confiance.** Console web,
    clavier virtuel et jam session n'ont ni authentification ni chiffrement (limite déjà
    documentée dans le README) et rien n'empêche aujourd'hui ces serveurs d'écouter sur toutes
    les interfaces réseau plutôt que juste le LAN local. Pas un problème à la maison, mais à
