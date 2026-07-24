@@ -5,8 +5,9 @@ Un assistant d'improvisation et de composition musicale, en Swift — écoute en
 par IA (à partir d'un texte ou d'un enregistrement), lecture multi-timbrale de morceaux
 structurés, et une session collaborative en réseau local. Piloté aujourd'hui par une interface
 en ligne de commande avec menus façon DOS, mais construit sur une couche applicative
-(`AppCore`) entièrement indépendante de la présentation — pensée pour qu'une future interface
-graphique (SwiftUI) puisse s'y brancher sans rien réécrire.
+(`AppCore`) entièrement indépendante de la présentation. Une interface graphique SwiftUI
+(iOS + macOS) existe maintenant en parallèle : bibliothèque de composants `JamShackUI`
+(dans ce package) + coquille Xcode dans [`App/`](App/README.md).
 
 ## Démarrer
 
