@@ -48,12 +48,26 @@ public struct PitchKeyboardColorScheme: Sendable {
     }
 }
 
+/// One key's laid-out rectangle, shared between drawing and tap/drag hit-testing so the two
+/// can never disagree about where a key actually is.
+private struct KeyRect {
+    let pitch: Int
+    let rect: CGRect
+}
+
 /// A vectorial piano keyboard over an absolute MIDI pitch range, colored via
 /// `pitchDisplayState(...)` (`Sources/AppCore/PitchDisplayState.swift`) — the same
 /// classification logic the ASCII terminal keyboard and the web console's `keyboardHTML`
 /// use, so all three surfaces agree on what "root/tone/outside/held/mode" means for a given
 /// pitch. Pure `Canvas`/`Path` (no `UIViewRepresentable`/`NSViewRepresentable`) so it hosts
 /// cleanly on iOS, macOS, and later visionOS without a rewrite.
+///
+/// When `onNoteOn`/`onNoteOff` are supplied (non-nil), the keyboard is also playable — tap or
+/// click a key to sound it, drag across the keys for a glissando (each newly-entered key
+/// fires its own note-on, the previously-held one fires note-off) — the "clavier virtuel"
+/// counterpart to the web console's own clickable virtual-keyboard page. Left `nil` (the
+/// default) for a read-only display, e.g. showing another track's/the recognized chord's
+/// notes where tapping shouldn't inject anything.
 public struct PitchKeyboardView: View {
     public let minMidi: Int
     public let maxMidi: Int
@@ -64,6 +78,8 @@ public struct PitchKeyboardView: View {
     public let alwaysShowChord: Bool
     public let showModeColoring: Bool
     public let colorScheme: PitchKeyboardColorScheme
+    public let onNoteOn: ((Int) -> Void)?
+    public let onNoteOff: ((Int) -> Void)?
 
     public init(
         minMidi: Int = 48,
@@ -74,7 +90,9 @@ public struct PitchKeyboardView: View {
         modeTones: [Int] = [],
         alwaysShowChord: Bool = false,
         showModeColoring: Bool = false,
-        colorScheme: PitchKeyboardColorScheme = PitchKeyboardColorScheme()
+        colorScheme: PitchKeyboardColorScheme = PitchKeyboardColorScheme(),
+        onNoteOn: ((Int) -> Void)? = nil,
+        onNoteOff: ((Int) -> Void)? = nil
     ) {
         self.minMidi = minMidi
         self.maxMidi = maxMidi
@@ -85,6 +103,8 @@ public struct PitchKeyboardView: View {
         self.alwaysShowChord = alwaysShowChord
         self.showModeColoring = showModeColoring
         self.colorScheme = colorScheme
+        self.onNoteOn = onNoteOn
+        self.onNoteOff = onNoteOff
     }
 
     // White key slot (0...6) within its octave, for the 7 white pitch classes.
@@ -94,47 +114,86 @@ public struct PitchKeyboardView: View {
 
     private var octaveCount: Int { max(1, Int(ceil(Double(maxMidi - minMidi + 1) / 12.0))) }
 
-    public var body: some View {
-        Canvas { context, size in
-            let whiteKeyCount = octaveCount * 7
-            let whiteW = size.width / CGFloat(whiteKeyCount)
-            let blackW = whiteW * 0.6
-            let blackH = size.height * 0.62
+    // The pitch currently held down by a tap/click/drag, if any — nil whenever nothing is
+    // being played through this view (as opposed to `heldPitches`, which reflects the
+    // session's actual state and may include notes held via other input methods entirely,
+    // e.g. a MIDI keyboard playing the same track simultaneously).
+    @State private var pressedPitch: Int?
 
-            // White keys first (background layer), then black keys on top — matches a real
-            // keyboard's visual stacking.
-            for pitch in minMidi...maxMidi {
-                let pitchClass = ((pitch % 12) + 12) % 12
-                guard let whiteSlotInOctave = Self.whiteSlotBySemitone[pitchClass] else { continue }
-                let octave = (pitch - minMidi) / 12
+    private func layout(for size: CGSize) -> (white: [KeyRect], black: [KeyRect]) {
+        let whiteKeyCount = octaveCount * 7
+        let whiteW = size.width / CGFloat(whiteKeyCount)
+        let blackW = whiteW * 0.6
+        let blackH = size.height * 0.62
+        var white: [KeyRect] = []
+        var black: [KeyRect] = []
+
+        for pitch in minMidi...maxMidi {
+            let pitchClass = ((pitch % 12) + 12) % 12
+            let octave = (pitch - minMidi) / 12
+            if let whiteSlotInOctave = Self.whiteSlotBySemitone[pitchClass] {
                 let slot = octave * 7 + whiteSlotInOctave
                 let x = CGFloat(slot) * whiteW
-                let rect = CGRect(x: x, y: 0, width: whiteW, height: size.height)
-                let state = pitchDisplayState(
-                    pitch: pitch, heldPitches: heldPitches, chordRoot: chordRoot,
-                    chordTones: chordTones, modeTones: modeTones,
-                    alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring
-                )
-                let path = Path(rect.insetBy(dx: 0.5, dy: 0.5))
-                context.fill(path, with: .color(colorScheme.fillColor(for: state.role, isWhiteKey: true)))
-                context.stroke(path, with: .color(.black.opacity(0.4)), lineWidth: 1)
-            }
-
-            for pitch in minMidi...maxMidi {
-                let pitchClass = ((pitch % 12) + 12) % 12
-                guard let whiteSlotBefore = Self.blackAfterWhiteSlot[pitchClass] else { continue }
-                let octave = (pitch - minMidi) / 12
+                white.append(KeyRect(pitch: pitch, rect: CGRect(x: x, y: 0, width: whiteW, height: size.height)))
+            } else if let whiteSlotBefore = Self.blackAfterWhiteSlot[pitchClass] {
                 let slot = octave * 7 + whiteSlotBefore + 1
                 let x = CGFloat(slot) * whiteW - blackW / 2
-                let rect = CGRect(x: x, y: 0, width: blackW, height: blackH)
-                let state = pitchDisplayState(
-                    pitch: pitch, heldPitches: heldPitches, chordRoot: chordRoot,
-                    chordTones: chordTones, modeTones: modeTones,
-                    alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring
-                )
-                let path = Path(rect)
-                context.fill(path, with: .color(colorScheme.fillColor(for: state.role, isWhiteKey: false)))
+                black.append(KeyRect(pitch: pitch, rect: CGRect(x: x, y: 0, width: blackW, height: blackH)))
             }
+        }
+        return (white, black)
+    }
+
+    /// Black keys are drawn on top, so they're also hit-tested first.
+    private func pitch(at point: CGPoint, in size: CGSize) -> Int? {
+        let (white, black) = layout(for: size)
+        if let hit = black.first(where: { $0.rect.contains(point) }) { return hit.pitch }
+        if let hit = white.first(where: { $0.rect.contains(point) }) { return hit.pitch }
+        return nil
+    }
+
+    public var body: some View {
+        GeometryReader { proxy in
+            Canvas { context, size in
+                let (white, black) = layout(for: size)
+                // White keys first (background layer), then black keys on top — matches a
+                // real keyboard's visual stacking.
+                for key in white {
+                    let state = pitchDisplayState(
+                        pitch: key.pitch, heldPitches: heldPitches, chordRoot: chordRoot,
+                        chordTones: chordTones, modeTones: modeTones,
+                        alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring
+                    )
+                    let path = Path(key.rect.insetBy(dx: 0.5, dy: 0.5))
+                    context.fill(path, with: .color(colorScheme.fillColor(for: state.role, isWhiteKey: true)))
+                    context.stroke(path, with: .color(.black.opacity(0.4)), lineWidth: 1)
+                }
+                for key in black {
+                    let state = pitchDisplayState(
+                        pitch: key.pitch, heldPitches: heldPitches, chordRoot: chordRoot,
+                        chordTones: chordTones, modeTones: modeTones,
+                        alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring
+                    )
+                    context.fill(Path(key.rect), with: .color(colorScheme.fillColor(for: state.role, isWhiteKey: false)))
+                }
+            }
+            .contentShape(Rectangle())
+            // Always attached: `onNoteOn?`/`onNoteOff?` are no-ops when nil (a read-only
+            // display), so there's no need to conditionally install a different gesture.
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard let newPitch = pitch(at: value.location, in: proxy.size) else { return }
+                        guard newPitch != pressedPitch else { return }
+                        if let oldPitch = pressedPitch { onNoteOff?(oldPitch) }
+                        pressedPitch = newPitch
+                        onNoteOn?(newPitch)
+                    }
+                    .onEnded { _ in
+                        if let pitch = pressedPitch { onNoteOff?(pitch) }
+                        pressedPitch = nil
+                    }
+            )
         }
         .frame(minHeight: 80)
     }

@@ -11,7 +11,12 @@ struct ContentView: View {
         Group {
             if let bridge {
                 TabView {
-                    RunScreen(bridge: bridge)
+                    RunScreen(
+                        bridge: bridge,
+                        interactiveTrackID: TrackID.computerKeyboard.wireIDText,
+                        onNoteOn: { pitch in session.pressKey(pitch: pitch) },
+                        onNoteOff: { pitch in session.releaseKey(pitch: pitch) }
+                    )
                         .tabItem { Label("Run", systemImage: "pianokeys") }
                     CircleOfFifthsWheelView(wheel: bridge.state.wheel)
                         .padding()

@@ -7,14 +7,34 @@ import AppCore
 /// polling -> per-track adapter -> `PitchKeyboardView`).
 public struct RunScreen: View {
     public let bridge: SessionUIBridge
+    /// The `WebConsoleTrackState.id` (e.g. `"clavier"` for `.computerKeyboard`) allowed to be
+    /// played by tapping/clicking its own keyboard — the "clavier virtuel" counterpart to the
+    /// web console's clickable virtual-keyboard page. Every other track's keyboard stays
+    /// read-only (tapping a MIDI-sourced track's display shouldn't inject a note into it).
+    public let interactiveTrackID: String?
+    public let onNoteOn: ((Int) -> Void)?
+    public let onNoteOff: ((Int) -> Void)?
 
-    public init(bridge: SessionUIBridge) {
+    public init(
+        bridge: SessionUIBridge,
+        interactiveTrackID: String? = nil,
+        onNoteOn: ((Int) -> Void)? = nil,
+        onNoteOff: ((Int) -> Void)? = nil
+    ) {
         self.bridge = bridge
+        self.interactiveTrackID = interactiveTrackID
+        self.onNoteOn = onNoteOn
+        self.onNoteOff = onNoteOff
     }
 
     public var body: some View {
         List(bridge.state.tracks, id: \.id) { track in
-            TrackRunRow(track: track)
+            let isInteractive = track.id == interactiveTrackID
+            TrackRunRow(
+                track: track,
+                onNoteOn: isInteractive ? onNoteOn : nil,
+                onNoteOff: isInteractive ? onNoteOff : nil
+            )
         }
         #if os(macOS)
         .listStyle(.inset)
@@ -24,6 +44,8 @@ public struct RunScreen: View {
 
 private struct TrackRunRow: View {
     let track: WebConsoleTrackState
+    let onNoteOn: ((Int) -> Void)?
+    let onNoteOff: ((Int) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -57,7 +79,9 @@ private struct TrackRunRow: View {
                 heldPitches: Set(track.heldPitches),
                 chordRoot: track.chordRoot,
                 chordTones: track.chordTones,
-                modeTones: track.modeTones
+                modeTones: track.modeTones,
+                onNoteOn: onNoteOn,
+                onNoteOff: onNoteOff
             )
         }
         .padding(.vertical, 6)
