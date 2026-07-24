@@ -28,7 +28,7 @@
 		85845D37B71BB8E94BC0A6E4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		8AE00B5478A71F5B75E67AE6 /* ServerControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerControlsView.swift; sourceTree = "<group>"; };
 		9D61157EE29A0F14F1047111 /* SourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourcesView.swift; sourceTree = "<group>"; };
-		ACB2E6D6180EE0915C04B78D /* JamShackApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = JamShackApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ACB2E6D6180EE0915C04B78D /* JamShackApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JamShackApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C05344F7C49061FB32C682B1 /* JamShackApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JamShackApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D5998490361DA6721A074DBB /* JamShackApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -147,8 +147,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = 71EABA9A79435D9019306CD6 /* Build configuration list for PBXProject "JamShackApp" */;
 			developmentRegion = en;
@@ -227,6 +225,7 @@
 				CODE_SIGN_ENTITLEMENTS = Generated/JamShackApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = T2L9QQQ4PL;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Generated/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -249,6 +248,7 @@
 				CODE_SIGN_ENTITLEMENTS = Generated/JamShackApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = T2L9QQQ4PL;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Generated/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

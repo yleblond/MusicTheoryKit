@@ -3,6 +3,7 @@
 public enum MicrophonePitchError: Error, CustomStringConvertible {
     case permissionDenied
     case engineStartFailed(Error)
+    case audioSessionConfigurationFailed(Error)
 
     public var description: String {
         switch self {
@@ -12,6 +13,8 @@ public enum MicrophonePitchError: Error, CustomStringConvertible {
                 + "this binary, not the binary itself), then try again"
         case .engineStartFailed(let error):
             return "could not start the microphone input engine: \(error)"
+        case .audioSessionConfigurationFailed(let error):
+            return "could not configure the audio session for microphone input: \(error)"
         }
     }
 }
@@ -42,11 +45,13 @@ public enum AnalysisStrategy: Sendable {
 /// microphone at all" (permission problem, wrong input device, muted) apart from "audio is
 /// arriving but isn't a clear pitch" (below the detection floor, or a noisy/percussive sound).
 ///
-/// **macOS-only as written.** `AVAudioEngine.inputNode` exists on iOS too, but iOS
-/// additionally requires configuring and activating an `AVAudioSession` (input category,
-/// microphone permission) before an input tap delivers anything — that setup isn't
-/// implemented here, since this app is CLI-only (macOS) for now; a SwiftUI/iOS front-end
-/// would need to add it.
+/// Works on iOS too: unlike macOS, iOS requires an `AVAudioSession` to be configured and
+/// activated before `inputNode` reports a valid (non-zero-channel) format — skipping this
+/// doesn't throw a catchable Swift error, it crashes `installTap(onBus:bufferSize:format:)`
+/// with an Objective-C exception ("required condition is false: format.channelCount > 0" or
+/// similar), since the format handed to it is invalid. `.playAndRecord` (not just `.record`)
+/// because this app also plays audio simultaneously (`AudioEngine.PiecePlayer`'s sampler) —
+/// `.record` alone would silence that.
 public final class MicrophonePitchListener {
     public typealias Handler = ([DetectedPitch], Float) -> Void
 
@@ -72,6 +77,7 @@ public final class MicrophonePitchListener {
     /// thrown error) but never detects anything, with no indication why.
     public func start() throws {
         try Self.ensureMicrophonePermission()
+        try Self.configureAudioSessionForRecording()
 
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
@@ -91,6 +97,23 @@ public final class MicrophonePitchListener {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         accumulated.removeAll()
+        #if os(iOS)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
+    }
+
+    /// No-op on macOS (`AVAudioSession` isn't a macOS concept — the system handles input
+    /// routing automatically there, which is why this class worked on macOS without it).
+    private static func configureAudioSessionForRecording() throws {
+        #if os(iOS)
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            throw MicrophonePitchError.audioSessionConfigurationFailed(error)
+        }
+        #endif
     }
 
     private static func ensureMicrophonePermission() throws {
