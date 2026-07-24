@@ -21,6 +21,8 @@ struct ContentView: View {
                     CircleOfFifthsWheelView(wheel: bridge.state.wheel)
                         .padding()
                         .tabItem { Label("Roue", systemImage: "circle.grid.3x3") }
+                    ServerControlsView(session: session)
+                        .tabItem { Label("Reseau", systemImage: "network") }
                 }
                 .computerKeyboardInput(
                     onNoteOn: { pitch in session.pressKey(pitch: pitch) },

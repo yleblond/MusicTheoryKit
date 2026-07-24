@@ -13,8 +13,10 @@
 		68C6FE5177D67E4E3CAC7446 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85845D37B71BB8E94BC0A6E4 /* ContentView.swift */; };
 		847D8A7872208ACF18F5A338 /* JamShackUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3A5A8CA68CCCCAA28A365476 /* JamShackUI */; };
 		8709F71477C329D65279EDAA /* Localization in Frameworks */ = {isa = PBXBuildFile; productRef = 263D3476D6FAF10646944B01 /* Localization */; };
+		95F0005F0AC3755B8AC07FB3 /* ServerControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE00B5478A71F5B75E67AE6 /* ServerControlsView.swift */; };
 		9BD7175879646171CA7BFB25 /* Localization in Frameworks */ = {isa = PBXBuildFile; productRef = E01C405FDA95346DCCD5782F /* Localization */; };
 		B58D6F16866C835C999DFA92 /* JamShackUI in Frameworks */ = {isa = PBXBuildFile; productRef = 87F816FA700F02A4EAC0B7EC /* JamShackUI */; };
+		BAB1C701AC9506CD9EF781D7 /* ServerControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE00B5478A71F5B75E67AE6 /* ServerControlsView.swift */; };
 		DE4436B33AD885B08B6E0E84 /* JamShackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5998490361DA6721A074DBB /* JamShackApp.swift */; };
 		EFC7F17F89F0B8DA703B4AD3 /* AppCore in Frameworks */ = {isa = PBXBuildFile; productRef = FAA934C8A384EC61D40B89BF /* AppCore */; };
 /* End PBXBuildFile section */
@@ -22,7 +24,8 @@
 /* Begin PBXFileReference section */
 		11F2C88E605F1362E9CA1EEB /* MusicTheoryKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MusicTheoryKit; path = ..; sourceTree = SOURCE_ROOT; };
 		85845D37B71BB8E94BC0A6E4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		ACB2E6D6180EE0915C04B78D /* JamShackApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JamShackApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8AE00B5478A71F5B75E67AE6 /* ServerControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerControlsView.swift; sourceTree = "<group>"; };
+		ACB2E6D6180EE0915C04B78D /* JamShackApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = JamShackApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C05344F7C49061FB32C682B1 /* JamShackApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JamShackApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D5998490361DA6721A074DBB /* JamShackApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -65,6 +68,7 @@
 			children = (
 				85845D37B71BB8E94BC0A6E4 /* ContentView.swift */,
 				D5998490361DA6721A074DBB /* JamShackApp.swift */,
+				8AE00B5478A71F5B75E67AE6 /* ServerControlsView.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -139,6 +143,8 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
 			};
 			buildConfigurationList = 71EABA9A79435D9019306CD6 /* Build configuration list for PBXProject "JamShackApp" */;
 			developmentRegion = en;
@@ -170,6 +176,7 @@
 			files = (
 				68C6FE5177D67E4E3CAC7446 /* ContentView.swift in Sources */,
 				4B891030B381AABC680DEB7A /* JamShackApp.swift in Sources */,
+				95F0005F0AC3755B8AC07FB3 /* ServerControlsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -179,6 +186,7 @@
 			files = (
 				565F0AD0D4439E562FFECF4F /* ContentView.swift in Sources */,
 				DE4436B33AD885B08B6E0E84 /* JamShackApp.swift in Sources */,
+				BAB1C701AC9506CD9EF781D7 /* ServerControlsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -213,7 +221,6 @@
 				CODE_SIGN_ENTITLEMENTS = Generated/JamShackApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = T2L9QQQ4PL;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Generated/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -236,7 +243,6 @@
 				CODE_SIGN_ENTITLEMENTS = Generated/JamShackApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = T2L9QQQ4PL;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Generated/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
