@@ -26,6 +26,12 @@ struct ContentView: View {
         .task {
             do {
                 try session.start()
+                // .individual (the default) creates one .midiSource(index) track per
+                // visible port instead of a single .midiMerged one — .merged is simpler
+                // for this first milestone (one external keyboard, no need to distinguish
+                // multiple MIDI devices yet).
+                session.setMIDIFusionMode(.merged)
+                try session.startTrack(.midiMerged)
                 try session.startTrack(.computerKeyboard)
                 bridge = SessionUIBridge(session: session)
             } catch {
