@@ -37,9 +37,12 @@ struct SceneManagementView: View {
         Form {
             sceneHeaderSection
             if scene != nil {
+                // Sample folder BEFORE roles: a role's sound picker needs `session.sampleFiles`
+                // already populated to have anything to offer — listing it after roles left
+                // the picker with nothing to show until the user happened to scroll down first.
+                sampleFolderSection
                 rolesSection
                 unassignedInstrumentsSection
-                sampleFolderSection
                 saveLoadSection
             }
         }
@@ -119,7 +122,7 @@ struct SceneManagementView: View {
     private var rolesSection: some View {
         Section {
             ForEach(scene?.roles ?? []) { role in
-                SceneRoleRow(session: session, role: role, onError: { actionError = $0 })
+                SceneRoleRow(session: session, role: role, sampleFiles: session.sampleFiles, onError: { actionError = $0 })
             }
             Button("Ajouter un role") { showNewRoleAlert = true }
         } header: {
@@ -170,7 +173,7 @@ struct SceneManagementView: View {
                 Text(sampleFolderURL.path).font(.caption).foregroundStyle(.secondary)
             }
             if !session.sampleFiles.isEmpty {
-                Text("\(session.sampleFiles.count) son(s) trouve(s) — utilisable(s) comme nom dans le champ 'Son' d'un role.")
+                Text("\(session.sampleFiles.count) son(s) trouve(s) — choisis-en un dans le menu 'Son' de chaque role ci-dessous.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -205,9 +208,16 @@ struct SceneManagementView: View {
 private struct SceneRoleRow: View {
     let session: ImprovSession
     let role: SceneRole
+    let sampleFiles: [String]
     let onError: (String) -> Void
 
-    @State private var soundName = ""
+    private func setSound(_ name: String?) {
+        do {
+            try session.setSceneRoleSound(role.id, soundName: name)
+        } catch {
+            onError("\(error)")
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -222,15 +232,17 @@ private struct SceneRoleRow: View {
             }
             HStack {
                 Text("Son")
-                TextField("nom du fichier son", text: $soundName)
-                    .multilineTextAlignment(.trailing)
-                    .onSubmit {
-                        do {
-                            try session.setSceneRoleSound(role.id, soundName: soundName.isEmpty ? nil : soundName)
-                        } catch {
-                            onError("\(error)")
+                Spacer()
+                if sampleFiles.isEmpty {
+                    Text("choisis un dossier de sons ci-dessus").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Menu(role.soundName ?? "Aucun") {
+                        Button("Aucun") { setSound(nil) }
+                        ForEach(sampleFiles, id: \.self) { name in
+                            Button(name) { setSound(name) }
                         }
                     }
+                }
             }
             HStack {
                 Toggle("Ecoute", isOn: Binding(
@@ -263,7 +275,6 @@ private struct SceneRoleRow: View {
             }
         }
         .padding(.vertical, 4)
-        .onAppear { soundName = role.soundName ?? "" }
     }
 }
 
