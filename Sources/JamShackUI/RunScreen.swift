@@ -32,7 +32,12 @@ public struct RunScreen: View {
 
     public var body: some View {
         HStack(spacing: 0) {
-            CircleOfFifthsWheelView(wheel: bridge.state.wheel)
+            CircleOfFifthsWheelView(
+                wheel: bridge.state.wheel,
+                palette: bridge.state.palette,
+                paletteTextColors: bridge.state.paletteTextColors,
+                tracks: bridge.state.tracks
+            )
                 .padding()
                 .frame(width: 300)
             Divider()
