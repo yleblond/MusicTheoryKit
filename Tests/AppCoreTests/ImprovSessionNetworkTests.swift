@@ -4,24 +4,27 @@ import PieceModel
 import MusicTheoryKit
 import Foundation
 
+// Free function (not a method) specifically so concurrent closures that call it (see
+// testReleaseAllKeysRecoversFromOutOfOrderNoteOnNoteOffHTTPRequests) don't need to capture
+// `self` (an XCTestCase, not Sendable) across `DispatchQueue.concurrentPerform`.
+private func syncGET(_ url: String, timeout: TimeInterval = 2) -> (status: Int, contentType: String?, body: String)? {
+    let semaphore = DispatchSemaphore(value: 0)
+    nonisolated(unsafe) var result: (Int, String?, String)?
+    URLSession.shared.dataTask(with: URL(string: url)!) { data, response, _ in
+        if let http = response as? HTTPURLResponse, let data {
+            result = (http.statusCode, http.value(forHTTPHeaderField: "Content-Type"), String(data: data, encoding: .utf8) ?? "")
+        }
+        semaphore.signal()
+    }.resume()
+    _ = semaphore.wait(timeout: .now() + timeout)
+    return result
+}
+
 // Real HTTP/TCP integration tests over real loopback sockets (not mocks) — deliberately
 // separate from ImprovSessionTests.swift: these are slow, use fixed ports, and exercise the
 // actual NetworkServer/NetworkClient/HTTPServer wiring end to end, unlike the fast in-process
 // unit tests in that file. Mirrors the technique SanityChecks used before this migration.
 final class ImprovSessionNetworkTests: XCTestCase {
-
-    private func syncGET(_ url: String, timeout: TimeInterval = 2) -> (status: Int, contentType: String?, body: String)? {
-        let semaphore = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var result: (Int, String?, String)?
-        URLSession.shared.dataTask(with: URL(string: url)!) { data, response, _ in
-            if let http = response as? HTTPURLResponse, let data {
-                result = (http.statusCode, http.value(forHTTPHeaderField: "Content-Type"), String(data: data, encoding: .utf8) ?? "")
-            }
-            semaphore.signal()
-        }.resume()
-        _ = semaphore.wait(timeout: .now() + timeout)
-        return result
-    }
 
     // A real client/server pair over real loopback TCP, both `ImprovSession` instances living
     // in this one process — exercises the actual `NetworkServer`/`NetworkClient`/
@@ -264,6 +267,32 @@ final class ImprovSessionNetworkTests: XCTestCase {
         XCTAssertTrue(withProgression.body.contains("\"quality\":\"major\""))
 
         session.stopVirtualKeyboard()
+    }
+
+    // Regression/mitigation test for a still-open race, not a Swift-concurrency bug: two
+    // independent `GET /note-on`/`GET /note-off` requests are two independent TCP
+    // connections with no ordering guarantee, so a fast tap can have its "off" processed
+    // before its "on," leaving a note stuck held (see `releaseAllKeys`'s doc comment,
+    // ImprovSession.swift:2066). This doesn't fix the underlying TCP-ordering race — no
+    // amount of actor/serial-queue refactor could — it asserts the documented recovery path
+    // (`releaseAllKeys`) actually clears whatever got left stuck.
+    func testReleaseAllKeysRecoversFromOutOfOrderNoteOnNoteOffHTTPRequests() throws {
+        let session = ImprovSession()
+        try session.start()
+        try session.startVirtualKeyboard(port: 18412)
+        defer { session.stopVirtualKeyboard() }
+        let client = "&client=stress&name=Stress"
+
+        DispatchQueue.concurrentPerform(iterations: 50) { i in
+            let pitch = 60 + (i % 12)
+            _ = syncGET("http://127.0.0.1:18412/note-on?pitch=\(pitch)" + client)
+            _ = syncGET("http://127.0.0.1:18412/note-off?pitch=\(pitch)" + client)
+        }
+        Thread.sleep(forTimeInterval: 0.2)
+
+        session.releaseAllKeys(track: .webKeyboard(clientID: "stress"))
+        let held = session.tracks.first { if case .webKeyboard("stress") = $0.id { return true }; return false }?.heldPitches
+        XCTAssertEqual(held ?? [], [])
     }
 
     // The active palette's colors must appear in BOTH the web console's and the virtual

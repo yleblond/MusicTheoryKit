@@ -180,7 +180,15 @@ Pour le détail complet (modules, concurrence, points de conception), voir
 ```sh
 cd MusicTheoryKit
 swift build    # compile tout
-swift test     # execute tous les tests XCTest (312 a ce jour, 0 echec)
+swift test     # execute tous les tests XCTest (315 a ce jour, 0 echec)
+```
+
+Pour verifier specifiquement l'absence de regression sur les 3 bugs de concurrence deja
+rencontres (voir `Docs/ARCHITECTURE.md`), lancer en plus Thread Sanitizer sur les
+stress-tests dedies (plus lent, pas execute par defaut) :
+
+```sh
+swift test --sanitize=thread --filter ImprovSessionConcurrencyStressTests
 ```
 
 ## Limites connues
