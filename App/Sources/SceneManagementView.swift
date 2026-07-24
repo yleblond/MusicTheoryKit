@@ -7,15 +7,15 @@ import UniformTypeIdentifiers
 /// own sound, and save/load the whole thing — the GUI counterpart to the CLI's "Scene"
 /// menu category (`scene-new`/`scene-role-*`/`save-scene`/`use-scene` commands).
 ///
-/// Save/load is deliberately different per platform, per the same reasoning already used for
-/// `ServerControlsView`'s ports and `SourcesView`'s server/client fields: macOS keeps the
-/// existing file-path-typing convention (`ImprovSession.saveScene(title:toJSONFile:)` takes a
-/// plain path, exactly like the CLI), but iOS is sandboxed — there's no "type any path on
-/// disk" the way a Mac terminal has, so scene files go through SwiftUI's `.fileExporter`/
-/// `.fileImporter` (the standard iOS document-picker pattern: Files app, iCloud Drive, "On My
-/// iPad"...) instead. Same split for the sample-sound folder: macOS types a folder path,
-/// iOS picks a folder via `.fileImporter(allowedContentTypes: [.folder])` and keeps a
-/// security-scoped access token open for the rest of this view's lifetime.
+/// File access (scene save/load, the sample-sound folder) goes through SwiftUI's
+/// `.fileExporter`/`.fileImporter` on BOTH platforms — NOT a typed path on macOS, even
+/// though that matches the CLI's own convention there. The CLI can type any path because
+/// it's a plain, unsandboxed process; this app has `com.apple.security.app-sandbox` enabled
+/// (a real security boundary, kept deliberately), and a sandboxed app can only reach a path
+/// it didn't create itself by going through an actual Open/Save panel (or a persisted
+/// security-scoped bookmark from a past one) — typing a path directly is silently/visibly
+/// refused regardless of what's typed. `.fileExporter`/`.fileImporter` are exactly "the
+/// panel," and they work identically well on macOS as on iOS.
 struct SceneManagementView: View {
     let session: ImprovSession
 
@@ -25,11 +25,6 @@ struct SceneManagementView: View {
     @State private var showNewRoleAlert = false
     @State private var actionError: String?
 
-    // macOS-only fields.
-    @State private var scenePathText = ""
-    @State private var sampleFolderPathText = ""
-
-    // iOS-only fields.
     @State private var pendingSceneExportData = Data()
     @State private var showSceneExporter = false
     @State private var showSceneImporter = false
@@ -71,7 +66,6 @@ struct SceneManagementView: View {
             }
             Button("Annuler", role: .cancel) {}
         }
-        #if os(iOS)
         .fileExporter(
             isPresented: $showSceneExporter,
             document: PlainDataDocument(data: pendingSceneExportData),
@@ -102,7 +96,6 @@ struct SceneManagementView: View {
                 actionError = "\(error)"
             }
         }
-        #endif
     }
 
     @ViewBuilder
@@ -170,18 +163,12 @@ struct SceneManagementView: View {
     @ViewBuilder
     private var sampleFolderSection: some View {
         Section {
-            #if os(macOS)
-            HStack {
-                TextField("Dossier des sons (.sf2/.dls/.aupreset)", text: $sampleFolderPathText)
-                Button("Lister") {
-                    do { try session.listSampleFiles(in: sampleFolderPathText) } catch { actionError = "\(error)" }
-                }
-            }
-            #else
             Button(sampleFolderURL == nil ? "Choisir un dossier de sons" : "Changer de dossier de sons") {
                 showSampleFolderImporter = true
             }
-            #endif
+            if let sampleFolderURL {
+                Text(sampleFolderURL.path).font(.caption).foregroundStyle(.secondary)
+            }
             if !session.sampleFiles.isEmpty {
                 Text("\(session.sampleFiles.count) son(s) trouve(s) — utilisable(s) comme nom dans le champ 'Son' d'un role.")
                     .font(.caption)
@@ -189,33 +176,14 @@ struct SceneManagementView: View {
             }
         } header: {
             Text("Sons disponibles")
+        } footer: {
+            Text("Cet acces ne persiste que pendant que l'app tourne — a refaire au prochain lancement.")
         }
     }
 
     @ViewBuilder
     private var saveLoadSection: some View {
         Section {
-            #if os(macOS)
-            HStack {
-                TextField("Chemin du fichier .json", text: $scenePathText)
-            }
-            HStack {
-                Button("Sauvegarder") {
-                    do {
-                        try session.saveScene(title: scene?.title ?? "Scene", toJSONFile: scenePathText)
-                    } catch {
-                        actionError = "\(error)"
-                    }
-                }
-                Button("Charger") {
-                    do {
-                        try session.loadScene(fromJSONFile: scenePathText)
-                    } catch {
-                        actionError = "\(error)"
-                    }
-                }
-            }
-            #else
             Button("Sauvegarder...") {
                 do {
                     let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
@@ -228,7 +196,6 @@ struct SceneManagementView: View {
                 }
             }
             Button("Charger...") { showSceneImporter = true }
-            #endif
         } header: {
             Text("Sauvegarde")
         }

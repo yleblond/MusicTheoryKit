@@ -43,6 +43,12 @@ targets:
         com.apple.security.network.client: true
         com.apple.security.network.server: true
         com.apple.security.device.audio-input: true
+        # Pairs with .fileExporter/.fileImporter (scene save/load, sample-sound folder in
+        # SceneManagementView): grants read/write access to whatever the user actually
+        # picked via the panel these present — macOS-only concept (no effect on iOS, which
+        # has no equivalent entitlement key), but harmless to declare on both since XcodeGen
+        # applies the same entitlements dict to the single multiplatform target.
+        com.apple.security.files.user-selected.read-write: true
     dependencies:
       - package: MusicTheoryKit
         product: JamShackUI
