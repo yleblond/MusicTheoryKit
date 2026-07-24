@@ -17,6 +17,10 @@ struct ContentView: View {
                         .padding()
                         .tabItem { Label("Roue", systemImage: "circle.grid.3x3") }
                 }
+                .computerKeyboardInput(
+                    onNoteOn: { pitch in session.pressKey(pitch: pitch) },
+                    onNoteOff: { pitch in session.releaseKey(pitch: pitch) }
+                )
             } else if let startError {
                 Text(startError).foregroundStyle(.red).padding()
             } else {
