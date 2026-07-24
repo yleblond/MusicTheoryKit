@@ -5,6 +5,7 @@ import MIDIEngine
 import MusicTheoryKit
 import LLMEngine
 import SoundTrackModel
+import AudioEngine
 
 final class ImprovSessionTests: XCTestCase {
 
@@ -1362,6 +1363,37 @@ final class ImprovSessionTests: XCTestCase {
         try session.loadScene(fromJSONFile: tempFile.path)
 
         XCTAssertNil(session.currentScene?.roles.first?.attachedTrackID)
+    }
+
+    // MARK: - Localization
+
+    func testLoadOrCreateLanguageSettingDefaultsToFrenchAndRoundTrips() throws {
+        let session = ImprovSession()
+        try session.start()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let path = folder.appendingPathComponent("language.json").path
+
+        try session.loadOrCreateLanguageSetting(fromJSONFile: path)
+        XCTAssertEqual(session.currentLanguage, .fr)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+
+        // `setLanguage` only rewrites language.json once `settingsFolder` is set (mirrors
+        // `selectColorPalette`'s "in-memory only" default, but this one also persists on change).
+        try session.setSettingsFolder(folder.path)
+        try session.setLanguage(.de)
+        let reloaded = ImprovSession()
+        try reloaded.start()
+        try reloaded.loadLanguageSetting(fromJSONFile: path)
+        XCTAssertEqual(reloaded.currentLanguage, .de)
+    }
+
+    func testSetLanguageUpdatesCurrentLanguageAndWebConsoleState() throws {
+        let session = ImprovSession()
+        try session.start()
+        try session.setLanguage(.de)
+        XCTAssertEqual(session.currentLanguage, .de)
+        XCTAssertEqual(session.buildWebConsoleState().language, "de")
     }
 }
 

@@ -27,6 +27,7 @@ let package = Package(
         // it without `WebConsole` ever depending on `AppCore` (the reverse of the existing
         // dependency direction below) just to reach the shared translation table.
         .target(name: "Localization"),
+        .testTarget(name: "LocalizationTests", dependencies: ["Localization"]),
         .testTarget(name: "MusicTheoryKitTests", dependencies: ["MusicTheoryKit"]),
         .target(name: "PieceModel", dependencies: ["MusicTheoryKit"]),
         .testTarget(name: "PieceModelTests", dependencies: ["PieceModel"]),
@@ -55,7 +56,7 @@ let package = Package(
         // Presentation-agnostic app state/behavior: a CLI drives it today, a future
         // SwiftUI front-end can bind to the same `ImprovSession` instance later.
         .target(name: "AppCore", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "AudioEngine", "MIDIEngine", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole", "Localization"]),
-        .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit", "LLMEngine", "NetEngine", "SoundTrackModel"]),
+        .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit", "LLMEngine", "NetEngine", "SoundTrackModel", "AudioEngine"]),
         .executableTarget(name: "JamShack", dependencies: ["AppCore", "Localization"]),
         // Standalone hardware-validation CLI for the ROLI LUMI Keys' reverse-engineered LED
         // SysEx protocol (see MIDIEngine's LumiSysex/MIDIOutputPort) — kept separate from
