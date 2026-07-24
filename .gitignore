@@ -2,3 +2,6 @@
 mcp-server/.venv/
 mcp-server/__pycache__/
 .swiftpm/
+.DS_Store
+App/**/xcuserdata/
+DerivedData/
