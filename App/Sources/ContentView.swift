@@ -23,6 +23,8 @@ struct ContentView: View {
                         .tabItem { Label("Roue", systemImage: "circle.grid.3x3") }
                     SourcesView(session: session)
                         .tabItem { Label("Sources", systemImage: "dot.radiowaves.left.and.right") }
+                    SceneManagementView(session: session)
+                        .tabItem { Label("Scene", systemImage: "theatermasks") }
                     ServerControlsView(session: session)
                         .tabItem { Label("Reseau", systemImage: "network") }
                 }
