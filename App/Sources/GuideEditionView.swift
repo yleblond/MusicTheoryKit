@@ -27,7 +27,17 @@ struct GuideEditionView: View {
                 addStepSection
                 GuideStepsSection(session: session, bridge: bridge)
             } else {
-                Section { Text("Aucun guide actif — cree ou charge un guide dans l'onglet Fichier.").foregroundStyle(.secondary) }
+                Section {
+                    Text("Aucun guide actif").foregroundStyle(.secondary)
+                    ActivateOrCreateBlock(
+                        files: session.guideFiles,
+                        onActivate: { try session.loadGuideSequence(named: $0) },
+                        createButtonLabel: "Creer un guide",
+                        createAlertTitle: "Nouveau guide",
+                        createFieldPlaceholder: "Titre du guide",
+                        onCreate: { session.newGuideSequence(title: $0) }
+                    )
+                }
             }
         }
         #if os(macOS)

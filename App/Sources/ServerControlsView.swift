@@ -71,7 +71,15 @@ struct ServerControlsView: View {
             Text(caption).font(.caption).foregroundStyle(.secondary)
             if let port {
                 ForEach(addresses(for: port), id: \.self) { url in
-                    Text(url).textSelection(.enabled).font(.system(.body, design: .monospaced))
+                    HStack {
+                        Text(url).textSelection(.enabled).font(.system(.body, design: .monospaced))
+                        Spacer()
+                        if let shareURL = URL(string: url) {
+                            ShareLink(item: shareURL, message: Text("Rejoins-moi sur \(title) : ")) {
+                                Image(systemName: "square.and.arrow.up")
+                            }
+                        }
+                    }
                 }
                 Button("Arreter", role: .destructive) { stop() }
             } else {

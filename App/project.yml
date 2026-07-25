@@ -2,8 +2,12 @@ name: JamShackApp
 options:
   bundleIdPrefix: com.jamshack
   deploymentTarget:
-    iOS: "17.0"
-    macOS: "14.0"
+    # Bumped from 17.0/14.0 to adopt the `Tab(_:systemImage:)` + `.tabViewStyle(.sidebarAdaptable)`
+    # API pair (see ContentView.swift) — on macOS specifically, the classic `.tabItem { Label }`
+    # top tab bar never shows icons (confirmed empirically: neither `.tabItem`+`Label` NOR the
+    # new `Tab()` API show an icon in that style on this OS — only `.sidebarAdaptable` does).
+    iOS: "18.0"
+    macOS: "15.0"
   createIntermediateGroups: true
 
 packages:

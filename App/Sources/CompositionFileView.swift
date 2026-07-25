@@ -30,7 +30,7 @@ struct CompositionFileView: View {
                 Text("Aucun dossier de composition IA choisi — JamShack > Dossiers.").font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(session.compositionFiles, id: \.self) { name in
-                    Button(name) {
+                    Button(name.strippingJSONExtension) {
                         do {
                             try session.loadCompositionDescription(named: name)
                         } catch {

@@ -117,7 +117,7 @@ struct SceneFileView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(session.sceneFiles, id: \.self) { name in
-                    Button(name) {
+                    Button(name.strippingJSONExtension) {
                         do {
                             try session.loadScene(named: name)
                             onLoaded()

@@ -27,11 +27,6 @@ struct JamShackFoldersView: View {
                     fileCount: session.pieceFiles.isEmpty ? nil : session.pieceFiles.count
                 ) { try session.listPieceFiles(in: $0) }
                 FolderPickerRow(
-                    title: "Sons (samples)",
-                    currentPath: session.sampleFolder,
-                    fileCount: session.sampleFiles.isEmpty ? nil : session.sampleFiles.count
-                ) { try session.listSampleFiles(in: $0) }
-                FolderPickerRow(
                     title: "Soundtracks",
                     currentPath: session.soundTrackFolder,
                     fileCount: session.soundTrackFiles.isEmpty ? nil : session.soundTrackFiles.count
@@ -50,6 +45,11 @@ struct JamShackFoldersView: View {
                 Text("Contenus")
             }
             Section {
+                FolderPickerRow(
+                    title: "Sons (samples)",
+                    currentPath: session.sampleFolder,
+                    fileCount: session.sampleFiles.isEmpty ? nil : session.sampleFiles.count
+                ) { try session.listSampleFiles(in: $0) }
                 FolderPickerRow(title: "Reglages", currentPath: session.settingsFolder, fileCount: nil) {
                     try session.setSettingsFolder($0)
                 }

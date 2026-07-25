@@ -360,6 +360,7 @@ public final class ImprovSession: @unchecked Sendable {
         case unknownSceneRole
         case virtualKeyboardAlreadyActive
         case invalidColorPaletteIndex
+        case invalidColorPaletteFile
         case emptyColorPaletteFile
         case emptyChordProgressionTemplateFile
         case lumiDestinationNotFound
@@ -413,6 +414,7 @@ public final class ImprovSession: @unchecked Sendable {
             case .unknownSceneRole: return "no role with that id in the active scene"
             case .virtualKeyboardAlreadyActive: return "virtual keyboard already running — stop it first"
             case .invalidColorPaletteIndex: return "no color palette at that index"
+            case .invalidColorPaletteFile: return "a palette needs exactly 12 colors (one per pitch class)"
             case .emptyColorPaletteFile: return "that file has no palettes in it"
             case .emptyChordProgressionTemplateFile: return "that file has no chord progression templates in it"
             case .lumiDestinationNotFound: return "couldn't auto-detect a single LUMI MIDI destination — pass destinationIndex explicitly (see MIDIOutputPort.destinationDescriptors())"
@@ -1568,6 +1570,52 @@ public final class ImprovSession: @unchecked Sendable {
         guard colorPalettes.indices.contains(index) else { throw SessionError.invalidColorPaletteIndex }
         activeColorPaletteIndex = index
         append("Using color palette: \(activeColorPalette.name)")
+    }
+
+    /// Persists `colorPalettes` back to `palettes.json` — the write counterpart to
+    /// `loadColorPalettes`, needed now that palettes can be edited/created from the UI and not
+    /// just hand-edited on disk. A no-op (not an error) if no settings folder is set yet, same
+    /// convention as `saveMicrophoneCalibration`/`saveLumiSettings`.
+    private func saveColorPalettes() throws {
+        guard let settingsFolder else { return }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(ColorPaletteFile(palettes: colorPalettes))
+        try data.write(to: URL(fileURLWithPath: (settingsFolder as NSString).appendingPathComponent("palettes.json")))
+    }
+
+    /// Replaces one palette's colors in place (keeping its name and position) and persists —
+    /// `colors`/`textColors` must both be exactly 12 entries (one per pitch class, same as
+    /// every existing palette) or this throws rather than silently storing a malformed
+    /// palette. `textColors` defaults to `ColorPalette.legibleTextColors(for:)` when omitted.
+    public func updateColorPalette(atIndex index: Int, colors: [String], textColors: [String]? = nil) throws {
+        guard colorPalettes.indices.contains(index) else { throw SessionError.invalidColorPaletteIndex }
+        guard colors.count == 12 else { throw SessionError.invalidColorPaletteFile }
+        let resolvedTextColors = textColors ?? ColorPalette.legibleTextColors(for: colors)
+        guard resolvedTextColors.count == 12 else { throw SessionError.invalidColorPaletteFile }
+        colorPalettes[index] = ColorPalette(name: colorPalettes[index].name, colors: colors, textColors: resolvedTextColors)
+        try saveColorPalettes()
+    }
+
+    /// Renames a palette in place and persists — kept separate from `updateColorPalette`
+    /// (which never touches the name) so the editor UI can rename without also having to
+    /// resend all 12 colors.
+    public func renameColorPalette(atIndex index: Int, name: String) throws {
+        guard colorPalettes.indices.contains(index) else { throw SessionError.invalidColorPaletteIndex }
+        colorPalettes[index].name = name
+        try saveColorPalettes()
+    }
+
+    /// Appends a brand-new palette (starting from `ColorPalette.builtInDefaults[0]`'s colors
+    /// when none are given — a real starting point to tweak, not 12 copies of one color) and
+    /// selects it immediately, so creating a palette drops the user straight into editing
+    /// something they're already looking at.
+    public func addColorPalette(name: String, colors: [String]? = nil) throws {
+        let resolvedColors = colors ?? ColorPalette.builtInDefaults[0].colors
+        let newPalette = ColorPalette(name: name, colors: resolvedColors, textColors: ColorPalette.legibleTextColors(for: resolvedColors))
+        colorPalettes.append(newPalette)
+        try saveColorPalettes()
+        try selectColorPalette(atIndex: colorPalettes.count - 1)
     }
 
     // MARK: - UI language (shared by terminal, web console, virtual keyboard)

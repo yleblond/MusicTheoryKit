@@ -34,7 +34,7 @@ struct JamShackView: View {
             case .midi: return "pianokeys"
             case .microphone: return "mic"
             case .jamSession: return "person.2.fill"
-            case .serveurs: return "server.rack"
+            case .serveurs: return "safari"
             case .couleurs: return "paintpalette"
             case .langue: return "globe"
             case .llm: return "brain"

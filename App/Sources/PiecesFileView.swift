@@ -51,7 +51,7 @@ struct PiecesFileView: View {
                 Text("Aucun dossier de morceaux choisi — JamShack > Dossiers.").font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(session.pieceFiles, id: \.self) { name in
-                    Button(name) {
+                    Button(name.strippingJSONExtension) {
                         do {
                             try session.loadPiece(named: name)
                             onLoaded()

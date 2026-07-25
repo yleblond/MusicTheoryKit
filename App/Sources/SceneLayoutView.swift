@@ -22,11 +22,20 @@ struct SceneLayoutView: View {
     var body: some View {
         Group {
             if scene == nil {
-                ContentUnavailableView(
-                    "Aucune scene active",
-                    systemImage: "theatermasks",
-                    description: Text("Cree une scene dans le sous-tab Fichier.")
-                )
+                ContentUnavailableView {
+                    Label("Aucune scene active", systemImage: "theatermasks")
+                } description: {
+                    Text("Active une scene existante ou cree-en une nouvelle.")
+                } actions: {
+                    ActivateOrCreateBlock(
+                        files: session.sceneFiles,
+                        onActivate: { try session.loadScene(named: $0) },
+                        createButtonLabel: "Creer une scene",
+                        createAlertTitle: "Nouvelle scene",
+                        createFieldPlaceholder: "Nom de la scene",
+                        onCreate: { session.newScene(title: $0) }
+                    )
+                }
             } else {
                 VStack(spacing: 0) {
                     if let actionError {

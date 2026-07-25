@@ -56,7 +56,7 @@ struct GuideFileView: View {
                 Text("Aucun dossier de guides choisi — JamShack > Dossiers.").font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(session.guideFiles, id: \.self) { name in
-                    Button(name) {
+                    Button(name.strippingJSONExtension) {
                         do {
                             try session.loadGuideSequence(named: name)
                             onLoaded()

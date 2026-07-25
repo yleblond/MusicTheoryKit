@@ -49,7 +49,7 @@ struct JamShackLLMView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(Array(session.llmConnections.enumerated()), id: \.offset) { index, name in
-                    Button(name) {
+                    Button(name.strippingJSONExtension) {
                         testResult = nil
                         testError = nil
                         do {

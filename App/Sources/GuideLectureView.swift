@@ -58,7 +58,15 @@ struct GuideLectureView: View {
                 Text(actionError).foregroundStyle(.red).font(.caption)
             }
             if session.currentGuide == nil {
-                Text("Aucun guide actif — cree ou charge un guide dans l'onglet Fichier.").foregroundStyle(.secondary)
+                Text("Aucun guide actif").foregroundStyle(.secondary)
+                ActivateOrCreateBlock(
+                    files: session.guideFiles,
+                    onActivate: { try session.loadGuideSequence(named: $0) },
+                    createButtonLabel: "Creer un guide",
+                    createAlertTitle: "Nouveau guide",
+                    createFieldPlaceholder: "Titre du guide",
+                    onCreate: { session.newGuideSequence(title: $0) }
+                )
             } else {
                 Button("Demarrer le guide") {
                     do {

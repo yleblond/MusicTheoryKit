@@ -31,7 +31,7 @@ struct RecordingFileView: View {
                 Text("Aucun dossier de soundtracks choisi — JamShack > Dossiers.").font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(session.soundTrackFiles, id: \.self) { name in
-                    Button(name) {
+                    Button(name.strippingJSONExtension) {
                         do {
                             try session.loadSoundTrack(named: name)
                             onLoaded()

@@ -19,6 +19,22 @@ struct JamShackColorsView: View {
     /// after an unplug/replug, not a fixed constant, which is the leading suspect for "LUMI
     /// worked once, then stopped" reports. Defaults to the built-in "34" (hex for 0x34).
     @State private var deviceIDHex = "34"
+    @State private var paletteEditorTarget: PaletteEditorTarget?
+
+    private enum PaletteEditorTarget: Identifiable {
+        case new
+        case existing(Int)
+        var id: String {
+            switch self {
+            case .new: return "new"
+            case .existing(let index): return "existing-\(index)"
+            }
+        }
+        var index: Int? {
+            if case .existing(let index) = self { return index }
+            return nil
+        }
+    }
 
     private var resolvedDeviceID: UInt8 {
         UInt8(deviceIDHex, radix: 16) ?? 0x34
@@ -36,34 +52,46 @@ struct JamShackColorsView: View {
         #if os(macOS)
         .formStyle(.grouped)
         #endif
+        .sheet(item: $paletteEditorTarget) { target in
+            PaletteEditorView(session: session, existingIndex: target.index)
+        }
     }
 
     @ViewBuilder
     private var paletteSection: some View {
         Section {
             ForEach(Array(session.colorPalettes.enumerated()), id: \.offset) { index, palette in
-                Button {
-                    do {
-                        try session.selectColorPalette(atIndex: index)
-                    } catch {
-                        actionError = "\(error)"
-                    }
-                } label: {
-                    HStack {
-                        Text(palette.name).foregroundStyle(.primary)
-                        Spacer()
-                        HStack(spacing: 2) {
-                            ForEach(palette.colors, id: \.self) { hex in
-                                Circle().fill(Color(hex: hex)).frame(width: 10, height: 10)
+                HStack {
+                    Button {
+                        do {
+                            try session.selectColorPalette(atIndex: index)
+                        } catch {
+                            actionError = "\(error)"
+                        }
+                    } label: {
+                        HStack {
+                            Text(palette.name).foregroundStyle(.primary)
+                            Spacer()
+                            HStack(spacing: 2) {
+                                ForEach(palette.colors, id: \.self) { hex in
+                                    Circle().fill(Color(hex: hex)).frame(width: 10, height: 10)
+                                }
+                            }
+                            if index == session.activeColorPaletteIndex {
+                                Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
                             }
                         }
-                        if index == session.activeColorPaletteIndex {
-                            Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
-                        }
                     }
+                    .buttonStyle(.plain)
+                    Button {
+                        paletteEditorTarget = .existing(index)
+                    } label: {
+                        Image(systemName: "pencil.circle")
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .buttonStyle(.plain)
             }
+            Button("Nouvelle palette...") { paletteEditorTarget = .new }
         } header: {
             Text("Palette de couleur")
         }
