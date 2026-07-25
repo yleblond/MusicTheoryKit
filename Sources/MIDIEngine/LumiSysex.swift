@@ -90,8 +90,11 @@ public enum LumiSysex {
         return envelope(payload: bits.paddedValues())
     }
 
-    public static func setColorMode(_ mode: ColorMode) -> [UInt8] {
-        envelope(payload: mode.payload)
+    /// `deviceID` overrides `envelope`'s own default (0x34) — see that function's doc comment
+    /// for why this might need to change after an unplug/replug (a possibly topology-assigned
+    /// ID, not confirmed to be a fixed constant for this product).
+    public static func setColorMode(_ mode: ColorMode, deviceID: UInt8 = 0x34) -> [UInt8] {
+        envelope(payload: mode.payload, deviceID: deviceID)
     }
 
     /// LUMI's fixed built-in scale list (used, in `.user` `ColorMode`, to decide which

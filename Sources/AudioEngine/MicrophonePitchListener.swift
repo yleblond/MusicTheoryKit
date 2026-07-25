@@ -54,6 +54,8 @@ public enum AnalysisStrategy: Sendable {
 /// `.record` alone would silence that.
 public final class MicrophonePitchListener {
     public typealias Handler = ([DetectedPitch], Float) -> Void
+    /// `magnitudes`/`binHz` — see `FFTPitchAnalyzer.spectrumSnapshot`'s own doc comment.
+    public typealias SpectrumHandler = (_ magnitudes: [Float], _ binHz: Double) -> Void
 
     private let engine = AVAudioEngine()
     private let analyzer: FFTPitchAnalyzer
@@ -61,12 +63,30 @@ public final class MicrophonePitchListener {
     private let strategy: AnalysisStrategy
     private var accumulated: [Float] = []
     private let handler: Handler
+    private let spectrumHandler: SpectrumHandler?
 
-    public init(analysisWindowSize: Int = 4096, strategy: AnalysisStrategy = .polyphonic(maxPeaks: 6), handler: @escaping Handler) {
+    /// Gates whether `spectrumHandler` is actually called — a spectroscope UI is opt-in and
+    /// off by default (real per-window cost: an extra FFT-sized array copy out of
+    /// `analyzer`), so this lets a caller toggle it live without tearing down/recreating the
+    /// whole listener (which would drop in-flight `accumulated` samples and briefly
+    /// interrupt real note detection). `nonisolated(unsafe)`: read on the audio-callback
+    /// thread, written from whichever thread the UI toggle runs on (typically main) — a
+    /// plain `Bool`, so a torn read/write is not a memory-safety issue, only ever costing one
+    /// extra-or-missing spectrum update at the moment of the flip, the same "soft state,
+    /// relaxed consistency accepted" category `ImprovSession.playbackGeneration` already is.
+    nonisolated(unsafe) public var spectrumEnabled = false
+
+    public init(
+        analysisWindowSize: Int = 4096,
+        strategy: AnalysisStrategy = .polyphonic(maxPeaks: 6),
+        handler: @escaping Handler,
+        spectrumHandler: SpectrumHandler? = nil
+    ) {
         self.analysisWindowSize = analysisWindowSize
         self.strategy = strategy
         self.analyzer = FFTPitchAnalyzer(size: analysisWindowSize)
         self.handler = handler
+        self.spectrumHandler = spectrumHandler
     }
 
     /// Checks/requests microphone permission (blocking until the user answers a first-time
@@ -161,6 +181,10 @@ public final class MicrophonePitchListener {
             }
             let pitches = frequencies.map { DetectedPitch(frequencyHz: $0, midiPitch: DetectedPitch.midiPitch(forFrequencyHz: $0)) }
             handler(pitches, level)
+
+            if spectrumEnabled, let spectrumHandler, let snapshot = analyzer.spectrumSnapshot(of: window, sampleRate: sampleRate) {
+                spectrumHandler(snapshot.magnitudes, snapshot.binHz)
+            }
         }
     }
 }

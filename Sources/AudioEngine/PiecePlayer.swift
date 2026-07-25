@@ -21,10 +21,23 @@ public enum SampleLoadError: Error, CustomStringConvertible {
 /// live-input tracks, reused here so a piece's chords and each melodic line/track can carry
 /// a genuinely different timbre. Not thread-safe beyond calling `start()` once before any
 /// `play(_:)`.
-public final class PiecePlayer {
+/// `@unchecked Sendable`: `playGeneration`/`activePitchesByInstrument` (the only mutable state
+/// touched from more than one thread — `namedSamplers`/`engine`/`sampler` are only ever
+/// touched from whichever thread calls `play(_:)`/`loadSample`) are guarded by `stateLock`.
+public final class PiecePlayer: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let sampler = AVAudioUnitSampler()
     private var namedSamplers: [String: SamplerUnit] = [:]
+
+    // Guards `playGeneration`/`activePitchesByInstrument` below — both are read/written from
+    // this player's own `DispatchQueue.global()`-scheduled note-on/off closures (several,
+    // concurrently) as well as from whichever thread calls `play(_:)`/`stopAllNotes()` (the
+    // UI thread) — the same "plain Swift state touched from more than one thread" pattern
+    // that has caused real crashes elsewhere in this project (see `ImprovSession`'s own
+    // `playbackStateQueue`), so this needs real synchronization, not just a comment.
+    private let stateLock = NSLock()
+    private var playGeneration = 0
+    private var activePitchesByInstrument: [String?: Set<Int>] = [:]
 
     public init() {
         engine.attach(sampler)
@@ -81,17 +94,24 @@ public final class PiecePlayer {
             }
         }
 
+        stateLock.lock()
+        playGeneration += 1
+        let generation = playGeneration
+        stateLock.unlock()
+
         let now = DispatchTime.now()
         for note in notes {
             let target = note.instrumentName.flatMap { namedSamplers[$0] }
-            DispatchQueue.global().asyncAfter(deadline: now + note.startSeconds) { [sampler] in
+            DispatchQueue.global().asyncAfter(deadline: now + note.startSeconds) { [weak self, sampler] in
+                guard let self, self.isCurrentGeneration(generation) else { return }
                 if let target {
                     target.startNote(pitch: note.pitch, velocity: note.velocity)
                 } else {
                     sampler.startNote(Self.clampedByte(note.pitch), withVelocity: Self.clampedByte(note.velocity), onChannel: 0)
                 }
             }
-            DispatchQueue.global().asyncAfter(deadline: now + note.startSeconds + note.durationSeconds) { [sampler] in
+            DispatchQueue.global().asyncAfter(deadline: now + note.startSeconds + note.durationSeconds) { [weak self, sampler] in
+                guard let self, self.isCurrentGeneration(generation) else { return }
                 if let target {
                     target.stopNote(pitch: note.pitch)
                 } else {
@@ -107,15 +127,21 @@ public final class PiecePlayer {
         // off, and the key is left audibly stuck. Force every pitch used by each target off
         // once, right after the piece's true last note-off should have fired, so nothing is
         // ever left ringing regardless of which overlap caused it. Grouped per instrument
-        // name (not one global set) since each name sounds through its own sampler.
+        // name (not one global set) since each name sounds through its own sampler — also
+        // remembered in `activePitchesByInstrument` so `stopAllNotes()` (an early "Arreter"
+        // button press, not just this natural end-of-piece cleanup) knows what to silence.
         let totalDuration = Self.totalDuration(of: notes)
         var pitchesByInstrument: [String?: Set<Int>] = [:]
         for note in notes {
             pitchesByInstrument[note.instrumentName, default: []].insert(note.pitch)
         }
+        stateLock.lock()
+        activePitchesByInstrument = pitchesByInstrument
+        stateLock.unlock()
         for (name, pitches) in pitchesByInstrument {
             let target = name.flatMap { namedSamplers[$0] }
-            DispatchQueue.global().asyncAfter(deadline: now + totalDuration + 0.05) { [sampler] in
+            DispatchQueue.global().asyncAfter(deadline: now + totalDuration + 0.05) { [weak self, sampler] in
+                guard let self, self.isCurrentGeneration(generation) else { return }
                 for pitch in pitches {
                     if let target {
                         target.stopNote(pitch: pitch)
@@ -123,9 +149,45 @@ public final class PiecePlayer {
                         sampler.stopNote(Self.clampedByte(pitch), onChannel: 0)
                     }
                 }
+                self.clearActivePitches(ifStillGeneration: generation)
             }
         }
         return warnings
+    }
+
+    private func isCurrentGeneration(_ generation: Int) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return playGeneration == generation
+    }
+
+    private func clearActivePitches(ifStillGeneration generation: Int) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard playGeneration == generation else { return }
+        activePitchesByInstrument = [:]
+    }
+
+    /// Immediately silences every note this player might currently have sounding (from the
+    /// most recent `play(_:)` call), and invalidates that call's still-pending scheduled
+    /// note-on/note-off closures so they become no-ops instead of firing later — the
+    /// "Arreter" button's counterpart to letting a piece finish on its own.
+    public func stopAllNotes() {
+        stateLock.lock()
+        playGeneration += 1
+        let pitchesByInstrument = activePitchesByInstrument
+        activePitchesByInstrument = [:]
+        stateLock.unlock()
+        for (name, pitches) in pitchesByInstrument {
+            let target = name.flatMap { namedSamplers[$0] }
+            for pitch in pitches {
+                if let target {
+                    target.stopNote(pitch: pitch)
+                } else {
+                    sampler.stopNote(Self.clampedByte(pitch), onChannel: 0)
+                }
+            }
+        }
     }
 
     /// Triggers a note immediately — the realtime counterpart to `play(_:)`, for live

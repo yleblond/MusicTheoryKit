@@ -34,6 +34,15 @@ public enum GuitarChordShape {
     public struct StringPosition: Equatable, Sendable {
         public let relativeFret: Int?
         public let finger: Int?
+
+        /// Public so a caller outside this module (e.g. `JamShackUI`'s
+        /// `GuitarChordDiagramView`, converting a `WebConsoleGuitarChordDiagram` back into a
+        /// real `Diagram` for offline/in-process rendering) can build one directly instead of
+        /// only ever receiving values already constructed by `diagram(forRoot:chordTemplateID:)`.
+        public init(relativeFret: Int?, finger: Int?) {
+            self.relativeFret = relativeFret
+            self.finger = finger
+        }
     }
 
     /// A single movable shape, plus the absolute barre fret it's been transposed to for one
@@ -43,6 +52,13 @@ public enum GuitarChordShape {
         public let label: String
         public let barreFret: Int
         public let positions: [StringPosition]
+
+        /// See `StringPosition.init`'s doc comment for why this needs to be public.
+        public init(label: String, barreFret: Int, positions: [StringPosition]) {
+            self.label = label
+            self.barreFret = barreFret
+            self.positions = positions
+        }
     }
 
     /// string6...string1, e.g. `[0, 2, 2, 1, 0, 0]` for major.

@@ -2,7 +2,7 @@ import Foundation
 
 /// The UI display language — independent of command names/syntax, which are never translated.
 /// French is the authored reference language; English and German are translations of it.
-public enum AppLanguage: String, Codable, CaseIterable, Sendable {
+public enum AppLanguage: String, Codable, CaseIterable, Sendable, Hashable {
     case fr, en, de
 }
 

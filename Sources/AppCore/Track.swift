@@ -84,7 +84,7 @@ public enum MIDIFusionMode: Sendable, Equatable, Hashable {
 /// compared against real playing. See `FFTPitchAnalyzer.monophonicFundamentalHeuristic`/
 /// `monophonicFundamentalHPS` and `MicrophonePitchStabilizer.Policy` for what each one
 /// actually does.
-public enum MicrophoneRecognitionMode: Sendable, Equatable, Codable {
+public enum MicrophoneRecognitionMode: Sendable, Equatable, Hashable, Codable {
     /// One note at a time; harmonic-vs-fundamental ambiguity resolved via a lightweight
     /// subharmonic-promotion heuristic over the top few FFT candidates.
     case monophonicHeuristic

@@ -1,31 +1,36 @@
 import SwiftUI
 import AppCore
+import JamShackUI
 
-/// The "Scene" tab — split into two sub-tabs (same vertical icon-sidebar pattern as the
-/// "JamShack" tab, for the same reason: keeps each screen focused instead of one long form):
-/// **Fichier** (create/rename the scene, single-file export/import, the folder-based scene
-/// browser — creating/loading a scene here switches to **Disposition**, per explicit user
-/// request — see `SceneFileView`) and **Disposition** (instruments <-> roles, side by side —
-/// see `SceneLayoutView`).
-struct SceneManagementView: View {
+/// The "Enregistrement" tab — split into four sub-tabs: **Fichier** (soundtrack folder —
+/// loading one here switches to **Play** — see `RecordingFileView`), **Record** (source
+/// selection, start/stop the recording — see `RecordingRecordView`), **Play** (play/stop the
+/// current recording, choose its sound — see `RecordingPlayView`), and **IA** (compose a piece
+/// from the recording — see `RecordingIAView`).
+struct RecordingView: View {
     let session: ImprovSession
+    let bridge: SessionUIBridge
 
     private enum SubTab: CaseIterable, Identifiable {
-        case file, layout
+        case file, record, play, ia
 
         var id: Self { self }
 
         var systemImage: String {
             switch self {
             case .file: return "doc.text"
-            case .layout: return "rectangle.split.2x1"
+            case .record: return "record.circle"
+            case .play: return "play.fill"
+            case .ia: return "brain"
             }
         }
 
         var accessibilityLabel: String {
             switch self {
-            case .file: return "Fichier de scene"
-            case .layout: return "Disposition de la scene"
+            case .file: return "Fichier de soundtrack"
+            case .record: return "Enregistrement"
+            case .play: return "Jouer"
+            case .ia: return "Composition IA"
             }
         }
     }
@@ -57,8 +62,10 @@ struct SceneManagementView: View {
             Divider()
             Group {
                 switch subTab {
-                case .file: SceneFileView(session: session, onLoaded: { subTab = .layout })
-                case .layout: SceneLayoutView(session: session)
+                case .file: RecordingFileView(session: session, onLoaded: { subTab = .play })
+                case .record: RecordingRecordView(session: session, bridge: bridge)
+                case .play: RecordingPlayView(session: session)
+                case .ia: RecordingIAView(session: session)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -67,5 +74,6 @@ struct SceneManagementView: View {
 }
 
 #Preview {
-    SceneManagementView(session: ImprovSession())
+    let session = ImprovSession()
+    return RecordingView(session: session, bridge: SessionUIBridge(session: session))
 }

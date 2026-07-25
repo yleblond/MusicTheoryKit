@@ -88,7 +88,7 @@ public struct OpenAICompatibleProvider: LLMProvider {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let envVar = connection.apiKeyEnvVar {
-            guard let key = ProcessInfo.processInfo.environment[envVar] else { throw LLMError.missingAPIKey(envVar) }
+            guard let key = APIKeyStore.resolve(envVar) else { throw LLMError.missingAPIKey(envVar) }
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: [
@@ -128,7 +128,7 @@ public struct AnthropicProvider: LLMProvider {
             throw LLMError.invalidBaseURL(connection.baseURL)
         }
         guard let envVar = connection.apiKeyEnvVar else { throw LLMError.missingAPIKey("ANTHROPIC_API_KEY") }
-        guard let key = ProcessInfo.processInfo.environment[envVar] else { throw LLMError.missingAPIKey(envVar) }
+        guard let key = APIKeyStore.resolve(envVar) else { throw LLMError.missingAPIKey(envVar) }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

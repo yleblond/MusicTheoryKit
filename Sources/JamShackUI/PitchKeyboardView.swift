@@ -78,8 +78,32 @@ public struct PitchKeyboardView: View {
     public let alwaysShowChord: Bool
     public let showModeColoring: Bool
     public let colorScheme: PitchKeyboardColorScheme
+    /// The active palette's 12 hex colors (index 0 = C ... 11 = B) — same values
+    /// `WebConsoleState.palette` sends, used ONLY for the degree badges (each badge is
+    /// colored by its own note's identity, same as the web's `.degree-badge`), never for the
+    /// key fill itself (that stays `colorScheme`, a role/state color, not a note-identity one).
+    public let palette: [String]
+    /// See `palette`'s doc comment — the legible text color painted OVER each badge.
+    public let paletteTextColors: [String]
     public let onNoteOn: ((Int) -> Void)?
     public let onNoteOff: ((Int) -> Void)?
+    /// Overridable per call site — e.g. the Guide screen's own static mode/chord reference
+    /// keyboards render noticeably smaller than the live "En direct" one, per explicit user
+    /// request. Defaults to the height every other call site already used before this became
+    /// configurable.
+    public let height: CGFloat
+
+    /// Same fallback arrays `StaticAssets.swift`'s `PITCH_CLASS_COLORS`/`_TEXT_COLORS` use
+    /// before the first real palette is known — a reasonable default for any call site that
+    /// doesn't have (or care about) the session's actual active palette.
+    public static let defaultPalette = [
+        "#DB2A52", "#0AAD9A", "#F7872D", "#4169B7", "#F2DE18", "#AE2F93",
+        "#44B853", "#F15830", "#249CD7", "#FEBC20", "#884A9C", "#ABD144",
+    ]
+    public static let defaultPaletteTextColors = [
+        "#ffffff", "#ffffff", "#ffffff", "#ffffff", "#111111", "#ffffff",
+        "#ffffff", "#ffffff", "#ffffff", "#111111", "#ffffff", "#111111",
+    ]
 
     public init(
         minMidi: Int = 48,
@@ -91,8 +115,11 @@ public struct PitchKeyboardView: View {
         alwaysShowChord: Bool = false,
         showModeColoring: Bool = false,
         colorScheme: PitchKeyboardColorScheme = PitchKeyboardColorScheme(),
+        palette: [String] = PitchKeyboardView.defaultPalette,
+        paletteTextColors: [String] = PitchKeyboardView.defaultPaletteTextColors,
         onNoteOn: ((Int) -> Void)? = nil,
-        onNoteOff: ((Int) -> Void)? = nil
+        onNoteOff: ((Int) -> Void)? = nil,
+        height: CGFloat = 144
     ) {
         self.minMidi = minMidi
         self.maxMidi = maxMidi
@@ -103,14 +130,22 @@ public struct PitchKeyboardView: View {
         self.alwaysShowChord = alwaysShowChord
         self.showModeColoring = showModeColoring
         self.colorScheme = colorScheme
+        self.palette = palette
+        self.paletteTextColors = paletteTextColors
         self.onNoteOn = onNoteOn
         self.onNoteOff = onNoteOff
+        self.height = height
     }
 
     // White key slot (0...6) within its octave, for the 7 white pitch classes.
     private static let whiteSlotBySemitone: [Int: Int] = [0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6]
     // For each black pitch class, the white slot it sits directly after.
     private static let blackAfterWhiteSlot: [Int: Int] = [1: 0, 3: 1, 6: 3, 8: 4, 10: 5]
+    /// Vertical space reserved above the keys themselves for degree badges — same idea as the
+    /// web's `.degree-badge { top: -18px }` sitting above the key div, except here the keys
+    /// are shifted down to make room rather than the badge overflowing the view's own bounds.
+    private static let badgeTopInset: CGFloat = 18
+    private static let badgeDiameter: CGFloat = 14
 
     private var octaveCount: Int { max(1, Int(ceil(Double(maxMidi - minMidi + 1) / 12.0))) }
 
@@ -124,7 +159,8 @@ public struct PitchKeyboardView: View {
         let whiteKeyCount = octaveCount * 7
         let whiteW = size.width / CGFloat(whiteKeyCount)
         let blackW = whiteW * 0.6
-        let blackH = size.height * 0.62
+        let keysHeight = max(0, size.height - Self.badgeTopInset)
+        let blackH = keysHeight * 0.62
         var white: [KeyRect] = []
         var black: [KeyRect] = []
 
@@ -134,11 +170,11 @@ public struct PitchKeyboardView: View {
             if let whiteSlotInOctave = Self.whiteSlotBySemitone[pitchClass] {
                 let slot = octave * 7 + whiteSlotInOctave
                 let x = CGFloat(slot) * whiteW
-                white.append(KeyRect(pitch: pitch, rect: CGRect(x: x, y: 0, width: whiteW, height: size.height)))
+                white.append(KeyRect(pitch: pitch, rect: CGRect(x: x, y: Self.badgeTopInset, width: whiteW, height: keysHeight)))
             } else if let whiteSlotBefore = Self.blackAfterWhiteSlot[pitchClass] {
                 let slot = octave * 7 + whiteSlotBefore + 1
                 let x = CGFloat(slot) * whiteW - blackW / 2
-                black.append(KeyRect(pitch: pitch, rect: CGRect(x: x, y: 0, width: blackW, height: blackH)))
+                black.append(KeyRect(pitch: pitch, rect: CGRect(x: x, y: Self.badgeTopInset, width: blackW, height: blackH)))
             }
         }
         return (white, black)
@@ -156,6 +192,12 @@ public struct PitchKeyboardView: View {
         GeometryReader { proxy in
             Canvas { context, size in
                 let (white, black) = layout(for: size)
+                // One badge per key belonging to the current mode (`degreeBadge`, independent
+                // of `role`/held state — see `PitchDisplayState`'s doc comment), drawn after
+                // every key so it always reads on top — mirrors the web's `.degree-badge`,
+                // always shown for every mode-tone key regardless of what's actually held.
+                var badges: [(rect: CGRect, degree: Int, pitchClass: Int)] = []
+
                 // White keys first (background layer), then black keys on top — matches a
                 // real keyboard's visual stacking.
                 for key in white {
@@ -167,6 +209,9 @@ public struct PitchKeyboardView: View {
                     let path = Path(key.rect.insetBy(dx: 0.5, dy: 0.5))
                     context.fill(path, with: .color(colorScheme.fillColor(for: state.role, isWhiteKey: true)))
                     context.stroke(path, with: .color(.black.opacity(0.4)), lineWidth: 1)
+                    if let degree = state.degreeBadge {
+                        badges.append((key.rect, degree, ((key.pitch % 12) + 12) % 12))
+                    }
                 }
                 for key in black {
                     let state = pitchDisplayState(
@@ -175,6 +220,21 @@ public struct PitchKeyboardView: View {
                         alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring
                     )
                     context.fill(Path(key.rect), with: .color(colorScheme.fillColor(for: state.role, isWhiteKey: false)))
+                    if let degree = state.degreeBadge {
+                        badges.append((key.rect, degree, ((key.pitch % 12) + 12) % 12))
+                    }
+                }
+
+                for badge in badges {
+                    let bg = palette.indices.contains(badge.pitchClass) ? Color(hex: palette[badge.pitchClass]) : .accentColor
+                    let fg = paletteTextColors.indices.contains(badge.pitchClass) ? Color(hex: paletteTextColors[badge.pitchClass]) : .white
+                    let center = CGPoint(x: badge.rect.midX, y: Self.badgeTopInset / 2)
+                    let circleRect = CGRect(
+                        x: center.x - Self.badgeDiameter / 2, y: center.y - Self.badgeDiameter / 2,
+                        width: Self.badgeDiameter, height: Self.badgeDiameter
+                    )
+                    context.fill(Path(ellipseIn: circleRect), with: .color(bg))
+                    context.draw(Text("\(badge.degree)").font(.system(size: 9, weight: .bold)).foregroundStyle(fg), at: center)
                 }
             }
             .contentShape(Rectangle())
@@ -195,7 +255,7 @@ public struct PitchKeyboardView: View {
                     }
             )
         }
-        .frame(minHeight: 80)
+        .frame(height: height) // default 144 = +50% over 96 — explicit user request.
     }
 }
 

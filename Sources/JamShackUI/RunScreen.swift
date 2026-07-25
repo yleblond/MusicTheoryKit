@@ -39,12 +39,14 @@ public struct RunScreen: View {
                 tracks: bridge.state.tracks
             )
                 .padding()
-                .frame(width: 300)
+                .frame(width: 525) // +75% over the original 300 — explicit user request.
             Divider()
             List(bridge.state.tracks, id: \.id) { track in
                 let isInteractive = track.id == interactiveTrackID
                 TrackRunRow(
                     track: track,
+                    palette: bridge.state.palette,
+                    paletteTextColors: bridge.state.paletteTextColors,
                     onNoteOn: isInteractive ? onNoteOn : nil,
                     onNoteOff: isInteractive ? onNoteOff : nil
                 )
@@ -58,6 +60,8 @@ public struct RunScreen: View {
 
 private struct TrackRunRow: View {
     let track: WebConsoleTrackState
+    let palette: [String]
+    let paletteTextColors: [String]
     let onNoteOn: ((Int) -> Void)?
     let onNoteOff: ((Int) -> Void)?
 
@@ -79,21 +83,13 @@ private struct TrackRunRow: View {
             if let recognitionMode = track.recognitionMode {
                 Text(recognitionMode).font(.caption2).foregroundStyle(.secondary)
             }
-            // C2...C7 (5 octaves) rather than the tighter 2-octave default: a real MIDI
-            // controller's playing range varies a lot (a 25-key controller centered on C3,
-            // a 61-key spanning C2-C6...), and a held note outside the displayed range
-            // simply never lights up even though it's correctly recognized (the recognized
-            // chord/mode labels above are unaffected either way, since those don't depend
-            // on this view's range). Static for now — the web console's Observer tab
-            // auto-centers its window on whatever's actually held; doing the same here
-            // would be the next real improvement over a fixed range.
-            PitchKeyboardView(
-                minMidi: 36,
-                maxMidi: 96,
-                heldPitches: Set(track.heldPitches),
+            AutoCenteredKeyboardView(
+                heldPitches: track.heldPitches,
                 chordRoot: track.chordRoot,
                 chordTones: track.chordTones,
                 modeTones: track.modeTones,
+                palette: palette,
+                paletteTextColors: paletteTextColors,
                 onNoteOn: onNoteOn,
                 onNoteOff: onNoteOff
             )

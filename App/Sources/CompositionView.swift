@@ -1,31 +1,28 @@
 import SwiftUI
 import AppCore
 
-/// The "Scene" tab — split into two sub-tabs (same vertical icon-sidebar pattern as the
-/// "JamShack" tab, for the same reason: keeps each screen focused instead of one long form):
-/// **Fichier** (create/rename the scene, single-file export/import, the folder-based scene
-/// browser — creating/loading a scene here switches to **Disposition**, per explicit user
-/// request — see `SceneFileView`) and **Disposition** (instruments <-> roles, side by side —
-/// see `SceneLayoutView`).
-struct SceneManagementView: View {
+/// The "Composition" tab — split into two sub-tabs: **Fichier** (composition-description
+/// folder — see `CompositionFileView`) and **Composer** (title/style/description + the
+/// compose action — see `CompositionComposerView`).
+struct CompositionView: View {
     let session: ImprovSession
 
     private enum SubTab: CaseIterable, Identifiable {
-        case file, layout
+        case file, composer
 
         var id: Self { self }
 
         var systemImage: String {
             switch self {
             case .file: return "doc.text"
-            case .layout: return "rectangle.split.2x1"
+            case .composer: return "wand.and.stars"
             }
         }
 
         var accessibilityLabel: String {
             switch self {
-            case .file: return "Fichier de scene"
-            case .layout: return "Disposition de la scene"
+            case .file: return "Fichier de composition"
+            case .composer: return "Composer"
             }
         }
     }
@@ -57,8 +54,8 @@ struct SceneManagementView: View {
             Divider()
             Group {
                 switch subTab {
-                case .file: SceneFileView(session: session, onLoaded: { subTab = .layout })
-                case .layout: SceneLayoutView(session: session)
+                case .file: CompositionFileView(session: session)
+                case .composer: CompositionComposerView(session: session)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -67,5 +64,5 @@ struct SceneManagementView: View {
 }
 
 #Preview {
-    SceneManagementView(session: ImprovSession())
+    CompositionView(session: ImprovSession())
 }

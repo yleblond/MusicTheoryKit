@@ -688,6 +688,7 @@ public final class ImprovSession: @unchecked Sendable {
         try loadOrCreateLanguageSetting(fromJSONFile: (folderPath as NSString).appendingPathComponent("language.json"))
         try loadOrCreateLumiSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("lumi.json"))
         try loadOrCreateNoteColorSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("note-colors.json"))
+        try loadOrCreateLLMAPIKeys(fromJSONFile: (folderPath as NSString).appendingPathComponent("llm-api-keys.json"))
         settingsFolder = folderPath
         append("Dossier de reglages: \(folderPath).")
     }
@@ -1076,6 +1077,13 @@ public final class ImprovSession: @unchecked Sendable {
         for _ in 0..<abs(delta) {
             guard advanceGuideChordOneStep(direction: direction) else { break }
         }
+        // Real bug fix: crossing into a neighboring step's progression (see
+        // `advanceGuideChordOneStep`'s own doc comment) changes `currentGuideStepIndex` —
+        // i.e. the MODE — same as `advanceGuideStep` does, but this method never called
+        // this. `syncLumiGuideDisplayIfActive` already no-ops when the resolved state hasn't
+        // actually changed (the common case: moving between chords within the SAME step), so
+        // calling it unconditionally here is cheap and only ever sends when warranted.
+        syncLumiGuideDisplayIfActive()
     }
 
     /// Moves exactly one position in `direction` (+1/-1). Returns `false` if there's nowhere
@@ -1719,6 +1727,21 @@ public final class ImprovSession: @unchecked Sendable {
         }
     }
 
+    /// Stops the current piece playback early — the "Arreter" button's counterpart to
+    /// letting it finish on its own. Bumps `playbackGeneration` (invalidating every already-
+    /// scheduled note-on/off/chord-index closure from the current `play()` call, same
+    /// mechanism `play()` itself relies on) and asks `player` to immediately silence
+    /// whatever it might currently have sounding. A no-op if nothing is playing.
+    public func stopPlayback() {
+        guard isPlaying else { return }
+        playbackGeneration += 1
+        player.stopAllNotes()
+        isPlaying = false
+        playbackHeldPitches = []
+        playbackCurrentChordIndex = nil
+        append("Lecture arretee.")
+    }
+
     /// Resolves every distinct `RenderedNote.instrumentName` used by `notes` to an actual
     /// sample file in `sampleFolder` (same folder/lookup `use-sample`/`loadSample(named:)`
     /// already use for the piece-playback default sound) — a name with no matching file is
@@ -1869,9 +1892,16 @@ public final class ImprovSession: @unchecked Sendable {
             break
         case .microphone:
             let mode = tracks[index].microphoneRecognitionMode
-            let newListener = MicrophonePitchListener(strategy: Self.analysisStrategy(for: mode)) { [weak self] detected, level in
-                self?.handleDetectedPitches(detected, level: level, track: id)
-            }
+            let newListener = MicrophonePitchListener(
+                strategy: Self.analysisStrategy(for: mode),
+                handler: { [weak self] detected, level in
+                    self?.handleDetectedPitches(detected, level: level, track: id)
+                },
+                spectrumHandler: { [weak self] magnitudes, binHz in
+                    self?.storeMicrophoneSpectrum(magnitudes: magnitudes, binHz: binHz)
+                }
+            )
+            newListener.spectrumEnabled = microphoneSpectrumCaptureEnabled
             try newListener.start()
             microphoneListener = newListener
             pitchStabilizers[id] = MicrophonePitchStabilizer(policy: Self.stabilizerPolicy(for: mode))
@@ -2054,6 +2084,22 @@ public final class ImprovSession: @unchecked Sendable {
         try loadSample(named: sampleFiles[index])
     }
 
+    /// Same as `loadSample(named:)`, for `soundTrackPlayer`'s own sampler instead of the
+    /// piece-playback one — until this is called, a `SoundTrack` recording plays back through
+    /// the default sine synth, exactly like a piece would before its own `loadSample`.
+    public func loadSoundTrackSample(named name: String) throws {
+        guard let sampleFolder else { throw SessionError.noSampleFolderListed }
+        let url = URL(fileURLWithPath: sampleFolder).appendingPathComponent(name)
+        try soundTrackPlayer.loadSample(at: url)
+        append("Son de lecture (enregistrement): \(name)")
+    }
+
+    /// Convenience over `loadSoundTrackSample(named:)` using the 0-based position in `sampleFiles`.
+    public func loadSoundTrackSample(atIndex index: Int) throws {
+        guard sampleFiles.indices.contains(index) else { throw SessionError.invalidSampleIndex }
+        try loadSoundTrackSample(named: sampleFiles[index])
+    }
+
     /// Simulates a key press/release without real MIDI hardware — useful for testing and
     /// demoing, and the same entry point the computer-keyboard track's typed-piano feature
     /// and a future on-screen/touch virtual keyboard both use. Defaults to `.computerKeyboard`
@@ -2157,6 +2203,39 @@ public final class ImprovSession: @unchecked Sendable {
     /// input.
     public func simulateMicrophoneDetection(_ detected: [DetectedPitch], level: Float, track: TrackID = .microphone) {
         handleDetectedPitches(detected, level: level, track: track)
+    }
+
+    // MARK: - Microphone spectroscope (opt-in, off by default — see MicrophoneControlsView)
+
+    /// Guarded by `liveInputQueue`, same as every other piece of mic-derived state.
+    private var microphoneSpectrumSnapshot: (magnitudes: [Float], binHz: Double)?
+    /// The user's own toggle, remembered independently of whether a `MicrophonePitchListener`
+    /// currently exists — `startTrack(.microphone)` applies it to a freshly-created listener,
+    /// and `setMicrophoneSpectrumCaptureEnabled` applies it live to an already-running one, so
+    /// flipping the toggle either before or after starting the microphone both work. Off by
+    /// default, per explicit user request.
+    private var microphoneSpectrumCaptureEnabled = false
+
+    private func storeMicrophoneSpectrum(magnitudes: [Float], binHz: Double) {
+        liveInputQueue.sync { microphoneSpectrumSnapshot = (magnitudes, binHz) }
+    }
+
+    /// Turns the microphone's spectroscope capture on/off — cheap to leave off (the default):
+    /// `MicrophonePitchListener` only does the extra per-window FFT-spectrum copy at all when
+    /// this is `true` (see its own `spectrumEnabled` doc comment).
+    public func setMicrophoneSpectrumCaptureEnabled(_ enabled: Bool) {
+        microphoneSpectrumCaptureEnabled = enabled
+        microphoneListener?.spectrumEnabled = enabled
+        if !enabled { liveInputQueue.sync { microphoneSpectrumSnapshot = nil } }
+    }
+
+    /// The most recent magnitude spectrum captured from the microphone, or `nil` if
+    /// spectroscope capture is off (see `setMicrophoneSpectrumCaptureEnabled`) or nothing's
+    /// been analyzed yet. For a UI to poll (e.g. a `TimelineView`), not to observe reactively
+    /// — this app deliberately never binds SwiftUI directly to anything mutated off the main
+    /// thread (see `SessionUIBridge`'s own doc comment for why).
+    public func currentMicrophoneSpectrum() -> (magnitudes: [Float], binHz: Double)? {
+        liveInputQueue.sync { microphoneSpectrumSnapshot }
     }
 
     /// Re-runs one track's chord/mode recognition and logs a line only when the result
@@ -3070,6 +3149,52 @@ public final class ImprovSession: @unchecked Sendable {
         try loadNoteColorSettings(fromJSONFile: path)
     }
 
+    // MARK: - LLM API keys (persisted, plaintext — see LLMAPIKeysFile's doc comment)
+
+    public private(set) var llmAPIKeys = LLMAPIKeysFile()
+
+    public func loadLLMAPIKeys(fromJSONFile path: String) throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        llmAPIKeys = try JSONDecoder().decode(LLMAPIKeysFile.self, from: data)
+        for (envVar, key) in llmAPIKeys.keysByEnvVar { APIKeyStore.set(key, forEnvVar: envVar) }
+    }
+
+    /// Mirrors `loadOrCreateLumiSettings(fromJSONFile:)`: writes the defaults first if
+    /// nothing is there yet, then loads it either way — including pushing every stored key
+    /// into `APIKeyStore` so a relaunch doesn't need the key retyped before composing.
+    public func loadOrCreateLLMAPIKeys(fromJSONFile path: String) throws {
+        if !FileManager.default.fileExists(atPath: path) {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(LLMAPIKeysFile())
+            try data.write(to: URL(fileURLWithPath: path))
+        }
+        try loadLLMAPIKeys(fromJSONFile: path)
+    }
+
+    private func saveLLMAPIKeys() throws {
+        guard let settingsFolder else { return }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(llmAPIKeys)
+        try data.write(to: URL(fileURLWithPath: (settingsFolder as NSString).appendingPathComponent("llm-api-keys.json")))
+    }
+
+    /// Stores (or clears, if `key` is empty) the API key for a given env-var slot (e.g.
+    /// "ANTHROPIC_API_KEY", the value of some connection's `apiKeyEnvVar`) — both pushed into
+    /// `APIKeyStore` (what `LLMProvider`s actually read at call time) and persisted to disk,
+    /// so it survives a relaunch without needing a real shell environment variable set.
+    public func setLLMAPIKey(_ key: String, forEnvVar envVar: String) throws {
+        if key.isEmpty {
+            llmAPIKeys.keysByEnvVar.removeValue(forKey: envVar)
+        } else {
+            llmAPIKeys.keysByEnvVar[envVar] = key
+        }
+        APIKeyStore.set(key.isEmpty ? nil : key, forEnvVar: envVar)
+        try saveLLMAPIKeys()
+        append(key.isEmpty ? "Clef API effacee pour \(envVar)." : "Clef API mise a jour pour \(envVar).")
+    }
+
     // MARK: - LUMI Keys settings (persisted colors/brightness/auto-propagation)
 
     /// See `LumiSettingsFile`'s own doc comment for defaults/persistence shape.
@@ -3206,13 +3331,70 @@ public final class ImprovSession: @unchecked Sendable {
         }
     }
 
+    /// Sends the LUMI's own built-in "piano" display directly — bypassing
+    /// `notifyActiveScreen`'s own toggles/state tracking entirely — the simplest possible
+    /// smoke test: unmistakably visible on the device regardless of any color/scale
+    /// configuration, and it's the very display every other LUMI feature here falls back to
+    /// (see `LumiAutoPropagationScreen`'s `default` case), so if THIS doesn't show up on the
+    /// device, nothing else will either. Unlike `notifyActiveScreen` (which swallows errors
+    /// via `try?` on purpose — a missing LUMI shouldn't ever interrupt normal use), this
+    /// surfaces a real error (no destination detected, MIDI send failed) so a "Testeur LUMI"
+    /// UI can answer "is basic sending wired up at all" directly.
+    /// `deviceID` overrides the SysEx envelope's own default (0x34) — see
+    /// `LumiSysex.envelope`'s doc comment: this byte may be a topology-assigned ID rather
+    /// than a fixed constant, meaning it can silently change after an unplug/replug, with
+    /// every command afterward reaching the device but being ignored (wrong device ID, not a
+    /// missing/broken connection) — exactly the "worked once, then stopped" symptom this
+    /// parameter exists to let a "Testeur LUMI" UI probe for, by trying other values.
+    public func testLumiPianoMode(destinationIndex: Int? = nil, deviceID: UInt8 = 0x34) throws {
+        guard let index = destinationIndex ?? MIDIOutputPort.autoDetectedDestinationIndex(nameContains: "lumi") else {
+            throw SessionError.lumiDestinationNotFound
+        }
+        try sendLumiMessages([LumiSysex.setColorMode(.piano, deviceID: deviceID)], toDestinationIndex: index)
+        append("Test LUMI : mode piano envoye (ID appareil 0x\(String(deviceID, radix: 16, uppercase: true))).")
+    }
+
+    /// Every currently-visible CoreMIDI destination's display name — lets a "Testeur LUMI"
+    /// UI show exactly what's detected (and under what name) without needing any
+    /// `MIDIEngine` type exposed outside this module. Useful when
+    /// `MIDIOutputPort.autoDetectedDestinationIndex`'s "name must contain 'lumi', must match
+    /// exactly one" requirement fails and nothing explains why.
+    public static func visibleMIDIDestinationNames() -> [String] {
+        MIDIOutputPort.destinationDescriptors().map(\.displayName)
+    }
+
     // MARK: - LUMI Keys live display ("run" mode — follow live recognition, else piano)
 
     private struct LumiDisplayConfig {
-        let destinationIndex: Int
+        /// `nil` when the destination was auto-detected (the common case) rather than
+        /// explicitly passed by the caller.
+        ///
+        /// Real bug found and fixed (2026-07-25), root-caused via live protocol captures
+        /// (MIDI Monitor + ROLI Dashboard) that first ruled out the device-ID byte/checksum/
+        /// bit-packing as the cause of a "LUMI worked once, then stopped" report — both
+        /// matched this encoder byte-for-byte, so the wire format itself was never the
+        /// problem. The actual bug: `startLumiLiveDisplay`/`startLumiGuideDisplay` used to
+        /// resolve `MIDIOutputPort.autoDetectedDestinationIndex(nameContains: "lumi")` ONCE
+        /// and cache the resulting `Int`, then reuse that same index on every subsequent
+        /// send for as long as Run/Guide mode stayed on (i.e. on every recognized chord/mode
+        /// change). But that index is just a position in CoreMIDI's current destination
+        /// enumeration — it can shift the moment the visible destination SET changes (any
+        /// other MIDI device connecting/disconnecting, not just the LUMI itself), silently
+        /// redirecting every later send to whatever device now sits at that stale index (or
+        /// to nothing, if the list shrank) — exactly "worked once [while the index was still
+        /// valid], then stopped [after something else changed the enumeration]". Fixed by
+        /// never caching a resolved index for this ongoing case: `resolvedDestinationIndex()`
+        /// re-resolves by name on every single call instead. An index the CALLER explicitly
+        /// passed in (disambiguating more than one class-compliant device) is a deliberate
+        /// choice and is still honored as fixed for that whole session, same as before.
+        let explicitDestinationIndex: Int?
         let rootColor: (red: UInt8, green: UInt8, blue: UInt8)
         let scaleColor: (red: UInt8, green: UInt8, blue: UInt8)
         let brightnessPercentage: Int
+
+        func resolvedDestinationIndex() -> Int? {
+            explicitDestinationIndex ?? MIDIOutputPort.autoDetectedDestinationIndex(nameContains: "lumi")
+        }
     }
 
     /// What the LUMI should currently show while live display mode is on. `.none` is an
@@ -3262,11 +3444,14 @@ public final class ImprovSession: @unchecked Sendable {
         scaleColor: (red: UInt8, green: UInt8, blue: UInt8),
         brightnessPercentage: Int = 100
     ) throws {
-        guard let index = destinationIndex ?? MIDIOutputPort.autoDetectedDestinationIndex(nameContains: "lumi") else {
+        // Validates a destination exists RIGHT NOW (immediate feedback if the LUMI isn't
+        // detected at all), but does NOT cache this resolved index for later sends — see
+        // `LumiDisplayConfig.explicitDestinationIndex`'s doc comment for why.
+        guard destinationIndex ?? MIDIOutputPort.autoDetectedDestinationIndex(nameContains: "lumi") != nil else {
             throw SessionError.lumiDestinationNotFound
         }
         liveInputQueue.sync {
-            lumiLiveModeConfig = LumiDisplayConfig(destinationIndex: index, rootColor: rootColor, scaleColor: scaleColor, brightnessPercentage: brightnessPercentage)
+            lumiLiveModeConfig = LumiDisplayConfig(explicitDestinationIndex: destinationIndex, rootColor: rootColor, scaleColor: scaleColor, brightnessPercentage: brightnessPercentage)
             lumiLiveModeLastState = .none
         }
         syncLumiLiveModeIfActive()
@@ -3277,7 +3462,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// so "run mode off" always means "honest piano display", never stale leftover colors.
     public func stopLumiLiveDisplay() {
         let previousIndex: Int? = liveInputQueue.sync {
-            let index = lumiLiveModeConfig?.destinationIndex
+            let index = lumiLiveModeConfig.flatMap { $0.resolvedDestinationIndex() }
             lumiLiveModeConfig = nil
             lumiLiveModeLastState = .none
             return index
@@ -3304,6 +3489,10 @@ public final class ImprovSession: @unchecked Sendable {
             return (config, newState)
         }
         guard let pending else { return }
+        guard let index = pending.config.resolvedDestinationIndex() else {
+            append("Erreur envoi LUMI (mode run) : destination LUMI introuvable.")
+            return
+        }
         do {
             switch pending.state {
             case .mode(let mode):
@@ -3313,10 +3502,10 @@ public final class ImprovSession: @unchecked Sendable {
                         rootColor: pending.config.rootColor, scaleColor: pending.config.scaleColor,
                         brightnessPercentage: pending.config.brightnessPercentage
                     ),
-                    toDestinationIndex: pending.config.destinationIndex
+                    toDestinationIndex: index
                 )
             case .piano:
-                try sendLumiMessages([LumiSysex.setColorMode(.piano)], toDestinationIndex: pending.config.destinationIndex)
+                try sendLumiMessages([LumiSysex.setColorMode(.piano)], toDestinationIndex: index)
             case .none:
                 break
             }
@@ -3365,10 +3554,12 @@ public final class ImprovSession: @unchecked Sendable {
         scaleColor: (red: UInt8, green: UInt8, blue: UInt8),
         brightnessPercentage: Int = 100
     ) throws {
-        guard let index = destinationIndex ?? MIDIOutputPort.autoDetectedDestinationIndex(nameContains: "lumi") else {
+        // Validates a destination exists RIGHT NOW, without caching it for later sends — see
+        // `LumiDisplayConfig.explicitDestinationIndex`'s doc comment for why.
+        guard destinationIndex ?? MIDIOutputPort.autoDetectedDestinationIndex(nameContains: "lumi") != nil else {
             throw SessionError.lumiDestinationNotFound
         }
-        lumiGuideDisplayConfig = LumiDisplayConfig(destinationIndex: index, rootColor: rootColor, scaleColor: scaleColor, brightnessPercentage: brightnessPercentage)
+        lumiGuideDisplayConfig = LumiDisplayConfig(explicitDestinationIndex: destinationIndex, rootColor: rootColor, scaleColor: scaleColor, brightnessPercentage: brightnessPercentage)
         lumiGuideDisplayLastState = .none
         syncLumiGuideDisplayIfActive()
         append("Mode guide LUMI actif.")
@@ -3377,7 +3568,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// Pushes `.piano` on the way out (if it was actually active — a no-op if it wasn't),
     /// same reasoning as `stopLumiLiveDisplay`'s own doc comment.
     public func stopLumiGuideDisplay() {
-        guard let previousIndex = lumiGuideDisplayConfig?.destinationIndex else { return }
+        guard let previousIndex = lumiGuideDisplayConfig?.resolvedDestinationIndex() else { return }
         lumiGuideDisplayConfig = nil
         lumiGuideDisplayLastState = .none
         do {
@@ -3396,15 +3587,19 @@ public final class ImprovSession: @unchecked Sendable {
         let newState = LumiGuideDisplayLastState.current(forStepMode: currentGuideStepReference())
         guard newState != lumiGuideDisplayLastState else { return }
         lumiGuideDisplayLastState = newState
+        guard let index = config.resolvedDestinationIndex() else {
+            append("Erreur envoi LUMI (mode guide) : destination LUMI introuvable.")
+            return
+        }
         do {
             switch newState {
             case .guideMap(let reference):
                 try sendLumiMessages(
                     LumiGuideMap.messages(mode: reference, rootColor: config.rootColor, scaleColor: config.scaleColor, brightnessPercentage: config.brightnessPercentage),
-                    toDestinationIndex: config.destinationIndex
+                    toDestinationIndex: index
                 )
             case .piano:
-                try sendLumiMessages([LumiSysex.setColorMode(.piano)], toDestinationIndex: config.destinationIndex)
+                try sendLumiMessages([LumiSysex.setColorMode(.piano)], toDestinationIndex: index)
             case .none:
                 break
             }
@@ -4076,6 +4271,18 @@ public final class ImprovSession: @unchecked Sendable {
             self.soundTrackHeldPitches = []
             self.append("Lecture de la soundtrack terminee.")
         }
+    }
+
+    /// Stops the current soundtrack playback early — mirrors `stopPlayback()`, just for
+    /// `soundTrackPlayer`/`isPlayingSoundTrack` instead of `player`/`isPlaying`. A no-op if
+    /// nothing is playing.
+    public func stopSoundTrackPlayback() {
+        guard isPlayingSoundTrack else { return }
+        soundTrackPlaybackGeneration += 1
+        soundTrackPlayer.stopAllNotes()
+        isPlayingSoundTrack = false
+        soundTrackHeldPitches = []
+        append("Lecture de la soundtrack arretee.")
     }
 
     /// Asks the AI module to reverse-engineer a measure-based `Piece` structure out of

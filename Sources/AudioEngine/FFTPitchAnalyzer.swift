@@ -108,6 +108,18 @@ public final class FFTPitchAnalyzer {
         return magnitudes
     }
 
+    /// The raw Hann-windowed magnitude spectrum (length `size / 2`) for `samples`, plus the
+    /// frequency each bin index represents (`index * binHz`) — for a caller that wants to
+    /// actually SHOW the spectrum (a spectroscope), not just this analyzer's own note-
+    /// detection results. Reuses the exact same private `magnitudeSpectrum` every other
+    /// method here does, so a displayed spectrum can never drift from what detection is
+    /// actually seeing. `nil` under the same conditions those methods already return no
+    /// result for (wrong length, too quiet — see `rms(of:)`/`minimumRMSForDetection`).
+    public func spectrumSnapshot(of samples: [Float], sampleRate: Double) -> (magnitudes: [Float], binHz: Double)? {
+        guard let magnitudes = magnitudeSpectrum(of: samples) else { return nil }
+        return (magnitudes, sampleRate / Double(size))
+    }
+
     /// Parabolic interpolation across `bin` and its two neighbors, for sub-bin frequency
     /// resolution (a single FFT bin alone is much coarser than one semitone at low
     /// frequencies). `bin` must be strictly between the first and last index of `magnitudes`.

@@ -62,3 +62,19 @@ CHANGELOG une fois traitée.
    `Docs/ARCHITECTURE.md` pour le détail, prête à implémenter sans reprendre ce qui précède
    (`InstrumentIdentityHint` n'a délibérément pas de cas `.remote` encore, c'est le point
    d'extension prévu).
+
+## App SwiftUI (2026-07-25)
+
+1. **Stockage des clefs API LLM dans le Trousseau (Keychain), pas en texte clair.** L'app
+   SwiftUI (contrairement au CLI, qui lit une vraie variable d'environnement positionnée
+   avant le lancement) n'a aucun moyen pratique de faire saisir une variable d'environnement
+   par l'utilisateur — l'onglet JamShack > LLM permet donc de taper la clef directement, mais
+   elle est aujourd'hui sauvegardée en JSON texte clair (`LLMAPIKeysFile`,
+   `Sources/AppCore/LLMAPIKeysFile.swift`, fichier `llm-api-keys.json` dans le dossier
+   Reglages) — accessible à quiconque a accès à ce dossier (par ex. tout appareil synchronisé
+   sur le même compte iCloud Drive, si le dossier Reglages y est). Décision explicite de
+   l'utilisateur : accepter ce compromis pour débloquer l'usage GUI maintenant, migrer plus
+   tard vers le Trousseau (`Security.framework`/`Keychain Services`, ou
+   `kSecClassGenericPassword`) sans changer la surface d'API (`ImprovSession.setLLMAPIKey`/
+   `APIKeyStore.resolve` dans `Sources/LLMEngine/APIKeyStore.swift` resteraient les mêmes
+   points d'entrée, seule l'implémentation de la persistance changerait).

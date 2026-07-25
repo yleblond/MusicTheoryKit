@@ -233,8 +233,10 @@ public struct CircleOfFifthsWheelView: View {
 
 extension Color {
     /// Parses "#RRGGBB" (the only shape `ColorPalette`/`WebConsoleState.palette` ever produce)
-    /// — falls back to opaque black for anything else rather than crashing on a malformed value.
-    fileprivate init(hex: String) {
+    /// — falls back to opaque black for anything else rather than crashing on a malformed
+    /// value. Not `fileprivate` — `PitchKeyboardView`'s degree badges (also palette-hex-driven)
+    /// reuse this instead of duplicating it.
+    init(hex: String) {
         var text = hex
         if text.hasPrefix("#") { text.removeFirst() }
         guard text.count == 6, let value = UInt32(text, radix: 16) else {

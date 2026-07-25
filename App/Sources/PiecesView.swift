@@ -1,31 +1,28 @@
 import SwiftUI
 import AppCore
 
-/// The "Scene" tab — split into two sub-tabs (same vertical icon-sidebar pattern as the
-/// "JamShack" tab, for the same reason: keeps each screen focused instead of one long form):
-/// **Fichier** (create/rename the scene, single-file export/import, the folder-based scene
-/// browser — creating/loading a scene here switches to **Disposition**, per explicit user
-/// request — see `SceneFileView`) and **Disposition** (instruments <-> roles, side by side —
-/// see `SceneLayoutView`).
-struct SceneManagementView: View {
+/// The "Morceaux" tab — split into two sub-tabs: **Fichier** (loaded piece info, demo, folder
+/// browser — loading a piece here switches to **Play** — see `PiecesFileView`) and **Play**
+/// (play/stop the loaded piece, choose its sound — see `PiecesPlayView`).
+struct PiecesView: View {
     let session: ImprovSession
 
     private enum SubTab: CaseIterable, Identifiable {
-        case file, layout
+        case file, play
 
         var id: Self { self }
 
         var systemImage: String {
             switch self {
             case .file: return "doc.text"
-            case .layout: return "rectangle.split.2x1"
+            case .play: return "play.fill"
             }
         }
 
         var accessibilityLabel: String {
             switch self {
-            case .file: return "Fichier de scene"
-            case .layout: return "Disposition de la scene"
+            case .file: return "Fichier de morceau"
+            case .play: return "Jouer"
             }
         }
     }
@@ -57,8 +54,8 @@ struct SceneManagementView: View {
             Divider()
             Group {
                 switch subTab {
-                case .file: SceneFileView(session: session, onLoaded: { subTab = .layout })
-                case .layout: SceneLayoutView(session: session)
+                case .file: PiecesFileView(session: session, onLoaded: { subTab = .play })
+                case .play: PiecesPlayView(session: session)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -67,5 +64,5 @@ struct SceneManagementView: View {
 }
 
 #Preview {
-    SceneManagementView(session: ImprovSession())
+    PiecesView(session: ImprovSession())
 }
