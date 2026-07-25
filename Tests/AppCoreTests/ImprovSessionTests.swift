@@ -440,6 +440,97 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertTrue(session.tracks.first { $0.id == .microphone }!.heldPitches.contains(60))
     }
 
+    func testMicrophoneCalibrationCapturesThePeakLevelForTheQuietPhase() throws {
+        let session = ImprovSession()
+        try session.startTrack(.microphone)
+        session.beginMicrophoneCalibrationCapture(phase: .quiet)
+        session.simulateMicrophoneDetection([], level: 0.01, track: .microphone)
+        session.simulateMicrophoneDetection([], level: 0.05, track: .microphone) // peak
+        session.simulateMicrophoneDetection([], level: 0.02, track: .microphone) // lower again
+        try session.endMicrophoneCalibrationCapture()
+        XCTAssertEqual(session.microphoneCalibration.quietRMS, 0.05)
+    }
+
+    func testMicrophoneCalibrationCapturesThePeakLevelForTheLoudPhase() throws {
+        let session = ImprovSession()
+        try session.startTrack(.microphone)
+        session.beginMicrophoneCalibrationCapture(phase: .loud)
+        session.simulateMicrophoneDetection([], level: 0.2, track: .microphone)
+        session.simulateMicrophoneDetection([], level: 0.4, track: .microphone) // peak
+        try session.endMicrophoneCalibrationCapture()
+        XCTAssertEqual(session.microphoneCalibration.loudRMS, 0.4)
+    }
+
+    func testCancellingMicrophoneCalibrationCaptureLeavesSettingsUnchanged() throws {
+        let session = ImprovSession()
+        try session.startTrack(.microphone)
+        let before = session.microphoneCalibration
+        session.beginMicrophoneCalibrationCapture(phase: .loud)
+        session.simulateMicrophoneDetection([], level: 0.9, track: .microphone)
+        session.cancelMicrophoneCalibrationCapture()
+        try session.endMicrophoneCalibrationCapture() // no capture in progress: a no-op
+        XCTAssertEqual(session.microphoneCalibration, before)
+    }
+
+    func testResetMicrophoneCalibrationRestoresDefaults() throws {
+        let session = ImprovSession()
+        try session.startTrack(.microphone)
+        session.beginMicrophoneCalibrationCapture(phase: .loud)
+        session.simulateMicrophoneDetection([], level: 0.9, track: .microphone)
+        try session.endMicrophoneCalibrationCapture()
+        XCTAssertNotEqual(session.microphoneCalibration, MicrophoneCalibrationSettingsFile())
+        try session.resetMicrophoneCalibration()
+        XCTAssertEqual(session.microphoneCalibration, MicrophoneCalibrationSettingsFile())
+    }
+
+    // Note: no test exercises `storeMicrophoneSpectrum`'s opportunistic peak-magnitude capture
+    // end-to-end via real microphone hardware — an earlier attempt was inherently flaky (it
+    // depends on real ambient room noise clearing `minimumRMSForDetection` within the test's
+    // sleep window, which no sleep duration can guarantee) and removed. The preference logic
+    // (exact capture wins when > 0, else a real RMS-to-magnitude conversion) is covered
+    // deterministically by `testEstimatedPeakMagnitudePrefersExactCaptureOverRMSConversion`
+    // below; the "off" path is covered by the test immediately below.
+
+    func testMicrophoneCalibrationLeavesPeakSpectrumMagnitudeAtZeroWhenSpectroscopeIsOff() throws {
+        let session = ImprovSession()
+        try session.startTrack(.microphone)
+        // Spectroscope left off (the default) — no spectrum data ever flows, so there's
+        // nothing to capture a peak magnitude from.
+        session.beginMicrophoneCalibrationCapture(phase: .quiet)
+        session.simulateMicrophoneDetection([], level: 0.02, track: .microphone)
+        try session.endMicrophoneCalibrationCapture()
+        XCTAssertEqual(session.microphoneCalibration.quietPeakMagnitude, 0)
+    }
+
+    func testMicrophoneCalibrationSettingsFileDecodesOldJSONWithoutPeakMagnitudeFields() throws {
+        let oldJSON = #"{"quietRMS": 0.01, "loudRMS": 0.2}"#.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(MicrophoneCalibrationSettingsFile.self, from: oldJSON)
+        XCTAssertEqual(decoded.quietRMS, 0.01)
+        XCTAssertEqual(decoded.loudRMS, 0.2)
+        XCTAssertEqual(decoded.quietPeakMagnitude, 0)
+        XCTAssertEqual(decoded.loudPeakMagnitude, 0)
+    }
+
+    func testEstimatedPeakMagnitudePrefersExactCaptureOverRMSConversion() {
+        var calibration = MicrophoneCalibrationSettingsFile(loudRMS: 0.3, loudPeakMagnitude: 123456)
+        XCTAssertEqual(calibration.estimatedLoudPeakMagnitude, 123456)
+        calibration.loudPeakMagnitude = 0 // never captured with spectrum data
+        // Falls back to a real RMS-to-magnitude conversion, not zero or a live-frame value.
+        let expected = Float(Double(calibration.loudRMS) * Double(calibration.loudRMS) * FFTPitchAnalyzer.approximatePeakPowerPerSquaredRMS)
+        XCTAssertEqual(calibration.estimatedLoudPeakMagnitude, expected)
+        XCTAssertGreaterThan(calibration.estimatedLoudPeakMagnitude, 0)
+    }
+
+    func testMicrophoneCalibrationNormalizedMapsQuietLoudRangeAndRejectsADegenerateRange() {
+        let calibration = MicrophoneCalibrationSettingsFile(quietRMS: 0.01, loudRMS: 0.11)
+        XCTAssertEqual(calibration.normalized(0.01), 0)
+        XCTAssertEqual(calibration.normalized(0.11), 1)
+        XCTAssertEqual(calibration.normalized(0.06) ?? -1, Float(0.5), accuracy: 0.0001)
+        XCTAssertEqual(calibration.normalized(-1), 0) // clamped below quiet
+        XCTAssertEqual(calibration.normalized(5), 1) // clamped above loud
+        XCTAssertNil(MicrophoneCalibrationSettingsFile(quietRMS: 0.2, loudRMS: 0.1).normalized(0.15))
+    }
+
     func testEnablingSoundOnATrackSoundsIncomingNotes() throws {
         let session = ImprovSession()
         try session.start() // needed before the track's own sampler is exercised below

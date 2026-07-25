@@ -36,6 +36,7 @@ targets:
         SWIFT_VERSION: "6.0"
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     entitlements:
       path: Generated/JamShackApp.entitlements
       properties:

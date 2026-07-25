@@ -84,6 +84,30 @@ public final class FFTPitchAnalyzer {
         return (sumOfSquares / Float(samples.count)).squareRoot()
     }
 
+    /// The ratio between a peak FFT bin's magnitude (`spectrumSnapshot`/`vDSP_zvmags` — this
+    /// is POWER, i.e. magnitude-squared, not amplitude) and the squared time-domain RMS
+    /// (`rms(of:)`) of a single sine tone at that peak's frequency, FOR `size == 4096` with
+    /// this analyzer's Hann-NORM window. In other words: `peakMagnitude ≈ approximateRatio *
+    /// rms * rms` for a roughly single-tone signal (a played note, which is exactly what mic
+    /// calibration asks the user to play).
+    ///
+    /// **Empirically measured, not analytically derived** — measured by feeding synthetic
+    /// sine tones of a known RMS through this exact analyzer at several frequencies (80Hz to
+    /// 3kHz) and several sub-bin phase offsets (a tone that doesn't land exactly on a bin
+    /// center loses some peak energy to spectral leakage into neighboring bins). The ratio
+    /// held consistent across that frequency range (varying about +-15% with bin alignment,
+    /// not with frequency), so one averaged constant is a reasonable stand-in — not an exact
+    /// conversion for every possible signal shape, but far better than no conversion at all.
+    /// Tied to `size`: this was measured for `size == 4096` specifically (the only window size
+    /// this app ever actually uses, via `MicrophonePitchListener`'s default
+    /// `analysisWindowSize`) — re-measure if that default ever changes, since magnitude scales
+    /// with the window's own sum, which depends on `size`.
+    ///
+    /// Used by `MicrophoneCalibrationSettingsFile` to turn a calibrated RMS level into an
+    /// expected peak magnitude WITHOUT requiring the spectroscope to have been open at
+    /// calibration time — see that type's own doc comment.
+    public static let approximatePeakPowerPerSquaredRMS: Double = 2.017e7
+
     /// Windows, FFTs, and returns the magnitude spectrum (length `size / 2`) — or `nil` if
     /// `samples` is the wrong length or too quiet (see `rms(of:)`/`minimumRMSForDetection`).
     /// Shared by `dominantFrequency` and `dominantFrequencies` so the actual FFT only

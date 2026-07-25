@@ -39,6 +39,7 @@
 		5E6F9AC439CDE09175FD0C3B /* MicrophoneControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */; };
 		60CEB1142DD1D191145837E6 /* JamShackLanguageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE39EAC785B1BF4AA9F44EDE /* JamShackLanguageView.swift */; };
 		6743E9D3C12B1E174E105531 /* JamSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44E28F5AF89E79FD7606B5CD /* JamSessionView.swift */; };
+		67CCA36685B322EFBE37923F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04D7D71FEF77850B75E4B7B5 /* Assets.xcassets */; };
 		68C6FE5177D67E4E3CAC7446 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85845D37B71BB8E94BC0A6E4 /* ContentView.swift */; };
 		6DFBB4E9B841927603BEE0F7 /* JamShackColorsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C99CBF1FBD1605E7FEA1F5C3 /* JamShackColorsView.swift */; };
 		7A5A34186E7782C4BB0A0B56 /* RecordingFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43140D25200D4FC00530C882 /* RecordingFileView.swift */; };
@@ -48,6 +49,7 @@
 		8044ABB2BF2C4C7E282F75F7 /* SceneManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */; };
 		81A9DF4DEF87ABCF374B5812 /* GuideDescriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E2F51CDF00A0B57FE9AEAB /* GuideDescriptionView.swift */; };
 		847D8A7872208ACF18F5A338 /* JamShackUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3A5A8CA68CCCCAA28A365476 /* JamShackUI */; };
+		84A0A5FA3CEB6B7C2D5E76AB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04D7D71FEF77850B75E4B7B5 /* Assets.xcassets */; };
 		8709F71477C329D65279EDAA /* Localization in Frameworks */ = {isa = PBXBuildFile; productRef = 263D3476D6FAF10646944B01 /* Localization */; };
 		87ADB9547777D950541A8943 /* CompositionFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCD1C63D851BB483B73CD474 /* CompositionFileView.swift */; };
 		89FA5DA51B57871082FEFA6D /* JamShackColorsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C99CBF1FBD1605E7FEA1F5C3 /* JamShackColorsView.swift */; };
@@ -91,6 +93,7 @@
 
 /* Begin PBXFileReference section */
 		02ECC889D04105BEF9F10780 /* RecordingIAView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIAView.swift; sourceTree = "<group>"; };
+		04D7D71FEF77850B75E4B7B5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneManagementView.swift; sourceTree = "<group>"; };
 		1190B8CF15C5292002934879 /* RecordingPlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingPlayView.swift; sourceTree = "<group>"; };
 		11F2C88E605F1362E9CA1EEB /* MusicTheoryKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MusicTheoryKit; path = ..; sourceTree = SOURCE_ROOT; };
@@ -168,6 +171,7 @@
 		95AD2A689F9027466D496CA0 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				04D7D71FEF77850B75E4B7B5 /* Assets.xcassets */,
 				A80BD5958DD843BF49738DE9 /* ColorHex.swift */,
 				C8B884B9A1FFA6496D1A1DE6 /* CompositionComposerView.swift */,
 				BCD1C63D851BB483B73CD474 /* CompositionFileView.swift */,
@@ -234,6 +238,7 @@
 			buildConfigurationList = 1C55C5455BC1FE3915FA586C /* Build configuration list for PBXNativeTarget "JamShackApp_iOS" */;
 			buildPhases = (
 				55D1154F87AF783D70706EEB /* Sources */,
+				3C161D350C41CE8C0A3C6F0E /* Resources */,
 				3D2DCD6FE4C3FCBDC2526BDF /* Frameworks */,
 			);
 			buildRules = (
@@ -255,6 +260,7 @@
 			buildConfigurationList = 183D1973CCA59E8342E855EA /* Build configuration list for PBXNativeTarget "JamShackApp_macOS" */;
 			buildPhases = (
 				12237D5A99CFA37DF7700FE2 /* Sources */,
+				BCEA68A838BE3C1D096F2E27 /* Resources */,
 				6B443BCDAB495A3736679A23 /* Frameworks */,
 			);
 			buildRules = (
@@ -304,6 +310,25 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		3C161D350C41CE8C0A3C6F0E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				67CCA36685B322EFBE37923F /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BCEA68A838BE3C1D096F2E27 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				84A0A5FA3CEB6B7C2D5E76AB /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		12237D5A99CFA37DF7700FE2 /* Sources */ = {

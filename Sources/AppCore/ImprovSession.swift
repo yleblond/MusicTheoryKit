@@ -689,6 +689,7 @@ public final class ImprovSession: @unchecked Sendable {
         try loadOrCreateLumiSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("lumi.json"))
         try loadOrCreateNoteColorSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("note-colors.json"))
         try loadOrCreateLLMAPIKeys(fromJSONFile: (folderPath as NSString).appendingPathComponent("llm-api-keys.json"))
+        try loadOrCreateMicrophoneCalibration(fromJSONFile: (folderPath as NSString).appendingPathComponent("microphone-calibration.json"))
         settingsFolder = folderPath
         append("Dossier de reglages: \(folderPath).")
     }
@@ -2185,6 +2186,10 @@ public final class ImprovSession: @unchecked Sendable {
             guard let index = tracks.firstIndex(where: { $0.id == track }) else { return }
             tracks[index].microphoneInputLevel = level
             tracks[index].lastDetectedPitches = detected
+            if var capture = microphoneCalibrationCapture {
+                capture.peakLevel = max(capture.peakLevel, level)
+                microphoneCalibrationCapture = capture
+            }
             let raw = Set(detected.map(\.midiPitch))
             for transition in pitchStabilizers[track]?.ingest(raw) ?? [] {
                 updateRecognitionState(
@@ -2207,17 +2212,63 @@ public final class ImprovSession: @unchecked Sendable {
 
     // MARK: - Microphone spectroscope (opt-in, off by default — see MicrophoneControlsView)
 
-    /// Guarded by `liveInputQueue`, same as every other piece of mic-derived state.
+    /// A dedicated queue, deliberately NOT `liveInputQueue`: unlike every other consumer of
+    /// `liveInputQueue`, `currentMicrophoneSpectrum()` is polled straight from a SwiftUI
+    /// `TimelineView` on the **main thread**, several times a second, for as long as the
+    /// spectroscope is open. `liveInputQueue` is also where the real-time microphone/MIDI
+    /// callback thread does its own frequent blocking `.sync` work (note detection, network
+    /// broadcast) — sharing that queue would mean the main thread's render pass and the
+    /// real-time audio thread repeatedly blocking on one another (priority inversion), which
+    /// can freeze the UI and, if it stalls the audio thread's real-time deadline long enough,
+    /// crash the process outright. This is exactly the "never bind SwiftUI directly to
+    /// anything mutated off the main thread [via a contended queue]" pitfall `SessionUIBridge`
+    /// exists to avoid everywhere else — an isolated, otherwise-unused queue for this one
+    /// scalar snapshot sidesteps it just as well without needing to route through the
+    /// bridge's `WebConsoleState` (which is also serialized over HTTP for the web console —
+    /// not a place to add a per-window magnitude array).
+    private let microphoneSpectrumQueue = DispatchQueue(label: "ImprovSession.microphoneSpectrum")
+    /// `@ObservationIgnored` is load-bearing, not cosmetic: `ImprovSession` is `@Observable`,
+    /// so without this, every read/write of this property goes through Swift's Observation
+    /// runtime (`ObservationRegistrar`/`ObservationCenter`), which uses its own internal lock
+    /// shared across the whole process — regardless of which queue guards the raw memory.
+    /// That lock is what actually deadlocked on-device: the real-time audio thread mutating
+    /// `tracks` (a legitimately-observed property) and this spectrum-queue thread mutating
+    /// this property both tried to acquire it at once, while the main thread's `TimelineView`
+    /// sat blocked on `microphoneSpectrumQueue.sync` waiting for the latter — three threads in
+    /// a cycle, confirmed via a live `sample` of the frozen process (all three parked on the
+    /// same `_MovableLockLock`/`ObservationCenter.invalidate` frame). This property was never
+    /// meant to be observed reactively anyway (see `currentMicrophoneSpectrum`'s own doc
+    /// comment — it's polled, not bound), so removing it from observation tracking entirely is
+    /// the actual fix, not just a queue swap. `microphoneSpectrumQueue` above still matters for
+    /// plain memory-safety (concurrent access to an un-observed property is still a data race),
+    /// it just no longer also has to fight SwiftUI's own lock.
+    @ObservationIgnored
     private var microphoneSpectrumSnapshot: (magnitudes: [Float], binHz: Double)?
     /// The user's own toggle, remembered independently of whether a `MicrophonePitchListener`
     /// currently exists — `startTrack(.microphone)` applies it to a freshly-created listener,
     /// and `setMicrophoneSpectrumCaptureEnabled` applies it live to an already-running one, so
     /// flipping the toggle either before or after starting the microphone both work. Off by
-    /// default, per explicit user request.
+    /// default, per explicit user request. `@ObservationIgnored` for the same reason as
+    /// `microphoneSpectrumSnapshot` above — it's flipped from the main thread (a UI toggle) but
+    /// read from `MicrophonePitchListener`'s own `spectrumEnabled`, never observed by a View.
+    @ObservationIgnored
     private var microphoneSpectrumCaptureEnabled = false
 
     private func storeMicrophoneSpectrum(magnitudes: [Float], binHz: Double) {
-        liveInputQueue.sync { microphoneSpectrumSnapshot = (magnitudes, binHz) }
+        microphoneSpectrumQueue.async { self.microphoneSpectrumSnapshot = (magnitudes, binHz) }
+        // Opportunistically feed the calibration capture's peak-magnitude tracking (see
+        // `microphoneCalibrationCapture`'s own doc comment) — a no-op if no capture is in
+        // progress. `microphoneCalibrationCapture` is guarded by `liveInputQueue`, NOT
+        // `microphoneSpectrumQueue`, so this hops onto that queue rather than touching it
+        // directly from here (this closure runs on the real-time audio thread, same as
+        // `handleDetectedPitches`, which already owns that property on `liveInputQueue`) —
+        // `.async`, matching the "never block the real-time thread" rule the spectrum
+        // snapshot write above already follows.
+        liveInputQueue.async {
+            guard var capture = self.microphoneCalibrationCapture else { return }
+            capture.peakMagnitude = max(capture.peakMagnitude, magnitudes.max() ?? 0)
+            self.microphoneCalibrationCapture = capture
+        }
     }
 
     /// Turns the microphone's spectroscope capture on/off — cheap to leave off (the default):
@@ -2226,16 +2277,114 @@ public final class ImprovSession: @unchecked Sendable {
     public func setMicrophoneSpectrumCaptureEnabled(_ enabled: Bool) {
         microphoneSpectrumCaptureEnabled = enabled
         microphoneListener?.spectrumEnabled = enabled
-        if !enabled { liveInputQueue.sync { microphoneSpectrumSnapshot = nil } }
+        if !enabled { microphoneSpectrumQueue.async { self.microphoneSpectrumSnapshot = nil } }
     }
 
     /// The most recent magnitude spectrum captured from the microphone, or `nil` if
     /// spectroscope capture is off (see `setMicrophoneSpectrumCaptureEnabled`) or nothing's
-    /// been analyzed yet. For a UI to poll (e.g. a `TimelineView`), not to observe reactively
-    /// — this app deliberately never binds SwiftUI directly to anything mutated off the main
-    /// thread (see `SessionUIBridge`'s own doc comment for why).
+    /// been analyzed yet. Safe to poll directly from the main thread (e.g. a `TimelineView`)
+    /// — see `microphoneSpectrumQueue`'s own doc comment for why this one piece of state
+    /// deliberately isn't guarded by `liveInputQueue` like the rest of this class.
     public func currentMicrophoneSpectrum() -> (magnitudes: [Float], binHz: Double)? {
-        liveInputQueue.sync { microphoneSpectrumSnapshot }
+        microphoneSpectrumQueue.sync { microphoneSpectrumSnapshot }
+    }
+
+    // MARK: - Microphone calibration (two-point quiet/loud range, see MicrophoneCalibrationSettingsFile)
+
+    public enum MicrophoneCalibrationPhase: Sendable, Equatable {
+        case quiet
+        case loud
+    }
+
+    /// Guarded by `liveInputQueue`, same as `microphoneInputLevel` — set/cleared only from
+    /// the main thread (`beginMicrophoneCalibrationCapture`/`endMicrophoneCalibrationCapture`)
+    /// but updated from the microphone's real-time callback thread inside
+    /// `handleDetectedPitches`, which already owns that queue for `microphoneInputLevel` — not
+    /// a new source of cross-thread state, so no new queue is needed here (unlike the
+    /// spectroscope's `microphoneSpectrumQueue`: this isn't polled tightly from a
+    /// `TimelineView`, only read once when the UI ends a capture). `@ObservationIgnored` for
+    /// the same reason as `microphoneSpectrumSnapshot` above — this is mutated from the
+    /// real-time audio thread (inside `handleDetectedPitches`, alongside `tracks`), and never
+    /// meant to be observed by any View; leaving it under Observation tracking would add a
+    /// second background-thread contender for SwiftUI's internal invalidation lock, the same
+    /// mechanism that caused the spectroscope deadlock.
+    @ObservationIgnored
+    private var microphoneCalibrationCapture: (phase: MicrophoneCalibrationPhase, peakLevel: Float, peakMagnitude: Float)?
+
+    /// See `MicrophoneCalibrationSettingsFile`'s own doc comment for what this is used for.
+    public private(set) var microphoneCalibration = MicrophoneCalibrationSettingsFile()
+
+    public func loadMicrophoneCalibration(fromJSONFile path: String) throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        microphoneCalibration = try JSONDecoder().decode(MicrophoneCalibrationSettingsFile.self, from: data)
+    }
+
+    /// Mirrors `loadOrCreateLumiSettings(fromJSONFile:)`: writes the defaults first if
+    /// nothing is there yet, then loads it either way.
+    public func loadOrCreateMicrophoneCalibration(fromJSONFile path: String) throws {
+        if !FileManager.default.fileExists(atPath: path) {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(MicrophoneCalibrationSettingsFile())
+            try data.write(to: URL(fileURLWithPath: path))
+        }
+        try loadMicrophoneCalibration(fromJSONFile: path)
+    }
+
+    private func saveMicrophoneCalibration() throws {
+        guard let settingsFolder else { return }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(microphoneCalibration)
+        try data.write(to: URL(fileURLWithPath: (settingsFolder as NSString).appendingPathComponent("microphone-calibration.json")))
+    }
+
+    /// Starts a capture window for one calibration phase: for as long as this is active
+    /// (until `endMicrophoneCalibrationCapture()`/`cancelMicrophoneCalibrationCapture()` is
+    /// called), every microphone analysis window's level is compared against a running peak —
+    /// the UI drives how long that lasts (typically "hold this while you play a few quiet/
+    /// loud notes"), not this method, so there's no timer here to get out of sync with what's
+    /// shown on screen. Requires the microphone track to already be listening (same as the
+    /// existing "Niveau" meter) — otherwise the peak just stays at 0.
+    public func beginMicrophoneCalibrationCapture(phase: MicrophoneCalibrationPhase) {
+        liveInputQueue.sync { microphoneCalibrationCapture = (phase, 0, 0) }
+    }
+
+    /// Commits the current capture window's peak level (and peak spectral magnitude, if the
+    /// spectroscope happened to be on — see `microphoneCalibrationCapture`'s own doc comment,
+    /// 0 otherwise) into `microphoneCalibration` (persisted) and clears the capture state. A
+    /// no-op if no capture is in progress (e.g. `beginMicrophoneCalibrationCapture` was never
+    /// called, or this is called twice).
+    public func endMicrophoneCalibrationCapture() throws {
+        let capture: (phase: MicrophoneCalibrationPhase, peakLevel: Float, peakMagnitude: Float)? = liveInputQueue.sync {
+            let value = microphoneCalibrationCapture
+            microphoneCalibrationCapture = nil
+            return value
+        }
+        guard let capture else { return }
+        switch capture.phase {
+        case .quiet:
+            microphoneCalibration.quietRMS = capture.peakLevel
+            microphoneCalibration.quietPeakMagnitude = capture.peakMagnitude
+        case .loud:
+            microphoneCalibration.loudRMS = capture.peakLevel
+            microphoneCalibration.loudPeakMagnitude = capture.peakMagnitude
+        }
+        try saveMicrophoneCalibration()
+        let phaseLabel = capture.phase == .quiet ? "note faible" : "note forte"
+        append("Calibration microphone (\(phaseLabel)) enregistree : niveau \(capture.peakLevel).")
+    }
+
+    /// Abandons the current capture window without touching `microphoneCalibration` — for a
+    /// "Annuler" button mid-capture.
+    public func cancelMicrophoneCalibrationCapture() {
+        liveInputQueue.sync { microphoneCalibrationCapture = nil }
+    }
+
+    public func resetMicrophoneCalibration() throws {
+        microphoneCalibration = MicrophoneCalibrationSettingsFile()
+        try saveMicrophoneCalibration()
+        append("Calibration microphone reinitialisee.")
     }
 
     /// Re-runs one track's chord/mode recognition and logs a line only when the result

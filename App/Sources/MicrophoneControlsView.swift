@@ -4,18 +4,24 @@ import JamShackUI
 
 /// Start/stop the microphone track — used as the "Microphone" sub-tab of the "JamShack" tab.
 /// A plain `View`, not a `Form`/`Section` itself, so it composes cleanly inside another Form.
-/// While active, also shows the live input level, the notes currently being detected, the
-/// recognized chord/mode in text form (re-added per explicit user request — this screen
-/// originally omitted it on an earlier request, since the Live screen already shows
-/// chord/mode recognition; both asks are honored by showing it here too now, not by
-/// reversing the Live screen's own scope), and an opt-in (off by default) spectroscope —
-/// the live FFT spectrum with a vertical marker at each detected note.
+/// Three blocks once the microphone is active: (1) start/stop + recognition mode, side by
+/// side; (2) calibration + live level meter, side by side; (3) a segmented choice between
+/// "Notes recues" (the live keyboard + chord/mode text, default) and "Spectrometre" (the FFT
+/// spectroscope, opt-in — see `spectrogramContent`'s own doc comment for why leaving that tab
+/// always stops the capture).
 struct MicrophoneControlsView: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
 
     @State private var microphoneError: String?
     @State private var spectroscopeEnabled = false
+    @State private var calibratingPhase: ImprovSession.MicrophoneCalibrationPhase?
+    @State private var displayMode: DisplayMode = .notesReceived
+
+    private enum DisplayMode: Hashable {
+        case notesReceived
+        case spectrogram
+    }
 
     /// `bridge.state.tracks` only ever contains currently-listening tracks (see
     /// `WebConsoleTrackState`'s own doc comment) — reading through the bridge here instead of
@@ -56,67 +62,107 @@ struct MicrophoneControlsView: View {
                 if let microphoneError {
                     Text(microphoneError).foregroundStyle(.red).font(.caption)
                 }
-                if microphoneTrack != nil {
-                    Text("Microphone actif").foregroundStyle(.green)
-                    Button("Arreter", role: .destructive) { session.stopTrack(.microphone) }
-                } else {
-                    Button("Demarrer l'ecoute du microphone") {
-                        microphoneError = nil
-                        do {
-                            try session.startTrack(.microphone)
-                        } catch {
-                            microphoneError = "\(error)"
+                HStack(alignment: .top, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if microphoneTrack != nil {
+                            Text("Microphone actif").foregroundStyle(.green)
+                            Button("Arreter", role: .destructive) { session.stopTrack(.microphone) }
+                        } else {
+                            Button("Demarrer l'ecoute") {
+                                microphoneError = nil
+                                do {
+                                    try session.startTrack(.microphone)
+                                } catch {
+                                    microphoneError = "\(error)"
+                                }
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Reconnaissance").font(.caption).foregroundStyle(.secondary)
+                        Picker("Mode", selection: Binding(
+                            get: { currentRecognitionMode },
+                            set: { newMode in
+                                do {
+                                    try session.setMicrophoneRecognitionMode(newMode, for: .microphone)
+                                } catch {
+                                    microphoneError = "\(error)"
+                                }
+                            }
+                        )) {
+                            ForEach(Self.recognitionModePresets, id: \.self) { mode in
+                                Text(Self.label(for: mode)).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } header: {
                 Text("Microphone")
             } footer: {
-                Text("Detection d'accords/notes jouees a la voix ou a un instrument acoustique, par analyse spectrale (FFT).")
-            }
-            Section {
-                Picker("Mode", selection: Binding(
-                    get: { currentRecognitionMode },
-                    set: { newMode in
-                        do {
-                            try session.setMicrophoneRecognitionMode(newMode, for: .microphone)
-                        } catch {
-                            microphoneError = "\(error)"
-                        }
-                    }
-                )) {
-                    ForEach(Self.recognitionModePresets, id: \.self) { mode in
-                        Text(Self.label(for: mode)).tag(mode)
-                    }
-                }
-            } header: {
-                Text("Mode de reconnaissance / filtrage")
-            } footer: {
-                Text("Monophonique : une seule note a la fois (voix, instrument solo). Polyphonique : plusieurs notes simultanees, avec un delai de confirmation (verrouille = strict, glissant = tolere un echantillon rate).")
+                Text("Detection d'accords/notes jouees a la voix ou a un instrument acoustique, par analyse spectrale (FFT). Monophonique : une seule note a la fois. Polyphonique : plusieurs notes simultanees, avec un delai de confirmation.")
             }
             if let microphoneTrack {
                 Section {
-                    ProgressView(value: Double(min(1, max(0, microphoneTrack.microphoneLevel ?? 0))))
-                        .tint(.accentColor)
+                    HStack(alignment: .top, spacing: 20) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            calibrationRow(phase: .quiet, label: "Note faible", value: session.microphoneCalibration.quietRMS)
+                            calibrationRow(phase: .loud, label: "Note forte", value: session.microphoneCalibration.loudRMS)
+                            if calibratingPhase != nil {
+                                Button("Annuler", role: .cancel) {
+                                    session.cancelMicrophoneCalibrationCapture()
+                                    calibratingPhase = nil
+                                }
+                            } else {
+                                Button("Reinitialiser", role: .destructive) {
+                                    do {
+                                        try session.resetMicrophoneCalibration()
+                                    } catch {
+                                        microphoneError = "\(error)"
+                                    }
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Niveau").font(.caption).foregroundStyle(.secondary)
+                            let rawLevel = microphoneTrack.microphoneLevel ?? 0
+                            ProgressView(value: Double(session.microphoneCalibration.normalized(rawLevel) ?? min(1, max(0, rawLevel))))
+                                .tint(.accentColor)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 } header: {
-                    Text("Niveau")
+                    Text("Calibration & niveau")
+                } footer: {
+                    Text(calibratingPhase == nil
+                        ? "Joue quelques notes faibles puis fortes pour calibrer le niveau affiche ci-dessus a ce microphone/instrument."
+                        : "En cours de capture : jouez maintenant, puis appuyez sur \u{201c}Terminer la capture\u{201d}.")
                 }
                 Section {
-                    AutoCenteredKeyboardView(
-                        heldPitches: microphoneTrack.heldPitches,
-                        palette: bridge.state.palette,
-                        paletteTextColors: bridge.state.paletteTextColors
-                    )
-                    if let chordLabel = microphoneTrack.chordLabel {
-                        Text(chordLabel).font(.headline).foregroundStyle(Color.accentColor)
+                    Picker("Affichage", selection: $displayMode) {
+                        Label("Notes recues", systemImage: "pianokeys").tag(DisplayMode.notesReceived)
+                        Label("Spectrometre", systemImage: "waveform").tag(DisplayMode.spectrogram)
                     }
-                    if let modesLabel = microphoneTrack.modesLabel {
-                        Text(modesLabel).font(.caption).foregroundStyle(.secondary)
+                    .pickerStyle(.segmented)
+                    .onChange(of: displayMode) { _, newValue in
+                        guard newValue != .spectrogram, spectroscopeEnabled else { return }
+                        spectroscopeEnabled = false
+                        session.setMicrophoneSpectrumCaptureEnabled(false)
                     }
-                } header: {
-                    Text("Notes recues")
+                    switch displayMode {
+                    case .notesReceived:
+                        notesReceivedContent(microphoneTrack)
+                    case .spectrogram:
+                        spectrogramContent(microphoneTrack)
+                    }
+                } footer: {
+                    if displayMode == .spectrogram {
+                        Text("Spectre FFT en direct — trait rouge vertical a chaque note reperee, seuils de calibration en pointilles. Desactive par defaut (cout de calcul supplementaire) et arrete automatiquement en quittant cet onglet.")
+                    }
                 }
-                spectroscopeSection(microphoneTrack)
             }
         }
         #if os(macOS)
@@ -125,29 +171,69 @@ struct MicrophoneControlsView: View {
     }
 
     @ViewBuilder
-    private func spectroscopeSection(_ track: WebConsoleTrackState) -> some View {
-        Section {
-            Toggle("Spectroscope", isOn: Binding(
-                get: { spectroscopeEnabled },
-                set: { newValue in
-                    spectroscopeEnabled = newValue
-                    session.setMicrophoneSpectrumCaptureEnabled(newValue)
-                }
-            ))
-            if spectroscopeEnabled {
-                TimelineView(.periodic(from: .now, by: 0.1)) { _ in
-                    let snapshot = session.currentMicrophoneSpectrum()
-                    SpectrumView(
-                        magnitudes: snapshot?.magnitudes ?? [],
-                        binHz: snapshot?.binHz ?? 1,
-                        markedPitches: track.heldPitches
-                    )
+    private func calibrationRow(phase: ImprovSession.MicrophoneCalibrationPhase, label: String, value: Float) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            Text(String(format: "%.4f", value)).foregroundStyle(.secondary).font(.caption)
+            Button(calibratingPhase == phase ? "Terminer la capture" : "Capturer") {
+                if calibratingPhase == phase {
+                    do {
+                        try session.endMicrophoneCalibrationCapture()
+                        calibratingPhase = nil
+                    } catch {
+                        microphoneError = "\(error)"
+                    }
+                } else {
+                    session.beginMicrophoneCalibrationCapture(phase: phase)
+                    calibratingPhase = phase
                 }
             }
-        } header: {
-            Text("Spectroscope")
-        } footer: {
-            Text("Spectre FFT en direct — trait rouge vertical a chaque note reperee. Desactive par defaut (cout de calcul supplementaire).")
+            .disabled(calibratingPhase != nil && calibratingPhase != phase)
+        }
+    }
+
+    @ViewBuilder
+    private func notesReceivedContent(_ track: WebConsoleTrackState) -> some View {
+        AutoCenteredKeyboardView(
+            heldPitches: track.heldPitches,
+            palette: bridge.state.palette,
+            paletteTextColors: bridge.state.paletteTextColors
+        )
+        if let chordLabel = track.chordLabel {
+            Text(chordLabel).font(.headline).foregroundStyle(Color.accentColor)
+        }
+        if let modesLabel = track.modesLabel {
+            Text(modesLabel).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    /// The spectroscope stays opt-in via its own `Toggle` (real per-window FFT-copy cost — see
+    /// `MicrophonePitchListener.spectrumEnabled`'s doc comment) — but regardless of that
+    /// toggle's own state, switching `displayMode` away from `.spectrogram` always stops
+    /// capture too (the `onChange` in `body`): leaving this tab is as good a reason to stop as
+    /// flipping the toggle off, and forgetting to flip it off before navigating away
+    /// shouldn't leave the extra FFT work running unseen.
+    @ViewBuilder
+    private func spectrogramContent(_ track: WebConsoleTrackState) -> some View {
+        Toggle("Activer le spectrometre", isOn: Binding(
+            get: { spectroscopeEnabled },
+            set: { newValue in
+                spectroscopeEnabled = newValue
+                session.setMicrophoneSpectrumCaptureEnabled(newValue)
+            }
+        ))
+        if spectroscopeEnabled {
+            TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                let snapshot = session.currentMicrophoneSpectrum()
+                SpectrumView(
+                    magnitudes: snapshot?.magnitudes ?? [],
+                    binHz: snapshot?.binHz ?? 1,
+                    markedPitches: track.heldPitches,
+                    calibrationQuietMagnitude: session.microphoneCalibration.estimatedQuietPeakMagnitude,
+                    calibrationLoudMagnitude: session.microphoneCalibration.estimatedLoudPeakMagnitude
+                )
+            }
         }
     }
 }

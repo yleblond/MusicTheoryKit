@@ -120,7 +120,19 @@ struct JamShackFoldersView: View {
         defaultRootError = nil
         DefaultFolderBookmark.save(url)
         defaultRootPath = url.path
-        configureDefaultFolders(in: url, session: session)
+        // `configureDefaultFolders` does ~8 synchronous disk operations (mkdir + several
+        // JSON loads via `setSettingsFolder`) — this is called straight from a
+        // `.fileImporter`/document-picker completion, which runs on the main thread as part
+        // of the picker's own dismissal animation. Over an iCloud Drive-backed root (files not
+        // yet locally cached), that can take long enough to trip the OS's ~5s main-thread
+        // watchdog and get the app SIGKILLed — a real crash observed on-device, not
+        // hypothetical (crash log: `documentPicker(_:didPickDocumentsAt:)` -> `applyRootFolder`
+        // -> `configureDefaultFolders` -> blocked in `Data(contentsOf:)`/`mkdirat`). `session`
+        // is already designed to be called from a non-main thread (see its own concurrency
+        // doc comments) — nothing here needs the result back synchronously.
+        Task.detached {
+            configureDefaultFolders(in: url, session: session)
+        }
     }
 }
 
