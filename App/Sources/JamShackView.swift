@@ -14,14 +14,14 @@ import Localization
 ///    `JamShackMIDIView`.
 /// 3. **Microphone**: start/stop the microphone track, level meter, live notes — see
 ///    `MicrophoneControlsView`.
-/// 4. **Serveurs** (web console et clavier web): the web console + virtual keyboard HTTP
-///    servers — see `ServerControlsView`.
-/// 5. **Jam Session**: the collaborative server/client mode — see `JamSessionView`.
-/// 6. **Couleurs**: active color palette + LUMI Keys settings — see `JamShackColorsView`.
-/// 7. **LLM**: active LLM connection + a quick test call — see `JamShackLLMView`.
-/// 8. **Dossiers**: every folder the app needs (pieces/samples/soundtracks/guides/scenes/
+/// 4. **Jam Session**: the two HTTP servers (console web, clavier virtuel — "Own devices") and
+///    the collaborative server/client mode ("Connected devices") — see `JamSessionView`, merged
+///    from what used to be two separate sub-tabs (2026-07-26).
+/// 5. **Couleurs**: active color palette + LUMI Keys settings — see `JamShackColorsView`.
+/// 6. **LLM**: active LLM connection + a quick test call — see `JamShackLLMView`.
+/// 7. **Dossiers**: every folder the app needs (pieces/samples/soundtracks/guides/scenes/
 ///    reglages/composition IA) — see `JamShackFoldersView`.
-/// 9. **Langue**: UI language — see `JamShackLanguageView`.
+/// 8. **Langue**: UI language — see `JamShackLanguageView`.
 ///
 /// A vertical strip of icon-only buttons (a "sidebar" tab bar) rather than a horizontal
 /// segmented control — this many entries don't fit comfortably as horizontal text labels on an
@@ -32,7 +32,7 @@ struct JamShackView: View {
     let bridge: SessionUIBridge
 
     private enum SubTab: CaseIterable, Identifiable {
-        case sons, midi, microphone, serveurs, jamSession, couleurs, llm, dossiers, langue
+        case sons, midi, microphone, jamSession, couleurs, llm, dossiers, langue
 
         var id: Self { self }
 
@@ -41,7 +41,6 @@ struct JamShackView: View {
             case .sons: return "music.note.list"
             case .midi: return "pianokeys"
             case .microphone: return "mic"
-            case .serveurs: return "safari"
             case .jamSession: return "person.2.fill"
             case .couleurs: return "paintpalette"
             case .llm: return "brain"
@@ -55,7 +54,6 @@ struct JamShackView: View {
             case .sons: return L10n.string(.appTabSons, language)
             case .midi: return L10n.string(.appTabMIDI, language)
             case .microphone: return L10n.string(.appTabMicrophone, language)
-            case .serveurs: return L10n.string(.appTabServeurs, language)
             case .jamSession: return L10n.string(.catJamSession, language)
             case .couleurs: return L10n.string(.appTabCouleurs, language)
             case .llm: return L10n.string(.appTabLLM, language)
@@ -95,7 +93,6 @@ struct JamShackView: View {
                 case .sons: SoundsView(session: session, bridge: bridge)
                 case .midi: JamShackMIDIView(session: session, bridge: bridge)
                 case .microphone: MicrophoneControlsView(session: session, bridge: bridge)
-                case .serveurs: ServerControlsView(session: session)
                 case .jamSession: JamSessionView(session: session)
                 case .couleurs: JamShackColorsView(session: session)
                 case .llm: JamShackLLMView(session: session)

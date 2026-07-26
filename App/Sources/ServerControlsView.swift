@@ -3,77 +3,40 @@ import AppCore
 import NetEngine
 import Localization
 
-/// Start/stop controls for the two HTTP servers `ImprovSession` already exposes (the
-/// read-only web console and the playable virtual keyboard — same servers/pages `JamShack`'s
-/// CLI already starts via `web-console`/`virtual-keyboard` commands), plus the actual
-/// address(es) to type into a browser on ANOTHER device on the same network — `localhost`
-/// only resolves from this device itself, so reaching the server from someone else's
-/// phone/laptop needs the real LAN address (`LocalNetworkAddress.ipv4Addresses()`).
+/// One HTTP server's start/stop card (console web or clavier virtuel — same two servers
+/// `ImprovSession` already exposes, same ones `JamShack`'s CLI starts via
+/// `web-console`/`virtual-keyboard`) — a plain card rather than a `Form` `Section`, so two of
+/// these can sit side by side in an `HStack` (see `JamSessionView`'s "Own devices" block, where
+/// this now lives alongside the collaborative session under a single "Jam Session" sub-tab).
 ///
-/// Works on iOS too, not just macOS: `Network.framework` (what `WebConsole`'s `HTTPServer`
-/// is built on) is available on both, and iOS doesn't have a distinct "incoming network
+/// Works on iOS too, not just macOS: `Network.framework` (what `WebConsole`'s `HTTPServer` is
+/// built on) is available on both, and iOS doesn't have a distinct "incoming network
 /// connections" entitlement the way macOS's App Sandbox does — only the local-network
 /// permission prompt already covered by `NSLocalNetworkUsageDescription`. The real iOS-only
 /// caveat: the server only accepts connections while this app is in the foreground — a
 /// backgrounded/locked app has any listening socket suspended by the OS.
-struct ServerControlsView: View {
+struct ServerCard: View {
     let session: ImprovSession
+    let title: String
+    let caption: String
+    let port: Int?
+    @Binding var portText: String
+    let start: (Int) throws -> Void
+    let stop: () -> Void
 
-    @State private var webConsolePortText = "8080"
-    @State private var virtualKeyboardPortText = "8081"
     @State private var errorText: String?
 
     var body: some View {
-        Form {
-            if let errorText {
-                Section {
-                    Text(errorText).foregroundStyle(.red)
-                }
-            }
-            serverSection(
-                title: L10n.string(.fieldConsoleWeb, session.currentLanguage),
-                caption: L10n.string(.appHintConsoleWebCaption, session.currentLanguage),
-                port: session.webConsolePort,
-                portText: $webConsolePortText,
-                start: { try session.startWebConsole(port: $0) },
-                stop: { session.stopWebConsole() }
-            )
-            serverSection(
-                title: L10n.string(.fieldClavierVirtuel, session.currentLanguage),
-                caption: L10n.string(.appHintClavierVirtuelCaption, session.currentLanguage),
-                port: session.virtualKeyboardPort,
-                portText: $virtualKeyboardPortText,
-                start: { try session.startVirtualKeyboard(port: $0) },
-                stop: { session.stopVirtualKeyboard() }
-            )
-            #if os(iOS)
-            Section {
-                Text(L10n.string(.appHintServeurPremierPlan, session.currentLanguage))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            #endif
-        }
-        #if os(macOS)
-        .formStyle(.grouped)
-        #endif
-    }
-
-    @ViewBuilder
-    private func serverSection(
-        title: String,
-        caption: String,
-        port: Int?,
-        portText: Binding<String>,
-        start: @escaping (Int) throws -> Void,
-        stop: @escaping () -> Void
-    ) -> some View {
-        Section {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline)
             Text(caption).font(.caption).foregroundStyle(.secondary)
+            if let errorText {
+                Text(errorText).font(.caption).foregroundStyle(.red)
+            }
             if let port {
                 ForEach(addresses(for: port), id: \.self) { url in
                     HStack {
-                        Text(url).textSelection(.enabled).font(.system(.body, design: .monospaced))
+                        Text(url).textSelection(.enabled).font(.system(.caption, design: .monospaced))
                         Spacer()
                         if let shareURL = URL(string: url) {
                             ShareLink(item: shareURL, message: Text(L10n.string(.appFormatRejoinsMoiSur, session.currentLanguage, title))) {
@@ -86,7 +49,7 @@ struct ServerControlsView: View {
             } else {
                 HStack {
                     Text(L10n.string(.fieldPort, session.currentLanguage))
-                    TextField(L10n.string(.fieldPort, session.currentLanguage), text: portText)
+                    TextField(L10n.string(.fieldPort, session.currentLanguage), text: $portText)
                         #if os(iOS)
                         .keyboardType(.numberPad)
                         #endif
@@ -94,7 +57,7 @@ struct ServerControlsView: View {
                 }
                 Button(L10n.string(.appButtonDemarrer, session.currentLanguage)) {
                     errorText = nil
-                    guard let portNumber = Int(portText.wrappedValue) else {
+                    guard let portNumber = Int(portText) else {
                         errorText = "Port invalide."
                         return
                     }
@@ -105,9 +68,15 @@ struct ServerControlsView: View {
                     }
                 }
             }
-        } header: {
-            Text(title)
+            #if os(iOS)
+            Text(L10n.string(.appHintServeurPremierPlan, session.currentLanguage))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            #endif
         }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func addresses(for port: Int) -> [String] {
@@ -115,8 +84,4 @@ struct ServerControlsView: View {
         let hosts = ipAddresses.isEmpty ? ["localhost"] : ipAddresses
         return hosts.map { "http://\($0):\(port)" }
     }
-}
-
-#Preview {
-    ServerControlsView(session: ImprovSession())
 }

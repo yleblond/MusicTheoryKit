@@ -42,6 +42,10 @@ public struct SceneRole: Identifiable, Equatable, Sendable {
     public var soundName: String?
     public var isListening: Bool
     public var soundEnabled: Bool
+    /// Linear 0...1, applied to the role's attached `SamplerUnit.setVolume(_:)` — the role owns
+    /// this the same way it owns `soundName`, so a saved scene remembers a mix, not just an
+    /// instrument choice.
+    public var volume: Float
     /// A best-effort hint of the last-attached instrument's identity, persisted so
     /// `loadScene` can try to reattach the SAME instrument automatically — see
     /// `ImprovSession.matches(_:_:)` for the exact matching rules per hint kind.
@@ -61,7 +65,7 @@ public struct SceneRole: Identifiable, Equatable, Sendable {
 
     public init(
         id: UUID = UUID(), name: String, soundName: String? = nil, isListening: Bool = false,
-        soundEnabled: Bool = false, lastAttachedInstrument: InstrumentIdentityHint? = nil,
+        soundEnabled: Bool = false, volume: Float = 1.0, lastAttachedInstrument: InstrumentIdentityHint? = nil,
         microphoneRecognitionMode: MicrophoneRecognitionMode? = nil, attachedTrackID: TrackID? = nil
     ) {
         self.id = id
@@ -69,6 +73,7 @@ public struct SceneRole: Identifiable, Equatable, Sendable {
         self.soundName = soundName
         self.isListening = isListening
         self.soundEnabled = soundEnabled
+        self.volume = volume
         self.lastAttachedInstrument = lastAttachedInstrument
         self.microphoneRecognitionMode = microphoneRecognitionMode
         self.attachedTrackID = attachedTrackID
@@ -77,7 +82,7 @@ public struct SceneRole: Identifiable, Equatable, Sendable {
 
 extension SceneRole: Codable {
     private enum CodingKeys: String, CodingKey {
-        case id, name, soundName, isListening, soundEnabled, lastAttachedInstrument, microphoneRecognitionMode
+        case id, name, soundName, isListening, soundEnabled, volume, lastAttachedInstrument, microphoneRecognitionMode
         // `attachedTrackID` deliberately absent — see this type's own doc comment.
     }
 
@@ -88,6 +93,7 @@ extension SceneRole: Codable {
         soundName = try container.decodeIfPresent(String.self, forKey: .soundName)
         isListening = try container.decode(Bool.self, forKey: .isListening)
         soundEnabled = try container.decode(Bool.self, forKey: .soundEnabled)
+        volume = try container.decodeIfPresent(Float.self, forKey: .volume) ?? 1.0
         lastAttachedInstrument = try container.decodeIfPresent(InstrumentIdentityHint.self, forKey: .lastAttachedInstrument)
         microphoneRecognitionMode = try container.decodeIfPresent(MicrophoneRecognitionMode.self, forKey: .microphoneRecognitionMode)
         attachedTrackID = nil
@@ -100,6 +106,7 @@ extension SceneRole: Codable {
         try container.encodeIfPresent(soundName, forKey: .soundName)
         try container.encode(isListening, forKey: .isListening)
         try container.encode(soundEnabled, forKey: .soundEnabled)
+        try container.encode(volume, forKey: .volume)
         try container.encodeIfPresent(lastAttachedInstrument, forKey: .lastAttachedInstrument)
         try container.encodeIfPresent(microphoneRecognitionMode, forKey: .microphoneRecognitionMode)
     }

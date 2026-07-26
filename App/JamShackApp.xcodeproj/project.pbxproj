@@ -17,7 +17,7 @@
 		143F82B51732D9FC35633767 /* GuidePlayIndicationRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EA276BC19892B1D37813D15 /* GuidePlayIndicationRow.swift */; };
 		1481CD1EB22CC7D497D07C5A /* FolderPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */; };
 		1AB02A5A72BD4D7D84652261 /* GuideStepsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95942B8846FAA9B3ED42228B /* GuideStepsSection.swift */; };
-		1E9501DB484C0AFA4E74099A /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D747789B762A02608C1E6B9 /* RecordingView.swift */; };
+		23F3B29DEE343C8962CE837B /* StudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 240AE13F56A89701316555FB /* StudioView.swift */; };
 		2636F5B565CF2E54B614292F /* PlaybackControlButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA393FDD6590DDE0D1E4FAEF /* PlaybackControlButton.swift */; };
 		2697496573116390CEDCD939 /* FileDisplayName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9144B6EB7F1029254BDA64AB /* FileDisplayName.swift */; };
 		280A9ECBDACA278B699919B9 /* SceneLayoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC498287531CCB5772C1258B /* SceneLayoutView.swift */; };
@@ -25,8 +25,8 @@
 		34D898F93E23EC88710EAE78 /* SoundsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4765E80FA8CA331E5728B0F0 /* SoundsView.swift */; };
 		35B050C640C7B52F29632BD7 /* SceneLayoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC498287531CCB5772C1258B /* SceneLayoutView.swift */; };
 		38F537A45F6133BAC6560CE5 /* PlainDataDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */; };
-		3A6FF5E045443ADB653E623D /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D747789B762A02608C1E6B9 /* RecordingView.swift */; };
 		3D9A4A9A9A91CE71B7CD7525 /* GuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AE61DA02F48C19951B955F1 /* GuideView.swift */; };
+		44042629664C9742478E68C8 /* StudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 240AE13F56A89701316555FB /* StudioView.swift */; };
 		499812C7FD4D8433B09B41AA /* FolderPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */; };
 		4B891030B381AABC680DEB7A /* JamShackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5998490361DA6721A074DBB /* JamShackApp.swift */; };
 		4BF48752328F746D8FCF5953 /* MicrophoneControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */; };
@@ -80,8 +80,6 @@
 		BCA1F9419457B861023D6282 /* CompositionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9678EC3E37F61041F0877632 /* CompositionView.swift */; };
 		C6A60D2024F2CAE6B169624D /* JamShackLLMView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7DEF8B5C7B029CBF137DA9B /* JamShackLLMView.swift */; };
 		C716A5DC69D121C276897938 /* GuideEditionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556A46486C82BF4F493BD822 /* GuideEditionView.swift */; };
-		CB7AA0DAE3430DB97ACBA42D /* RecordingRecordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B39EE9FB9184AEE70357B90D /* RecordingRecordView.swift */; };
-		D578DCAB35A39143C6DD516C /* RecordingRecordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B39EE9FB9184AEE70357B90D /* RecordingRecordView.swift */; };
 		D839BAEC37283785BFC857AA /* DefaultFolders.swift in Sources */ = {isa = PBXBuildFile; fileRef = E65E68A369BA12BBAE7A4558 /* DefaultFolders.swift */; };
 		DE4436B33AD885B08B6E0E84 /* JamShackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5998490361DA6721A074DBB /* JamShackApp.swift */; };
 		DE754A12EE4D8EA7F6026199 /* GameCenterCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56783C5791125C49D8104883 /* GameCenterCoordinator.swift */; };
@@ -111,6 +109,7 @@
 		1AE61DA02F48C19951B955F1 /* GuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideView.swift; sourceTree = "<group>"; };
 		1DAE2E35B014C09B62C4CE0A /* PiecesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiecesView.swift; sourceTree = "<group>"; };
 		1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackMIDIView.swift; sourceTree = "<group>"; };
+		240AE13F56A89701316555FB /* StudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioView.swift; sourceTree = "<group>"; };
 		2D4854E83A4DBE291EDAA3CC /* SceneFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneFileView.swift; sourceTree = "<group>"; };
 		30A09EE36BD0499ABAC54DA1 /* JamShackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackView.swift; sourceTree = "<group>"; };
 		43140D25200D4FC00530C882 /* RecordingFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFileView.swift; sourceTree = "<group>"; };
@@ -129,13 +128,11 @@
 		9144B6EB7F1029254BDA64AB /* FileDisplayName.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDisplayName.swift; sourceTree = "<group>"; };
 		95942B8846FAA9B3ED42228B /* GuideStepsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideStepsSection.swift; sourceTree = "<group>"; };
 		9678EC3E37F61041F0877632 /* CompositionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionView.swift; sourceTree = "<group>"; };
-		9D747789B762A02608C1E6B9 /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
 		A1393183ADD7BD2ED1C60FA8 /* JamShackFoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackFoldersView.swift; sourceTree = "<group>"; };
 		A7171E005C138F689954FCE0 /* PiecesPlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiecesPlayView.swift; sourceTree = "<group>"; };
 		A80BD5958DD843BF49738DE9 /* ColorHex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorHex.swift; sourceTree = "<group>"; };
 		AC498287531CCB5772C1258B /* SceneLayoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneLayoutView.swift; sourceTree = "<group>"; };
-		ACB2E6D6180EE0915C04B78D /* JamShackApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JamShackApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		B39EE9FB9184AEE70357B90D /* RecordingRecordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingRecordView.swift; sourceTree = "<group>"; };
+		ACB2E6D6180EE0915C04B78D /* JamShackApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = JamShackApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B6E2F51CDF00A0B57FE9AEAB /* GuideDescriptionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideDescriptionView.swift; sourceTree = "<group>"; };
 		B7DEF8B5C7B029CBF137DA9B /* JamShackLLMView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackLLMView.swift; sourceTree = "<group>"; };
 		BCD1C63D851BB483B73CD474 /* CompositionFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionFileView.swift; sourceTree = "<group>"; };
@@ -222,13 +219,12 @@
 				43140D25200D4FC00530C882 /* RecordingFileView.swift */,
 				02ECC889D04105BEF9F10780 /* RecordingIAView.swift */,
 				1190B8CF15C5292002934879 /* RecordingPlayView.swift */,
-				B39EE9FB9184AEE70357B90D /* RecordingRecordView.swift */,
-				9D747789B762A02608C1E6B9 /* RecordingView.swift */,
 				2D4854E83A4DBE291EDAA3CC /* SceneFileView.swift */,
 				AC498287531CCB5772C1258B /* SceneLayoutView.swift */,
 				0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */,
 				8AE00B5478A71F5B75E67AE6 /* ServerControlsView.swift */,
 				4765E80FA8CA331E5728B0F0 /* SoundsView.swift */,
+				240AE13F56A89701316555FB /* StudioView.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -305,6 +301,8 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
 			};
 			buildConfigurationList = 71EABA9A79435D9019306CD6 /* Build configuration list for PBXProject "JamShackApp" */;
 			developmentRegion = en;
@@ -388,13 +386,12 @@
 				EFE1F540F63FE5F86C1CE27B /* RecordingFileView.swift in Sources */,
 				A3FC9F5864E6D9343CFCA9EA /* RecordingIAView.swift in Sources */,
 				05BD6E11AAE63F8B77C2CED7 /* RecordingPlayView.swift in Sources */,
-				CB7AA0DAE3430DB97ACBA42D /* RecordingRecordView.swift in Sources */,
-				3A6FF5E045443ADB653E623D /* RecordingView.swift in Sources */,
 				E182D86105890618BC2F4355 /* SceneFileView.swift in Sources */,
 				280A9ECBDACA278B699919B9 /* SceneLayoutView.swift in Sources */,
 				8044ABB2BF2C4C7E282F75F7 /* SceneManagementView.swift in Sources */,
 				95F0005F0AC3755B8AC07FB3 /* ServerControlsView.swift in Sources */,
 				8E7A90E2BE9987478689DCF2 /* SoundsView.swift in Sources */,
+				44042629664C9742478E68C8 /* StudioView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -437,13 +434,12 @@
 				7A5A34186E7782C4BB0A0B56 /* RecordingFileView.swift in Sources */,
 				B24C4DD819AD8669CAF3A18D /* RecordingIAView.swift in Sources */,
 				E346B2608CCC23DBE600FD60 /* RecordingPlayView.swift in Sources */,
-				D578DCAB35A39143C6DD516C /* RecordingRecordView.swift in Sources */,
-				1E9501DB484C0AFA4E74099A /* RecordingView.swift in Sources */,
 				A42BBCF8F1E99FA7A334C4CF /* SceneFileView.swift in Sources */,
 				35B050C640C7B52F29632BD7 /* SceneLayoutView.swift in Sources */,
 				F6A508097CA52946658B6950 /* SceneManagementView.swift in Sources */,
 				BAB1C701AC9506CD9EF781D7 /* ServerControlsView.swift in Sources */,
 				34D898F93E23EC88710EAE78 /* SoundsView.swift in Sources */,
+				23F3B29DEE343C8962CE837B /* StudioView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -478,7 +474,6 @@
 				CODE_SIGN_ENTITLEMENTS = Generated/JamShackApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = T2L9QQQ4PL;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Generated/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -501,7 +496,6 @@
 				CODE_SIGN_ENTITLEMENTS = Generated/JamShackApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = T2L9QQQ4PL;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Generated/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

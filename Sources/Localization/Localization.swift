@@ -205,8 +205,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appDefaultNouvellePalette, appDefaultGuideTitle, appDefaultMorceauFilename
 
     // MARK: - App: main TabView + JamShack sidebar + sub-tab sidebars (accessibility labels)
-    case appTabLive, appStatusDemarrage
-    case appTabDossiers, appTabSons, appTabMIDI, appTabMicrophone, appTabServeurs, appTabCouleurs, appTabLangue, appTabLLM
+    case appTabStudio, appStatusDemarrage
+    case appTabDossiers, appTabSons, appTabMIDI, appTabMicrophone, appTabCouleurs, appTabLangue, appTabLLM
     case appTabFichierMorceau, appTabFichierSoundtrack, appTabFichierGuide, appTabEditionGuide, appTabLectureGuide
     case appTabFichierScene, appTabDispositionScene, appTabFichierComposition, appTabComposerCourt
 
@@ -263,6 +263,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appMenuAttacherA, appButtonDetacher, appLabelLibre
     case appPlaceholderAucunSonFavoriParenthese, appButtonAucun, appButtonSupprimer
     case appFormatOccupeParRole
+    case appFieldVolume
 
     // MARK: - App: JamShack > Sons (SoundsView)
     case appPlaceholderAucunSonTrouve, appPlaceholderRechercherSonAlias, appFormatSonsCompte
@@ -305,7 +306,11 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHintServeurPremierPlan, appFormatRejoinsMoiSur, appHintConsoleWebCaption, appHintClavierVirtuelCaption
 
     // MARK: - App: Jam Session tab
-    case appHeadingSessionCollaborative, appFormatGameCenterErreur, appHintNomAfficheParticipants
+    case appFormatGameCenterErreur, appHintNomAfficheParticipants
+    case appHeadingCetAppareil, appHeadingAppareilsConnectes
+    case appButtonReorganiser, appButtonTerminerReorganisation
+    case appButtonVoirLeGuide
+    case appHeadingEcouterLeGuide, appFieldVitesse
     case appSectionHebergerReseauLocal, appFormatServeurActifPort, appButtonArreterLeServeur
     case appSectionRejoindreReseauLocal, appFormatConnecteA, appButtonSeDeconnecter
     case appSectionOrganisateurGameCenter, appLabelSessionGameCenterActive, appButtonArreterLaSession

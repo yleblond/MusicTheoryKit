@@ -390,13 +390,12 @@ enum L10nTable {
         .appDefaultMorceauFilename: [.fr: "Morceau", .en: "Piece", .de: "Stück"],
 
         // MARK: - App: main TabView + sidebar accessibility labels
-        .appTabLive: [.fr: "Live", .en: "Live", .de: "Live"],
+        .appTabStudio: [.fr: "Studio", .en: "Studio", .de: "Studio"],
         .appStatusDemarrage: [.fr: "Demarrage...", .en: "Starting...", .de: "Wird gestartet..."],
         .appTabDossiers: [.fr: "Dossiers", .en: "Folders", .de: "Ordner"],
         .appTabSons: [.fr: "Sons", .en: "Sounds", .de: "Klänge"],
         .appTabMIDI: [.fr: "MIDI", .en: "MIDI", .de: "MIDI"],
         .appTabMicrophone: [.fr: "Microphone", .en: "Microphone", .de: "Mikrofon"],
-        .appTabServeurs: [.fr: "Serveurs", .en: "Servers", .de: "Server"],
         .appTabCouleurs: [.fr: "Couleurs", .en: "Colors", .de: "Farben"],
         .appTabLangue: [.fr: "Langue", .en: "Language", .de: "Sprache"],
         .appTabLLM: [.fr: "LLM", .en: "LLM", .de: "LLM"],
@@ -528,6 +527,7 @@ enum L10nTable {
         .appButtonAucun: [.fr: "Aucun", .en: "None", .de: "Keiner"],
         .appButtonSupprimer: [.fr: "Supprimer", .en: "Delete", .de: "Löschen"],
         .appFormatOccupeParRole: [.fr: "%@ (occupe par %@)", .en: "%@ (taken by %@)", .de: "%@ (belegt von %@)"],
+        .appFieldVolume: [.fr: "Volume", .en: "Volume", .de: "Lautstärke"],
 
         // MARK: - App: JamShack > Sons
         .appPlaceholderAucunSonTrouve: [.fr: "Aucun son trouve. Choisis (ou decompresse une librairie dans) le dossier \"%@\" via JamShack > Dossiers.", .en: "No sound found. Choose (or decompress a library into) the \"%@\" folder via JamShack > Folders.", .de: "Kein Klang gefunden. Wähle den Ordner \"%@\" (oder entpacke dort eine Bibliothek) über JamShack > Ordner."],
@@ -638,7 +638,13 @@ enum L10nTable {
         .appHintClavierVirtuelCaption: [.fr: "Piano jouable a la souris/au tactile depuis un navigateur.", .en: "A piano playable with mouse/touch from a browser.", .de: "Ein mit Maus/Touch spielbares Klavier über einen Browser."],
 
         // MARK: - App: Jam Session tab
-        .appHeadingSessionCollaborative: [.fr: "Session collaborative (Jam Session)", .en: "Collaborative session (Jam Session)", .de: "Kollaborative Sitzung (Jam Session)"],
+        .appHeadingCetAppareil: [.fr: "Cet appareil", .en: "This device", .de: "Dieses Gerät"],
+        .appButtonReorganiser: [.fr: "Réorganiser", .en: "Reorder", .de: "Neu anordnen"],
+        .appButtonTerminerReorganisation: [.fr: "Terminer", .en: "Done", .de: "Fertig"],
+        .appButtonVoirLeGuide: [.fr: "Voir le guide", .en: "View the guide", .de: "Guide anzeigen"],
+        .appHeadingEcouterLeGuide: [.fr: "Écouter le guide", .en: "Listen to the guide", .de: "Guide anhören"],
+        .appFieldVitesse: [.fr: "Vitesse", .en: "Speed", .de: "Geschwindigkeit"],
+        .appHeadingAppareilsConnectes: [.fr: "Appareils connectés", .en: "Connected devices", .de: "Verbundene Geräte"],
         .appFormatGameCenterErreur: [.fr: "Game Center : %@", .en: "Game Center: %@", .de: "Game Center: %@"],
         .appHintNomAfficheParticipants: [.fr: "Le nom sous lequel les autres participants te voient.", .en: "The name other participants see you as.", .de: "Der Name, unter dem dich die anderen Teilnehmer sehen."],
         .appSectionHebergerReseauLocal: [.fr: "Heberger (reseau local)", .en: "Host (local network)", .de: "Hosten (lokales Netzwerk)"],

@@ -2,6 +2,7 @@ import SwiftUI
 import AppCore
 import MusicTheoryKit
 import PieceModel
+import JamShackUI
 import Localization
 
 /// "Couleurs" sub-tab of the "JamShack" tab: the active color palette (mirrors the CLI's
@@ -47,6 +48,7 @@ struct JamShackColorsView: View {
                 Section { Text(actionError).foregroundStyle(.red).font(.caption) }
             }
             paletteSection
+            spectrogramSection
             lumiSection
             lumiTestSection
         }
@@ -95,6 +97,32 @@ struct JamShackColorsView: View {
             Button(L10n.string(.appButtonNouvellePalette, session.currentLanguage)) { paletteEditorTarget = .new }
         } header: {
             Text(L10n.string(.fieldPaletteDeCouleur, session.currentLanguage))
+        }
+    }
+
+    /// Same setting as the "Microphone" sub-tab's Spectrogramme picker — both read/write
+    /// `session.spectrogramSettings`, so changing it here or there stays in sync (see
+    /// `SpectrogramSettingsFile`'s own doc comment for why this lives on `ImprovSession` now
+    /// instead of a local `@State`).
+    @ViewBuilder
+    private var spectrogramSection: some View {
+        Section {
+            Picker(L10n.string(.appFieldPaletteSpectrogramme, session.currentLanguage), selection: Binding(
+                get: { SpectrogramPalette(rawValue: session.spectrogramSettings.palette) ?? .thermal },
+                set: { newValue in
+                    do {
+                        try session.setSpectrogramPalette(newValue.rawValue)
+                    } catch {
+                        actionError = "\(error)"
+                    }
+                }
+            )) {
+                Text(L10n.string(.appPaletteThermique, session.currentLanguage)).tag(SpectrogramPalette.thermal)
+                Text(L10n.string(.appPaletteBleu, session.currentLanguage)).tag(SpectrogramPalette.blue)
+                Text(L10n.string(.appPaletteNiveauxDeGris, session.currentLanguage)).tag(SpectrogramPalette.grayscale)
+            }
+        } header: {
+            Text(L10n.string(.appFieldPaletteSpectrogramme, session.currentLanguage))
         }
     }
 

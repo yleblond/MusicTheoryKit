@@ -3,9 +3,11 @@ import AppCore
 import SoundTrackModel
 import Localization
 
-/// "Play" sub-tab of the Enregistrement tab: play/stop the current recording, and pick which
-/// sound it plays through — recording/loading it happens in the sibling "Record"/"Fichier"
-/// sub-tabs.
+/// "Enregistrement actuel" sub-tab of the Studio tab: play/stop the current recording — the
+/// sound it plays through is no longer picked manually here (removed 2026-07-26): it's derived
+/// automatically from the active scene's own attached instrument/sound (see
+/// `ImprovSession.applyCurrentSceneSoundToSoundTrackPlayer`), applied once when this view
+/// appears. Recording/loading happens in the sibling "Live"/"Dossiers de soundtracks" sub-tabs.
 struct RecordingPlayView: View {
     let session: ImprovSession
 
@@ -18,7 +20,6 @@ struct RecordingPlayView: View {
             }
             if let soundTrack = session.currentSoundTrack {
                 playSection(soundTrack)
-                soundSection
             } else {
                 Section { Text(L10n.string(.appPlaceholderAucunEnregistrementRecordFichier, session.currentLanguage)).foregroundStyle(.secondary) }
             }
@@ -26,6 +27,7 @@ struct RecordingPlayView: View {
         #if os(macOS)
         .formStyle(.grouped)
         #endif
+        .onAppear { session.applyCurrentSceneSoundToSoundTrackPlayer() }
     }
 
     @ViewBuilder
@@ -51,28 +53,6 @@ struct RecordingPlayView: View {
         }
     }
 
-    @ViewBuilder
-    private var soundSection: some View {
-        Section {
-            if session.favoriteSampleFiles.isEmpty {
-                Text(L10n.string(.appPlaceholderAucunSonFavori, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-            } else {
-                ForEach(session.favoriteSampleFiles, id: \.self) { name in
-                    Button(session.displayName(forSamplePath: name)) {
-                        do {
-                            try session.loadSoundTrackSample(named: name)
-                        } catch {
-                            actionError = "\(error)"
-                        }
-                    }
-                }
-            }
-        } header: {
-            Text(L10n.string(.appHeadingSonDeLecture, session.currentLanguage))
-        } footer: {
-            Text(L10n.string(.appHintSonParDefaut, session.currentLanguage))
-        }
-    }
 }
 
 #Preview {

@@ -11,11 +11,17 @@ import Localization
 struct GuideEditionView: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
+    /// Switches the parent `GuideView` to its "Lecture" sub-tab — same ad hoc callback pattern
+    /// already used by `GuideFileView`'s own `onLoaded`, not a shared binding (the sub-tab enum
+    /// stays private to `GuideView`).
+    let onRequestLecture: () -> Void
 
     @State private var selectedTonic = 0
     @State private var selectedScaleID = ScaleLibrary.all[0].id
     @State private var selectedProgressionName: String?
     @State private var actionError: String?
+    @State private var auditionSampleName: String?
+    @State private var auditionSpeed: Double = 1.0
 
     private static let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
@@ -27,6 +33,10 @@ struct GuideEditionView: View {
             if session.currentGuide != nil {
                 addStepSection
                 GuideStepsSection(session: session, bridge: bridge)
+                Section {
+                    Button(L10n.string(.appButtonVoirLeGuide, session.currentLanguage), action: onRequestLecture)
+                }
+                listenSection
             } else {
                 Section {
                     Text(L10n.string(.appPlaceholderAucunGuideActif, session.currentLanguage)).foregroundStyle(.secondary)
@@ -78,9 +88,46 @@ struct GuideEditionView: View {
             Text(L10n.string(.appHeadingAjouterUnMode, session.currentLanguage))
         }
     }
+
+    /// Plays the active guide's steps audibly through `ImprovSession.startGuideAudition(speedFactor:)`
+    /// — a chord-hold per chord (or tonic alone for a step with no progression), no melody/timing
+    /// beyond the flat per-chord duration `auditionSpeed` scales (a guide has no tempo of its own).
+    @ViewBuilder
+    private var listenSection: some View {
+        Section {
+            if session.favoriteSampleFiles.isEmpty {
+                Text(L10n.string(.appPlaceholderAucunSonFavori, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+            } else {
+                Picker(L10n.string(.fieldSon, session.currentLanguage), selection: $auditionSampleName) {
+                    Text(L10n.string(.appButtonAucun, session.currentLanguage)).tag(String?.none)
+                    ForEach(session.favoriteSampleFiles, id: \.self) { name in
+                        Text(session.displayName(forSamplePath: name)).tag(String?.some(name))
+                    }
+                }
+            }
+            VStack(alignment: .leading) {
+                Text("\(L10n.string(.appFieldVitesse, session.currentLanguage)) : ×\(String(format: "%.2f", auditionSpeed))")
+                Slider(value: $auditionSpeed, in: 0.25...3, step: 0.25)
+            }
+            if session.isAuditioningGuide {
+                Button(L10n.string(.appButtonArreter, session.currentLanguage), role: .destructive) {
+                    session.stopGuideAudition()
+                }
+            } else {
+                Button(L10n.string(.appButtonDemarrer, session.currentLanguage)) {
+                    if let auditionSampleName {
+                        try? session.loadGuideAuditionSample(named: auditionSampleName)
+                    }
+                    session.startGuideAudition(speedFactor: auditionSpeed)
+                }
+            }
+        } header: {
+            Text(L10n.string(.appHeadingEcouterLeGuide, session.currentLanguage))
+        }
+    }
 }
 
 #Preview {
     let session = ImprovSession()
-    return GuideEditionView(session: session, bridge: SessionUIBridge(session: session))
+    return GuideEditionView(session: session, bridge: SessionUIBridge(session: session), onRequestLecture: {})
 }

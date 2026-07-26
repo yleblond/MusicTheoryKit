@@ -16,6 +16,10 @@ public struct AutoCenteredKeyboardView: View {
     public let paletteTextColors: [String]
     public let onNoteOn: ((Int) -> Void)?
     public let onNoteOff: ((Int) -> Void)?
+    /// Forwarded as-is to the underlying `PitchKeyboardView.height` (default 144, same as that
+    /// view's own default) — exposed here so a specific caller (the Live screen) can shrink it
+    /// without affecting every other screen reusing this same card (Microphone/MIDI sub-tabs).
+    public let keyboardHeight: CGFloat
 
     public init(
         heldPitches: [Int],
@@ -25,7 +29,8 @@ public struct AutoCenteredKeyboardView: View {
         palette: [String] = PitchKeyboardView.defaultPalette,
         paletteTextColors: [String] = PitchKeyboardView.defaultPaletteTextColors,
         onNoteOn: ((Int) -> Void)? = nil,
-        onNoteOff: ((Int) -> Void)? = nil
+        onNoteOff: ((Int) -> Void)? = nil,
+        keyboardHeight: CGFloat = 144
     ) {
         self.heldPitches = heldPitches
         self.chordRoot = chordRoot
@@ -35,6 +40,7 @@ public struct AutoCenteredKeyboardView: View {
         self.paletteTextColors = paletteTextColors
         self.onNoteOn = onNoteOn
         self.onNoteOff = onNoteOff
+        self.keyboardHeight = keyboardHeight
     }
 
     /// 3 octaves (C3...B5 by default — same default range `StaticAssets.swift`'s
@@ -63,7 +69,8 @@ public struct AutoCenteredKeyboardView: View {
                 palette: palette,
                 paletteTextColors: paletteTextColors,
                 onNoteOn: onNoteOn,
-                onNoteOff: onNoteOff
+                onNoteOff: onNoteOff,
+                height: keyboardHeight
             )
         }
         .task(id: heldPitches) {

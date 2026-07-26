@@ -5,7 +5,11 @@ import Localization
 
 struct ContentView: View {
     private enum AppTab: Hashable {
-        case jamShack, scene, live, guide, recording, pieces, composition
+        // `.live` kept as the case name (renamed to "Studio" only in its displayed label,
+        // `.appTabStudio`) — no need to touch every reference to this enum value for a label
+        // change. `.recording` no longer exists as its own tab: merged into `.live`/Studio
+        // (2026-07-26), see `StudioView`.
+        case jamShack, scene, live, guide, pieces, composition
     }
 
     @State private var session = ImprovSession()
@@ -55,30 +59,21 @@ struct ContentView: View {
                     Tab(L10n.string(.tabScene, session.currentLanguage), systemImage: "theatermasks", value: AppTab.scene) {
                         SceneManagementView(session: session)
                     }
-                    Tab(L10n.string(.appTabLive, session.currentLanguage), systemImage: "pianokeys", value: AppTab.live) {
-                        RunScreen(
-                            bridge: bridge,
-                            interactiveTrackID: TrackID.computerKeyboard.wireIDText,
-                            onNoteOn: { pitch in session.pressKey(pitch: pitch) },
-                            onNoteOff: { pitch in session.releaseKey(pitch: pitch) }
-                        )
-                        // Same LUMI-follows-the-active-screen wiring as Guide > Lecture (see
-                        // that view's own `onAppear` doc comment) — never wired anywhere in
-                        // this app before, for the "Run" mode either.
-                        .onAppear { session.notifyActiveScreen(.run) }
-                        .onDisappear { session.notifyActiveScreen(.other) }
+                    // "Studio" — merges what used to be two separate tabs, Live and
+                    // Enregistrement (2026-07-26): recording is something you do WHILE playing
+                    // live, not a separate destination. See `StudioView`.
+                    Tab(L10n.string(.appTabStudio, session.currentLanguage), systemImage: "pianokeys", value: AppTab.live) {
+                        StudioView(session: session, bridge: bridge)
                     }
                     Tab(L10n.string(.headingGuide, session.currentLanguage), systemImage: "map", value: AppTab.guide) {
                         GuideView(session: session, bridge: bridge)
                     }
-                    Tab(L10n.string(.catEnregistrement, session.currentLanguage), systemImage: "record.circle", value: AppTab.recording) {
-                        RecordingView(session: session, bridge: bridge)
-                    }
-                    Tab(L10n.string(.catMorceaux, session.currentLanguage), systemImage: "music.note.list", value: AppTab.pieces) {
-                        PiecesView(session: session)
-                    }
                     Tab(L10n.string(.catComposition, session.currentLanguage), systemImage: "wand.and.stars", value: AppTab.composition) {
                         CompositionView(session: session)
+                    }
+                    // "Morceaux" moved to last position, per explicit user request (2026-07-26).
+                    Tab(L10n.string(.catMorceaux, session.currentLanguage), systemImage: "music.note.list", value: AppTab.pieces) {
+                        PiecesView(session: session)
                     }
                 }
                 .tabViewStyle(.sidebarAdaptable)

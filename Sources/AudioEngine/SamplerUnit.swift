@@ -37,6 +37,12 @@ public final class SamplerUnit: @unchecked Sendable {
         sampler.stopNote(Self.clampedByte(pitch), onChannel: Self.clampedByte(channel))
     }
 
+    /// Linear 0...1, applied to this instance's own dedicated `mainMixerNode` — safe to change
+    /// without affecting any other track, since each `SamplerUnit` owns its own `AVAudioEngine`.
+    public func setVolume(_ volume: Float) {
+        engine.mainMixerNode.outputVolume = max(0, min(1, volume))
+    }
+
     /// Same three formats `PiecePlayer.loadSample` supports.
     public func loadSample(at url: URL, program: UInt8 = 0) throws {
         switch url.pathExtension.lowercased() {

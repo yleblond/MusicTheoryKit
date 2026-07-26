@@ -41,9 +41,12 @@ struct JamSessionView: View {
     @State private var discoveredServers: [DiscoveredServer] = []
     @State private var networkError: String?
     @State private var gameCenter = GameCenterCoordinator()
+    @State private var webConsolePortText = "8080"
+    @State private var virtualKeyboardPortText = "8081"
 
     var body: some View {
         Form {
+            ownDevicesSection
             modeSection
             networkErrorSection
             content
@@ -78,6 +81,38 @@ struct JamSessionView: View {
         }
     }
 
+    /// The two HTTP servers (console web, clavier virtuel) side by side — merged into this same
+    /// sub-tab (2026-07-26, used to be its own "Serveurs" sub-tab) since both this block and the
+    /// collaborative session below are fundamentally the same idea: other devices reaching this
+    /// one. See `ServerCard`.
+    @ViewBuilder
+    private var ownDevicesSection: some View {
+        Section {
+            HStack(alignment: .top, spacing: 12) {
+                ServerCard(
+                    session: session,
+                    title: L10n.string(.fieldConsoleWeb, session.currentLanguage),
+                    caption: L10n.string(.appHintConsoleWebCaption, session.currentLanguage),
+                    port: session.webConsolePort,
+                    portText: $webConsolePortText,
+                    start: { try session.startWebConsole(port: $0) },
+                    stop: { session.stopWebConsole() }
+                )
+                ServerCard(
+                    session: session,
+                    title: L10n.string(.fieldClavierVirtuel, session.currentLanguage),
+                    caption: L10n.string(.appHintClavierVirtuelCaption, session.currentLanguage),
+                    port: session.virtualKeyboardPort,
+                    portText: $virtualKeyboardPortText,
+                    start: { try session.startVirtualKeyboard(port: $0) },
+                    stop: { session.stopVirtualKeyboard() }
+                )
+            }
+        } header: {
+            Text(L10n.string(.appHeadingCetAppareil, session.currentLanguage))
+        }
+    }
+
     @ViewBuilder
     private var modeSection: some View {
         Section {
@@ -85,7 +120,7 @@ struct JamSessionView: View {
                 ForEach(CollaborationMode.allCases) { Text($0.label(session.currentLanguage)).tag($0) }
             }
         } header: {
-            Text(L10n.string(.appHeadingSessionCollaborative, session.currentLanguage))
+            Text(L10n.string(.appHeadingAppareilsConnectes, session.currentLanguage))
         }
         .disabled(session.networkRole != .standalone)
     }

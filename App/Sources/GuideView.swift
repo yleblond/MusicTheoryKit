@@ -62,8 +62,8 @@ struct GuideView: View {
             Group {
                 switch subTab {
                 case .file: GuideFileView(session: session, onLoaded: { subTab = .lecture })
-                case .edition: GuideEditionView(session: session, bridge: bridge)
-                case .lecture: GuideLectureView(session: session, bridge: bridge)
+                case .edition: GuideEditionView(session: session, bridge: bridge, onRequestLecture: { subTab = .lecture })
+                case .lecture: GuideLectureView(session: session, bridge: bridge, onGuideStopped: { subTab = .edition })
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

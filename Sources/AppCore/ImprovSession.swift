@@ -192,9 +192,14 @@ public final class ImprovSession: @unchecked Sendable {
     /// Every pitch currently sounding because of `playSoundTrack()` — mirrors
     /// `playbackHeldPitches` for the temporal-recording playback mode.
     public private(set) var soundTrackHeldPitches: Set<Int> = []
+    /// A third, independent playback mode alongside `isPlaying`/`isPlayingSoundTrack` — "listen
+    /// to the active guide" (see `startGuideAudition(speedFactor:)`), no held-pitches display of
+    /// its own since nothing in the Guide screens shows it live yet.
+    public private(set) var isAuditioningGuide = false
 
     private let player = PiecePlayer()
     private let soundTrackPlayer = SoundTrackPlayer()
+    private let guideAuditionPlayer = GuideAuditionPlayer()
     private var midiListeners: [TrackID: MIDIInputListener] = [:]
     /// Purely diagnostic — one lightweight `MIDIInputListener` per currently-visible MIDI
     /// source, kept connected regardless of whether that source's corresponding track is
@@ -320,6 +325,8 @@ public final class ImprovSession: @unchecked Sendable {
     /// Same role as `playbackGeneration`, for `playSoundTrack()` — guards against a second
     /// `playSoundTrack()` call's scheduled callbacks clobbering a newer call's state.
     private var soundTrackPlaybackGeneration = 0
+    /// Same role as `playbackGeneration`/`soundTrackPlaybackGeneration`, for `startGuideAudition(speedFactor:)`.
+    private var guideAuditionGeneration = 0
 
     public enum SessionError: Error, CustomStringConvertible {
         case noPieceLoaded
@@ -361,6 +368,7 @@ public final class ImprovSession: @unchecked Sendable {
         case noGuideFolderListed
         case invalidGuideIndex
         case invalidGuideStepIndex
+        case invalidChordIndex
         case noCurrentGuideFile
         case noSceneFolderListed
         case invalidSceneIndex
@@ -415,6 +423,7 @@ public final class ImprovSession: @unchecked Sendable {
             case .noGuideFolderListed: return "no guide sequence folder listed yet — try 'guides <folder>' first"
             case .invalidGuideIndex: return "no guide sequence at that index"
             case .invalidGuideStepIndex: return "no step at that index in the guide sequence"
+            case .invalidChordIndex: return "no chord at that index in the step's progression"
             case .noCurrentGuideFile: return "this guide sequence was never loaded from or saved to a file — try 'save-guide-as <name>'"
             case .noSceneFolderListed: return "no scene folder listed yet — try 'scenes <folder>' first"
             case .invalidSceneIndex: return "no scene at that index"
@@ -440,6 +449,7 @@ public final class ImprovSession: @unchecked Sendable {
     public func start() throws {
         try player.start()
         try soundTrackPlayer.start()
+        try guideAuditionPlayer.start()
         append("Audio engine started.")
     }
 
@@ -697,6 +707,7 @@ public final class ImprovSession: @unchecked Sendable {
         try loadOrCreateChordProgressionTemplates(fromJSONFile: (folderPath as NSString).appendingPathComponent("chordprogressions.json"))
         try loadOrCreateLanguageSetting(fromJSONFile: (folderPath as NSString).appendingPathComponent("language.json"))
         try loadOrCreateLumiSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("lumi.json"))
+        try loadOrCreateSpectrogramSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("spectrogram.json"))
         try loadOrCreateNoteColorSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("note-colors.json"))
         try loadOrCreateLLMAPIKeys(fromJSONFile: (folderPath as NSString).appendingPathComponent("llm-api-keys.json"))
         try loadOrCreateMicrophoneCalibration(fromJSONFile: (folderPath as NSString).appendingPathComponent("microphone-calibration.json"))
@@ -980,6 +991,135 @@ public final class ImprovSession: @unchecked Sendable {
         append("Removed step \(index + 1) from guide sequence '\(currentGuide.title)'.")
     }
 
+    /// Manual equivalent of `MutableCollection.move(fromOffsets:toOffset:)` — that convenience
+    /// is a `SwiftUI`-only extension (backing `.onMove`'s standard implementation), and
+    /// `AppCore` deliberately never imports `SwiftUI` (it's shared by the plain `JamShack` CLI
+    /// executable, which doesn't link it) — a real link failure, not a hypothetical, confirmed
+    /// by `JamShack` failing to link with an undefined `SwiftUI` symbol until this was written
+    /// out by hand. Same reordering semantics: elements at `source` are removed (order among
+    /// themselves preserved) and reinserted starting at `destination`, adjusted for however many
+    /// of the removed indices sat before it.
+    private static func reordered<T>(_ array: [T], moving source: IndexSet, to destination: Int) -> [T] {
+        var result = array
+        let moved = source.map { array[$0] }
+        for index in source.sorted(by: >) {
+            result.remove(at: index)
+        }
+        let adjustedDestination = destination - source.filter { $0 < destination }.count
+        result.insert(contentsOf: moved, at: adjustedDestination)
+        return result
+    }
+
+    /// Reorders the guide's own steps — the CLI/menu have no equivalent yet, added for the
+    /// SwiftUI app's drag-and-drop step list (`GuideStepsSection`). Keeps `currentGuideStepIndex`
+    /// pointed at the SAME step (not the same numeric position) if a guide is currently active,
+    /// same "don't silently jump the active step" care as `removeGuideStep`.
+    public func moveGuideSteps(fromOffsets source: IndexSet, toOffset destination: Int) throws {
+        guard var currentGuide else { throw SessionError.noGuideSequence }
+        let activeStep = currentGuideStepIndex.flatMap { currentGuide.steps.indices.contains($0) ? currentGuide.steps[$0] : nil }
+        currentGuide.steps = Self.reordered(currentGuide.steps, moving: source, to: destination)
+        self.currentGuide = currentGuide
+        if let activeStep {
+            currentGuideStepIndex = currentGuide.steps.firstIndex(of: activeStep)
+        }
+        append("Reordered steps of guide sequence '\(currentGuide.title)'.")
+    }
+
+    /// Reorders the chords WITHIN one step's already-resolved progression — same rationale as
+    /// `moveGuideSteps`, for `GuideStepsSection`'s per-step chord list.
+    public func moveGuideStepChords(atStepIndex stepIndex: Int, fromOffsets source: IndexSet, toOffset destination: Int) throws {
+        guard var currentGuide else { throw SessionError.noGuideSequence }
+        guard currentGuide.steps.indices.contains(stepIndex) else { throw SessionError.invalidGuideStepIndex }
+        if let progression = currentGuide.steps[stepIndex].chordProgression {
+            currentGuide.steps[stepIndex].chordProgression = Self.reordered(progression, moving: source, to: destination)
+        }
+        self.currentGuide = currentGuide
+        append("Reordered chords of step \(stepIndex + 1) in guide sequence '\(currentGuide.title)'.")
+    }
+
+    /// Re-picks/changes a whole existing step's chord progression — `addGuideStep(_:chordProgression:)`
+    /// only ever set this at CREATION time; this is the same resolution logic
+    /// (`resolveChordProgression(_:in:)`) applied to a step already in the sequence, for the
+    /// Guide Edition screen's per-step progression picker. `template: nil` clears the
+    /// progression entirely (same "no progression" meaning as never having set one).
+    public func setGuideStepChordProgression(atIndex index: Int, template: ChordProgressionTemplate?) throws {
+        guard var currentGuide else { throw SessionError.noGuideSequence }
+        guard currentGuide.steps.indices.contains(index) else { throw SessionError.invalidGuideStepIndex }
+        guard let mode = currentGuide.steps[index].mode.resolve() else { throw SessionError.invalidModeReference }
+        currentGuide.steps[index].chordProgressionName = template?.name
+        currentGuide.steps[index].chordProgression = template.map { resolveChordProgression($0, in: mode) }
+        self.currentGuide = currentGuide
+        let progressionSuffix = template.map { " + \($0.name)" } ?? " (aucune)"
+        append("Updated chord progression for step \(index + 1) of guide sequence '\(currentGuide.title)'\(progressionSuffix).")
+    }
+
+    /// Plays the active guide's steps audibly in sequence through `guideAuditionPlayer` — one
+    /// chord-hold per chord in each step's progression (or, for a step with none, its tonic
+    /// alone), back to back, no melody/timing beyond that (a guide has neither). `speedFactor`
+    /// scales how long each chord is held (1.0 = 1 second/chord, 2.0 = twice as fast) — there's
+    /// no tempo/BPM to scale here, just a flat per-chord duration, unlike `play()`'s
+    /// measure-based `Piece` timing.
+    public func startGuideAudition(speedFactor: Double = 1.0) {
+        guard let currentGuide, !currentGuide.steps.isEmpty, !isAuditioningGuide else { return }
+        let secondsPerChord = 1.0 / max(0.1, speedFactor)
+        var chords: [GuideAuditionChord] = []
+        var cursor = 0.0
+        for step in currentGuide.steps {
+            let progression = step.chordProgression ?? []
+            if progression.isEmpty {
+                if let mode = step.mode.resolve() {
+                    chords.append(GuideAuditionChord(pitches: [48 + mode.tonic.value], startSeconds: cursor, durationSeconds: secondsPerChord))
+                    cursor += secondsPerChord
+                }
+            } else {
+                for chordReference in progression {
+                    guard let chord = chordReference.resolve() else { continue }
+                    let pitches = chord.pitchClasses.map { 48 + $0.value }
+                    chords.append(GuideAuditionChord(pitches: pitches, startSeconds: cursor, durationSeconds: secondsPerChord))
+                    cursor += secondsPerChord
+                }
+            }
+        }
+        guard !chords.isEmpty else { return }
+        guideAuditionPlayer.play(chords)
+
+        guideAuditionGeneration += 1
+        let generation = guideAuditionGeneration
+        isAuditioningGuide = true
+        append("Ecoute du guide demarree.")
+
+        playbackStateQueue.asyncAfter(deadline: .now() + cursor + 0.2) { [weak self] in
+            guard let self, self.guideAuditionGeneration == generation else { return }
+            self.isAuditioningGuide = false
+            self.append("Ecoute du guide terminee.")
+        }
+    }
+
+    /// Stops an in-progress guide audition early — mirrors `stopSoundTrackPlayback()`. A no-op
+    /// if nothing is auditioning.
+    public func stopGuideAudition() {
+        guard isAuditioningGuide else { return }
+        guideAuditionGeneration += 1
+        guideAuditionPlayer.stopAllNotes()
+        isAuditioningGuide = false
+        append("Ecoute du guide arretee.")
+    }
+
+    /// Changes ONE chord's quality within a step's already-resolved progression, keeping its
+    /// root — the "see this chord's extensions" editor (7th/sus/etc. on the same fundamental,
+    /// see `ChordVocabulary.allChords(forRoot:)`), not a re-pick of the whole progression (see
+    /// `setGuideStepChordProgression(atIndex:template:)` for that).
+    public func setGuideStepChordQuality(stepIndex: Int, chordIndex: Int, templateID: String) throws {
+        guard var currentGuide else { throw SessionError.noGuideSequence }
+        guard currentGuide.steps.indices.contains(stepIndex) else { throw SessionError.invalidGuideStepIndex }
+        guard let progression = currentGuide.steps[stepIndex].chordProgression, progression.indices.contains(chordIndex) else {
+            throw SessionError.invalidChordIndex
+        }
+        currentGuide.steps[stepIndex].chordProgression?[chordIndex].chordTemplateID = templateID
+        self.currentGuide = currentGuide
+        append("Updated chord \(chordIndex + 1) of step \(stepIndex + 1) in guide sequence '\(currentGuide.title)'.")
+    }
+
     public func loadGuideSequence(fromJSONFile path: String) throws {
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let decoded = try JSONDecoder().decode(GuideSequence.self, from: data)
@@ -1233,6 +1373,22 @@ public final class ImprovSession: @unchecked Sendable {
         append("Son du role '\(scene.roles[index].name)' : \(soundName ?? "aucun")")
     }
 
+    /// Sets a role's own mix volume (linear 0...1) — if an instrument is currently attached,
+    /// applies it immediately to that instrument's own `SamplerUnit`; either way it's saved on
+    /// the role itself, so a later `attachInstrument`/`loadScene` reapplies it via
+    /// `applyRoleConfiguration`, same "the role owns its own configuration" precedent as
+    /// `soundName`.
+    public func setSceneRoleVolume(_ roleID: SceneRole.ID, volume: Float) throws {
+        guard var scene = currentScene else { throw SessionError.noSceneLoaded }
+        guard let index = scene.roles.firstIndex(where: { $0.id == roleID }) else { throw SessionError.unknownSceneRole }
+        scene.roles[index].volume = volume
+        let attachedTrackID = scene.roles[index].attachedTrackID
+        currentScene = scene
+        if let attachedTrackID {
+            samplers[attachedTrackID]?.setVolume(volume)
+        }
+    }
+
     /// Sets a role's own declared listening state — if an instrument is currently attached,
     /// starts/stops it immediately to match.
     public func setSceneRoleListening(_ roleID: SceneRole.ID, isListening: Bool) throws {
@@ -1328,6 +1484,9 @@ public final class ImprovSession: @unchecked Sendable {
         } else {
             try? setSoundEnabled(role.soundEnabled, for: trackID)
         }
+        // After the sound setup above, which is what actually creates/retrieves this track's
+        // `SamplerUnit` in `samplers` — a no-op if none exists yet (role has no sound enabled).
+        samplers[trackID]?.setVolume(role.volume)
     }
 
     /// A best-effort snapshot of `trackID`'s current identity, for `SceneRole.
@@ -2180,6 +2339,30 @@ public final class ImprovSession: @unchecked Sendable {
     public func loadSoundTrackSample(atIndex index: Int) throws {
         guard sampleFiles.indices.contains(index) else { throw SessionError.invalidSampleIndex }
         try loadSoundTrackSample(named: sampleFiles[index])
+    }
+
+    /// Same as `loadSoundTrackSample(named:)`, for `guideAuditionPlayer`'s own sampler — until
+    /// this is called, "Ecouter le guide" plays back through the default sine synth.
+    public func loadGuideAuditionSample(named name: String) throws {
+        guard let sampleFolder else { throw SessionError.noSampleFolderListed }
+        let url = URL(fileURLWithPath: sampleFolder).appendingPathComponent(name)
+        try guideAuditionPlayer.loadSample(at: url)
+        append("Son d'ecoute du guide: \(name)")
+    }
+
+    /// Derives the SoundTrack playback sound from the active scene instead of requiring a
+    /// manual pick each time (see the Studio tab's "Enregistrement actuel" sub-tab, merged from
+    /// the former standalone "Play" sub-tab, 2026-07-26) — the role attached to
+    /// `.computerKeyboard` if there is one (the most likely "lead" instrument), otherwise the
+    /// first attached role with a sound of its own. A no-op (not an error) if there's no active
+    /// scene or no attached role has a sound — same "best effort" spirit as
+    /// `applyRoleConfiguration`.
+    public func applyCurrentSceneSoundToSoundTrackPlayer() {
+        guard let scene = currentScene else { return }
+        let role = scene.roles.first(where: { $0.attachedTrackID == .computerKeyboard && $0.soundName != nil })
+            ?? scene.roles.first(where: { $0.attachedTrackID != nil && $0.soundName != nil })
+        guard let soundName = role?.soundName else { return }
+        try? loadSoundTrackSample(named: soundName)
     }
 
     /// `sampleFiles` filtered down to favorites (see `SoundEntry.isFavorite`) — this is what
@@ -3596,6 +3779,46 @@ public final class ImprovSession: @unchecked Sendable {
         lumiSettings.autoPropagateGuideMode = enabled
         try saveLumiSettings()
         append("Propagation auto LUMI (mode guide) : \(enabled ? "activee" : "desactivee").")
+    }
+
+    // MARK: - Spectrogram settings (persisted palette/note overlay)
+
+    /// See `SpectrogramSettingsFile`'s own doc comment for defaults/persistence shape.
+    public private(set) var spectrogramSettings = SpectrogramSettingsFile()
+
+    public func loadSpectrogramSettings(fromJSONFile path: String) throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        spectrogramSettings = try JSONDecoder().decode(SpectrogramSettingsFile.self, from: data)
+    }
+
+    /// Mirrors `loadOrCreateLumiSettings(fromJSONFile:)`: writes the defaults first if nothing
+    /// is there yet, then loads it either way.
+    public func loadOrCreateSpectrogramSettings(fromJSONFile path: String) throws {
+        if !FileManager.default.fileExists(atPath: path) {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(SpectrogramSettingsFile())
+            try data.write(to: URL(fileURLWithPath: path))
+        }
+        try loadSpectrogramSettings(fromJSONFile: path)
+    }
+
+    private func saveSpectrogramSettings() throws {
+        guard let settingsFolder else { return }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(spectrogramSettings)
+        try data.write(to: URL(fileURLWithPath: (settingsFolder as NSString).appendingPathComponent("spectrogram.json")))
+    }
+
+    public func setSpectrogramPalette(_ palette: String) throws {
+        spectrogramSettings.palette = palette
+        try saveSpectrogramSettings()
+    }
+
+    public func setSpectrogramShowNoteOverlay(_ enabled: Bool) throws {
+        spectrogramSettings.showNoteOverlay = enabled
+        try saveSpectrogramSettings()
     }
 
     /// Which console screen is active, for `notifyActiveScreen` — deliberately just a 3-way

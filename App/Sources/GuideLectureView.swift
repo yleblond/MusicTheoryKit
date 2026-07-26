@@ -21,6 +21,11 @@ import Localization
 struct GuideLectureView: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
+    /// Switches the parent `GuideView` back to its "Edition" sub-tab once the guide is
+    /// stopped — called explicitly from the stop button's own action (NOT from `onDisappear`,
+    /// which also fires on a plain manual tab switch and would fight that navigation instead
+    /// of following it).
+    let onGuideStopped: () -> Void
 
     @State private var actionError: String?
     @FocusState private var isFocused: Bool
@@ -130,7 +135,10 @@ struct GuideLectureView: View {
 
     private var controlBar: some View {
         HStack {
-            Button(L10n.string(.appButtonArreterLeGuide, session.currentLanguage), role: .destructive) { session.stopGuide() }
+            Button(L10n.string(.appButtonArreterLeGuide, session.currentLanguage), role: .destructive) {
+                session.stopGuide()
+                onGuideStopped()
+            }
             Spacer()
             Button(L10n.string(.appButtonPrecedent, session.currentLanguage)) { session.advanceGuideStep(by: -1) }
             Button(L10n.string(.appButtonSuivant, session.currentLanguage)) { session.advanceGuideStep(by: 1) }
@@ -140,5 +148,5 @@ struct GuideLectureView: View {
 
 #Preview {
     let session = ImprovSession()
-    return GuideLectureView(session: session, bridge: SessionUIBridge(session: session))
+    return GuideLectureView(session: session, bridge: SessionUIBridge(session: session), onGuideStopped: {})
 }

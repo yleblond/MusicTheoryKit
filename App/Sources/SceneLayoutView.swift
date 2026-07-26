@@ -220,6 +220,19 @@ private struct SceneRoleRow: View {
                 }
             }
             HStack {
+                Text(L10n.string(.appFieldVolume, session.currentLanguage))
+                Slider(value: Binding(
+                    get: { role.volume },
+                    set: { newValue in
+                        do {
+                            try session.setSceneRoleVolume(role.id, volume: newValue)
+                        } catch {
+                            onError("\(error)")
+                        }
+                    }
+                ), in: 0...1)
+            }
+            HStack {
                 Toggle(L10n.string(.fieldEcoute, session.currentLanguage), isOn: Binding(
                     get: { role.isListening },
                     set: { newValue in

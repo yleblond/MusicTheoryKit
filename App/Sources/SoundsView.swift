@@ -96,10 +96,14 @@ struct SoundsView: View {
             Section {
                 Text(L10n.string(.appPlaceholderAucunSonTrouve, session.currentLanguage, L10n.string(.appLabelDossierSons, session.currentLanguage)))
                     .foregroundStyle(.secondary)
+            } header: {
+                Text(L10n.string(.appTabSons, session.currentLanguage))
             }
         } else {
             Section {
                 TextField(L10n.string(.appPlaceholderRechercherSonAlias, session.currentLanguage), text: $searchText)
+            } header: {
+                Text(L10n.string(.appTabSons, session.currentLanguage))
             }
             Section {
                 ForEach(filteredSounds, id: \.self) { path in

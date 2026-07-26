@@ -31,14 +31,26 @@ struct MicrophoneControlsView: View {
     /// `SpectrogramColorScaleView`'s live indicator has something to point at without re-fetching
     /// a snapshot outside the polling loop that already owns that cadence.
     @State private var spectrogramCurrentPeakMagnitude: Float?
-    /// Off by default — a deliberate opt-in overlay (per explicit user request), not a
-    /// permanent addition to the base graph.
-    @State private var spectrogramShowNotes = false
-    @State private var spectrogramPalette: SpectrogramPalette = .thermal
     /// Shared by both the spectrometre and spectrogramme graphs so they read as a matched pair
     /// (per explicit user request) — 280 * 1.3, also per explicit user request ("agrandir de
     /// 30% en hauteur").
     private static let spectrumGraphHeight: CGFloat = 364
+
+    /// Backed by `session.spectrogramSettings` (persisted, shared with the "Couleurs" sub-tab)
+    /// rather than local `@State` — a previous version kept these as plain `@State`, lost every
+    /// time this view was recreated (e.g. switching sub-tabs and back).
+    private var spectrogramShowNotes: Binding<Bool> {
+        Binding(
+            get: { session.spectrogramSettings.showNoteOverlay },
+            set: { try? session.setSpectrogramShowNoteOverlay($0) }
+        )
+    }
+    private var spectrogramPalette: Binding<SpectrogramPalette> {
+        Binding(
+            get: { SpectrogramPalette(rawValue: session.spectrogramSettings.palette) ?? .thermal },
+            set: { try? session.setSpectrogramPalette($0.rawValue) }
+        )
+    }
 
     private enum DisplayMode: Hashable {
         /// Calibration rows + level meter — a peer tab now, not an always-visible block above
@@ -300,8 +312,8 @@ struct MicrophoneControlsView: View {
     @ViewBuilder
     private func spectrographContent(_ track: WebConsoleTrackState) -> some View {
         if spectroscopeEnabled {
-            Toggle(L10n.string(.appToggleAfficherNotesSpectrogramme, session.currentLanguage), isOn: $spectrogramShowNotes)
-            Picker(L10n.string(.appFieldPaletteSpectrogramme, session.currentLanguage), selection: $spectrogramPalette) {
+            Toggle(L10n.string(.appToggleAfficherNotesSpectrogramme, session.currentLanguage), isOn: spectrogramShowNotes)
+            Picker(L10n.string(.appFieldPaletteSpectrogramme, session.currentLanguage), selection: spectrogramPalette) {
                 Text(L10n.string(.appPaletteThermique, session.currentLanguage)).tag(SpectrogramPalette.thermal)
                 Text(L10n.string(.appPaletteBleu, session.currentLanguage)).tag(SpectrogramPalette.blue)
                 Text(L10n.string(.appPaletteNiveauxDeGris, session.currentLanguage)).tag(SpectrogramPalette.grayscale)
@@ -313,14 +325,14 @@ struct MicrophoneControlsView: View {
                     markedPitches: track.heldPitches,
                     calibrationQuietMagnitude: session.microphoneCalibration.estimatedQuietPeakMagnitude,
                     calibrationLoudMagnitude: session.microphoneCalibration.estimatedLoudPeakMagnitude,
-                    showNoteOverlay: spectrogramShowNotes,
-                    palette: spectrogramPalette
+                    showNoteOverlay: spectrogramShowNotes.wrappedValue,
+                    palette: spectrogramPalette.wrappedValue
                 )
                 SpectrogramColorScaleView(
                     currentPeakMagnitude: spectrogramCurrentPeakMagnitude,
                     calibrationQuietMagnitude: session.microphoneCalibration.estimatedQuietPeakMagnitude,
                     calibrationLoudMagnitude: session.microphoneCalibration.estimatedLoudPeakMagnitude,
-                    palette: spectrogramPalette
+                    palette: spectrogramPalette.wrappedValue
                 )
             }
             .frame(minHeight: Self.spectrumGraphHeight)

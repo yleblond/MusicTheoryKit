@@ -40,6 +40,13 @@ public enum ChordVocabulary {
     public static func byID(_ id: String) -> ChordTemplate? {
         byIDLookup[id]
     }
+
+    /// Every chord quality in `seed` anchored on the same root — the full set of "extensions"
+    /// (7th, sus, etc.) reachable from one fundamental, for a UI that lets a chord's quality be
+    /// changed without touching its root (see the Guide's chord-progression editor).
+    public static func allChords(forRoot root: PitchClass) -> [Chord] {
+        seed.map { Chord(root: root, template: $0) }
+    }
 }
 
 /// A chord template anchored to a root — the object actually played/detected/suggested.

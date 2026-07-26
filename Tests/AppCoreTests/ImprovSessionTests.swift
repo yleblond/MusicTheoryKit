@@ -1314,6 +1314,29 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertEqual(session.currentScene?.roles.count, 0)
     }
 
+    func testSetSceneRoleVolumeUpdatesRoleAndAppliesToAttachedInstrument() throws {
+        let session = ImprovSession()
+        try session.start()
+        session.newScene(title: "Test")
+        let roleID = try session.addSceneRole(name: "Piano")
+        try session.attachInstrument(.computerKeyboard, toRole: roleID)
+
+        try session.setSceneRoleVolume(roleID, volume: 0.5)
+        XCTAssertEqual(session.currentScene?.roles.first { $0.id == roleID }?.volume, 0.5)
+
+        // Detached role: the volume is still recorded even without a live instrument attached.
+        try session.detachInstrument(fromRole: roleID)
+        try session.setSceneRoleVolume(roleID, volume: 0.2)
+        XCTAssertEqual(session.currentScene?.roles.first { $0.id == roleID }?.volume, 0.2)
+    }
+
+    func testSetSceneRoleVolumeWithoutActiveSceneThrows() {
+        let session = ImprovSession()
+        XCTAssertThrowsError(try session.setSceneRoleVolume(UUID(), volume: 0.5)) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .noSceneLoaded)
+        }
+    }
+
     func testAddSceneRoleWithoutActiveSceneThrows() {
         let session = ImprovSession()
         XCTAssertThrowsError(try session.addSceneRole(name: "Piano 1")) { error in
@@ -1593,6 +1616,76 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertNil(session.currentGuideStepIndex)
     }
 
+    func testSetGuideStepChordQualityChangesOnlyThatChordKeepingItsRoot() throws {
+        let session = ImprovSession()
+        session.newGuideSequence(title: "Practice")
+        let progression = ChordProgressionTemplate(name: "I-IV-V", degrees: ["I", "IV", "V"])
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"), chordProgression: progression)
+
+        try session.setGuideStepChordQuality(stepIndex: 0, chordIndex: 1, templateID: "7")
+        let updated = try XCTUnwrap(session.currentGuide?.steps[0].chordProgression)
+        XCTAssertEqual(updated[0].chordTemplateID, "Ma", "untouched chords keep their original quality")
+        XCTAssertEqual(updated[1].chordTemplateID, "7")
+        XCTAssertEqual(updated[1].root, 5, "changing quality never touches the chord's own root")
+        XCTAssertEqual(updated[2].chordTemplateID, "Ma")
+    }
+
+    func testSetGuideStepChordQualityWithInvalidChordIndexThrows() throws {
+        let session = ImprovSession()
+        session.newGuideSequence(title: "Practice")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        XCTAssertThrowsError(try session.setGuideStepChordQuality(stepIndex: 0, chordIndex: 0, templateID: "7")) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .invalidChordIndex, "no chord progression at all on this step")
+        }
+    }
+
+    func testMoveGuideStepsReordersAndKeepsActiveStepPointedAtTheSameStep() throws {
+        let session = ImprovSession()
+        session.newGuideSequence(title: "Practice")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        try session.addGuideStep(ModeReference(tonic: 2, scaleID: "dorian"))
+        try session.addGuideStep(ModeReference(tonic: 7, scaleID: "mixolydian"))
+        try session.startGuide(atStepIndex: 1) // the Dorian step
+
+        try session.moveGuideSteps(fromOffsets: [0], toOffset: 3) // Ionian moves to the end
+        XCTAssertEqual(session.currentGuide?.steps.map { $0.mode.scaleID }, ["dorian", "mixolydian", "ionian"])
+        XCTAssertEqual(session.currentGuideStepIndex, 0, "the active step follows Dorian to its new position")
+        XCTAssertEqual(session.currentGuideStepMode()?.displayName, "D Dorian")
+    }
+
+    func testMoveGuideStepChordsReordersWithinOneStepOnly() throws {
+        let session = ImprovSession()
+        session.newGuideSequence(title: "Practice")
+        let progression = ChordProgressionTemplate(name: "I-IV-V", degrees: ["I", "IV", "V"])
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"), chordProgression: progression)
+        try session.addGuideStep(ModeReference(tonic: 2, scaleID: "dorian"), chordProgression: progression)
+
+        try session.moveGuideStepChords(atStepIndex: 0, fromOffsets: [0], toOffset: 3)
+        let reordered = try XCTUnwrap(session.currentGuide?.steps[0].chordProgression)
+        XCTAssertEqual(reordered.map(\.root), [5, 7, 0], "IV, V, I after moving I to the end")
+
+        // Step 1 is in D dorian, not C ionian — its own I/IV/V resolve to D(2)/G(7)/A(9), a
+        // different absolute root set than step 0's, by design (`resolveChordProgression`
+        // resolves each step's template against ITS OWN mode).
+        let untouched = try XCTUnwrap(session.currentGuide?.steps[1].chordProgression)
+        XCTAssertEqual(untouched.map(\.root), [2, 7, 9], "the sibling step's own progression is unaffected")
+    }
+
+    func testSetGuideStepChordProgressionAppliesToAnAlreadyCreatedStepAndCanClearIt() throws {
+        let session = ImprovSession()
+        session.newGuideSequence(title: "Practice")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian")) // no progression yet
+
+        let progression = ChordProgressionTemplate(name: "ii-V-I", degrees: ["ii", "V", "I"])
+        try session.setGuideStepChordProgression(atIndex: 0, template: progression)
+        XCTAssertEqual(session.currentGuide?.steps[0].chordProgressionName, "ii-V-I")
+        XCTAssertEqual(session.currentGuide?.steps[0].chordProgression?.count, 3)
+
+        try session.setGuideStepChordProgression(atIndex: 0, template: nil)
+        XCTAssertNil(session.currentGuide?.steps[0].chordProgressionName)
+        XCTAssertNil(session.currentGuide?.steps[0].chordProgression)
+    }
+
     func testAddGuideStepWithoutASequenceThrows() {
         let session = ImprovSession()
         XCTAssertThrowsError(try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian")))
@@ -1798,6 +1891,34 @@ final class ImprovSessionTests: XCTestCase {
         let reloaded = ImprovSession()
         try reloaded.loadOrCreateColorPalettes(fromJSONFile: tempFile.path)
         XCTAssertEqual(reloaded.colorPalettes, ColorPalette.builtInDefaults, "loadOrCreateColorPalettes doesn't overwrite an existing file")
+    }
+
+    func testLoadOrCreateSpectrogramSettingsWritesDefaultsThenPersistsChanges() throws {
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tempFile.path))
+
+        let session = ImprovSession()
+        try session.loadOrCreateSpectrogramSettings(fromJSONFile: tempFile.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tempFile.path))
+        XCTAssertEqual(session.spectrogramSettings.palette, "thermal")
+        XCTAssertFalse(session.spectrogramSettings.showNoteOverlay)
+
+        // `setSpectrogramPalette`/`setSpectrogramShowNoteOverlay` only persist once a settings
+        // folder is known (see `setSettingsFolder`) — exercised end to end via that, not the
+        // bare JSON file, same convention as the Lumi/palette settings.
+        let settingsFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: settingsFolder) }
+        try session.setSettingsFolder(settingsFolder.path)
+        try session.setSpectrogramPalette("blue")
+        try session.setSpectrogramShowNoteOverlay(true)
+        XCTAssertEqual(session.spectrogramSettings.palette, "blue")
+        XCTAssertTrue(session.spectrogramSettings.showNoteOverlay)
+
+        let reloaded = ImprovSession()
+        try reloaded.setSettingsFolder(settingsFolder.path)
+        XCTAssertEqual(reloaded.spectrogramSettings.palette, "blue")
+        XCTAssertTrue(reloaded.spectrogramSettings.showNoteOverlay)
     }
 
     func testSelectColorPaletteByNameAndIndexAndRejectsInvalid() throws {
