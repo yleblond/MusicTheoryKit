@@ -620,6 +620,11 @@ enum L10nTable {
         .appFormatEnCoursDeCapture: [.fr: "En cours de capture : jouez maintenant, puis appuyez sur \u{201c}%@\u{201d}.", .en: "Capturing: play now, then tap \u{201c}%@\u{201d}.", .de: "Erfassung läuft: jetzt spielen, dann auf \u{201e}%@\u{201c} tippen."],
         .appLabelSpectrogramme: [.fr: "Spectrogramme", .en: "Spectrogram", .de: "Spektrogramm"],
         .appLabelCalibrationCourt: [.fr: "Calibration", .en: "Calibration", .de: "Kalibrierung"],
+        .appToggleAfficherNotesSpectrogramme: [.fr: "Afficher les notes reconnues", .en: "Show recognized notes", .de: "Erkannte Noten anzeigen"],
+        .appFieldPaletteSpectrogramme: [.fr: "Palette", .en: "Palette", .de: "Palette"],
+        .appPaletteThermique: [.fr: "Thermique", .en: "Thermal", .de: "Thermisch"],
+        .appPaletteBleu: [.fr: "Bleu", .en: "Blue", .de: "Blau"],
+        .appPaletteNiveauxDeGris: [.fr: "Niveaux de gris", .en: "Grayscale", .de: "Graustufen"],
         .appHintSpectrogramme: [
             .fr: "Historique du spectre au fil du temps — le temps en abscisse, la frequence en ordonnee, l'intensite en couleur. Meme cout de calcul et meme arret automatique en quittant cet onglet que le spectrometre.",
             .en: "Spectrum history over time — time on the x-axis, frequency on the y-axis, intensity as color. Same computation cost and same auto-stop when leaving this tab as the spectrometer.",

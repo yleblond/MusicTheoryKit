@@ -5,14 +5,13 @@ import Localization
 
 /// Start/stop the microphone track — used as the "Microphone" sub-tab of the "JamShack" tab.
 /// A plain `View`, not a `Form`/`Section` itself, so it composes cleanly inside another Form.
-/// Two blocks once the microphone is active: (1) start/stop + recognition mode, side by side;
-/// (2) a segmented choice between "Calibration" (the calibration rows + level meter, moved in
-/// here per explicit user request so it's a peer of the other three rather than always-visible
-/// above them), "Notes recues" (the live keyboard + chord/mode text, default), "Spectrometre"
-/// (the live FFT spectroscope — a single-frame reading), and "Spectrogramme" (the same FFT
-/// capture plotted as a scrolling time/frequency waterfall) — the latter two share one opt-in
-/// capture toggle (see `spectrometerContent`/`spectrographContent`'s own doc comments for why
-/// leaving both tabs always stops the capture).
+/// Start/stop lives in its own always-visible block; everything else is a segmented choice
+/// between "Calibration" (calibration rows + level meter), "Notes recues" (the live keyboard +
+/// chord/mode text + the recognition-mode picker, default), "Spectrometre" (the live FFT
+/// spectroscope — a single-frame reading), and "Spectrogramme" (the same FFT capture plotted as
+/// a scrolling time/frequency waterfall) — the latter two share one opt-in capture toggle (see
+/// `spectrometerContent`/`spectrographContent`'s own doc comments for why leaving both tabs
+/// always stops the capture).
 struct MicrophoneControlsView: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
@@ -28,6 +27,18 @@ struct MicrophoneControlsView: View {
     /// of how long this mode is left running.
     @State private var spectrogramHistory: [SpectrogramView.Column] = []
     private static let spectrogramCapacity = 240 // ~24s at the 100ms tick rate used below
+    /// The current frame's peak spectrum magnitude — kept alongside the history buffer so
+    /// `SpectrogramColorScaleView`'s live indicator has something to point at without re-fetching
+    /// a snapshot outside the polling loop that already owns that cadence.
+    @State private var spectrogramCurrentPeakMagnitude: Float?
+    /// Off by default — a deliberate opt-in overlay (per explicit user request), not a
+    /// permanent addition to the base graph.
+    @State private var spectrogramShowNotes = false
+    @State private var spectrogramPalette: SpectrogramPalette = .thermal
+    /// Shared by both the spectrometre and spectrogramme graphs so they read as a matched pair
+    /// (per explicit user request) — 280 * 1.3, also per explicit user request ("agrandir de
+    /// 30% en hauteur").
+    private static let spectrumGraphHeight: CGFloat = 364
 
     private enum DisplayMode: Hashable {
         /// Calibration rows + level meter — a peer tab now, not an always-visible block above
@@ -82,47 +93,21 @@ struct MicrophoneControlsView: View {
                 if let microphoneError {
                     Text(microphoneError).foregroundStyle(.red).font(.caption)
                 }
-                HStack(alignment: .top, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if microphoneTrack != nil {
-                            Text(L10n.string(.appLabelMicrophoneActif, session.currentLanguage)).foregroundStyle(.green)
-                            Button(L10n.string(.appButtonArreter, session.currentLanguage), role: .destructive) { session.stopTrack(.microphone) }
-                        } else {
-                            Button(L10n.string(.appButtonDemarrerEcoute, session.currentLanguage)) {
-                                microphoneError = nil
-                                do {
-                                    try session.startTrack(.microphone)
-                                } catch {
-                                    microphoneError = "\(error)"
-                                }
-                            }
+                if microphoneTrack != nil {
+                    Text(L10n.string(.appLabelMicrophoneActif, session.currentLanguage)).foregroundStyle(.green)
+                    Button(L10n.string(.appButtonArreter, session.currentLanguage), role: .destructive) { session.stopTrack(.microphone) }
+                } else {
+                    Button(L10n.string(.appButtonDemarrerEcoute, session.currentLanguage)) {
+                        microphoneError = nil
+                        do {
+                            try session.startTrack(.microphone)
+                        } catch {
+                            microphoneError = "\(error)"
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(L10n.string(.appHeadingReconnaissance, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-                        Picker(L10n.string(.fieldModeReconnaissance, session.currentLanguage), selection: Binding(
-                            get: { currentRecognitionMode },
-                            set: { newMode in
-                                do {
-                                    try session.setMicrophoneRecognitionMode(newMode, for: .microphone)
-                                } catch {
-                                    microphoneError = "\(error)"
-                                }
-                            }
-                        )) {
-                            ForEach(Self.recognitionModePresets, id: \.self) { mode in
-                                Text(Self.label(for: mode, session.currentLanguage)).tag(mode)
-                            }
-                        }
-                        .labelsHidden()
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } header: {
                 Text(L10n.string(.appHeadingMicrophone, session.currentLanguage))
-            } footer: {
-                Text(L10n.string(.appHintDetectionMicrophone, session.currentLanguage))
             }
             if let microphoneTrack {
                 Section {
@@ -166,12 +151,12 @@ struct MicrophoneControlsView: View {
                         Text(calibratingPhase == nil
                             ? L10n.string(.appHintCalibrationNiveau, session.currentLanguage)
                             : L10n.string(.appFormatEnCoursDeCapture, session.currentLanguage, L10n.string(.appButtonTerminerCapture, session.currentLanguage)))
+                    case .notesReceived:
+                        Text(L10n.string(.appHintDetectionMicrophone, session.currentLanguage))
                     case .spectrometer:
                         Text(L10n.string(.appHintSpectreFFT, session.currentLanguage))
                     case .spectrograph:
                         Text(L10n.string(.appHintSpectrogramme, session.currentLanguage))
-                    case .notesReceived:
-                        EmptyView()
                     }
                 }
             }
@@ -240,6 +225,24 @@ struct MicrophoneControlsView: View {
 
     @ViewBuilder
     private func notesReceivedContent(_ track: WebConsoleTrackState) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(L10n.string(.appHeadingReconnaissance, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+            Picker(L10n.string(.fieldModeReconnaissance, session.currentLanguage), selection: Binding(
+                get: { currentRecognitionMode },
+                set: { newMode in
+                    do {
+                        try session.setMicrophoneRecognitionMode(newMode, for: .microphone)
+                    } catch {
+                        microphoneError = "\(error)"
+                    }
+                }
+            )) {
+                ForEach(Self.recognitionModePresets, id: \.self) { mode in
+                    Text(Self.label(for: mode, session.currentLanguage)).tag(mode)
+                }
+            }
+            .labelsHidden()
+        }
         AutoCenteredKeyboardView(
             heldPitches: track.heldPitches,
             palette: bridge.state.palette,
@@ -271,6 +274,9 @@ struct MicrophoneControlsView: View {
                     calibrationQuietMagnitude: session.microphoneCalibration.estimatedQuietPeakMagnitude,
                     calibrationLoudMagnitude: session.microphoneCalibration.estimatedLoudPeakMagnitude
                 )
+                // Same height as the spectrogramme, per explicit user request — the two are
+                // views of the same underlying capture and read as a pair.
+                .frame(minHeight: Self.spectrumGraphHeight)
             }
         }
     }
@@ -294,20 +300,45 @@ struct MicrophoneControlsView: View {
     @ViewBuilder
     private func spectrographContent(_ track: WebConsoleTrackState) -> some View {
         if spectroscopeEnabled {
-            SpectrogramView(
-                history: spectrogramHistory,
-                markedPitches: track.heldPitches,
-                calibrationQuietMagnitude: session.microphoneCalibration.estimatedQuietPeakMagnitude,
-                calibrationLoudMagnitude: session.microphoneCalibration.estimatedLoudPeakMagnitude
-            )
-            .frame(minHeight: 280)
+            Toggle(L10n.string(.appToggleAfficherNotesSpectrogramme, session.currentLanguage), isOn: $spectrogramShowNotes)
+            Picker(L10n.string(.appFieldPaletteSpectrogramme, session.currentLanguage), selection: $spectrogramPalette) {
+                Text(L10n.string(.appPaletteThermique, session.currentLanguage)).tag(SpectrogramPalette.thermal)
+                Text(L10n.string(.appPaletteBleu, session.currentLanguage)).tag(SpectrogramPalette.blue)
+                Text(L10n.string(.appPaletteNiveauxDeGris, session.currentLanguage)).tag(SpectrogramPalette.grayscale)
+            }
+            HStack(alignment: .top, spacing: 4) {
+                SpectrogramView(
+                    history: spectrogramHistory,
+                    totalColumns: Self.spectrogramCapacity,
+                    markedPitches: track.heldPitches,
+                    calibrationQuietMagnitude: session.microphoneCalibration.estimatedQuietPeakMagnitude,
+                    calibrationLoudMagnitude: session.microphoneCalibration.estimatedLoudPeakMagnitude,
+                    showNoteOverlay: spectrogramShowNotes,
+                    palette: spectrogramPalette
+                )
+                SpectrogramColorScaleView(
+                    currentPeakMagnitude: spectrogramCurrentPeakMagnitude,
+                    calibrationQuietMagnitude: session.microphoneCalibration.estimatedQuietPeakMagnitude,
+                    calibrationLoudMagnitude: session.microphoneCalibration.estimatedLoudPeakMagnitude,
+                    palette: spectrogramPalette
+                )
+            }
+            .frame(minHeight: Self.spectrumGraphHeight)
             .task {
                 while !Task.isCancelled {
                     if let snapshot = session.currentMicrophoneSpectrum() {
-                        spectrogramHistory.append(.init(magnitudes: snapshot.magnitudes, binHz: snapshot.binHz))
+                        // Read held pitches FRESH from the bridge here, not from the `track`
+                        // parameter — that parameter is only re-evaluated when this view's
+                        // PARENT re-renders (roughly every ~250ms via `bridge.state`'s own
+                        // polling), but this loop is a single long-lived task that keeps running
+                        // between those re-renders, so it would otherwise capture one stale
+                        // snapshot of held pitches for its whole lifetime.
+                        let heldPitches = bridge.state.tracks.first { $0.id == "micro" }?.heldPitches ?? []
+                        spectrogramHistory.append(.init(magnitudes: snapshot.magnitudes, binHz: snapshot.binHz, heldPitches: heldPitches))
                         if spectrogramHistory.count > Self.spectrogramCapacity {
                             spectrogramHistory.removeFirst(spectrogramHistory.count - Self.spectrogramCapacity)
                         }
+                        spectrogramCurrentPeakMagnitude = snapshot.magnitudes.max()
                     }
                     try? await Task.sleep(nanoseconds: 100_000_000)
                 }

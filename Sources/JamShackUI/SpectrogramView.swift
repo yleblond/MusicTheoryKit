@@ -1,52 +1,68 @@
 import SwiftUI
 import CoreGraphics
 
-/// A scrolling waterfall spectrogram — time on the x-axis (oldest at the left, newest at the
-/// right, one column per accumulated `Column`), frequency on the y-axis (log-scaled in pitch,
-/// same convention as `SpectrumView`, so a held note lines up with its own row), color-coded by
-/// intensity. A vertical keyboard strip sits to the left, ROTATED from `SpectrumView`'s
-/// horizontal one but sharing the exact same pitch-to-position math, so its keys land exactly
-/// on the frequency rows they represent — the visual counterpart to `SpectrumView` for "what
-/// happened over the last N seconds" instead of "what's happening right now."
+/// A scrolling waterfall spectrogram — time on the x-axis (a FIXED window of `totalColumns`
+/// slots; real data fills in from the RIGHT as `history` grows, the left stays blank until
+/// enough time has passed — not a stretch-to-fit of however much history happens to exist yet),
+/// frequency on the y-axis (log-scaled in pitch, same convention as `SpectrumView`, so a held
+/// note lines up with its own row), color-coded by intensity (see `SpectrogramColorScale`,
+/// shared with `SpectrogramColorScaleView`'s legend so the two always agree on what a color
+/// means). A vertical keyboard strip sits to the left, ROTATED from `SpectrumView`'s horizontal
+/// one but sharing the exact same pitch-to-position math, so its keys land exactly on the
+/// frequency rows they represent.
 ///
 /// The caller owns the history buffer (this view holds no session state of its own, same
-/// `SpectrumView` philosophy) — typically a capped array a `Timer`/similar periodic tick
-/// appends one fresh `Column` to and trims from the front once past capacity.
+/// `SpectrumView` philosophy) — typically a capped array a periodic tick appends one fresh
+/// `Column` to and trims from the front once past `totalColumns`.
 public struct SpectrogramView: View {
     /// One FFT snapshot's worth of column data — `binHz` travels WITH each column (not shared
     /// once for the whole view) since nothing prevents the analyzer's sample rate/FFT size from
     /// changing between snapshots in principle, and the per-column cost of carrying it is
-    /// negligible.
+    /// negligible. `heldPitches` is that same tick's held notes, for the optional overlay.
     public struct Column {
         public let magnitudes: [Float]
         public let binHz: Double
-        public init(magnitudes: [Float], binHz: Double) {
+        public let heldPitches: [Int]
+        public init(magnitudes: [Float], binHz: Double, heldPitches: [Int] = []) {
             self.magnitudes = magnitudes
             self.binHz = binHz
+            self.heldPitches = heldPitches
         }
     }
 
     /// Oldest first, newest last — index `count - 1` is always the rightmost (most recent)
-    /// column, matching how a live waterfall scrolls (new data enters at the right, ages
-    /// leftward, same reading direction as this app's own RTL-agnostic timelines elsewhere).
+    /// column.
     public let history: [Column]
+    /// The FIXED number of column slots the x-axis represents — e.g. the caller's history
+    /// buffer capacity. `history.count` can be less than this (still filling in) but never more.
+    public let totalColumns: Int
     public let markedPitches: [Int]
     public let minHz: Double
     public let maxHz: Double
     public let calibrationQuietMagnitude: Float?
     public let calibrationLoudMagnitude: Float?
+    /// Draws each history column's `heldPitches` as small marks at their own (time, frequency)
+    /// position, layered on top of the color-coded magnitude image — off by default (it's a
+    /// deliberate opt-in overlay, per explicit user request, not a permanent addition to the
+    /// base graph).
+    public let showNoteOverlay: Bool
+    public let palette: SpectrogramPalette
 
     public init(
-        history: [Column], markedPitches: [Int] = [],
+        history: [Column], totalColumns: Int, markedPitches: [Int] = [],
         minHz: Double = 27.5, maxHz: Double = 4186.01,
-        calibrationQuietMagnitude: Float? = nil, calibrationLoudMagnitude: Float? = nil
+        calibrationQuietMagnitude: Float? = nil, calibrationLoudMagnitude: Float? = nil,
+        showNoteOverlay: Bool = false, palette: SpectrogramPalette = .thermal
     ) {
         self.history = history
+        self.totalColumns = max(1, totalColumns)
         self.markedPitches = markedPitches
         self.minHz = minHz
         self.maxHz = maxHz
         self.calibrationQuietMagnitude = calibrationQuietMagnitude
         self.calibrationLoudMagnitude = calibrationLoudMagnitude
+        self.showNoteOverlay = showNoteOverlay
+        self.palette = palette
     }
 
     // MARK: - Shared pitch math (identical formulas to `SpectrumView`, kept independent rather
@@ -68,12 +84,44 @@ public struct SpectrogramView: View {
                 drawVerticalKeyboardStrip(in: context, size: size)
             }
             .frame(width: 56)
+            // `.frame(maxWidth: .infinity)` here is load-bearing, not decorative: a `Canvas`
+            // has no intrinsic content size, and without an explicit "expand" signal it can
+            // end up sized to something far narrower than the space actually available inside
+            // a `Form`/`Section` row on macOS — confirmed via a real screenshot showing a wide
+            // dead gap between the keyboard strip and where the waterfall actually started
+            // drawing.
             Canvas { context, size in
                 drawWaterfall(in: context, size: size)
+                if showNoteOverlay {
+                    drawNoteOverlay(in: context, size: size)
+                }
             }
-            .frame(minHeight: 160)
+            .frame(maxWidth: .infinity)
             .background(Color.black.opacity(0.05))
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Column layout (shared by the waterfall image and the note overlay, so the two
+    // always agree on exactly where each history column sits horizontally)
+
+    /// Fixed-width columns (`pixelWidth / totalColumns`) — NOT `pixelWidth / history.count`,
+    /// which would stretch whatever little history exists yet to fill the whole width. Real
+    /// data is right-aligned (newest at the right edge); anything left of `history.count`
+    /// columns' worth of width is deliberately left blank, so the graph visibly fills in from
+    /// the right as time passes instead of arriving pre-stretched.
+    ///
+    /// `columnWidth` is a `Double`, NOT rounded down to whole pixels: `pixelWidth / totalColumns`
+    /// almost never divides evenly (e.g. a 700px-wide canvas over 240 columns is really 2.91px
+    /// each), and truncating that to `2` before multiplying back by `history.count` at full
+    /// capacity left a permanent ~200px dead gap at the left that never filled in no matter how
+    /// long the capture ran — confirmed via a real screenshot showing the gap stuck at a fixed
+    /// width instead of shrinking to zero. Keeping the fractional width and only rounding once,
+    /// at the end, when computing `startX`, means a full buffer always reaches `startX == 0`.
+    private func columnLayout(pixelWidth: Int) -> (columnWidth: Double, startX: Int) {
+        let columnWidth = Double(pixelWidth) / Double(max(1, totalColumns))
+        let startX = max(0, pixelWidth - Int((Double(history.count) * columnWidth).rounded()))
+        return (columnWidth, startX)
     }
 
     // MARK: - Waterfall
@@ -92,16 +140,16 @@ public struct SpectrogramView: View {
 
     private func makeWaterfallImage(pixelWidth: Int, pixelHeight: Int) -> CGImage? {
         guard !history.isEmpty, axisMaxPitch > axisMinPitch else { return nil }
-        let peakForScale = max(calibrationLoudMagnitude.map { $0 * 1.2 } ?? (history.compactMap { $0.magnitudes.max() }.max() ?? 0), 1)
+        let peakForScale = SpectrogramColorScale.peakForScale(
+            calibrationLoudMagnitude: calibrationLoudMagnitude,
+            fallback: history.compactMap { $0.magnitudes.max() }.max() ?? 0
+        )
+        let (columnWidth, startX) = columnLayout(pixelWidth: pixelWidth)
 
-        var pixels = [UInt8](repeating: 0, count: pixelWidth * pixelHeight * 4)
-        for px in 0..<pixelWidth {
-            // Nearest-neighbor column lookup: `history.count` columns of real data mapped onto
-            // `pixelWidth` output pixels — usually a near-1:1 mapping in practice (this view is
-            // typically about as wide as the history buffer is long), so nearest-neighbor reads
-            // exactly as sharp as the underlying data actually is, with no invented detail.
-            let columnIndex = min(history.count - 1, (px * history.count) / pixelWidth)
-            let column = history[columnIndex]
+        var pixels = [UInt8](repeating: 0, count: pixelWidth * pixelHeight * 4) // starts fully transparent
+        for px in startX..<pixelWidth {
+            let historyIndex = min(history.count - 1, Int(Double(px - startX) / columnWidth))
+            let column = history[historyIndex]
             guard column.binHz > 0, !column.magnitudes.isEmpty else { continue }
             for py in 0..<pixelHeight {
                 let t = Double(py) / Double(pixelHeight) // 0 at the top
@@ -110,9 +158,8 @@ public struct SpectrogramView: View {
                 let bin = Int((hz / column.binHz).rounded())
                 guard column.magnitudes.indices.contains(bin) else { continue }
                 let magnitude = column.magnitudes[bin]
-                let ratio = log10(1 + Double(magnitude)) / log10(1 + Double(peakForScale))
-                let intensity = min(max(ratio, 0), 1)
-                let color = Self.thermalColor(intensity)
+                let intensity = SpectrogramColorScale.intensity(for: magnitude, peakForScale: peakForScale)
+                let color = SpectrogramColorScale.color(intensity, palette: palette)
                 let idx = (py * pixelWidth + px) * 4
                 pixels[idx] = color.0
                 pixels[idx + 1] = color.1
@@ -130,29 +177,32 @@ public struct SpectrogramView: View {
         )
     }
 
-    /// A dark-to-bright thermal ramp (black -> purple -> red -> orange -> yellow -> pale) —
-    /// reads clearly against this app's dark theme and keeps quiet regions genuinely dark
-    /// instead of a mid-tone color, so loud transients still pop visually.
-    private static func thermalColor(_ intensity: Double) -> (UInt8, UInt8, UInt8) {
-        let stops: [(Double, (Double, Double, Double))] = [
-            (0.0, (0, 0, 0)),
-            (0.15, (24, 0, 42)),
-            (0.35, (92, 0, 84)),
-            (0.55, (182, 22, 42)),
-            (0.75, (230, 102, 18)),
-            (0.9, (250, 200, 60)),
-            (1.0, (255, 250, 224)),
-        ]
-        var lower = stops[0], upper = stops[stops.count - 1]
-        for i in 0..<(stops.count - 1) where intensity >= stops[i].0 && intensity <= stops[i + 1].0 {
-            lower = stops[i]
-            upper = stops[i + 1]
-            break
+    // MARK: - Note overlay
+
+    /// One semi-transparent rect per (history column, held pitch) pair, sized to exactly that
+    /// column's on-screen width and that pitch's own row height (the SAME `columnLayout`/pitch
+    /// math the waterfall image itself uses, so a mark always lands exactly on the real cell it
+    /// represents) — many adjacent columns holding the same pitch naturally read as one
+    /// continuous bar, which is exactly "this note was held over this time span."
+    private func drawNoteOverlay(in context: GraphicsContext, size: CGSize) {
+        guard axisMaxPitch > axisMinPitch, !history.isEmpty else { return }
+        let pixelWidth = max(1, Int(size.width))
+        let (columnWidth, startX) = columnLayout(pixelWidth: pixelWidth)
+        func y(forPitch pitch: Double) -> CGFloat {
+            size.height - CGFloat((pitch - axisMinPitch) / (axisMaxPitch - axisMinPitch)) * size.height
         }
-        let span = upper.0 - lower.0
-        let t = span > 0 ? (intensity - lower.0) / span : 0
-        func mix(_ a: Double, _ b: Double) -> UInt8 { UInt8(max(0, min(255, a + (b - a) * t))) }
-        return (mix(lower.1.0, upper.1.0), mix(lower.1.1, upper.1.1), mix(lower.1.2, upper.1.2))
+        for (index, column) in history.enumerated() {
+            guard !column.heldPitches.isEmpty else { continue }
+            let left = CGFloat(startX) + CGFloat(index) * CGFloat(columnWidth)
+            for pitch in column.heldPitches {
+                guard Double(pitch) >= axisMinPitch, Double(pitch) <= axisMaxPitch else { continue }
+                let top = y(forPitch: Double(pitch) + 0.5)
+                let bottom = y(forPitch: Double(pitch) - 0.5)
+                let rect = CGRect(x: left, y: top, width: CGFloat(columnWidth), height: bottom - top)
+                context.fill(Path(rect), with: .color(.white.opacity(0.55)))
+                context.stroke(Path(rect), with: .color(.white.opacity(0.85)), lineWidth: 0.5)
+            }
+        }
     }
 
     // MARK: - Vertical keyboard strip
@@ -233,13 +283,14 @@ public struct SpectrogramView: View {
 }
 
 #Preview {
-    let history: [SpectrogramView.Column] = (0..<120).map { i in
+    let history: [SpectrogramView.Column] = (0..<80).map { i in
         let mags = (0..<400).map { bin -> Float in
             let base = sin(Double(i) / 15) * 30 + 60
             return Float(max(0, base - abs(Double(bin) - 80) * 0.6 + (bin % 40 == 0 ? 150 : 0)))
         }
-        return .init(magnitudes: mags, binHz: 10)
+        return .init(magnitudes: mags, binHz: 10, heldPitches: i > 40 ? [60, 64, 67] : [60])
     }
-    return SpectrogramView(history: history, markedPitches: [60, 64, 67])
+    return SpectrogramView(history: history, totalColumns: 120, markedPitches: [60, 64, 67], showNoteOverlay: true)
+        .frame(height: 280)
         .padding()
 }

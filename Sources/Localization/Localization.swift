@@ -298,6 +298,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appButtonTerminerCapture, appButtonCapturer, appLabelNoteFaible, appLabelNoteForte
     case appHintCalibrationNiveau, appFormatEnCoursDeCapture
     case appLabelSpectrogramme, appHintSpectrogramme, appLabelCalibrationCourt
+    case appToggleAfficherNotesSpectrogramme
+    case appFieldPaletteSpectrogramme, appPaletteThermique, appPaletteBleu, appPaletteNiveauxDeGris
 
     // MARK: - App: Serveurs tab
     case appHintServeurPremierPlan, appFormatRejoinsMoiSur, appHintConsoleWebCaption, appHintClavierVirtuelCaption
