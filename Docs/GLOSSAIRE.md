@@ -202,15 +202,35 @@ selon la couche :
   d'autre » étant justement le point de ce champ. Voir §AppCore de `ARCHITECTURE.md` pour le
   détail de sa résolution côté serveur/côté client.
 
-## `SanityChecks` vs `XCTest`
+## `JamShack` vs `JamShackUI` vs `JamShackApp` — trois cibles distinctes, un seul nom de projet
 
-Cette machine n'a que les Command Line Tools (pas Xcode complet), donc `swift test` échoue
-(`XCTest` indisponible). `SanityChecks` est un exécutable séparé qui **rejoue à la main**
-chaque cas de test des vrais fichiers `XCTest` de `Tests/` (mêmes assertions, via `check`/
-`checkNil`) — ce n'est pas un remplaçant définitif, c'est un filet de sécurité pour cet
-environnement précis : toute nouvelle fonctionnalité doit gagner un cas dans les deux endroits
-(le vrai test `XCTest`, prêt pour le jour où Xcode sera installé, **et** son miroir dans
-`SanityChecks`, seul moyen actuel de le vérifier réellement).
+Trois noms très proches, facilement confondus :
+
+- **`JamShack`** — l'exécutable SwiftPM du CLI (`swift run JamShack`) : REPL + écrans
+  `run`/`config`/Guide Musical + menus DOS. Aucune vue SwiftUI dedans.
+- **`JamShackUI`** — la cible bibliothèque (module SwiftPM, `Sources/JamShackUI/`) qui contient
+  les vraies vues SwiftUI réutilisables (`RunScreen`, `SpectrumView`, `SpectrogramView`,
+  `SessionUIBridge`...) — buildable/testable/prévisualisable sans Xcode, comme n'importe quel
+  autre module de ce package.
+- **`JamShackApp`** — le projet Xcode dans `App/` (`App/JamShackApp.xcodeproj`, deux schemes
+  `JamShackApp_iOS`/`JamShackApp_macOS`) : la coquille qui embarque `JamShackUI` avec ce que
+  SPM seul ne peut pas fournir (Info.plist, entitlements, icône, signature). Aucune logique
+  propre — seulement des écrans supplémentaires (`App/Sources/*.swift`) qui composent les vues
+  de `JamShackUI`.
+
+## `SpectrumView` vs `SpectrogramView` — instrument vs enregistrement de l'instrument
+
+Même distinction que « Spectromètre » vs « Spectrogramme » dans l'onglet Microphone de l'app
+SwiftUI :
+
+- **`SpectrumView`** (« Spectrometre ») — une lecture FFT **d'un seul instant**, redessinée à
+  chaque tick sans mémoire des ticks précédents.
+- **`SpectrogramView`** (« Spectrogramme ») — la même capture FFT, mais accumulée dans le temps
+  et affichée en cascade (temps en abscisse, fréquence en ordonnée, intensité en couleur) —
+  voir `Docs/ARCHITECTURE.md` §JamShackUI pour la mécanique (fenêtre à largeur fixe, remplissage
+  depuis la droite). `SpectrogramColorScale`/`SpectrogramColorScaleView` en sont la légende de
+  couleur commune, partagée pour que les deux graphes restent toujours d'accord sur ce qu'une
+  couleur signifie.
 
 ## « Scène » — trois concepts sans rapport, malgré le nom
 

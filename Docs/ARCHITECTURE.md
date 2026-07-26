@@ -1,22 +1,24 @@
 # Documentation technique — Music Improv Assistant
 
-Documentation du code généré dans ce package Swift. Reflète l'état du code à la fin de la
-session du 2026-07-10. Pour l'historique détaillé des décisions/itérations, voir la mémoire
-`project_improv_app_roadmap.md` ; pour la définition des termes ambigus/récurrents
-(« piste », « prompt de composition », les trois écrans...), voir `Docs/GLOSSAIRE.md`.
+Documentation du code généré dans ce package Swift. Reflète l'état du code au 2026-07-26. Pour
+l'historique détaillé des décisions/itérations, voir la mémoire `project_improv_app_roadmap.md` ;
+pour la définition des termes ambigus/récurrents (« piste », « prompt de composition », les
+trois écrans...), voir `Docs/GLOSSAIRE.md`.
 
 ## Vue d'ensemble
 
-Une application Swift Package Manager, orchestrée aujourd'hui par un front-end en ligne de
-commande (`JamShack`), mais dont toute la logique métier vit dans une couche
-présentation-agnostique (`AppCore`) pensée pour qu'une future interface SwiftUI puisse s'y
-brancher sans rien réécrire.
+Une application Swift Package Manager dont toute la logique métier vit dans une couche
+présentation-agnostique (`AppCore`), avec deux façades construites dessus, sans rien réécrire
+de cette couche : une **application SwiftUI** (iOS + macOS, aujourd'hui l'interface principale
+— module `JamShackUI` + coquille Xcode `App/`, voir §JamShackUI/App plus bas) et un front-end en
+ligne de commande (`JamShack`), conservé pour le pilotage scriptable/à distance et comme
+référence historique.
 
 Xcode complet est installé sur la machine de développement : `swift test` fonctionne
-nativement (312 tests XCTest à ce jour, répartis dans `Tests/`). L'ancien exécutable
+nativement (356 tests XCTest à ce jour, répartis dans `Tests/`). L'ancien exécutable
 `SanityChecks` — un mimique manuel d'XCTest écrit à l'époque où seules les Command Line
 Tools étaient disponibles — a été entièrement migré vers de vrais fichiers `XCTest` puis
-supprimé (voir §Historique pour le détail de la migration).
+supprimé.
 
 Le projet est versionné avec git (dépôt dans `MusicTheoryKit/`, avec un remote `origin`).
 
@@ -47,11 +49,15 @@ AudioEngine (lecture Piece + SoundTrack, micro/FFT)   MIDIEngine (CoreMIDI)   Ne
                                             (REPL + écrans "run"/"config" + menus DOS)
 ```
 
-`Localization` (nouvelle cible, aucune dépendance — absente du schéma ci-dessus par souci de
-lisibilité) est utilisée par `AppCore` **et** par `WebConsole` : seul moyen de partager une
-table de traduction entre les deux sans inverser leur relation de dépendance (`AppCore` →
-`WebConsole`, jamais l'inverse) — voir §Localisation multilingue plus bas. `JamShack` en
-dépend aussi.
+`Localization` (aucune dépendance — absente du schéma ci-dessus par souci de lisibilité) est
+utilisée par `AppCore` **et** par `WebConsole` : seul moyen de partager une table de traduction
+entre les deux sans inverser leur relation de dépendance (`AppCore` → `WebConsole`, jamais
+l'inverse) — voir §Localisation multilingue plus bas. `JamShack` en dépend aussi.
+
+`JamShackUI` (également absente du schéma — c'est une façade, pas un maillon de la chaîne de
+traitement) dépend de `AppCore` **et** `Localization`, exactement comme `JamShack` : les deux
+sont deux façades parallèles au-dessus de la même logique applicative, ni l'une ni l'autre ne
+dépendant de l'autre. Voir §JamShackUI / App plus bas.
 
 ---
 
@@ -1994,8 +2000,9 @@ d'XCTest) a été entièrement migré vers de vrais fichiers `XCTest` puis suppr
 ```sh
 cd MusicTheoryKit
 swift build       # compile tout
-swift test        # execute tous les tests XCTest (312 a ce jour, 0 echec)
-swift run JamShack # lance l'application
+swift test        # execute tous les tests XCTest (356 a ce jour, 0 echec)
+swift run JamShack # lance l'application (CLI)
+open App/JamShackApp.xcodeproj # lance l'application SwiftUI
 ```
 
 ## Limites connues
@@ -2007,9 +2014,9 @@ swift run JamShack # lance l'application
 - **Piste `clavier` (terminal) sans vrai maintien** : limite du terminal (aucun événement de
   relâchement), pas du code — le clavier virtuel du navigateur (§WebConsole), lui, reçoit un
   vrai `keyup` et tient réellement la note.
-- **Aucune interface graphique** : tout passe par le CLI ; la couche `AppCore` est conçue
-  pour qu'une interface SwiftUI puisse s'y brancher sans réécriture, mais cette étape n'a
-  pas encore été commencée (bloquée par l'absence d'Xcode sur cette machine).
+- **App SwiftUI : clef API LLM stockée en JSON en clair**, pas dans le Trousseau — décision
+  explicite pour débloquer l'usage GUI maintenant, migration vers `Security.framework`/Keychain
+  prévue plus tard sans changer la surface d'API (voir `Docs/BACKLOG.md`).
 - **Session collaborative sans authentification ni chiffrement** : TCP en clair, tout client
   qui atteint le port est accepté (design délibéré pour cette première version — voir §AppCore).
   Ne pas exposer ce port au-delà d'un réseau de confiance (LAN/VPN).
@@ -2041,10 +2048,12 @@ swift run JamShack # lance l'application
 
 ## Suite prévue (feuille de route)
 
-D'après la mémoire du projet, les phases suivantes restent à faire : `KeyboardView`
-vectoriel/tactile (SwiftUI, nécessite Xcode), affinage de la reconnaissance
-(RecognitionEngine — déjà largement implémenté ce jour), un vrai module texte→progression
-au-delà du premier jet LLM actuel, et une vue timeline/lead-sheet.
+L'app SwiftUI (§JamShackUI / App) est faite et sert d'interface principale — ce n'est plus une
+phase à venir. D'après la mémoire du projet, restent : un vrai module texte→progression au-delà
+du premier jet LLM actuel, une vue timeline/lead-sheet, et les chantiers listés dans
+`Docs/BACKLOG.md` (migration Keychain pour la clef API LLM, taille adaptative du clavier
+virtuel, rôles de scène revendicables par un client réseau, passage d'`ImprovSession` à un
+`actor`).
 
 Explicitement demandé par l'utilisateur pour **plus tard**, pas cette session : pouvoir
 enregistrer une nouvelle SoundTrack pendant qu'un `Piece` est en train de jouer, et réfléchir

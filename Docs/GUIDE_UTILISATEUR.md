@@ -1,7 +1,10 @@
 # Guide utilisateur — Music Improv Assistant
 
-Manuel d'utilisation de l'application en ligne de commande, dans son état à la fin de la
-session du 2026-07-21. Un terme ambigu ou peu clair ? Voir `Docs/GLOSSAIRE.md`.
+Manuel d'utilisation de l'application en ligne de commande (`JamShack`), dans son état au
+2026-07-26. L'application dispose aussi d'une interface graphique SwiftUI (iOS + macOS,
+aujourd'hui l'interface principale) — voir §20 pour son propre manuel, plus succinct : les deux
+pilotent la même logique applicative (`AppCore`), le CLI reste la référence la plus détaillée
+commande par commande. Un terme ambigu ou peu clair ? Voir `Docs/GLOSSAIRE.md`.
 
 ## Lancer l'application
 

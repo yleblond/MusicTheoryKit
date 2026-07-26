@@ -3,13 +3,25 @@
 Un assistant d'improvisation et de composition musicale, en Swift — écoute en direct
 (MIDI/clavier/micro), reconnaissance d'accords et de modes en temps réel, composition assistée
 par IA (à partir d'un texte ou d'un enregistrement), lecture multi-timbrale de morceaux
-structurés, et une session collaborative en réseau local. Piloté aujourd'hui par une interface
-en ligne de commande avec menus façon DOS, mais construit sur une couche applicative
-(`AppCore`) entièrement indépendante de la présentation. Une interface graphique SwiftUI
-(iOS + macOS) existe maintenant en parallèle : bibliothèque de composants `JamShackUI`
-(dans ce package) + coquille Xcode dans [`App/`](App/README.md).
+structurés, et une session collaborative en réseau local. Toute la logique métier vit dans une
+couche applicative (`AppCore`) indépendante de la présentation, avec deux façades construites
+dessus : une **application SwiftUI** (iOS + macOS, aujourd'hui l'interface principale) —
+bibliothèque de composants `JamShackUI` (dans ce package) + coquille Xcode dans
+[`App/`](App/README.md) — et une interface en ligne de commande (`JamShack`) avec menus façon
+DOS, conservée pour le pilotage scriptable/à distance et comme référence historique.
 
 ## Démarrer
+
+**Application SwiftUI (iOS + macOS, interface principale)** :
+
+```sh
+open App/JamShackApp.xcodeproj
+```
+
+Voir [`App/README.md`](App/README.md) pour les schemes disponibles et la génération du projet
+via XcodeGen.
+
+**Interface en ligne de commande** (pilotage scriptable/à distance, sans Xcode) :
 
 ```sh
 cd MusicTheoryKit
@@ -38,8 +50,9 @@ swift run JamShack --web-console 8080 --virtual-keyboard 8081 --guide "Autumn Le
 
 Chaque option est indépendante et facultative — elles peuvent se combiner ou s'utiliser seules.
 
-**Environnement requis** : macOS, les Command Line Tools suffisent (Xcode complet non
-nécessaire pour utiliser l'application — seulement pour lancer `swift test`, voir plus bas).
+**Environnement requis** : macOS. Les Command Line Tools suffisent pour le CLI (`swift run
+JamShack`) ; Xcode complet est nécessaire pour l'application SwiftUI et pour `swift test`
+(voir plus bas).
 
 ## Fonctionnalités
 
@@ -160,8 +173,13 @@ LLMEngine          composition assistée par IA (3 fournisseurs), validation str
 NetEngine          transport réseau de la session collaborative (TCP fait main)
 WebConsole         serveur HTTP fait main pour la console web et le clavier virtuel
 AppCore            ImprovSession — tout l'état et la logique applicative
+Localization       table de traduction FR/EN/DE, partagée par AppCore/WebConsole/JamShackUI
 JamShack          l'exécutable : REPL + écrans figés + menus
+JamShackUI         bibliothèque de vues SwiftUI (iOS + macOS), pont vers AppCore via SessionUIBridge
 ```
+
+Coquille Xcode dans [`App/`](App/README.md) : embarque `JamShackUI` avec Info.plist/entitlements/
+icône — l'interface graphique principale de l'application aujourd'hui, à côté du CLI `JamShack`.
 
 Pour le détail complet (modules, concurrence, points de conception), voir
 [`Docs/ARCHITECTURE.md`](Docs/ARCHITECTURE.md).
@@ -181,7 +199,7 @@ Pour le détail complet (modules, concurrence, points de conception), voir
 ```sh
 cd MusicTheoryKit
 swift build    # compile tout
-swift test     # execute tous les tests XCTest (315 a ce jour, 0 echec)
+swift test     # execute tous les tests XCTest (356 a ce jour, 0 echec)
 ```
 
 Pour verifier specifiquement l'absence de regression sur les 3 bugs de concurrence deja
@@ -199,6 +217,7 @@ swift test --sanitize=thread --filter ImprovSessionConcurrencyStressTests
 - Microphone : macOS uniquement (portage iOS/iPadOS non fait).
 - Session collaborative, console web et clavier virtuel sans authentification ni chiffrement —
   à réserver à un réseau de confiance (LAN/VPN), jamais exposés directement sur Internet.
-- Aucune interface graphique à ce jour — tout passe par la ligne de commande.
+- App SwiftUI : clef API LLM stockée en JSON en clair, pas dans le Trousseau (voir
+  `Docs/BACKLOG.md`).
 
 Détail complet dans [`Docs/ARCHITECTURE.md`](Docs/ARCHITECTURE.md#limites-connues).
