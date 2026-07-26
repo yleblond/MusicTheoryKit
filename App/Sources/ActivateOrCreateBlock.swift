@@ -1,4 +1,5 @@
 import SwiftUI
+import Localization
 
 /// A small reusable block for "nothing active yet" placeholders (Scene's Disposition sub-tab,
 /// Guide's Edition/Lecture sub-tabs): a picklist over the relevant folder's own files (already
@@ -11,6 +12,7 @@ struct ActivateOrCreateBlock: View {
     let createAlertTitle: String
     let createFieldPlaceholder: String
     let onCreate: (String) -> Void
+    let language: AppLanguage
 
     @State private var selection: String?
     @State private var showCreateAlert = false
@@ -24,9 +26,9 @@ struct ActivateOrCreateBlock: View {
             }
             if !files.isEmpty {
                 HStack {
-                    Text("Activer")
+                    Text(L10n.string(.optionActiver, language))
                     Picker("", selection: $selection) {
-                        Text("Choisir...").tag(String?.none)
+                        Text(L10n.string(.appChoisirEllipsis, language)).tag(String?.none)
                         ForEach(files, id: \.self) { name in
                             Text(name.strippingJSONExtension).tag(String?.some(name))
                         }
@@ -47,11 +49,11 @@ struct ActivateOrCreateBlock: View {
         }
         .alert(createAlertTitle, isPresented: $showCreateAlert) {
             TextField(createFieldPlaceholder, text: $newTitle)
-            Button("Creer") {
+            Button(L10n.string(.appCreer, language)) {
                 onCreate(newTitle.isEmpty ? createFieldPlaceholder : newTitle)
                 newTitle = ""
             }
-            Button("Annuler", role: .cancel) {}
+            Button(L10n.string(.appAnnuler, language), role: .cancel) {}
         }
     }
 }

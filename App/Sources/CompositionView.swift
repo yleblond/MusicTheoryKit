@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import Localization
 
 /// The "Composition" tab — split into two sub-tabs: **Fichier** (composition-description
 /// folder — see `CompositionFileView`) and **Composer** (title/style/description + the
@@ -19,10 +20,10 @@ struct CompositionView: View {
             }
         }
 
-        var accessibilityLabel: String {
+        func accessibilityLabel(_ language: AppLanguage) -> String {
             switch self {
-            case .file: return "Fichier de composition"
-            case .composer: return "Composer"
+            case .file: return L10n.string(.appTabFichierComposition, language)
+            case .composer: return L10n.string(.appTabComposerCourt, language)
             }
         }
     }
@@ -45,7 +46,7 @@ struct CompositionView: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(tab.accessibilityLabel)
+                    .accessibilityLabel(tab.accessibilityLabel(session.currentLanguage))
                 }
                 Spacer()
             }

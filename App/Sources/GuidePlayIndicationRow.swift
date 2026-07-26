@@ -3,6 +3,7 @@ import AppCore
 import MusicTheoryKit
 import PieceModel
 import JamShackUI
+import Localization
 
 /// 2.b of the Guide "Lecture" screen: the "indication de jeu" row, left to right — notation
 /// (1/6 of the row's width), the mode+chord reference keyboards stacked (3/6), and the guitar
@@ -21,6 +22,7 @@ struct GuidePlayIndicationRow: View {
     let availableWidth: CGFloat
     let palette: [String]
     let paletteTextColors: [String]
+    let language: AppLanguage
 
     private static let keyboardMinMidi = 60
     private static let keyboardMaxMidi = 83 // 2 octaves, same range the web console's own Guide keyboards use
@@ -48,7 +50,7 @@ struct GuidePlayIndicationRow: View {
     @ViewBuilder
     private var staffColumn: some View {
         VStack(spacing: 4) {
-            Text("Partition").font(.caption).foregroundStyle(.secondary)
+            Text(L10n.string(.headingPartitionGuideWeb, language)).font(.caption).foregroundStyle(.secondary)
             ChordStaffView(
                 events: [ChordStaffView.chordEvent(root: guide.currentChordRoot ?? 0, tones: guide.currentChordTones)],
                 heightScale: Self.staffHeightScale
@@ -59,7 +61,7 @@ struct GuidePlayIndicationRow: View {
     @ViewBuilder
     private var keyboardsColumn: some View {
         VStack(spacing: 8) {
-            Text("Clavier du mode").font(.caption).foregroundStyle(.secondary)
+            Text(L10n.string(.appHeadingClavierDuMode, language)).font(.caption).foregroundStyle(.secondary)
             PitchKeyboardView(
                 minMidi: Self.keyboardMinMidi, maxMidi: Self.keyboardMaxMidi,
                 modeTones: guide.currentModeTones, showModeColoring: true,
@@ -67,7 +69,7 @@ struct GuidePlayIndicationRow: View {
                 height: Self.keyboardHeight
             )
             if hasChord {
-                Text("Clavier de l'accord").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.string(.appHeadingClavierAccord, language)).font(.caption).foregroundStyle(.secondary)
                 PitchKeyboardView(
                     minMidi: Self.keyboardMinMidi, maxMidi: Self.keyboardMaxMidi,
                     chordRoot: guide.currentChordRoot, chordTones: guide.currentChordTones, alwaysShowChord: true,
@@ -81,7 +83,7 @@ struct GuidePlayIndicationRow: View {
     @ViewBuilder
     private var tabColumn: some View {
         VStack(spacing: 4) {
-            Text("Tablature").font(.caption).foregroundStyle(.secondary)
+            Text(L10n.string(.headingTablatureGuideWeb, language)).font(.caption).foregroundStyle(.secondary)
             GuitarChordDiagramView(
                 webDiagram: guide.currentChordGuitarDiagram,
                 fallbackLabel: guide.currentChordProgression[safe: guide.currentChordIndex ?? -1]?.label ?? ""
@@ -100,14 +102,15 @@ private extension Array {
     // `WebConsoleGuideState` has no public initializer (see `WebConsoleState.swift`'s own
     // doc comment) — building one for a preview goes through a real session's real API.
     let session = ImprovSession()
-    session.newGuideSequence(title: "Demo")
+    session.newGuideSequence(title: L10n.string(.appDefaultGuideTitle, session.currentLanguage))
     try? session.addGuideStep(ModeReference(tonic: 0, scaleID: ScaleLibrary.all[0].id), chordProgression: session.chordProgressionTemplates.first)
     try? session.startGuide()
     session.advanceGuideChord(by: 1)
     let guide = session.buildWebConsoleState().guide!
     return GuidePlayIndicationRow(
         guide: guide, availableWidth: 600,
-        palette: PitchKeyboardView.defaultPalette, paletteTextColors: PitchKeyboardView.defaultPaletteTextColors
+        palette: PitchKeyboardView.defaultPalette, paletteTextColors: PitchKeyboardView.defaultPaletteTextColors,
+        language: session.currentLanguage
     )
     .padding()
 }

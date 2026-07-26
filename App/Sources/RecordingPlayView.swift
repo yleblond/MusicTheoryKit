@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import SoundTrackModel
+import Localization
 
 /// "Play" sub-tab of the Enregistrement tab: play/stop the current recording, and pick which
 /// sound it plays through — recording/loading it happens in the sibling "Record"/"Fichier"
@@ -19,7 +20,7 @@ struct RecordingPlayView: View {
                 playSection(soundTrack)
                 soundSection
             } else {
-                Section { Text("Aucun enregistrement — va dans l'onglet Record ou Fichier.").foregroundStyle(.secondary) }
+                Section { Text(L10n.string(.appPlaceholderAucunEnregistrementRecordFichier, session.currentLanguage)).foregroundStyle(.secondary) }
             }
         }
         #if os(macOS)
@@ -31,10 +32,11 @@ struct RecordingPlayView: View {
     private func playSection(_ soundTrack: SoundTrack) -> some View {
         Section {
             Text(soundTrack.title).font(.headline)
-            Text("\(soundTrack.events.count) evenement(s), \(String(format: "%.1f", soundTrack.durationSeconds))s")
+            Text(L10n.string(.appFormatEvenementsDuree, session.currentLanguage, "\(soundTrack.events.count)", String(format: "%.1f", soundTrack.durationSeconds)))
                 .font(.caption).foregroundStyle(.secondary)
             PlaybackControlButton(
                 isPlaying: session.isPlayingSoundTrack,
+                language: session.currentLanguage,
                 onPlay: {
                     do {
                         try session.playSoundTrack()
@@ -45,7 +47,7 @@ struct RecordingPlayView: View {
                 onStop: { session.stopSoundTrackPlayback() }
             )
         } header: {
-            Text("Enregistrement actuel")
+            Text(L10n.string(.appHeadingEnregistrementActuel, session.currentLanguage))
         }
     }
 
@@ -53,7 +55,7 @@ struct RecordingPlayView: View {
     private var soundSection: some View {
         Section {
             if session.favoriteSampleFiles.isEmpty {
-                Text("Aucun son favori — JamShack > Sons pour en marquer.").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.string(.appPlaceholderAucunSonFavori, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(session.favoriteSampleFiles, id: \.self) { name in
                     Button(session.displayName(forSamplePath: name)) {
@@ -66,9 +68,9 @@ struct RecordingPlayView: View {
                 }
             }
         } header: {
-            Text("Son de lecture")
+            Text(L10n.string(.appHeadingSonDeLecture, session.currentLanguage))
         } footer: {
-            Text("Son par defaut (synthese) si aucun choisi.")
+            Text(L10n.string(.appHintSonParDefaut, session.currentLanguage))
         }
     }
 }

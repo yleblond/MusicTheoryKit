@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import JamShackUI
+import Localization
 
 struct ContentView: View {
     private enum AppTab: Hashable {
@@ -25,13 +26,13 @@ struct ContentView: View {
                 // iPhone-width, can show as a sidebar on iPad) — chosen so this one change
                 // covers both platforms without a `#if os()` fork of the whole TabView.
                 TabView(selection: $selectedTab) {
-                    Tab("JamShack", systemImage: "folder", value: AppTab.jamShack) {
+                    Tab(L10n.string(.catJamShack, session.currentLanguage), systemImage: "folder", value: AppTab.jamShack) {
                         JamShackView(session: session, bridge: bridge)
                     }
-                    Tab("Scene", systemImage: "theatermasks", value: AppTab.scene) {
+                    Tab(L10n.string(.tabScene, session.currentLanguage), systemImage: "theatermasks", value: AppTab.scene) {
                         SceneManagementView(session: session)
                     }
-                    Tab("Live", systemImage: "pianokeys", value: AppTab.live) {
+                    Tab(L10n.string(.appTabLive, session.currentLanguage), systemImage: "pianokeys", value: AppTab.live) {
                         RunScreen(
                             bridge: bridge,
                             interactiveTrackID: TrackID.computerKeyboard.wireIDText,
@@ -44,16 +45,16 @@ struct ContentView: View {
                         .onAppear { session.notifyActiveScreen(.run) }
                         .onDisappear { session.notifyActiveScreen(.other) }
                     }
-                    Tab("Guide", systemImage: "map", value: AppTab.guide) {
+                    Tab(L10n.string(.headingGuide, session.currentLanguage), systemImage: "map", value: AppTab.guide) {
                         GuideView(session: session, bridge: bridge)
                     }
-                    Tab("Enregistrement", systemImage: "record.circle", value: AppTab.recording) {
+                    Tab(L10n.string(.catEnregistrement, session.currentLanguage), systemImage: "record.circle", value: AppTab.recording) {
                         RecordingView(session: session, bridge: bridge)
                     }
-                    Tab("Morceaux", systemImage: "music.note.list", value: AppTab.pieces) {
+                    Tab(L10n.string(.catMorceaux, session.currentLanguage), systemImage: "music.note.list", value: AppTab.pieces) {
                         PiecesView(session: session)
                     }
-                    Tab("Composition", systemImage: "wand.and.stars", value: AppTab.composition) {
+                    Tab(L10n.string(.catComposition, session.currentLanguage), systemImage: "wand.and.stars", value: AppTab.composition) {
                         CompositionView(session: session)
                     }
                 }
@@ -65,7 +66,7 @@ struct ContentView: View {
             } else if let startError {
                 Text(startError).foregroundStyle(.red).padding()
             } else {
-                ProgressView("Demarrage...")
+                ProgressView(L10n.string(.appStatusDemarrage, session.currentLanguage))
             }
         }
         .task {

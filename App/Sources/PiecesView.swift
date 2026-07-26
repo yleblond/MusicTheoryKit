@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import Localization
 
 /// The "Morceaux" tab — split into two sub-tabs: **Fichier** (loaded piece info, demo, folder
 /// browser — loading a piece here switches to **Play** — see `PiecesFileView`) and **Play**
@@ -19,10 +20,10 @@ struct PiecesView: View {
             }
         }
 
-        var accessibilityLabel: String {
+        func accessibilityLabel(_ language: AppLanguage) -> String {
             switch self {
-            case .file: return "Fichier de morceau"
-            case .play: return "Jouer"
+            case .file: return L10n.string(.appTabFichierMorceau, language)
+            case .play: return L10n.string(.appHeadingJouer, language)
             }
         }
     }
@@ -45,7 +46,7 @@ struct PiecesView: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(tab.accessibilityLabel)
+                    .accessibilityLabel(tab.accessibilityLabel(session.currentLanguage))
                 }
                 Spacer()
             }

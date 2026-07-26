@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import JamShackUI
+import Localization
 
 /// Start/stop the microphone track — used as the "Microphone" sub-tab of the "JamShack" tab.
 /// A plain `View`, not a `Form`/`Section` itself, so it composes cleanly inside another Form.
@@ -38,12 +39,12 @@ struct MicrophoneControlsView: View {
         .monophonicHeuristic, .monophonicHPS, .default, .polyphonicSliding(windows: 3),
     ]
 
-    private static func label(for mode: MicrophoneRecognitionMode) -> String {
+    private static func label(for mode: MicrophoneRecognitionMode, _ language: AppLanguage) -> String {
         switch mode {
-        case .monophonicHeuristic: return "Monophonique (heuristique)"
-        case .monophonicHPS: return "Monophonique (HPS)"
-        case .polyphonicLatched(let windows): return "Polyphonique verrouille (N=\(windows))"
-        case .polyphonicSliding(let windows): return "Polyphonique glissant (K=\(windows))"
+        case .monophonicHeuristic: return L10n.string(.optionMonoHeuristique, language)
+        case .monophonicHPS: return L10n.string(.optionMonoHPS, language)
+        case .polyphonicLatched(let windows): return "\(L10n.string(.optionPolyLatched, language)) (N=\(windows))"
+        case .polyphonicSliding(let windows): return "\(L10n.string(.optionPolySliding, language)) (K=\(windows))"
         }
     }
 
@@ -65,10 +66,10 @@ struct MicrophoneControlsView: View {
                 HStack(alignment: .top, spacing: 20) {
                     VStack(alignment: .leading, spacing: 8) {
                         if microphoneTrack != nil {
-                            Text("Microphone actif").foregroundStyle(.green)
-                            Button("Arreter", role: .destructive) { session.stopTrack(.microphone) }
+                            Text(L10n.string(.appLabelMicrophoneActif, session.currentLanguage)).foregroundStyle(.green)
+                            Button(L10n.string(.appButtonArreter, session.currentLanguage), role: .destructive) { session.stopTrack(.microphone) }
                         } else {
-                            Button("Demarrer l'ecoute") {
+                            Button(L10n.string(.appButtonDemarrerEcoute, session.currentLanguage)) {
                                 microphoneError = nil
                                 do {
                                     try session.startTrack(.microphone)
@@ -80,8 +81,8 @@ struct MicrophoneControlsView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Reconnaissance").font(.caption).foregroundStyle(.secondary)
-                        Picker("Mode", selection: Binding(
+                        Text(L10n.string(.appHeadingReconnaissance, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+                        Picker(L10n.string(.fieldModeReconnaissance, session.currentLanguage), selection: Binding(
                             get: { currentRecognitionMode },
                             set: { newMode in
                                 do {
@@ -92,7 +93,7 @@ struct MicrophoneControlsView: View {
                             }
                         )) {
                             ForEach(Self.recognitionModePresets, id: \.self) { mode in
-                                Text(Self.label(for: mode)).tag(mode)
+                                Text(Self.label(for: mode, session.currentLanguage)).tag(mode)
                             }
                         }
                         .labelsHidden()
@@ -100,23 +101,23 @@ struct MicrophoneControlsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } header: {
-                Text("Microphone")
+                Text(L10n.string(.appHeadingMicrophone, session.currentLanguage))
             } footer: {
-                Text("Detection d'accords/notes jouees a la voix ou a un instrument acoustique, par analyse spectrale (FFT). Monophonique : une seule note a la fois. Polyphonique : plusieurs notes simultanees, avec un delai de confirmation.")
+                Text(L10n.string(.appHintDetectionMicrophone, session.currentLanguage))
             }
             if let microphoneTrack {
                 Section {
                     HStack(alignment: .top, spacing: 20) {
                         VStack(alignment: .leading, spacing: 8) {
-                            calibrationRow(phase: .quiet, label: "Note faible", value: session.microphoneCalibration.quietRMS)
-                            calibrationRow(phase: .loud, label: "Note forte", value: session.microphoneCalibration.loudRMS)
+                            calibrationRow(phase: .quiet, label: L10n.string(.appLabelNoteFaible, session.currentLanguage), value: session.microphoneCalibration.quietRMS)
+                            calibrationRow(phase: .loud, label: L10n.string(.appLabelNoteForte, session.currentLanguage), value: session.microphoneCalibration.loudRMS)
                             if calibratingPhase != nil {
-                                Button("Annuler", role: .cancel) {
+                                Button(L10n.string(.appAnnuler, session.currentLanguage), role: .cancel) {
                                     session.cancelMicrophoneCalibrationCapture()
                                     calibratingPhase = nil
                                 }
                             } else {
-                                Button("Reinitialiser", role: .destructive) {
+                                Button(L10n.string(.appButtonReinitialiser, session.currentLanguage), role: .destructive) {
                                     do {
                                         try session.resetMicrophoneCalibration()
                                     } catch {
@@ -127,7 +128,7 @@ struct MicrophoneControlsView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Niveau").font(.caption).foregroundStyle(.secondary)
+                            Text(L10n.string(.appHeadingNiveau, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
                             let rawLevel = microphoneTrack.microphoneLevel ?? 0
                             ProgressView(value: Double(session.microphoneCalibration.normalized(rawLevel) ?? min(1, max(0, rawLevel))))
                                 .tint(.accentColor)
@@ -135,16 +136,16 @@ struct MicrophoneControlsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 } header: {
-                    Text("Calibration & niveau")
+                    Text(L10n.string(.appHeadingCalibrationNiveau, session.currentLanguage))
                 } footer: {
                     Text(calibratingPhase == nil
-                        ? "Joue quelques notes faibles puis fortes pour calibrer le niveau affiche ci-dessus a ce microphone/instrument."
-                        : "En cours de capture : jouez maintenant, puis appuyez sur \u{201c}Terminer la capture\u{201d}.")
+                        ? L10n.string(.appHintCalibrationNiveau, session.currentLanguage)
+                        : L10n.string(.appFormatEnCoursDeCapture, session.currentLanguage, L10n.string(.appButtonTerminerCapture, session.currentLanguage)))
                 }
                 Section {
-                    Picker("Affichage", selection: $displayMode) {
-                        Label("Notes recues", systemImage: "pianokeys").tag(DisplayMode.notesReceived)
-                        Label("Spectrometre", systemImage: "waveform").tag(DisplayMode.spectrogram)
+                    Picker(L10n.string(.appFieldAffichage, session.currentLanguage), selection: $displayMode) {
+                        Label(L10n.string(.appLabelNotesRecues, session.currentLanguage), systemImage: "pianokeys").tag(DisplayMode.notesReceived)
+                        Label(L10n.string(.appLabelSpectrometre, session.currentLanguage), systemImage: "waveform").tag(DisplayMode.spectrogram)
                     }
                     .pickerStyle(.segmented)
                     .onChange(of: displayMode) { _, newValue in
@@ -160,7 +161,7 @@ struct MicrophoneControlsView: View {
                     }
                 } footer: {
                     if displayMode == .spectrogram {
-                        Text("Spectre FFT en direct — trait rouge vertical a chaque note reperee, seuils de calibration en pointilles. Desactive par defaut (cout de calcul supplementaire) et arrete automatiquement en quittant cet onglet.")
+                        Text(L10n.string(.appHintSpectreFFT, session.currentLanguage))
                     }
                 }
             }
@@ -176,7 +177,7 @@ struct MicrophoneControlsView: View {
             Text(label)
             Spacer()
             Text(String(format: "%.4f", value)).foregroundStyle(.secondary).font(.caption)
-            Button(calibratingPhase == phase ? "Terminer la capture" : "Capturer") {
+            Button(calibratingPhase == phase ? L10n.string(.appButtonTerminerCapture, session.currentLanguage) : L10n.string(.appButtonCapturer, session.currentLanguage)) {
                 if calibratingPhase == phase {
                     do {
                         try session.endMicrophoneCalibrationCapture()
@@ -216,7 +217,7 @@ struct MicrophoneControlsView: View {
     /// shouldn't leave the extra FFT work running unseen.
     @ViewBuilder
     private func spectrogramContent(_ track: WebConsoleTrackState) -> some View {
-        Toggle("Activer le spectrometre", isOn: Binding(
+        Toggle(L10n.string(.appToggleActiverSpectrometre, session.currentLanguage), isOn: Binding(
             get: { spectroscopeEnabled },
             set: { newValue in
                 spectroscopeEnabled = newValue

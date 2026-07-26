@@ -15,7 +15,7 @@ struct JamShackLanguageView: View {
                 Section { Text(actionError).foregroundStyle(.red).font(.caption) }
             }
             Section {
-                Picker("Langue", selection: Binding(
+                Picker(L10n.string(.appFieldLangue, session.currentLanguage), selection: Binding(
                     get: { session.currentLanguage },
                     set: { newValue in
                         do {
@@ -33,9 +33,9 @@ struct JamShackLanguageView: View {
                 .pickerStyle(.segmented)
                 #endif
             } header: {
-                Text("Langue de l'interface")
+                Text(L10n.string(.appHeadingLangueInterface, session.currentLanguage))
             } footer: {
-                Text("S'applique aussi a la console web et au clavier virtuel.")
+                Text(L10n.string(.appHintLangueAppliqueAussi, session.currentLanguage))
             }
         }
         #if os(macOS)

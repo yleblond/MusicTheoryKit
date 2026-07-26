@@ -2,6 +2,7 @@ import SwiftUI
 import AppCore
 import MusicTheoryKit
 import PieceModel
+import Localization
 
 /// "Couleurs" sub-tab of the "JamShack" tab: the active color palette (mirrors the CLI's
 /// "Choisir palette de couleur..." menu item), the LUMI Keys settings (root/scale color,
@@ -91,9 +92,9 @@ struct JamShackColorsView: View {
                     .buttonStyle(.borderless)
                 }
             }
-            Button("Nouvelle palette...") { paletteEditorTarget = .new }
+            Button(L10n.string(.appButtonNouvellePalette, session.currentLanguage)) { paletteEditorTarget = .new }
         } header: {
-            Text("Palette de couleur")
+            Text(L10n.string(.fieldPaletteDeCouleur, session.currentLanguage))
         }
     }
 
@@ -101,7 +102,7 @@ struct JamShackColorsView: View {
     private var lumiSection: some View {
         Section {
             HStack {
-                Text("Couleur racine")
+                Text(L10n.string(.appHeadingCouleurRacine, session.currentLanguage))
                 Spacer()
                 ColorPicker("", selection: Binding(
                     get: { Color(hex: session.lumiSettings.rootColorHex) },
@@ -116,7 +117,7 @@ struct JamShackColorsView: View {
                 .labelsHidden()
             }
             HStack {
-                Text("Couleur gamme")
+                Text(L10n.string(.appHeadingCouleurGamme, session.currentLanguage))
                 Spacer()
                 ColorPicker("", selection: Binding(
                     get: { Color(hex: session.lumiSettings.scaleColorHex) },
@@ -131,7 +132,7 @@ struct JamShackColorsView: View {
                 .labelsHidden()
             }
             VStack(alignment: .leading) {
-                Text("Luminosite : \(session.lumiSettings.brightnessPercentage)%")
+                Text(L10n.string(.appFormatLuminositePourcent, session.currentLanguage, session.lumiSettings.brightnessPercentage))
                 Slider(
                     value: Binding(
                         get: { Double(session.lumiSettings.brightnessPercentage) },
@@ -147,7 +148,7 @@ struct JamShackColorsView: View {
                     step: 1
                 )
             }
-            Toggle("Mode Run : propagation automatique", isOn: Binding(
+            Toggle(L10n.string(.appToggleModeRunPropagation, session.currentLanguage), isOn: Binding(
                 get: { session.lumiSettings.autoPropagateRunMode },
                 set: { newValue in
                     do {
@@ -157,7 +158,7 @@ struct JamShackColorsView: View {
                     }
                 }
             ))
-            Toggle("Mode Guide : propagation automatique", isOn: Binding(
+            Toggle(L10n.string(.appToggleModeGuidePropagation, session.currentLanguage), isOn: Binding(
                 get: { session.lumiSettings.autoPropagateGuideMode },
                 set: { newValue in
                     do {
@@ -168,21 +169,21 @@ struct JamShackColorsView: View {
                 }
             ))
         } header: {
-            Text("LUMI Keys")
+            Text(L10n.string(.appHeadingLumiKeys, session.currentLanguage))
         } footer: {
-            Text("La propagation automatique envoie la carte de couleurs au clavier LUMI des qu'un accord/mode est reconnu, sans commande manuelle.")
+            Text(L10n.string(.appHintPropagationAutoLumi, session.currentLanguage))
         }
     }
 
     @ViewBuilder
     private var lumiTestSection: some View {
         Section {
-            Button("Lister les destinations MIDI visibles") {
+            Button(L10n.string(.appButtonListerDestinationsMidi, session.currentLanguage)) {
                 visibleDestinations = ImprovSession.visibleMIDIDestinationNames()
             }
             if let visibleDestinations {
                 if visibleDestinations.isEmpty {
-                    Text("Aucune destination MIDI visible.").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.string(.appPlaceholderAucuneDestinationMidi, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
                 } else {
                     ForEach(visibleDestinations, id: \.self) { name in
                         Text(name).font(.caption).foregroundStyle(name.localizedCaseInsensitiveContains("lumi") ? .green : .secondary)
@@ -190,16 +191,16 @@ struct JamShackColorsView: View {
                 }
             }
             HStack {
-                Text("ID appareil (hex)")
+                Text(L10n.string(.appFieldIDAppareilHex, session.currentLanguage))
                 Spacer()
-                TextField("34", text: $deviceIDHex)
+                TextField(L10n.string(.appPlaceholder34, session.currentLanguage), text: $deviceIDHex)
                     #if os(iOS)
                     .keyboardType(.asciiCapable)
                     #endif
                     .frame(width: 60)
                     .multilineTextAlignment(.trailing)
             }
-            Button("Tester : mode piano") {
+            Button(L10n.string(.appButtonTesterModePiano, session.currentLanguage)) {
                 do {
                     try session.testLumiPianoMode(deviceID: resolvedDeviceID)
                     lumiTestResult = "Commande envoyee (mode piano)."
@@ -207,7 +208,7 @@ struct JamShackColorsView: View {
                     lumiTestResult = "Echec : \(error)"
                 }
             }
-            Button("Tester : carte du guide (Do majeur)") {
+            Button(L10n.string(.appButtonTesterCarteGuide, session.currentLanguage)) {
                 guard let rootColor = LumiColorHex.rgb(session.lumiSettings.rootColorHex),
                       let scaleColor = LumiColorHex.rgb(session.lumiSettings.scaleColorHex) else {
                     lumiTestResult = "Couleurs LUMI invalides."
@@ -228,9 +229,9 @@ struct JamShackColorsView: View {
                 Text(lumiTestResult).font(.caption).foregroundStyle(lumiTestResult.hasPrefix("Echec") ? .red : .green)
             }
         } header: {
-            Text("Testeur LUMI")
+            Text(L10n.string(.appHeadingTesteurLumi, session.currentLanguage))
         } footer: {
-            Text("Envoie une vraie commande directement au clavier LUMI, sans passer par la propagation automatique Run/Guide — pour verifier que le clavier recoit bien quelque chose (ex: le mode piano doit s'afficher immediatement dessus). Si aucune destination ne contient \"lumi\" ci-dessus, c'est un probleme de detection, pas de commande. Si la detection est bonne mais que rien ne s'affiche (ou que ca marchait puis a arrete), l'ID appareil (0x34 par defaut) est peut-etre en cause — essaie d'autres valeurs hexadecimales ici.")
+            Text(L10n.string(.appHintTesteurLumiDetail, session.currentLanguage))
         }
     }
 }

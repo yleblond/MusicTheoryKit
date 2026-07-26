@@ -3,6 +3,7 @@ import AppCore
 import MusicTheoryKit
 import PieceModel
 import JamShackUI
+import Localization
 
 /// "Edition" sub-tab of the Guide tab: add a mode step to the active guide, and see the
 /// current step list — structural editing, as opposed to the "Lecture" sub-tab's playback
@@ -28,14 +29,15 @@ struct GuideEditionView: View {
                 GuideStepsSection(session: session, bridge: bridge)
             } else {
                 Section {
-                    Text("Aucun guide actif").foregroundStyle(.secondary)
+                    Text(L10n.string(.appPlaceholderAucunGuideActif, session.currentLanguage)).foregroundStyle(.secondary)
                     ActivateOrCreateBlock(
                         files: session.guideFiles,
                         onActivate: { try session.loadGuideSequence(named: $0) },
-                        createButtonLabel: "Creer un guide",
-                        createAlertTitle: "Nouveau guide",
-                        createFieldPlaceholder: "Titre du guide",
-                        onCreate: { session.newGuideSequence(title: $0) }
+                        createButtonLabel: L10n.string(.appButtonCreerUnGuide, session.currentLanguage),
+                        createAlertTitle: L10n.string(.appNouveauGuide, session.currentLanguage),
+                        createFieldPlaceholder: L10n.string(.appFieldTitreGuide, session.currentLanguage),
+                        onCreate: { session.newGuideSequence(title: $0) },
+                        language: session.currentLanguage
                     )
                 }
             }
@@ -48,21 +50,21 @@ struct GuideEditionView: View {
     @ViewBuilder
     private var addStepSection: some View {
         Section {
-            Picker("Tonique", selection: $selectedTonic) {
+            Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: $selectedTonic) {
                 ForEach(0..<12, id: \.self) { pitchClass in Text(Self.noteNames[pitchClass]).tag(pitchClass) }
             }
-            Picker("Gamme", selection: $selectedScaleID) {
+            Picker(L10n.string(.fieldGamme, session.currentLanguage), selection: $selectedScaleID) {
                 ForEach(ScaleLibrary.all, id: \.id) { scale in
                     Text("\(scale.popularName) (\(scale.systematicName))").tag(scale.id)
                 }
             }
-            Picker("Progression d'accords", selection: $selectedProgressionName) {
-                Text("Aucune").tag(String?.none)
+            Picker(L10n.string(.appFieldProgressionAccordsGuide, session.currentLanguage), selection: $selectedProgressionName) {
+                Text(L10n.string(.appOptionAucuneFem, session.currentLanguage)).tag(String?.none)
                 ForEach(session.chordProgressionTemplates, id: \.name) { template in
                     Text(template.name).tag(String?.some(template.name))
                 }
             }
-            Button("Ajouter ce mode au guide") {
+            Button(L10n.string(.appButtonAjouterModeAuGuide, session.currentLanguage)) {
                 let template = selectedProgressionName.flatMap { name in
                     session.chordProgressionTemplates.first { $0.name == name }
                 }
@@ -73,7 +75,7 @@ struct GuideEditionView: View {
                 }
             }
         } header: {
-            Text("Ajouter un mode")
+            Text(L10n.string(.appHeadingAjouterUnMode, session.currentLanguage))
         }
     }
 }

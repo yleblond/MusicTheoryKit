@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import JamShackUI
+import Localization
 
 /// MIDI settings sub-tab of the "JamShack" tab: fusion mode (one merged track vs. one track
 /// per visible port), a manual refresh of the visible-source list (this app doesn't watch
@@ -23,33 +24,33 @@ struct JamShackMIDIView: View {
     var body: some View {
         Form {
             Section {
-                Picker("Mode MIDI", selection: Binding(
+                Picker(L10n.string(.fieldModeMidi, session.currentLanguage), selection: Binding(
                     get: { session.midiFusionMode },
                     set: { session.setMIDIFusionMode($0) }
                 )) {
-                    Text("Fusionne").tag(MIDIFusionMode.merged)
-                    Text("Individuel").tag(MIDIFusionMode.individual)
+                    Text(L10n.string(.appOptionFusionne, session.currentLanguage)).tag(MIDIFusionMode.merged)
+                    Text(L10n.string(.appOptionIndividuel, session.currentLanguage)).tag(MIDIFusionMode.individual)
                 }
                 #if os(iOS)
                 .pickerStyle(.segmented)
                 #endif
             } header: {
-                Text("Mode MIDI")
+                Text(L10n.string(.fieldModeMidi, session.currentLanguage))
             } footer: {
-                Text("Fusionne : toutes les entrees MIDI comptent comme une seule piste. Individuel : une piste par port MIDI visible.")
+                Text(L10n.string(.appHintModeMidiDetail, session.currentLanguage))
             }
             Section {
-                Button("Rafraichir la liste MIDI") { session.refreshTracks() }
+                Button(L10n.string(.appButtonRafraichirListeMidi, session.currentLanguage)) { session.refreshTracks() }
                 let sources = session.availableMIDISources()
                 if sources.isEmpty {
-                    Text("Aucune source MIDI visible.").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.string(.appPlaceholderAucuneSourceMidi, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
                 } else {
                     ForEach(sources, id: \.self) { name in
                         Text(name)
                     }
                 }
             } header: {
-                Text("Sources MIDI visibles")
+                Text(L10n.string(.appHeadingSourcesMidiVisibles, session.currentLanguage))
             }
             ForEach(midiTracks, id: \.id) { track in
                 Section {

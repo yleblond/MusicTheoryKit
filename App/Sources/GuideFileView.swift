@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import Localization
 
 /// "Fichier" sub-tab of the Guide tab: create a new guide, see which one is active, and the
 /// folder-based guide browser (list/load/save-into-folder — the folder itself is picked from
@@ -25,13 +26,13 @@ struct GuideFileView: View {
         #if os(macOS)
         .formStyle(.grouped)
         #endif
-        .alert("Nouveau guide", isPresented: $showNewAlert) {
-            TextField("Titre", text: $newTitle)
-            Button("Creer") {
-                session.newGuideSequence(title: newTitle.isEmpty ? "Guide" : newTitle)
+        .alert(L10n.string(.appNouveauGuide, session.currentLanguage), isPresented: $showNewAlert) {
+            TextField(L10n.string(.fieldTitre, session.currentLanguage), text: $newTitle)
+            Button(L10n.string(.appCreer, session.currentLanguage)) {
+                session.newGuideSequence(title: newTitle.isEmpty ? L10n.string(.headingGuide, session.currentLanguage) : newTitle)
                 newTitle = ""
             }
-            Button("Annuler", role: .cancel) {}
+            Button(L10n.string(.appAnnuler, session.currentLanguage), role: .cancel) {}
         }
     }
 
@@ -41,11 +42,11 @@ struct GuideFileView: View {
             if let guide = session.currentGuide {
                 Text(guide.title).font(.headline)
             } else {
-                Text("Aucun guide actif.").foregroundStyle(.secondary)
+                Text(L10n.string(.appPlaceholderAucunGuideActifPoint, session.currentLanguage)).foregroundStyle(.secondary)
             }
-            Button("Nouveau guide") { showNewAlert = true }
+            Button(L10n.string(.appNouveauGuide, session.currentLanguage)) { showNewAlert = true }
         } header: {
-            Text("Guide")
+            Text(L10n.string(.headingGuide, session.currentLanguage))
         }
     }
 
@@ -53,7 +54,7 @@ struct GuideFileView: View {
     private var folderSection: some View {
         Section {
             if session.guideFiles.isEmpty {
-                Text("Aucun dossier de guides choisi — JamShack > Dossiers.").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.string(.appPlaceholderAucunDossierGuides, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(session.guideFiles, id: \.self) { name in
                     Button(name.strippingJSONExtension) {
@@ -66,9 +67,9 @@ struct GuideFileView: View {
                     }
                 }
                 if session.currentGuide != nil {
-                    Button("Sauvegarder dans ce dossier") {
+                    Button(L10n.string(.appButtonSauvegarderDansCeDossier, session.currentLanguage)) {
                         do {
-                            try session.saveGuideSequence(as: (session.currentGuide?.title ?? "Guide") + ".json")
+                            try session.saveGuideSequence(as: (session.currentGuide?.title ?? L10n.string(.headingGuide, session.currentLanguage)) + ".json")
                         } catch {
                             actionError = "\(error)"
                         }
@@ -76,7 +77,7 @@ struct GuideFileView: View {
                 }
             }
         } header: {
-            Text("Dossier de guides")
+            Text(L10n.string(.appHeadingDossierGuides, session.currentLanguage))
         }
     }
 }

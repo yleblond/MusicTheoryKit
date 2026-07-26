@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import NetEngine
+import Localization
 
 /// Start/stop controls for the two HTTP servers `ImprovSession` already exposes (the
 /// read-only web console and the playable virtual keyboard — same servers/pages `JamShack`'s
@@ -30,16 +31,16 @@ struct ServerControlsView: View {
                 }
             }
             serverSection(
-                title: "Console web",
-                caption: "Miroir en lecture seule de l'onglet Run, consultable depuis un navigateur.",
+                title: L10n.string(.fieldConsoleWeb, session.currentLanguage),
+                caption: L10n.string(.appHintConsoleWebCaption, session.currentLanguage),
                 port: session.webConsolePort,
                 portText: $webConsolePortText,
                 start: { try session.startWebConsole(port: $0) },
                 stop: { session.stopWebConsole() }
             )
             serverSection(
-                title: "Clavier virtuel",
-                caption: "Piano jouable a la souris/au tactile depuis un navigateur.",
+                title: L10n.string(.fieldClavierVirtuel, session.currentLanguage),
+                caption: L10n.string(.appHintClavierVirtuelCaption, session.currentLanguage),
                 port: session.virtualKeyboardPort,
                 portText: $virtualKeyboardPortText,
                 start: { try session.startVirtualKeyboard(port: $0) },
@@ -47,7 +48,7 @@ struct ServerControlsView: View {
             )
             #if os(iOS)
             Section {
-                Text("Le serveur n'accepte des connexions que tant que l'app reste au premier plan.")
+                Text(L10n.string(.appHintServeurPremierPlan, session.currentLanguage))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -75,23 +76,23 @@ struct ServerControlsView: View {
                         Text(url).textSelection(.enabled).font(.system(.body, design: .monospaced))
                         Spacer()
                         if let shareURL = URL(string: url) {
-                            ShareLink(item: shareURL, message: Text("Rejoins-moi sur \(title) : ")) {
+                            ShareLink(item: shareURL, message: Text(L10n.string(.appFormatRejoinsMoiSur, session.currentLanguage, title))) {
                                 Image(systemName: "square.and.arrow.up")
                             }
                         }
                     }
                 }
-                Button("Arreter", role: .destructive) { stop() }
+                Button(L10n.string(.appButtonArreter, session.currentLanguage), role: .destructive) { stop() }
             } else {
                 HStack {
-                    Text("Port")
-                    TextField("Port", text: portText)
+                    Text(L10n.string(.fieldPort, session.currentLanguage))
+                    TextField(L10n.string(.fieldPort, session.currentLanguage), text: portText)
                         #if os(iOS)
                         .keyboardType(.numberPad)
                         #endif
                         .multilineTextAlignment(.trailing)
                 }
-                Button("Demarrer") {
+                Button(L10n.string(.appButtonDemarrer, session.currentLanguage)) {
                     errorText = nil
                     guard let portNumber = Int(portText.wrappedValue) else {
                         errorText = "Port invalide."

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import JamShackUI
+import Localization
 
 /// The "Guide" tab — split into three sub-tabs (same vertical icon-sidebar pattern as
 /// "Scene"/"JamShack"): **Fichier** (create/load/save a guide sequence — see `GuideFileView`),
@@ -24,11 +25,11 @@ struct GuideView: View {
             }
         }
 
-        var accessibilityLabel: String {
+        func accessibilityLabel(_ language: AppLanguage) -> String {
             switch self {
-            case .file: return "Fichier de guide"
-            case .edition: return "Edition du guide"
-            case .lecture: return "Lecture du guide"
+            case .file: return L10n.string(.appTabFichierGuide, language)
+            case .edition: return L10n.string(.appTabEditionGuide, language)
+            case .lecture: return L10n.string(.appTabLectureGuide, language)
             }
         }
     }
@@ -51,7 +52,7 @@ struct GuideView: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(tab.accessibilityLabel)
+                    .accessibilityLabel(tab.accessibilityLabel(session.currentLanguage))
                 }
                 Spacer()
             }

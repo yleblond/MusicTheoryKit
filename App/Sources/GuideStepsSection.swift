@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import JamShackUI
+import Localization
 
 /// The guide's step list — shared by the "Edition" (structural) and "Lecture" (playback)
 /// sub-tabs of the Guide tab, so the exact same rendering (including which step is currently
@@ -24,7 +25,7 @@ struct GuideStepsSection: View {
                 }
             }
         } header: {
-            Text("Etapes")
+            Text(L10n.string(.appHeadingEtapes, session.currentLanguage))
         }
     }
 }

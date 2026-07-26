@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import Localization
 
 /// "Fichier" sub-tab of the Enregistrement tab: the folder-based soundtrack browser (list/
 /// load/save-into-folder — the folder itself is picked from the "JamShack" tab's "Dossiers"
@@ -28,7 +29,7 @@ struct RecordingFileView: View {
     private var folderSection: some View {
         Section {
             if session.soundTrackFiles.isEmpty {
-                Text("Aucun dossier de soundtracks choisi — JamShack > Dossiers.").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.string(.appPlaceholderAucunDossierSoundtracks, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(session.soundTrackFiles, id: \.self) { name in
                     Button(name.strippingJSONExtension) {
@@ -41,9 +42,9 @@ struct RecordingFileView: View {
                     }
                 }
                 if session.currentSoundTrack != nil {
-                    Button("Sauvegarder dans ce dossier") {
+                    Button(L10n.string(.appButtonSauvegarderDansCeDossier, session.currentLanguage)) {
                         do {
-                            try session.saveSoundTrack(as: (session.currentSoundTrack?.title ?? "Enregistrement") + ".json")
+                            try session.saveSoundTrack(as: (session.currentSoundTrack?.title ?? L10n.string(.catEnregistrement, session.currentLanguage)) + ".json")
                         } catch {
                             actionError = "\(error)"
                         }
@@ -51,7 +52,7 @@ struct RecordingFileView: View {
                 }
             }
         } header: {
-            Text("Dossier de soundtracks")
+            Text(L10n.string(.appHeadingDossierSoundtracks, session.currentLanguage))
         }
     }
 }

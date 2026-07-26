@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import JamShackUI
+import Localization
 
 /// The "Enregistrement" tab — split into four sub-tabs: **Fichier** (soundtrack folder —
 /// loading one here switches to **Play** — see `RecordingFileView`), **Record** (source
@@ -25,12 +26,12 @@ struct RecordingView: View {
             }
         }
 
-        var accessibilityLabel: String {
+        func accessibilityLabel(_ language: AppLanguage) -> String {
             switch self {
-            case .file: return "Fichier de soundtrack"
-            case .record: return "Enregistrement"
-            case .play: return "Jouer"
-            case .ia: return "Composition IA"
+            case .file: return L10n.string(.appTabFichierSoundtrack, language)
+            case .record: return L10n.string(.catEnregistrement, language)
+            case .play: return L10n.string(.appHeadingJouer, language)
+            case .ia: return L10n.string(.appHeadingCompositionIA, language)
             }
         }
     }
@@ -53,7 +54,7 @@ struct RecordingView: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(tab.accessibilityLabel)
+                    .accessibilityLabel(tab.accessibilityLabel(session.currentLanguage))
                 }
                 Spacer()
             }

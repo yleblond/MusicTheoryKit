@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import Localization
 
 /// "Sons" sub-tab of the "JamShack" tab: curates `session.sampleFiles` (every .sf2/.dls/
 /// .aupreset file found under "Sons (samples)", subfolders included — see
@@ -32,21 +33,21 @@ struct SoundsView: View {
             }
             if session.sampleFiles.isEmpty {
                 Section {
-                    Text("Aucun son trouve. Choisis (ou decompresse une librairie dans) le dossier \"Sons (samples)\" via JamShack > Dossiers.")
+                    Text(L10n.string(.appPlaceholderAucunSonTrouve, session.currentLanguage, L10n.string(.appLabelDossierSons, session.currentLanguage)))
                         .foregroundStyle(.secondary)
                 }
             } else {
                 Section {
-                    TextField("Rechercher un son ou un alias...", text: $searchText)
+                    TextField(L10n.string(.appPlaceholderRechercherSonAlias, session.currentLanguage), text: $searchText)
                 }
                 Section {
                     ForEach(filteredSounds, id: \.self) { path in
                         soundRow(path)
                     }
                 } header: {
-                    Text("Sons (\(filteredSounds.count)/\(session.sampleFiles.count))")
+                    Text(L10n.string(.appFormatSonsCompte, session.currentLanguage, filteredSounds.count, session.sampleFiles.count))
                 } footer: {
-                    Text("Coche l'etoile pour ajouter un son aux favoris : c'est cette liste reduite qui apparait ensuite partout ou un son se choisit (Morceaux, Enregistrement, Scenes) plutot que la liste complete ci-dessus.")
+                    Text(L10n.string(.appHintCocheEtoileFavoris, session.currentLanguage))
                 }
             }
         }
@@ -68,7 +69,7 @@ struct SoundsView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 if editingAliasFor == path {
-                    TextField("Alias", text: $aliasDraft, onCommit: { commitAlias(path) })
+                    TextField(L10n.string(.appFieldAlias, session.currentLanguage), text: $aliasDraft, onCommit: { commitAlias(path) })
                         #if os(macOS)
                         .textFieldStyle(.roundedBorder)
                         #endif

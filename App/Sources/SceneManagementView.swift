@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import Localization
 
 /// The "Scene" tab — split into two sub-tabs (same vertical icon-sidebar pattern as the
 /// "JamShack" tab, for the same reason: keeps each screen focused instead of one long form):
@@ -22,10 +23,10 @@ struct SceneManagementView: View {
             }
         }
 
-        var accessibilityLabel: String {
+        func accessibilityLabel(_ language: AppLanguage) -> String {
             switch self {
-            case .file: return "Fichier de scene"
-            case .layout: return "Disposition de la scene"
+            case .file: return L10n.string(.appTabFichierScene, language)
+            case .layout: return L10n.string(.appTabDispositionScene, language)
             }
         }
     }
@@ -48,7 +49,7 @@ struct SceneManagementView: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(tab.accessibilityLabel)
+                    .accessibilityLabel(tab.accessibilityLabel(session.currentLanguage))
                 }
                 Spacer()
             }

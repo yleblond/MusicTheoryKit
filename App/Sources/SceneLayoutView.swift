@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import Localization
 
 /// "Disposition" sub-tab of the Scene tab: instruments <-> roles, side by side — attach an
 /// unassigned instrument to a role from either direction (a dropdown on the instrument's own
@@ -23,17 +24,18 @@ struct SceneLayoutView: View {
         Group {
             if scene == nil {
                 ContentUnavailableView {
-                    Label("Aucune scene active", systemImage: "theatermasks")
+                    Label(L10n.string(.appLabelAucuneSceneActiveCourt, session.currentLanguage), systemImage: "theatermasks")
                 } description: {
-                    Text("Active une scene existante ou cree-en une nouvelle.")
+                    Text(L10n.string(.appHintActiveSceneExistante, session.currentLanguage))
                 } actions: {
                     ActivateOrCreateBlock(
                         files: session.sceneFiles,
                         onActivate: { try session.loadScene(named: $0) },
-                        createButtonLabel: "Creer une scene",
-                        createAlertTitle: "Nouvelle scene",
-                        createFieldPlaceholder: "Nom de la scene",
-                        onCreate: { session.newScene(title: $0) }
+                        createButtonLabel: L10n.string(.appButtonCreerUneScene, session.currentLanguage),
+                        createAlertTitle: L10n.string(.appNouvelleScene, session.currentLanguage),
+                        createFieldPlaceholder: L10n.string(.appFieldNomScene, session.currentLanguage),
+                        onCreate: { session.newScene(title: $0) },
+                        language: session.currentLanguage
                     )
                 }
             } else {
@@ -52,17 +54,17 @@ struct SceneLayoutView: View {
                 }
             }
         }
-        .alert("Nouveau role", isPresented: $showNewRoleAlert) {
-            TextField("Nom (ex: Piano 1)", text: $newRoleName)
-            Button("Ajouter") {
+        .alert(L10n.string(.appAlertNouveauRole, session.currentLanguage), isPresented: $showNewRoleAlert) {
+            TextField(L10n.string(.appPlaceholderNomExPiano1, session.currentLanguage), text: $newRoleName)
+            Button(L10n.string(.appButtonAjouter, session.currentLanguage)) {
                 do {
-                    try session.addSceneRole(name: newRoleName.isEmpty ? "Role" : newRoleName)
+                    try session.addSceneRole(name: newRoleName.isEmpty ? L10n.string(.fieldRole, session.currentLanguage) : newRoleName)
                 } catch {
                     actionError = "\(error)"
                 }
                 newRoleName = ""
             }
-            Button("Annuler", role: .cancel) {}
+            Button(L10n.string(.appAnnuler, session.currentLanguage), role: .cancel) {}
         }
     }
 
@@ -71,14 +73,14 @@ struct SceneLayoutView: View {
         let unassigned = session.unassignedInstruments()
         Section {
             if unassigned.isEmpty {
-                Text("Tous les instruments sont affectes.").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.string(.appPlaceholderTousInstrumentsAffectes, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
             } else if let scene {
                 ForEach(unassigned) { track in
                     UnassignedInstrumentRow(session: session, track: track, scene: scene, onError: { actionError = $0 })
                 }
             }
         } header: {
-            Text("Instruments non affectes")
+            Text(L10n.string(.appHeadingInstrumentsNonAffectes, session.currentLanguage))
         }
     }
 
@@ -88,9 +90,9 @@ struct SceneLayoutView: View {
             ForEach(scene?.roles ?? []) { role in
                 SceneRoleRow(session: session, role: role, sampleFiles: session.favoriteSampleFiles, onError: { actionError = $0 })
             }
-            Button("Ajouter un role") { showNewRoleAlert = true }
+            Button(L10n.string(.appButtonAjouterUnRole, session.currentLanguage)) { showNewRoleAlert = true }
         } header: {
-            Text("Roles")
+            Text(L10n.string(.headerRoles, session.currentLanguage))
         }
     }
 }
@@ -108,26 +110,26 @@ private struct UnassignedInstrumentRow: View {
         HStack {
             Text(track.label)
             Spacer()
-            Menu("Attacher a...") {
+            Menu(L10n.string(.appMenuAttacherA, session.currentLanguage)) {
                 ForEach(scene.roles) { role in
                     Button(label(for: role)) { attach(to: role) }
                 }
                 if !scene.roles.isEmpty { Divider() }
-                Button("Ajouter un role...") { showNewRoleAlert = true }
+                Button(L10n.string(.appButtonAjouterUnRoleEllipsis, session.currentLanguage)) { showNewRoleAlert = true }
             }
         }
-        .alert("Nouveau role", isPresented: $showNewRoleAlert) {
-            TextField("Nom (ex: Piano 1)", text: $newRoleName)
-            Button("Creer et attacher") {
+        .alert(L10n.string(.appAlertNouveauRole, session.currentLanguage), isPresented: $showNewRoleAlert) {
+            TextField(L10n.string(.appPlaceholderNomExPiano1, session.currentLanguage), text: $newRoleName)
+            Button(L10n.string(.appButtonCreerEtAttacher, session.currentLanguage)) {
                 do {
-                    let roleID = try session.addSceneRole(name: newRoleName.isEmpty ? "Role" : newRoleName)
+                    let roleID = try session.addSceneRole(name: newRoleName.isEmpty ? L10n.string(.fieldRole, session.currentLanguage) : newRoleName)
                     try session.attachInstrument(track.id, toRole: roleID)
                 } catch {
                     onError("\(error)")
                 }
                 newRoleName = ""
             }
-            Button("Annuler", role: .cancel) {}
+            Button(L10n.string(.appAnnuler, session.currentLanguage), role: .cancel) {}
         }
     }
 
@@ -138,7 +140,7 @@ private struct UnassignedInstrumentRow: View {
         guard let attachedID = role.attachedTrackID, let occupant = session.tracks.first(where: { $0.id == attachedID }) else {
             return role.name
         }
-        return "\(role.name) (occupe par \(occupant.label))"
+        return L10n.string(.appFormatOccupeParRole, session.currentLanguage, role.name, occupant.label)
     }
 
     private func attach(to role: SceneRole) {
@@ -190,7 +192,7 @@ private struct SceneRoleRow: View {
                 // "Instruments non affectes" block's own "Attacher a..." menu.
                 Menu {
                     if role.attachedTrackID != nil {
-                        Button("Detacher", role: .destructive) { detach() }
+                        Button(L10n.string(.appButtonDetacher, session.currentLanguage), role: .destructive) { detach() }
                     }
                     ForEach(session.unassignedInstruments()) { track in
                         Button(track.label) { attach(track.id) }
@@ -199,18 +201,18 @@ private struct SceneRoleRow: View {
                     if let trackID = role.attachedTrackID, let track = session.tracks.first(where: { $0.id == trackID }) {
                         Text(track.label).foregroundStyle(.green)
                     } else {
-                        Text("libre").foregroundStyle(.secondary)
+                        Text(L10n.string(.appLabelLibre, session.currentLanguage)).foregroundStyle(.secondary)
                     }
                 }
             }
             HStack {
-                Text("Son")
+                Text(L10n.string(.fieldSon, session.currentLanguage))
                 Spacer()
                 if sampleFiles.isEmpty {
-                    Text("aucun son favori (JamShack > Sons)").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.string(.appPlaceholderAucunSonFavoriParenthese, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Menu(role.soundName.map(session.displayName(forSamplePath:)) ?? "Aucun") {
-                        Button("Aucun") { setSound(nil) }
+                    Menu(role.soundName.map(session.displayName(forSamplePath:)) ?? L10n.string(.appButtonAucun, session.currentLanguage)) {
+                        Button(L10n.string(.appButtonAucun, session.currentLanguage)) { setSound(nil) }
                         ForEach(sampleFiles, id: \.self) { name in
                             Button(session.displayName(forSamplePath: name)) { setSound(name) }
                         }
@@ -218,7 +220,7 @@ private struct SceneRoleRow: View {
                 }
             }
             HStack {
-                Toggle("Ecoute", isOn: Binding(
+                Toggle(L10n.string(.fieldEcoute, session.currentLanguage), isOn: Binding(
                     get: { role.isListening },
                     set: { newValue in
                         do {
@@ -229,7 +231,7 @@ private struct SceneRoleRow: View {
                     }
                 ))
                 Spacer()
-                Button("Supprimer", role: .destructive) {
+                Button(L10n.string(.appButtonSupprimer, session.currentLanguage), role: .destructive) {
                     do {
                         try session.removeSceneRole(role.id)
                     } catch {

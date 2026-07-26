@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import Localization
 
 /// "Fichier" sub-tab of the Morceaux tab: which piece is loaded, the demo piece, and the
 /// folder-based piece browser (list/load/save-into-folder). Playback lives in the "Play"
@@ -30,17 +31,17 @@ struct PiecesFileView: View {
         Section {
             if let piece = session.piece {
                 Text(piece.title).font(.headline)
-                Text("\(piece.fragments.count) fragment(s), \(String(format: "%.0f", piece.tempoBPM)) BPM")
+                Text(L10n.string(.appFormatFragmentsBPM, session.currentLanguage, "\(piece.fragments.count)", String(format: "%.0f", piece.tempoBPM)))
                     .font(.caption).foregroundStyle(.secondary)
             } else {
-                Text("Aucun morceau charge.").foregroundStyle(.secondary)
+                Text(L10n.string(.appPlaceholderAucunMorceauChargePoint, session.currentLanguage)).foregroundStyle(.secondary)
             }
-            Button("Charger la demo") {
+            Button(L10n.string(.appButtonChargerLaDemo, session.currentLanguage)) {
                 session.loadDemoPiece()
                 onLoaded()
             }
         } header: {
-            Text("Morceau charge")
+            Text(L10n.string(.appHeadingMorceauCharge, session.currentLanguage))
         }
     }
 
@@ -48,7 +49,7 @@ struct PiecesFileView: View {
     private var folderSection: some View {
         Section {
             if session.pieceFiles.isEmpty {
-                Text("Aucun dossier de morceaux choisi — JamShack > Dossiers.").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.string(.appPlaceholderAucunDossierMorceaux, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(session.pieceFiles, id: \.self) { name in
                     Button(name.strippingJSONExtension) {
@@ -61,9 +62,9 @@ struct PiecesFileView: View {
                     }
                 }
                 if session.piece != nil {
-                    Button("Sauvegarder dans ce dossier") {
+                    Button(L10n.string(.appButtonSauvegarderDansCeDossier, session.currentLanguage)) {
                         do {
-                            try session.savePiece(as: (session.piece?.title ?? "Morceau") + ".json")
+                            try session.savePiece(as: (session.piece?.title ?? L10n.string(.appDefaultMorceauFilename, session.currentLanguage)) + ".json")
                         } catch {
                             actionError = "\(error)"
                         }
@@ -71,7 +72,7 @@ struct PiecesFileView: View {
                 }
             }
         } header: {
-            Text("Dossier de morceaux")
+            Text(L10n.string(.appHeadingDossierMorceaux, session.currentLanguage))
         }
     }
 }

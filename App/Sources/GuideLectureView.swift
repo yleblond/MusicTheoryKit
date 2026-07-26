@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import JamShackUI
+import Localization
 
 /// "Lecture" sub-tab of the Guide tab — split horizontally per explicit user request: the
 /// circle-of-fifths wheel on the left (originally 1/3 of the screen, widened 30% per a follow-
@@ -58,17 +59,18 @@ struct GuideLectureView: View {
                 Text(actionError).foregroundStyle(.red).font(.caption)
             }
             if session.currentGuide == nil {
-                Text("Aucun guide actif").foregroundStyle(.secondary)
+                Text(L10n.string(.appPlaceholderAucunGuideActif, session.currentLanguage)).foregroundStyle(.secondary)
                 ActivateOrCreateBlock(
                     files: session.guideFiles,
                     onActivate: { try session.loadGuideSequence(named: $0) },
-                    createButtonLabel: "Creer un guide",
-                    createAlertTitle: "Nouveau guide",
-                    createFieldPlaceholder: "Titre du guide",
-                    onCreate: { session.newGuideSequence(title: $0) }
+                    createButtonLabel: L10n.string(.appButtonCreerUnGuide, session.currentLanguage),
+                    createAlertTitle: L10n.string(.appNouveauGuide, session.currentLanguage),
+                    createFieldPlaceholder: L10n.string(.appFieldTitreGuide, session.currentLanguage),
+                    onCreate: { session.newGuideSequence(title: $0) },
+                    language: session.currentLanguage
                 )
             } else {
-                Button("Demarrer le guide") {
+                Button(L10n.string(.appButtonDemarrerLeGuide, session.currentLanguage)) {
                     do {
                         try session.startGuide()
                     } catch {
@@ -105,13 +107,14 @@ struct GuideLectureView: View {
                         if let actionError {
                             Text(actionError).foregroundStyle(.red).font(.caption)
                         }
-                        GuideDescriptionView(guide: guide)
+                        GuideDescriptionView(guide: guide, language: session.currentLanguage)
                         GuidePlayIndicationRow(
                             guide: guide, availableWidth: rightColumnWidth - 32,
-                            palette: bridge.state.palette, paletteTextColors: bridge.state.paletteTextColors
+                            palette: bridge.state.palette, paletteTextColors: bridge.state.paletteTextColors,
+                            language: session.currentLanguage
                         )
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("En direct").font(.subheadline).foregroundStyle(.secondary)
+                            Text(L10n.string(.appLabelEnDirect, session.currentLanguage)).font(.subheadline).foregroundStyle(.secondary)
                             AutoCenteredKeyboardView(
                                 heldPitches: guide.heldPitches, modeTones: guide.currentModeTones,
                                 palette: bridge.state.palette, paletteTextColors: bridge.state.paletteTextColors
@@ -127,10 +130,10 @@ struct GuideLectureView: View {
 
     private var controlBar: some View {
         HStack {
-            Button("Arreter le guide", role: .destructive) { session.stopGuide() }
+            Button(L10n.string(.appButtonArreterLeGuide, session.currentLanguage), role: .destructive) { session.stopGuide() }
             Spacer()
-            Button("Precedent") { session.advanceGuideStep(by: -1) }
-            Button("Suivant") { session.advanceGuideStep(by: 1) }
+            Button(L10n.string(.appButtonPrecedent, session.currentLanguage)) { session.advanceGuideStep(by: -1) }
+            Button(L10n.string(.appButtonSuivant, session.currentLanguage)) { session.advanceGuideStep(by: 1) }
         }
     }
 }

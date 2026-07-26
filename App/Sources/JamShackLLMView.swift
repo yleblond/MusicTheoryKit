@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import LLMEngine
+import Localization
 
 /// "LLM" sub-tab of the "JamShack" tab: pick the active LLM connection (used by the
 /// Composition/Enregistrement tabs' "compose" actions) and test it with a simple call —
@@ -44,7 +45,7 @@ struct JamShackLLMView: View {
     private var connectionsSection: some View {
         Section {
             if session.llmConnections.isEmpty {
-                Text("Aucune connexion trouvee — fichiers .json dans le dossier Reglages > LLMConnections (JamShack > Dossiers).")
+                Text(L10n.string(.appPlaceholderAucuneConnexionLLM, session.currentLanguage))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -61,20 +62,20 @@ struct JamShackLLMView: View {
                 }
             }
         } header: {
-            Text("Connexions LLM")
+            Text(L10n.string(.appHeadingConnexionsLLM, session.currentLanguage))
         }
     }
 
     @ViewBuilder
     private func activeConnectionSection(_ connection: LLMConnection) -> some View {
         Section {
-            LabeledContent("Nom", value: connection.name)
-            LabeledContent("Fournisseur", value: connection.provider)
-            LabeledContent("Modele", value: connection.model)
+            LabeledContent(L10n.string(.appFieldNomCapital, session.currentLanguage), value: connection.name)
+            LabeledContent(L10n.string(.appFieldFournisseur, session.currentLanguage), value: connection.provider)
+            LabeledContent(L10n.string(.appFieldModele, session.currentLanguage), value: connection.model)
             if isTesting {
-                HStack { ProgressView(); Text("Test en cours...") }
+                HStack { ProgressView(); Text(L10n.string(.appStatusTestEnCours, session.currentLanguage)) }
             } else {
-                Button("Tester la connexion") { test(connection) }
+                Button(L10n.string(.appButtonTesterConnexion, session.currentLanguage)) { test(connection) }
             }
             if let testResult {
                 Text(testResult).font(.caption).foregroundStyle(.green)
@@ -83,17 +84,17 @@ struct JamShackLLMView: View {
                 Text(testError).font(.caption).foregroundStyle(.red)
             }
         } header: {
-            Text("Connexion active")
+            Text(L10n.string(.appHeadingConnexionActive, session.currentLanguage))
         } footer: {
-            Text("Envoie un prompt minimal (\"Reponds uniquement par le mot OK.\") pour verifier que la connexion repond vraiment.")
+            Text(L10n.string(.appHintEnvoiePromptMinimal, session.currentLanguage))
         }
     }
 
     @ViewBuilder
     private func apiKeySection(envVar: String, providerLabel: String) -> some View {
         Section {
-            SecureField("Clef API (\(envVar))", text: $apiKeyInput)
-            Button("Sauvegarder la clef") {
+            SecureField(L10n.string(.appFormatClefAPI, session.currentLanguage, envVar), text: $apiKeyInput)
+            Button(L10n.string(.appButtonSauvegarderLaClef, session.currentLanguage)) {
                 do {
                     try session.setLLMAPIKey(apiKeyInput, forEnvVar: envVar)
                     apiKeySaveMessage = apiKeyInput.isEmpty ? "Clef effacee." : "Clef sauvegardee."
@@ -105,9 +106,9 @@ struct JamShackLLMView: View {
                 Text(apiKeySaveMessage).font(.caption).foregroundStyle(.green)
             }
         } header: {
-            Text("Clef API (\(providerLabel))")
+            Text(L10n.string(.appFormatClefAPI, session.currentLanguage, providerLabel))
         } footer: {
-            Text("Attention : sauvegardee en texte clair dans le dossier Reglages (pas dans le Trousseau) — accessible a quiconque a acces a ce dossier. Suffisant pour l'instant, une version plus sure est prevue (voir Docs/BACKLOG.md).")
+            Text(L10n.string(.appWarningClefTexteClair, session.currentLanguage))
         }
     }
 

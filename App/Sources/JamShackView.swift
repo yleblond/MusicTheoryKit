@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import JamShackUI
+import Localization
 
 /// The "JamShack" tab — the GUI counterpart of the CLI's top-level `catJamShack` menu
 /// category, grouped into sub-tabs the same way that menu grouped its own entries:
@@ -47,17 +48,17 @@ struct JamShackView: View {
             }
         }
 
-        var accessibilityLabel: String {
+        func accessibilityLabel(_ language: AppLanguage) -> String {
             switch self {
-            case .dossiers: return "Dossiers"
-            case .sons: return "Sons"
-            case .midi: return "MIDI"
-            case .microphone: return "Microphone"
-            case .jamSession: return "Jam Session"
-            case .serveurs: return "Serveurs"
-            case .couleurs: return "Couleurs"
-            case .langue: return "Langue"
-            case .llm: return "LLM"
+            case .dossiers: return L10n.string(.appTabDossiers, language)
+            case .sons: return L10n.string(.appTabSons, language)
+            case .midi: return L10n.string(.appTabMIDI, language)
+            case .microphone: return L10n.string(.appTabMicrophone, language)
+            case .jamSession: return L10n.string(.catJamSession, language)
+            case .serveurs: return L10n.string(.appTabServeurs, language)
+            case .couleurs: return L10n.string(.appTabCouleurs, language)
+            case .langue: return L10n.string(.appTabLangue, language)
+            case .llm: return L10n.string(.appTabLLM, language)
             }
         }
     }
@@ -80,7 +81,7 @@ struct JamShackView: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(tab.accessibilityLabel)
+                    .accessibilityLabel(tab.accessibilityLabel(session.currentLanguage))
                 }
                 Spacer()
             }

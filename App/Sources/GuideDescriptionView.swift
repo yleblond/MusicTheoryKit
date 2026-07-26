@@ -2,6 +2,7 @@ import SwiftUI
 import AppCore
 import MusicTheoryKit
 import PieceModel
+import Localization
 
 /// 2.a of the Guide "Lecture" screen: a flattened textual description of the whole guide —
 /// every step's label on one line (the current one bracketed/bold) and the current step's
@@ -10,6 +11,7 @@ import PieceModel
 /// `Text` instead of HTML.
 struct GuideDescriptionView: View {
     let guide: WebConsoleGuideState
+    let language: AppLanguage
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -30,7 +32,7 @@ struct GuideDescriptionView: View {
     }
 
     private var progressionLine: Text {
-        let prefix = guide.currentChordProgressionName.map { "Suite d'accords (\($0)): " } ?? "Suite d'accords: "
+        let prefix = guide.currentChordProgressionName.map { L10n.string(.appFormatSuiteAccordsPrefix, language, $0) } ?? L10n.string(.appLabelSuiteAccordsSansNom, language)
         var line = Text(prefix)
         for (index, entry) in guide.currentChordProgression.enumerated() {
             if index > 0 { line = line + Text(" - ") }
@@ -45,11 +47,11 @@ struct GuideDescriptionView: View {
     // doc comment — only `ImprovSession` itself constructs these) — building one for a
     // preview goes through a real session's real API instead of faking one.
     let session = ImprovSession()
-    session.newGuideSequence(title: "Demo")
+    session.newGuideSequence(title: L10n.string(.appDefaultGuideTitle, session.currentLanguage))
     try? session.addGuideStep(ModeReference(tonic: 0, scaleID: ScaleLibrary.all[0].id), chordProgression: session.chordProgressionTemplates.first)
     try? session.addGuideStep(ModeReference(tonic: 7, scaleID: ScaleLibrary.all[0].id))
     try? session.startGuide()
     session.advanceGuideChord(by: 1)
     let guide = session.buildWebConsoleState().guide!
-    return GuideDescriptionView(guide: guide).padding()
+    return GuideDescriptionView(guide: guide, language: session.currentLanguage).padding()
 }

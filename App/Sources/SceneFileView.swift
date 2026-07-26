@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import UniformTypeIdentifiers
+import Localization
 
 /// "Fichier" sub-tab of the Scene tab: create/rename the active scene, single-file
 /// export/import, and the folder-based scene browser (list/load/save-into-folder — the folder
@@ -40,20 +41,20 @@ struct SceneFileView: View {
         #if os(macOS)
         .formStyle(.grouped)
         #endif
-        .alert("Nouvelle scene", isPresented: $showNewSceneAlert) {
-            TextField("Titre", text: $newSceneTitle)
-            Button("Creer") {
-                session.newScene(title: newSceneTitle.isEmpty ? "Scene" : newSceneTitle)
+        .alert(L10n.string(.appNouvelleScene, session.currentLanguage), isPresented: $showNewSceneAlert) {
+            TextField(L10n.string(.fieldTitre, session.currentLanguage), text: $newSceneTitle)
+            Button(L10n.string(.appCreer, session.currentLanguage)) {
+                session.newScene(title: newSceneTitle.isEmpty ? L10n.string(.tabScene, session.currentLanguage) : newSceneTitle)
                 newSceneTitle = ""
                 onLoaded()
             }
-            Button("Annuler", role: .cancel) {}
+            Button(L10n.string(.appAnnuler, session.currentLanguage), role: .cancel) {}
         }
         .fileExporter(
             isPresented: $showSceneExporter,
             document: PlainDataDocument(data: pendingSceneExportData),
             contentType: .json,
-            defaultFilename: scene?.title ?? "Scene"
+            defaultFilename: scene?.title ?? L10n.string(.tabScene, session.currentLanguage)
         ) { result in
             if case .failure(let error) = result { actionError = "\(error)" }
         }
@@ -83,14 +84,14 @@ struct SceneFileView: View {
             if let scene {
                 Text(scene.title).font(.headline)
             } else {
-                Text("Aucune scene active.").foregroundStyle(.secondary)
+                Text(L10n.string(.appPlaceholderAucuneSceneActivePoint, session.currentLanguage)).foregroundStyle(.secondary)
             }
-            Button("Nouvelle scene") { showNewSceneAlert = true }
+            Button(L10n.string(.appNouvelleScene, session.currentLanguage)) { showNewSceneAlert = true }
             // `currentSceneFilePath` also gets set by the "Exporter..." button below, which
             // writes to (then deletes) a temp file — `fileExists` keeps this button from
             // offering a reload of a path that no longer exists on disk.
             if let path = session.currentSceneFilePath, FileManager.default.fileExists(atPath: path) {
-                Button("Recharger cette scene") {
+                Button(L10n.string(.appButtonRechargerScene, session.currentLanguage)) {
                     do {
                         try session.loadScene(fromJSONFile: path)
                         onLoaded()
@@ -100,10 +101,10 @@ struct SceneFileView: View {
                 }
             }
         } header: {
-            Text("Scene")
+            Text(L10n.string(.tabScene, session.currentLanguage))
         } footer: {
             if let path = session.currentSceneFilePath, FileManager.default.fileExists(atPath: path) {
-                Text("Recharge la scene depuis le disque, en perdant les changements non sauvegardes.")
+                Text(L10n.string(.appHintRechargeScene, session.currentLanguage))
             }
         }
     }
@@ -112,7 +113,7 @@ struct SceneFileView: View {
     private var sceneFolderSection: some View {
         Section {
             if session.sceneFiles.isEmpty {
-                Text("Aucun dossier de scenes choisi — vas dans l'onglet JamShack > Dossiers.")
+                Text(L10n.string(.appPlaceholderAucunDossierScenes, session.currentLanguage))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -127,9 +128,9 @@ struct SceneFileView: View {
                     }
                 }
                 if scene != nil {
-                    Button("Sauvegarder dans ce dossier") {
+                    Button(L10n.string(.appButtonSauvegarderDansCeDossier, session.currentLanguage)) {
                         do {
-                            try session.saveScene(title: scene?.title ?? "Scene", as: (scene?.title ?? "Scene") + ".json")
+                            try session.saveScene(title: scene?.title ?? L10n.string(.tabScene, session.currentLanguage), as: (scene?.title ?? L10n.string(.tabScene, session.currentLanguage)) + ".json")
                         } catch {
                             actionError = "\(error)"
                         }
@@ -137,17 +138,17 @@ struct SceneFileView: View {
                 }
             }
         } header: {
-            Text("Dossier de scenes")
+            Text(L10n.string(.appHeadingDossierScenes, session.currentLanguage))
         }
     }
 
     @ViewBuilder
     private var saveLoadSection: some View {
         Section {
-            Button("Exporter...") {
+            Button(L10n.string(.appButtonExporter, session.currentLanguage)) {
                 do {
                     let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
-                    try session.saveScene(title: scene?.title ?? "Scene", toJSONFile: tempURL.path)
+                    try session.saveScene(title: scene?.title ?? L10n.string(.tabScene, session.currentLanguage), toJSONFile: tempURL.path)
                     pendingSceneExportData = try Data(contentsOf: tempURL)
                     try? FileManager.default.removeItem(at: tempURL)
                     showSceneExporter = true
@@ -155,11 +156,11 @@ struct SceneFileView: View {
                     actionError = "\(error)"
                 }
             }
-            Button("Importer...") { showSceneImporter = true }
+            Button(L10n.string(.appButtonImporter, session.currentLanguage)) { showSceneImporter = true }
         } header: {
-            Text("Fichier unique")
+            Text(L10n.string(.appHeadingFichierUnique, session.currentLanguage))
         } footer: {
-            Text("Pour partager une scene en dehors du dossier de scenes (AirDrop, Fichiers, etc).")
+            Text(L10n.string(.appHintPartagerScene, session.currentLanguage))
         }
     }
 }

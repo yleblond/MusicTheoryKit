@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import MusicTheoryKit
+import Localization
 
 /// A popup editor for one color palette: a name field and a `ColorPicker` per pitch class —
 /// used both to edit an existing palette (`existingIndex` set) and to create a brand-new one
@@ -25,7 +26,7 @@ struct PaletteEditorView: View {
             _name = State(initialValue: palette.name)
             _colors = State(initialValue: palette.colors)
         } else {
-            _name = State(initialValue: "Nouvelle palette")
+            _name = State(initialValue: L10n.string(.appDefaultNouvellePalette, session.currentLanguage))
             _colors = State(initialValue: ColorPalette.builtInDefaults[0].colors)
         }
     }
@@ -37,9 +38,9 @@ struct PaletteEditorView: View {
                     Section { Text(error).foregroundStyle(.red).font(.caption) }
                 }
                 Section {
-                    TextField("Nom", text: $name)
+                    TextField(L10n.string(.appFieldNomCapital, session.currentLanguage), text: $name)
                 } header: {
-                    Text("Nom de la palette")
+                    Text(L10n.string(.appHeadingNomPalette, session.currentLanguage))
                 }
                 Section {
                     ForEach(0..<12, id: \.self) { index in
@@ -54,19 +55,19 @@ struct PaletteEditorView: View {
                         }
                     }
                 } header: {
-                    Text("Couleurs (une par note)")
+                    Text(L10n.string(.appHeadingCouleursParNote, session.currentLanguage))
                 }
             }
             #if os(macOS)
             .formStyle(.grouped)
             #endif
-            .navigationTitle(existingIndex == nil ? "Nouvelle palette" : "Modifier la palette")
+            .navigationTitle(existingIndex == nil ? L10n.string(.appDefaultNouvellePalette, session.currentLanguage) : L10n.string(.appNavTitleModifierPalette, session.currentLanguage))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Annuler") { dismiss() }
+                    Button(L10n.string(.appAnnuler, session.currentLanguage)) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Enregistrer") { save() }
+                    Button(L10n.string(.appButtonEnregistrer, session.currentLanguage)) { save() }
                 }
             }
         }

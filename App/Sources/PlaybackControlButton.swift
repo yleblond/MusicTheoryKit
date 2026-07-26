@@ -1,11 +1,13 @@
 import SwiftUI
+import Localization
 
-/// A play/stop control with the icon above its French label — used by the Morceaux and
+/// A play/stop control with the icon above its label — used by the Morceaux and
 /// Enregistrement "Play" screens, per explicit user request ("icones play et stop ... avec
 /// eventuellement le label en dessous"). One shared view so both screens' buttons stay
 /// visually identical rather than two hand-tuned copies.
 struct PlaybackControlButton: View {
     let isPlaying: Bool
+    let language: AppLanguage
     let onPlay: () -> Void
     let onStop: () -> Void
 
@@ -14,7 +16,7 @@ struct PlaybackControlButton: View {
             VStack(spacing: 2) {
                 Image(systemName: isPlaying ? "stop.fill" : "play.fill")
                     .font(.title2)
-                Text(isPlaying ? "Arreter" : "Jouer")
+                Text(L10n.string(isPlaying ? .appButtonArreter : .appHeadingJouer, language))
                     .font(.caption)
             }
             .frame(minWidth: 60)
@@ -26,8 +28,8 @@ struct PlaybackControlButton: View {
 
 #Preview {
     HStack(spacing: 16) {
-        PlaybackControlButton(isPlaying: false, onPlay: {}, onStop: {})
-        PlaybackControlButton(isPlaying: true, onPlay: {}, onStop: {})
+        PlaybackControlButton(isPlaying: false, language: .fr, onPlay: {}, onStop: {})
+        PlaybackControlButton(isPlaying: true, language: .fr, onPlay: {}, onStop: {})
     }
     .padding()
 }

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import JamShackUI
+import Localization
 
 /// "Record" sub-tab of the Enregistrement tab: choose which currently-listening tracks to
 /// record, and start/stop the recording — playback of the resulting recording lives in the
@@ -28,8 +29,8 @@ struct RecordingRecordView: View {
     private var recordingSection: some View {
         Section {
             if session.isRecording {
-                Text("Enregistrement en cours...").foregroundStyle(.red)
-                Button("Arreter l'enregistrement", role: .destructive) {
+                Text(L10n.string(.appStatusEnregistrementEnCours, session.currentLanguage)).foregroundStyle(.red)
+                Button(L10n.string(.appButtonArreterEnregistrement, session.currentLanguage), role: .destructive) {
                     do {
                         _ = try session.stopRecording()
                     } catch {
@@ -45,19 +46,19 @@ struct RecordingRecordView: View {
                         }
                     ))
                 }
-                Button("Demarrer l'enregistrement") {
+                Button(L10n.string(.appButtonDemarrerEnregistrement, session.currentLanguage)) {
                     let trackIDs = Set(selectedTrackWireIDs.compactMap { TrackID(wireIDText: $0) })
                     do {
-                        try session.startRecording(title: "Enregistrement", tracks: trackIDs)
+                        try session.startRecording(title: L10n.string(.catEnregistrement, session.currentLanguage), tracks: trackIDs)
                     } catch {
                         actionError = "\(error)"
                     }
                 }
             }
         } header: {
-            Text("Enregistrement")
+            Text(L10n.string(.catEnregistrement, session.currentLanguage))
         } footer: {
-            Text("Choisis les pistes a enregistrer — aucune coche = toutes les pistes en ecoute.")
+            Text(L10n.string(.appHintChoisisPistesEnregistrer, session.currentLanguage))
         }
     }
 }

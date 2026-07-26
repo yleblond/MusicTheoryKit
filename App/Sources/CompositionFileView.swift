@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import Localization
 
 /// "Fichier" sub-tab of the Composition tab: the folder-based composition-description browser
 /// (list/load/save-into-folder — the folder itself is picked from the "JamShack" tab's
@@ -27,7 +28,7 @@ struct CompositionFileView: View {
     private var folderSection: some View {
         Section {
             if session.compositionFiles.isEmpty {
-                Text("Aucun dossier de composition IA choisi — JamShack > Dossiers.").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.string(.appPlaceholderAucunDossierCompositionIA, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(session.compositionFiles, id: \.self) { name in
                     Button(name.strippingJSONExtension) {
@@ -38,16 +39,16 @@ struct CompositionFileView: View {
                         }
                     }
                 }
-                Button("Sauvegarder la description dans ce dossier") {
+                Button(L10n.string(.appButtonSauvegarderDescriptionDossier, session.currentLanguage)) {
                     do {
-                        try session.saveCompositionDescription(as: (session.compositionTitle ?? "Description") + ".json")
+                        try session.saveCompositionDescription(as: (session.compositionTitle ?? L10n.string(.fieldDescription, session.currentLanguage)) + ".json")
                     } catch {
                         actionError = "\(error)"
                     }
                 }
             }
         } header: {
-            Text("Dossier de composition IA")
+            Text(L10n.string(.appHeadingDossierCompositionIA, session.currentLanguage))
         }
     }
 }

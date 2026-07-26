@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import LLMEngine
+import Localization
 
 /// "IA" sub-tab of the Enregistrement tab: compose a piece from the current recording via the
 /// active LLM connection (see the "JamShack" tab's own "LLM" sub-tab).
@@ -21,7 +22,7 @@ struct RecordingIAView: View {
             if session.currentSoundTrack != nil {
                 composeSection
             } else {
-                Section { Text("Aucun enregistrement — va dans l'onglet Record.").foregroundStyle(.secondary) }
+                Section { Text(L10n.string(.appPlaceholderAucunEnregistrementRecord, session.currentLanguage)).foregroundStyle(.secondary) }
             }
         }
         #if os(macOS)
@@ -32,23 +33,23 @@ struct RecordingIAView: View {
     @ViewBuilder
     private var composeSection: some View {
         Section {
-            TextField("Titre (optionnel)", text: $composeTitle)
-            TextField("Nombre de candidats", text: $composeCandidateCount)
+            TextField(L10n.string(.appPlaceholderTitreOptionnel, session.currentLanguage), text: $composeTitle)
+            TextField(L10n.string(.fieldNombreCandidats, session.currentLanguage), text: $composeCandidateCount)
                 #if os(iOS)
                 .keyboardType(.numberPad)
                 #endif
             if isComposing {
-                HStack { ProgressView(); Text("Composition en cours...") }
+                HStack { ProgressView(); Text(L10n.string(.appStatusCompositionEnCours, session.currentLanguage)) }
             } else {
-                Button("Composer un morceau depuis cet enregistrement") { compose() }
+                Button(L10n.string(.appButtonComposerDepuisEnregistrement, session.currentLanguage)) { compose() }
             }
             if let composeResultMessage {
                 Text(composeResultMessage).font(.caption).foregroundStyle(.green)
             }
         } header: {
-            Text("Composition IA depuis l'enregistrement")
+            Text(L10n.string(.appHeadingCompositionIADepuisEnregistrement, session.currentLanguage))
         } footer: {
-            Text("Utilise la connexion LLM active (JamShack > LLM) et le dossier de morceaux (JamShack > Dossiers).")
+            Text(L10n.string(.appHintUtiliseConnexionLLMEtDossier, session.currentLanguage))
         }
     }
 

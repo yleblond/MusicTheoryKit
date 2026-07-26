@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import Localization
 
 /// "Play" sub-tab of the Morceaux tab: play/stop the currently-loaded piece, and pick which
 /// sound it plays through — loading/choosing the piece itself happens in the "Fichier" sub-tab.
@@ -28,6 +29,7 @@ struct PiecesPlayView: View {
                 Text(piece.title).font(.headline)
                 PlaybackControlButton(
                     isPlaying: session.isPlaying,
+                    language: session.currentLanguage,
                     onPlay: {
                         do {
                             try session.play()
@@ -38,10 +40,10 @@ struct PiecesPlayView: View {
                     onStop: { session.stopPlayback() }
                 )
             } else {
-                Text("Aucun morceau charge — va dans l'onglet Fichier.").foregroundStyle(.secondary)
+                Text(L10n.string(.appPlaceholderAucunMorceauChargeOnglet, session.currentLanguage)).foregroundStyle(.secondary)
             }
         } header: {
-            Text("Jouer")
+            Text(L10n.string(.appHeadingJouer, session.currentLanguage))
         }
     }
 
@@ -49,7 +51,7 @@ struct PiecesPlayView: View {
     private var soundSection: some View {
         Section {
             if session.favoriteSampleFiles.isEmpty {
-                Text("Aucun son favori — JamShack > Sons pour en marquer.").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.string(.appPlaceholderAucunSonFavori, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(session.favoriteSampleFiles, id: \.self) { name in
                     Button(session.displayName(forSamplePath: name)) {
@@ -62,9 +64,9 @@ struct PiecesPlayView: View {
                 }
             }
         } header: {
-            Text("Son de lecture")
+            Text(L10n.string(.appHeadingSonDeLecture, session.currentLanguage))
         } footer: {
-            Text("Son par defaut (synthese) si aucun choisi.")
+            Text(L10n.string(.appHintSonParDefaut, session.currentLanguage))
         }
     }
 }

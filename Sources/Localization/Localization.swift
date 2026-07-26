@@ -198,6 +198,120 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case vkHeading, vkHint, vkPromptDisplayName, vkPromptNewName, vkDefaultAlias
     case vkChanger, vkVousPrefix, vkDispositionClavierPrefix, vkHeadingGuide
     case vkPlaceholderAucuneNote, placeholderAucunAccordVK, placeholderPisteNonInitialisee
+
+    // MARK: - App (SwiftUI native): shared buttons / alerts / defaults reused across screens
+    case appChoisirEllipsis, appChangerEllipsis, appCreer, appAnnuler, appButtonSauvegarderDansCeDossier
+    case appButtonArreter, appButtonDemarrer, appNouveauGuide, appNouvelleScene
+    case appDefaultNouvellePalette, appDefaultGuideTitle, appDefaultMorceauFilename
+
+    // MARK: - App: main TabView + JamShack sidebar + sub-tab sidebars (accessibility labels)
+    case appTabLive, appStatusDemarrage
+    case appTabDossiers, appTabSons, appTabMIDI, appTabMicrophone, appTabServeurs, appTabCouleurs, appTabLangue, appTabLLM
+    case appTabFichierMorceau, appTabFichierSoundtrack, appTabFichierGuide, appTabEditionGuide, appTabLectureGuide
+    case appTabFichierScene, appTabDispositionScene, appTabFichierComposition, appTabComposerCourt
+
+    // MARK: - App: Composition tab (Fichier + Composer sub-tabs)
+    case appPlaceholderTitreMorceau, appPlaceholderIndicationsStyleOpt, appHeadingDescriptionMorceau
+    case appHintDecrisMorceauTexteLibre, appStatusCompositionEnCours, appButtonComposerDepuisDescription
+    case appHeadingCompositionIA, appHintUtiliseConnexionLLMSeule
+    case appPlaceholderAucunDossierCompositionIA, appButtonSauvegarderDescriptionDossier, appHeadingDossierCompositionIA
+
+    // MARK: - App: JamShack > Dossiers (FolderPickerRow + JamShackFoldersView)
+    case appFormatFichiersTrouves
+    case appHeadingContenus, appHeadingConfiguration, appHintCreeSousDossiers
+    case appHeadingDossiersParDefaut, appHintDossiersParDefautDetail
+    case appButtonChoisirCreerDossierJamShack, appButtonChangerDossierJamShack
+    case appButtonChoisir, appHintChoisisCreeDossierJamShack
+    case appLabelDossierCompositionIA, appLabelDossierGuides, appLabelDossierReglages
+    case appLabelDossierScenes, appLabelDossierSoundtracks, appLabelDossierSons
+
+    // MARK: - App: Guide tab (Fichier/Edition/Lecture sub-tabs)
+    case appPlaceholderAucunGuideActif, appPlaceholderAucunGuideActifPoint
+    case appPlaceholderAucunDossierGuides, appHeadingDossierGuides
+    case appFieldProgressionAccordsGuide, appOptionAucuneFem
+    case appButtonAjouterModeAuGuide, appHeadingAjouterUnMode
+    case appHeadingClavierDuMode, appHeadingClavierAccord
+    case appButtonDemarrerLeGuide, appButtonArreterLeGuide, appButtonPrecedent, appButtonSuivant, appLabelEnDirect
+    case appButtonCreerUnGuide, appFieldTitreGuide
+    case appHeadingEtapes
+    case appFormatSuiteAccordsPrefix, appLabelSuiteAccordsSansNom
+
+    // MARK: - App: Morceaux tab (Fichier/Play sub-tabs)
+    case appHeadingJouer, appPlaceholderAucunSonFavori, appHeadingSonDeLecture, appHintSonParDefaut
+    case appPlaceholderAucunMorceauChargeOnglet, appPlaceholderAucunMorceauChargePoint
+    case appButtonChargerLaDemo, appHeadingMorceauCharge
+    case appPlaceholderAucunDossierMorceaux, appHeadingDossierMorceaux
+    case appFormatFragmentsBPM
+
+    // MARK: - App: Enregistrement tab (Fichier/Record/Play/IA sub-tabs)
+    case appPlaceholderAucunDossierSoundtracks, appHeadingDossierSoundtracks
+    case appStatusEnregistrementEnCours, appButtonArreterEnregistrement, appButtonDemarrerEnregistrement
+    case appHintChoisisPistesEnregistrer
+    case appPlaceholderAucunEnregistrementRecordFichier, appPlaceholderAucunEnregistrementRecord
+    case appFormatEvenementsDuree, appHeadingEnregistrementActuel
+    case appPlaceholderTitreOptionnel, appButtonComposerDepuisEnregistrement
+    case appHeadingCompositionIADepuisEnregistrement, appHintUtiliseConnexionLLMEtDossier
+
+    // MARK: - App: Scene tab (Fichier/Disposition sub-tabs)
+    case appPlaceholderAucuneSceneActivePoint, appButtonRechargerScene, appHintRechargeScene
+    case appPlaceholderAucunDossierScenes, appHeadingDossierScenes
+    case appButtonExporter, appButtonImporter, appHeadingFichierUnique, appHintPartagerScene
+    case appLabelAucuneSceneActiveCourt, appHintActiveSceneExistante, appButtonCreerUneScene, appFieldNomScene
+    case appAlertNouveauRole, appPlaceholderNomExPiano1, appButtonAjouter
+    case appPlaceholderTousInstrumentsAffectes, appHeadingInstrumentsNonAffectes
+    case appButtonAjouterUnRole, appButtonAjouterUnRoleEllipsis, appButtonCreerEtAttacher
+    case appMenuAttacherA, appButtonDetacher, appLabelLibre
+    case appPlaceholderAucunSonFavoriParenthese, appButtonAucun, appButtonSupprimer
+    case appFormatOccupeParRole
+
+    // MARK: - App: JamShack > Sons (SoundsView)
+    case appPlaceholderAucunSonTrouve, appPlaceholderRechercherSonAlias, appFormatSonsCompte
+    case appHintCocheEtoileFavoris, appFieldAlias
+
+    // MARK: - App: JamShack > MIDI
+    case appOptionFusionne, appOptionIndividuel, appHintModeMidiDetail
+    case appButtonRafraichirListeMidi, appPlaceholderAucuneSourceMidi, appHeadingSourcesMidiVisibles
+
+    // MARK: - App: JamShack > Couleurs (palette + LUMI settings + LUMI tester)
+    case appButtonNouvellePalette, appHeadingCouleurRacine, appHeadingCouleurGamme, appFormatLuminositePourcent
+    case appToggleModeRunPropagation, appToggleModeGuidePropagation
+    case appHeadingLumiKeys, appHintPropagationAutoLumi
+    case appButtonListerDestinationsMidi, appPlaceholderAucuneDestinationMidi
+    case appFieldIDAppareilHex, appPlaceholder34
+    case appButtonTesterModePiano, appButtonTesterCarteGuide, appHeadingTesteurLumi, appHintTesteurLumiDetail
+    case appFieldNomCapital, appHeadingNomPalette, appHeadingCouleursParNote, appButtonEnregistrer, appNavTitleModifierPalette
+
+    // MARK: - App: JamShack > Langue
+    case appFieldLangue, appHeadingLangueInterface, appHintLangueAppliqueAussi
+
+    // MARK: - App: JamShack > LLM
+    case appPlaceholderAucuneConnexionLLM, appHeadingConnexionsLLM, appStatusTestEnCours, appButtonTesterConnexion
+    case appHeadingConnexionActive, appHintEnvoiePromptMinimal, appFormatClefAPI, appButtonSauvegarderLaClef
+    case appWarningClefTexteClair, appFieldFournisseur, appFieldModele
+
+    // MARK: - App: Microphone tab
+    case appLabelMicrophoneActif, appButtonDemarrerEcoute, appHeadingReconnaissance, appHeadingMicrophone
+    case appHintDetectionMicrophone, appButtonReinitialiser, appHeadingNiveau, appHeadingCalibrationNiveau
+    case appFieldAffichage, appLabelNotesRecues, appLabelSpectrometre, appHintSpectreFFT, appToggleActiverSpectrometre
+    case appButtonTerminerCapture, appButtonCapturer, appLabelNoteFaible, appLabelNoteForte
+    case appHintCalibrationNiveau, appFormatEnCoursDeCapture
+
+    // MARK: - App: Serveurs tab
+    case appHintServeurPremierPlan, appFormatRejoinsMoiSur, appHintConsoleWebCaption, appHintClavierVirtuelCaption
+
+    // MARK: - App: Jam Session tab
+    case appHeadingSessionCollaborative, appFormatGameCenterErreur, appHintNomAfficheParticipants
+    case appSectionHebergerReseauLocal, appFormatServeurActifPort, appButtonArreterLeServeur
+    case appSectionRejoindreReseauLocal, appFormatConnecteA, appButtonSeDeconnecter
+    case appSectionOrganisateurGameCenter, appLabelSessionGameCenterActive, appButtonArreterLaSession
+    case appSectionParticipantGameCenter, appHintModeIsole
+    case appPlaceholder7777, appPlaceholderLocalhost, appButtonDemarrerLeServeur, appButtonSeConnecter
+    case appStatusRecherche, appButtonRechercherReseauLocal, appPlaceholderAucunServeurTrouve
+    case appHeadingRechercher, appHintServeurReseauLocal
+    case appStatusConnexionGameCenter, appButtonInviterTrouverParticipants, appHintOuvreFenetreGameCenterOrganisateur
+    case appButtonRejoindreViaGameCenter, appHintAccepteInvitationGameCenter
+    case appModeIsole, appModeJamGameCenterOrganisateur, appModeJamGameCenterParticipant
+    case appModeJamLocaleOrganisateur, appModeJamLocaleParticipant
 }
 
 public enum L10n {

@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import Localization
 
 /// One "pick a folder, remember it, show what was found in it" row — the GUI counterpart of
 /// the CLI's `catJamShack` category, where each entry prompts for a path and hands it to a
@@ -16,6 +17,7 @@ struct FolderPickerRow: View {
     let title: String
     let currentPath: String?
     let fileCount: Int?
+    let language: AppLanguage
     let onPick: (String) throws -> Void
 
     @State private var showImporter = false
@@ -27,7 +29,7 @@ struct FolderPickerRow: View {
             HStack {
                 Text(title).font(.headline)
                 Spacer()
-                Button(currentPath == nil ? "Choisir..." : "Changer...") {
+                Button(currentPath == nil ? L10n.string(.appChoisirEllipsis, language) : L10n.string(.appChangerEllipsis, language)) {
                     showImporter = true
                 }
             }
@@ -35,7 +37,7 @@ struct FolderPickerRow: View {
                 Text(currentPath).font(.caption).foregroundStyle(.secondary)
             }
             if let fileCount {
-                Text("\(fileCount) fichier(s) trouve(s).").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.string(.appFormatFichiersTrouves, language, fileCount)).font(.caption).foregroundStyle(.secondary)
             }
             if let error {
                 Text(error).font(.caption).foregroundStyle(.red)

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import UniformTypeIdentifiers
+import Localization
 #if os(macOS)
 import AppKit
 #endif
@@ -22,44 +23,49 @@ struct JamShackFoldersView: View {
             defaultFoldersSection
             Section {
                 FolderPickerRow(
-                    title: "Morceaux",
+                    title: L10n.string(.catMorceaux, session.currentLanguage),
                     currentPath: session.pieceFolder,
-                    fileCount: session.pieceFiles.isEmpty ? nil : session.pieceFiles.count
+                    fileCount: session.pieceFiles.isEmpty ? nil : session.pieceFiles.count,
+                    language: session.currentLanguage
                 ) { try session.listPieceFiles(in: $0) }
                 FolderPickerRow(
-                    title: "Soundtracks",
+                    title: L10n.string(.appLabelDossierSoundtracks, session.currentLanguage),
                     currentPath: session.soundTrackFolder,
-                    fileCount: session.soundTrackFiles.isEmpty ? nil : session.soundTrackFiles.count
+                    fileCount: session.soundTrackFiles.isEmpty ? nil : session.soundTrackFiles.count,
+                    language: session.currentLanguage
                 ) { try session.listSoundTrackFiles(in: $0) }
                 FolderPickerRow(
-                    title: "Guides",
+                    title: L10n.string(.appLabelDossierGuides, session.currentLanguage),
                     currentPath: session.guideFolder,
-                    fileCount: session.guideFiles.isEmpty ? nil : session.guideFiles.count
+                    fileCount: session.guideFiles.isEmpty ? nil : session.guideFiles.count,
+                    language: session.currentLanguage
                 ) { try session.listGuideFiles(in: $0) }
                 FolderPickerRow(
-                    title: "Scenes",
+                    title: L10n.string(.appLabelDossierScenes, session.currentLanguage),
                     currentPath: session.sceneFolder,
-                    fileCount: session.sceneFiles.isEmpty ? nil : session.sceneFiles.count
+                    fileCount: session.sceneFiles.isEmpty ? nil : session.sceneFiles.count,
+                    language: session.currentLanguage
                 ) { try session.listSceneFiles(in: $0) }
             } header: {
-                Text("Contenus")
+                Text(L10n.string(.appHeadingContenus, session.currentLanguage))
             }
             Section {
                 FolderPickerRow(
-                    title: "Sons (samples)",
+                    title: L10n.string(.appLabelDossierSons, session.currentLanguage),
                     currentPath: session.sampleFolder,
-                    fileCount: session.sampleFiles.isEmpty ? nil : session.sampleFiles.count
+                    fileCount: session.sampleFiles.isEmpty ? nil : session.sampleFiles.count,
+                    language: session.currentLanguage
                 ) { try session.listSampleFiles(in: $0) }
-                FolderPickerRow(title: "Reglages", currentPath: session.settingsFolder, fileCount: nil) {
+                FolderPickerRow(title: L10n.string(.appLabelDossierReglages, session.currentLanguage), currentPath: session.settingsFolder, fileCount: nil, language: session.currentLanguage) {
                     try session.setSettingsFolder($0)
                 }
-                FolderPickerRow(title: "Composition IA (prompts)", currentPath: session.promptsFolder, fileCount: nil) {
+                FolderPickerRow(title: L10n.string(.appLabelDossierCompositionIA, session.currentLanguage), currentPath: session.promptsFolder, fileCount: nil, language: session.currentLanguage) {
                     try session.setPromptsFolder($0)
                 }
             } header: {
-                Text("Configuration")
+                Text(L10n.string(.appHeadingConfiguration, session.currentLanguage))
             } footer: {
-                Text("Cree les sous-dossiers necessaires s'ils n'existent pas encore.")
+                Text(L10n.string(.appHintCreeSousDossiers, session.currentLanguage))
             }
         }
         #if os(macOS)
@@ -84,7 +90,7 @@ struct JamShackFoldersView: View {
             if let defaultRootError {
                 Text(defaultRootError).font(.caption).foregroundStyle(.red)
             }
-            Button(defaultRootPath == nil ? "Choisir/creer le dossier JamShack..." : "Changer de dossier JamShack...") {
+            Button(defaultRootPath == nil ? L10n.string(.appButtonChoisirCreerDossierJamShack, session.currentLanguage) : L10n.string(.appButtonChangerDossierJamShack, session.currentLanguage)) {
                 #if os(macOS)
                 pickRootFolderOnMac()
                 #else
@@ -92,9 +98,9 @@ struct JamShackFoldersView: View {
                 #endif
             }
         } header: {
-            Text("Dossiers par defaut")
+            Text(L10n.string(.appHeadingDossiersParDefaut, session.currentLanguage))
         } footer: {
-            Text("Cree/utilise Composition IA, Pieces, Scenes, Sequences, SoundFonts et SoundTracks a l'interieur du dossier choisi — iCloud Drive > JamShack par defaut. Retenu au prochain lancement.")
+            Text(L10n.string(.appHintDossiersParDefautDetail, session.currentLanguage))
         }
     }
 
@@ -104,8 +110,8 @@ struct JamShackFoldersView: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "Choisir"
-        panel.message = "Choisis ou cree le dossier JamShack (iCloud Drive recommande)"
+        panel.prompt = L10n.string(.appButtonChoisir, session.currentLanguage)
+        panel.message = L10n.string(.appHintChoisisCreeDossierJamShack, session.currentLanguage)
         panel.directoryURL = iCloudDriveURLIfAvailable()
         guard panel.runModal() == .OK, let url = panel.url else { return }
         applyRootFolder(url)

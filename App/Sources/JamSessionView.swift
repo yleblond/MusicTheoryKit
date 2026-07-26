@@ -2,6 +2,7 @@ import SwiftUI
 import AppCore
 import NetEngine
 import GameKit
+import Localization
 
 /// Second sub-tab of the "JamShack" tab: the collaborative jam session — either over the
 /// local network (server/client, with Bonjour discovery for the client side — mirrors the
@@ -20,13 +21,13 @@ struct JamSessionView: View {
     private enum CollaborationMode: String, CaseIterable, Identifiable {
         case isolated, localOrganizer, localParticipant, gameCenterOrganizer, gameCenterParticipant
         var id: Self { self }
-        var label: String {
+        func label(_ language: AppLanguage) -> String {
             switch self {
-            case .isolated: return "Isole"
-            case .localOrganizer: return "Jam locale - organisateur"
-            case .localParticipant: return "Jam locale - participant"
-            case .gameCenterOrganizer: return "Jam Game Center - organisateur"
-            case .gameCenterParticipant: return "Jam Game Center - participant"
+            case .isolated: return L10n.string(.appModeIsole, language)
+            case .localOrganizer: return L10n.string(.appModeJamLocaleOrganisateur, language)
+            case .localParticipant: return L10n.string(.appModeJamLocaleParticipant, language)
+            case .gameCenterOrganizer: return L10n.string(.appModeJamGameCenterOrganisateur, language)
+            case .gameCenterParticipant: return L10n.string(.appModeJamGameCenterParticipant, language)
             }
         }
     }
@@ -80,11 +81,11 @@ struct JamSessionView: View {
     @ViewBuilder
     private var modeSection: some View {
         Section {
-            Picker("Mode", selection: $mode) {
-                ForEach(CollaborationMode.allCases) { Text($0.label).tag($0) }
+            Picker(L10n.string(.fieldModeReconnaissance, session.currentLanguage), selection: $mode) {
+                ForEach(CollaborationMode.allCases) { Text($0.label(session.currentLanguage)).tag($0) }
             }
         } header: {
-            Text("Session collaborative (Jam Session)")
+            Text(L10n.string(.appHeadingSessionCollaborative, session.currentLanguage))
         }
         .disabled(session.networkRole != .standalone)
     }
@@ -98,7 +99,7 @@ struct JamSessionView: View {
             Section { Text(matchError).foregroundStyle(.red).font(.caption) }
         }
         if let authError = gameCenter.authenticationError {
-            Section { Text("Game Center : \(authError)").foregroundStyle(.red).font(.caption) }
+            Section { Text(L10n.string(.appFormatGameCenterErreur, session.currentLanguage, authError)).foregroundStyle(.red).font(.caption) }
         }
     }
 
@@ -106,14 +107,14 @@ struct JamSessionView: View {
     private var pseudoSection: some View {
         Section {
             HStack {
-                Text("Pseudo")
+                Text(L10n.string(.fieldPseudo, session.currentLanguage))
                 Spacer()
-                TextField("Pseudo", text: $pseudo)
+                TextField(L10n.string(.fieldPseudo, session.currentLanguage), text: $pseudo)
                     .multilineTextAlignment(.trailing)
                     .onChange(of: pseudo) { _, newValue in session.localClientName = newValue }
             }
         } footer: {
-            Text("Le nom sous lequel les autres participants te voient.")
+            Text(L10n.string(.appHintNomAfficheParticipants, session.currentLanguage))
         }
     }
 
@@ -139,27 +140,27 @@ struct JamSessionView: View {
             }
         case .server(let port):
             pseudoSection
-            Section("Heberger (reseau local)") {
-                Text("Serveur actif sur le port \(port)").foregroundStyle(.green)
-                Button("Arreter le serveur", role: .destructive) { session.stopServer() }
+            Section(L10n.string(.appSectionHebergerReseauLocal, session.currentLanguage)) {
+                Text(L10n.string(.appFormatServeurActifPort, session.currentLanguage, "\(port)")).foregroundStyle(.green)
+                Button(L10n.string(.appButtonArreterLeServeur, session.currentLanguage), role: .destructive) { session.stopServer() }
             }
         case .client(let description):
             pseudoSection
-            Section("Rejoindre (reseau local)") {
-                Text("Connecte a \(description)").foregroundStyle(.green)
-                Button("Se deconnecter", role: .destructive) { session.disconnectFromServer() }
+            Section(L10n.string(.appSectionRejoindreReseauLocal, session.currentLanguage)) {
+                Text(L10n.string(.appFormatConnecteA, session.currentLanguage, description)).foregroundStyle(.green)
+                Button(L10n.string(.appButtonSeDeconnecter, session.currentLanguage), role: .destructive) { session.disconnectFromServer() }
             }
         case .gameCenterServer:
             pseudoSection
-            Section("Organisateur Game Center") {
-                Text("Session Game Center active").foregroundStyle(.green)
-                Button("Arreter la session", role: .destructive) { session.stopServer() }
+            Section(L10n.string(.appSectionOrganisateurGameCenter, session.currentLanguage)) {
+                Text(L10n.string(.appLabelSessionGameCenterActive, session.currentLanguage)).foregroundStyle(.green)
+                Button(L10n.string(.appButtonArreterLaSession, session.currentLanguage), role: .destructive) { session.stopServer() }
             }
         case .gameCenterClient(let description):
             pseudoSection
-            Section("Participant Game Center") {
-                Text("Connecte a \(description)").foregroundStyle(.green)
-                Button("Se deconnecter", role: .destructive) { session.disconnectFromServer() }
+            Section(L10n.string(.appSectionParticipantGameCenter, session.currentLanguage)) {
+                Text(L10n.string(.appFormatConnecteA, session.currentLanguage, description)).foregroundStyle(.green)
+                Button(L10n.string(.appButtonSeDeconnecter, session.currentLanguage), role: .destructive) { session.disconnectFromServer() }
             }
         }
     }
@@ -167,46 +168,46 @@ struct JamSessionView: View {
     @ViewBuilder
     private var isolatedSection: some View {
         Section {
-            Text("Mode isole : aucune session collaborative active. Branche autant d'equipement (MIDI, microphone) que necessaire directement a cet appareil, ou invite d'autres personnes a jouer via les claviers virtuels (JamShack > Serveurs).")
+            Text(L10n.string(.appHintModeIsole, session.currentLanguage))
                 .foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder
     private var hostSection: some View {
-        Section("Heberger (reseau local)") {
+        Section(L10n.string(.appSectionHebergerReseauLocal, session.currentLanguage)) {
             HStack {
-                Text("Port")
+                Text(L10n.string(.fieldPort, session.currentLanguage))
                 Spacer()
-                TextField("7777", text: $serverPortText)
+                TextField(L10n.string(.appPlaceholder7777, session.currentLanguage), text: $serverPortText)
                     #if os(iOS)
                     .keyboardType(.numberPad)
                     #endif
                     .multilineTextAlignment(.trailing)
             }
-            Button("Demarrer le serveur") { startServer() }
+            Button(L10n.string(.appButtonDemarrerLeServeur, session.currentLanguage)) { startServer() }
         }
     }
 
     @ViewBuilder
     private var joinSection: some View {
-        Section("Rejoindre (reseau local)") {
+        Section(L10n.string(.appSectionRejoindreReseauLocal, session.currentLanguage)) {
             HStack {
-                Text("Hote")
+                Text(L10n.string(.fieldHote, session.currentLanguage))
                 Spacer()
-                TextField("localhost", text: $clientHostText)
+                TextField(L10n.string(.appPlaceholderLocalhost, session.currentLanguage), text: $clientHostText)
                     .multilineTextAlignment(.trailing)
             }
             HStack {
-                Text("Port")
+                Text(L10n.string(.fieldPort, session.currentLanguage))
                 Spacer()
-                TextField("7777", text: $clientPortText)
+                TextField(L10n.string(.appPlaceholder7777, session.currentLanguage), text: $clientPortText)
                     #if os(iOS)
                     .keyboardType(.numberPad)
                     #endif
                     .multilineTextAlignment(.trailing)
             }
-            Button("Se connecter") { connect() }
+            Button(L10n.string(.appButtonSeConnecter, session.currentLanguage)) { connect() }
         }
     }
 
@@ -214,20 +215,20 @@ struct JamSessionView: View {
     private var discoverSection: some View {
         Section {
             if isDiscovering {
-                HStack { ProgressView(); Text("Recherche...") }
+                HStack { ProgressView(); Text(L10n.string(.appStatusRecherche, session.currentLanguage)) }
             } else {
-                Button("Rechercher sur le reseau local") { discover() }
+                Button(L10n.string(.appButtonRechercherReseauLocal, session.currentLanguage)) { discover() }
                 if discoveredServers.isEmpty {
-                    Text("Aucun serveur trouve pour l'instant.").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.string(.appPlaceholderAucunServeurTrouve, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
                 }
             }
             ForEach(discoveredServers, id: \.name) { server in
                 Button(server.name) { connect(discovered: server) }
             }
         } header: {
-            Text("Rechercher")
+            Text(L10n.string(.appHeadingRechercher, session.currentLanguage))
         } footer: {
-            Text("Le serveur (cote 'Jam locale - organisateur') doit tourner sur le meme reseau local, et la permission 'Reseau local' doit etre accordee a cette app.")
+            Text(L10n.string(.appHintServeurReseauLocal, session.currentLanguage))
         }
     }
 
@@ -235,9 +236,9 @@ struct JamSessionView: View {
     private var gameCenterOrganizerSection: some View {
         Section {
             if !gameCenter.isAuthenticated {
-                Text("Connexion a Game Center...").foregroundStyle(.secondary)
+                Text(L10n.string(.appStatusConnexionGameCenter, session.currentLanguage)).foregroundStyle(.secondary)
             } else {
-                Button("Inviter / trouver des participants...") {
+                Button(L10n.string(.appButtonInviterTrouverParticipants, session.currentLanguage)) {
                     session.localClientName = pseudo
                     gameCenter.presentMatchmaker { match in
                         do {
@@ -249,9 +250,9 @@ struct JamSessionView: View {
                 }
             }
         } header: {
-            Text("Organisateur Game Center")
+            Text(L10n.string(.appSectionOrganisateurGameCenter, session.currentLanguage))
         } footer: {
-            Text("Ouvre la fenetre Game Center pour inviter des amis ou trouver automatiquement des participants, via internet (pas besoin du meme reseau local).")
+            Text(L10n.string(.appHintOuvreFenetreGameCenterOrganisateur, session.currentLanguage))
         }
     }
 
@@ -259,9 +260,9 @@ struct JamSessionView: View {
     private var gameCenterParticipantSection: some View {
         Section {
             if !gameCenter.isAuthenticated {
-                Text("Connexion a Game Center...").foregroundStyle(.secondary)
+                Text(L10n.string(.appStatusConnexionGameCenter, session.currentLanguage)).foregroundStyle(.secondary)
             } else {
-                Button("Rejoindre via Game Center...") {
+                Button(L10n.string(.appButtonRejoindreViaGameCenter, session.currentLanguage)) {
                     session.localClientName = pseudo
                     gameCenter.presentMatchmaker { match in
                         do {
@@ -273,9 +274,9 @@ struct JamSessionView: View {
                 }
             }
         } header: {
-            Text("Participant Game Center")
+            Text(L10n.string(.appSectionParticipantGameCenter, session.currentLanguage))
         } footer: {
-            Text("Accepte une invitation Game Center recue, ou trouve automatiquement une session ouverte.")
+            Text(L10n.string(.appHintAccepteInvitationGameCenter, session.currentLanguage))
         }
     }
 

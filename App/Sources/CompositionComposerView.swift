@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import Localization
 
 /// "Composer" sub-tab of the Composition tab: describe a piece in free text (title, style
 /// indications) and compose it via the active LLM connection (see the "JamShack" tab's own
@@ -37,17 +38,17 @@ struct CompositionComposerView: View {
     @ViewBuilder
     private var descriptionSection: some View {
         Section {
-            TextField("Titre du morceau", text: $title)
+            TextField(L10n.string(.appPlaceholderTitreMorceau, session.currentLanguage), text: $title)
                 .onChange(of: title) { _, newValue in session.setCompositionTitle(newValue.isEmpty ? nil : newValue) }
             TextEditor(text: $sourceText)
                 .frame(minHeight: 120)
                 .onChange(of: sourceText) { _, newValue in session.setSourceText(newValue) }
-            TextField("Indications de style (optionnel)", text: $instructions)
+            TextField(L10n.string(.appPlaceholderIndicationsStyleOpt, session.currentLanguage), text: $instructions)
                 .onChange(of: instructions) { _, newValue in session.setAdditionalCompositionInstructions(newValue.isEmpty ? nil : newValue) }
         } header: {
-            Text("Description du morceau")
+            Text(L10n.string(.appHeadingDescriptionMorceau, session.currentLanguage))
         } footer: {
-            Text("Decris le morceau en texte libre — c'est ce texte qui sera envoye au LLM pour composer.")
+            Text(L10n.string(.appHintDecrisMorceauTexteLibre, session.currentLanguage))
         }
     }
 
@@ -55,17 +56,17 @@ struct CompositionComposerView: View {
     private var composeSection: some View {
         Section {
             if isComposing {
-                HStack { ProgressView(); Text("Composition en cours...") }
+                HStack { ProgressView(); Text(L10n.string(.appStatusCompositionEnCours, session.currentLanguage)) }
             } else {
-                Button("Composer depuis cette description") { compose() }
+                Button(L10n.string(.appButtonComposerDepuisDescription, session.currentLanguage)) { compose() }
             }
             if let composeResultMessage {
                 Text(composeResultMessage).font(.caption).foregroundStyle(.green)
             }
         } header: {
-            Text("Composition IA")
+            Text(L10n.string(.appHeadingCompositionIA, session.currentLanguage))
         } footer: {
-            Text("Utilise la connexion LLM active (JamShack > LLM).")
+            Text(L10n.string(.appHintUtiliseConnexionLLMSeule, session.currentLanguage))
         }
     }
 
