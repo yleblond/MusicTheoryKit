@@ -86,7 +86,7 @@ struct SceneLayoutView: View {
     private var rolesSection: some View {
         Section {
             ForEach(scene?.roles ?? []) { role in
-                SceneRoleRow(session: session, role: role, sampleFiles: session.sampleFiles, onError: { actionError = $0 })
+                SceneRoleRow(session: session, role: role, sampleFiles: session.favoriteSampleFiles, onError: { actionError = $0 })
             }
             Button("Ajouter un role") { showNewRoleAlert = true }
         } header: {
@@ -207,12 +207,12 @@ private struct SceneRoleRow: View {
                 Text("Son")
                 Spacer()
                 if sampleFiles.isEmpty {
-                    Text("choisis un dossier de sons (JamShack > Dossiers)").font(.caption).foregroundStyle(.secondary)
+                    Text("aucun son favori (JamShack > Sons)").font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Menu(role.soundName ?? "Aucun") {
+                    Menu(role.soundName.map(session.displayName(forSamplePath:)) ?? "Aucun") {
                         Button("Aucun") { setSound(nil) }
                         ForEach(sampleFiles, id: \.self) { name in
-                            Button(name) { setSound(name) }
+                            Button(session.displayName(forSamplePath: name)) { setSound(name) }
                         }
                     }
                 }

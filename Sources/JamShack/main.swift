@@ -501,6 +501,8 @@ func networkRoleText() -> String {
     case .standalone: return TextStyle.placeholder(L10n.string(.placeholderSolo, session.currentLanguage))
     case .server(let port): return "serveur sur le port \(port)"
     case .client(let description): return "connecte a \(description)"
+    case .gameCenterServer: return "serveur Game Center"
+    case .gameCenterClient(let description): return "connecte via Game Center a \(description)"
     }
 }
 
@@ -575,8 +577,7 @@ func printTreeLine(_ text: String, ancestorIsLast: [Bool], isLast: Bool) {
 /// than just scanning `tracks` for `.remote` entries).
 func printSceneTree() {
     let lang = session.currentLanguage
-    let isServer: Bool
-    if case .server = session.networkRole { isServer = true } else { isServer = false }
+    let isServer = session.networkRole.isServerRole
     print("JamShack — mode: \(networkRoleText())")
 
     // The scene/roles concept as its own clearly-labeled branch, shown even with no active

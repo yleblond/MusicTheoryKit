@@ -10,6 +10,7 @@ import RecognitionEngine
 import LLMEngine
 import NetEngine
 import WebConsole
+import GameKit
 
 /// The whole app's state and behavior, independent of any presentation layer. A CLI
 /// front-end drives this today by calling its methods and reading its published state;
@@ -69,6 +70,10 @@ public final class ImprovSession: @unchecked Sendable {
     /// piece-playback sampler (`use-sample`).
     public private(set) var sampleFolder: String?
     public private(set) var sampleFiles: [String] = []
+    /// User-assigned alias/favorite metadata, keyed by the same relative-path strings as
+    /// `sampleFiles` — see `SoundEntry`/`setSoundAlias`/`setSoundFavorite`/`favoriteSampleFiles`.
+    /// Persisted to `sound-settings.json`, only entries the user has actually touched.
+    public private(set) var soundEntries: [SoundEntry] = []
     /// The folder last listed with `listPieceFiles`, and the `.json` piece files found in
     /// it — mirrors `sampleFolder`/`sampleFiles`.
     public private(set) var pieceFolder: String?
@@ -250,8 +255,11 @@ public final class ImprovSession: @unchecked Sendable {
     /// with memory corruption in testing, not just a benign "worst case interleaved log line"
     /// like the single-threaded live-input writes elsewhere in this class.
     private let playbackStateQueue = DispatchQueue(label: "ImprovSession.playbackState")
-    private var netServer: NetworkServer?
-    private var netClient: NetworkClient?
+    /// Protocol-typed (not the concrete `NetworkServer`/`NetworkClient`) so either the
+    /// local-network transport or `GameCenterTransport` can be stored/called the same way —
+    /// see `NetworkServerTransport`/`NetworkClientTransport`'s own doc comments.
+    private var netServer: (any NetworkServerTransport)?
+    private var netClient: (any NetworkClientTransport)?
     private var syncTimer: DispatchSourceTimer?
     private var webConsoleServer: HTTPServer?
     private var webConsoleRefreshTimer: DispatchSourceTimer?
@@ -692,6 +700,7 @@ public final class ImprovSession: @unchecked Sendable {
         try loadOrCreateNoteColorSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("note-colors.json"))
         try loadOrCreateLLMAPIKeys(fromJSONFile: (folderPath as NSString).appendingPathComponent("llm-api-keys.json"))
         try loadOrCreateMicrophoneCalibration(fromJSONFile: (folderPath as NSString).appendingPathComponent("microphone-calibration.json"))
+        try loadOrCreateSoundSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("sound-settings.json"))
         settingsFolder = folderPath
         append("Dossier de reglages: \(folderPath).")
     }
@@ -2101,19 +2110,28 @@ public final class ImprovSession: @unchecked Sendable {
 
     private static let supportedSampleExtensions: Set<String> = ["sf2", "dls", "aupreset"]
 
-    /// Scans `folderPath` for `.sf2`/`.dls`/`.aupreset` files and remembers both the folder
-    /// and the match list (in `sampleFiles`) so they can be picked by index afterwards.
+    /// Scans `folderPath` **and every subfolder beneath it** for `.sf2`/`.dls`/`.aupreset`
+    /// files and remembers both the folder and the match list (in `sampleFiles`) so they can
+    /// be picked by index afterwards. Recursive so a whole decompressed sound library (its own
+    /// subfolder of many .sf2 files) can simply be unzipped straight into this folder — each
+    /// entry in `sampleFiles` is a path *relative* to `folderPath` (e.g.
+    /// `"OrchestralLib/Strings/Violin.sf2"`), not a bare filename, so files with the same name
+    /// in different subfolders stay distinguishable and `appendingPathComponent` in
+    /// `loadSample(named:)`/`setInstrument(named:for:)`/etc. still resolves them correctly.
     public func listSampleFiles(in folderPath: String) throws {
-        let folderURL = URL(fileURLWithPath: folderPath)
-        let contents = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
+        // `subpathsOfDirectory(atPath:)` already returns paths *relative to `folderPath`*
+        // (including subfolders) as plain strings — unlike `FileManager.enumerator(at:)`,
+        // there's no symlink-resolution mismatch to worry about between the base folder URL
+        // and the enumerated file URLs (e.g. `NSTemporaryDirectory()`'s `/var/folders/...` vs.
+        // its resolved `/private/var/folders/...`, hit while testing this).
+        let contents = try FileManager.default.subpathsOfDirectory(atPath: folderPath)
         sampleFolder = folderPath
         sampleFiles = contents
-            .filter { Self.supportedSampleExtensions.contains($0.pathExtension.lowercased()) }
-            .map(\.lastPathComponent)
+            .filter { Self.supportedSampleExtensions.contains(($0 as NSString).pathExtension.lowercased()) }
             .sorted()
         append(sampleFiles.isEmpty
-            ? "No .sf2/.dls/.aupreset files found in \(folderPath)."
-            : "Found \(sampleFiles.count) sample file(s) in \(folderPath).")
+            ? "No .sf2/.dls/.aupreset files found in \(folderPath) (including subfolders)."
+            : "Found \(sampleFiles.count) sample file(s) in \(folderPath) (including subfolders).")
     }
 
     /// Loads a sample-based instrument by name from the last-listed folder (see
@@ -2147,6 +2165,94 @@ public final class ImprovSession: @unchecked Sendable {
     public func loadSoundTrackSample(atIndex index: Int) throws {
         guard sampleFiles.indices.contains(index) else { throw SessionError.invalidSampleIndex }
         try loadSoundTrackSample(named: sampleFiles[index])
+    }
+
+    /// `sampleFiles` filtered down to favorites (see `SoundEntry.isFavorite`) — this is what
+    /// every sound *picker* in the app should show (`PiecesPlayView`/`RecordingPlayView`/
+    /// `SceneLayoutView`'s role-sound menu), so a big decompressed library dumped into
+    /// `sampleFolder` doesn't turn every picker into an unusable wall of cryptic filenames. The
+    /// unfiltered `sampleFiles` (every sound found) is still what the Sounds sub-tab itself
+    /// shows, since that's where favorites get chosen from in the first place — deliberately no
+    /// "fall back to showing everything when there are zero favorites" exception: marking at
+    /// least one favorite is the expected first step before using any other sound picker.
+    public var favoriteSampleFiles: [String] {
+        let favoritePaths = Set(soundEntries.filter(\.isFavorite).map(\.path))
+        return sampleFiles.filter { favoritePaths.contains($0) }
+    }
+
+    /// The alias for a sound path if one was assigned, else `nil` — callers show the bare path
+    /// as a fallback (see `displayName(forSamplePath:)`).
+    public func soundAlias(forPath path: String) -> String? {
+        soundEntries.first { $0.path == path }?.alias
+    }
+
+    public func isSoundFavorite(_ path: String) -> Bool {
+        soundEntries.first { $0.path == path }?.isFavorite ?? false
+    }
+
+    /// What to show in any sound picker for a given `sampleFiles` entry — its alias if one was
+    /// assigned, otherwise the path itself.
+    public func displayName(forSamplePath path: String) -> String {
+        soundAlias(forPath: path) ?? path
+    }
+
+    /// Sets (or clears, with `nil`/empty) a sound's alias and persists. Removes the entry
+    /// entirely once it has neither an alias nor a favorite flag, keeping `sound-settings.json`
+    /// limited to sounds the user actually curated.
+    public func setSoundAlias(_ path: String, alias: String?) throws {
+        let trimmed = alias?.trimmingCharacters(in: .whitespacesAndNewlines)
+        try updateSoundEntry(path) { $0.alias = (trimmed?.isEmpty ?? true) ? nil : trimmed }
+    }
+
+    /// Marks (or unmarks) a sound as a favorite and persists — see `favoriteSampleFiles`.
+    public func setSoundFavorite(_ path: String, isFavorite: Bool) throws {
+        try updateSoundEntry(path) { $0.isFavorite = isFavorite }
+    }
+
+    /// Shared mutator behind `setSoundAlias`/`setSoundFavorite`: finds or creates the entry for
+    /// `path`, applies `mutate`, drops the entry if it ends up with no alias and not a favorite
+    /// (the "untouched" state), then persists either way.
+    private func updateSoundEntry(_ path: String, mutate: (inout SoundEntry) -> Void) throws {
+        if let index = soundEntries.firstIndex(where: { $0.path == path }) {
+            mutate(&soundEntries[index])
+            if soundEntries[index].alias == nil && !soundEntries[index].isFavorite {
+                soundEntries.remove(at: index)
+            }
+        } else {
+            var entry = SoundEntry(path: path)
+            mutate(&entry)
+            if entry.alias != nil || entry.isFavorite {
+                soundEntries.append(entry)
+            }
+        }
+        try saveSoundSettings()
+    }
+
+    /// Persists `soundEntries` back to `sound-settings.json` — no-op if no settings folder is
+    /// set yet, same convention as `saveColorPalettes`/`saveMicrophoneCalibration`.
+    private func saveSoundSettings() throws {
+        guard let settingsFolder else { return }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(SoundSettingsFile(sounds: soundEntries))
+        try data.write(to: URL(fileURLWithPath: (settingsFolder as NSString).appendingPathComponent("sound-settings.json")))
+    }
+
+    public func loadSoundSettings(fromJSONFile path: String) throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        soundEntries = try JSONDecoder().decode(SoundSettingsFile.self, from: data).sounds
+    }
+
+    /// Writes an empty `sound-settings.json` first if nothing is there yet, then loads it
+    /// either way — mirrors `loadOrCreateColorPalettes`.
+    public func loadOrCreateSoundSettings(fromJSONFile path: String) throws {
+        if !FileManager.default.fileExists(atPath: path) {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(SoundSettingsFile(sounds: []))
+            try data.write(to: URL(fileURLWithPath: path))
+        }
+        try loadSoundSettings(fromJSONFile: path)
     }
 
     /// Simulates a key press/release without real MIDI hardware — useful for testing and
@@ -2519,6 +2625,26 @@ public final class ImprovSession: @unchecked Sendable {
         append("Serveur demarre sur le port \(port).")
     }
 
+    /// Hosts a collaborative session over Game Center's matchmaking instead of a local TCP
+    /// listener — same "server" logic as `startServer(port:)` (any matched player is
+    /// accepted, tracks merged, `sync` broadcast every ~150ms), just addressed via
+    /// `GKPlayer.gamePlayerID` instead of a per-TCP-connection UUID. `match` must already be
+    /// a real, connected `GKMatch` — obtaining one (authentication, presenting Game Center's
+    /// matchmaker UI) is a UI-layer concern, not this session's — see `GameCenterCoordinator`
+    /// in the App target.
+    public func startGameCenterServer(with match: GKMatch) throws {
+        guard networkRole == .standalone else { throw SessionError.networkRoleAlreadyActive }
+        let transport = GameCenterTransport(
+            match: match, role: .organizer,
+            onMessage: { [weak self] connectionID, message in self?.handleServerMessage(connectionID, message) },
+            onDisconnect: { [weak self] connectionID in self?.handleClientDisconnected(connectionID) }
+        )
+        netServer = transport
+        networkRole = .gameCenterServer
+        startSyncBroadcastTimer()
+        append("Session Game Center demarree (organisateur).")
+    }
+
     /// Every participant currently connected while hosting (`networkRole == .server`), even
     /// one with no active/announced track yet — unlike scanning `tracks` for `.remote`
     /// entries (which only ever shows participants who've *announced* at least one
@@ -2526,7 +2652,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// connection's `hello` message arrives. Empty (not an error) outside server mode — see
     /// `Sources/JamShack/main.swift`'s scene-tree renderer for the main consumer.
     public func connectedClients() -> [(clientID: String, name: String)] {
-        guard case .server = networkRole else { return [] }
+        guard networkRole.isServerRole else { return [] }
         return liveInputQueue.sync { clientIDToClientName.map { (clientID: $0.key, name: $0.value) } }
     }
 
@@ -2540,7 +2666,7 @@ public final class ImprovSession: @unchecked Sendable {
     }
 
     public func stopServer() {
-        guard case .server = networkRole else { return }
+        guard networkRole.isServerRole else { return }
         syncTimer?.cancel()
         syncTimer = nil
         netServer?.stop()
@@ -2693,6 +2819,8 @@ public final class ImprovSession: @unchecked Sendable {
         case .standalone: networkRoleText = "solo"
         case .server(let port): networkRoleText = "serveur sur le port \(port)"
         case .client(let description): networkRoleText = "connecte a \(description)"
+        case .gameCenterServer: networkRoleText = "serveur Game Center"
+        case .gameCenterClient(let description): networkRoleText = "connecte via Game Center a \(description)"
         }
 
         let allTracks = liveInputQueue.sync { tracks }
@@ -4111,6 +4239,26 @@ public final class ImprovSession: @unchecked Sendable {
         )
     }
 
+    /// Joins a collaborative session over Game Center's matchmaking instead of connecting to
+    /// a local-network host/port — same "client" logic as `connectToServer` (announces
+    /// `hello` + every already-listening local track right away, so joining mid-session
+    /// doesn't require re-toggling anything). `match` must already be a real, connected
+    /// `GKMatch` — see `startGameCenterServer(with:)`'s own doc comment for why obtaining one
+    /// is a UI-layer concern, not this session's.
+    public func joinGameCenterSession(with match: GKMatch) throws {
+        guard networkRole == .standalone else { throw SessionError.networkRoleAlreadyActive }
+        let transport = GameCenterTransport(
+            match: match, role: .participant,
+            onMessage: { [weak self] _, message in self?.handleClientMessage(message) },
+            onDisconnect: { [weak self] _ in self?.handleServerDisconnected() }
+        )
+        netClient = transport
+        let organizerName = match.players.first?.displayName ?? "Game Center"
+        networkRole = .gameCenterClient(description: organizerName)
+        for message in initialClientMessages() { transport.send(message) }
+        append("Connecte a la session Game Center de \(organizerName).")
+    }
+
     /// `hello` followed by one `trackAnnounce` per already-listening local track — shared by
     /// both `connectToServer` overloads.
     private func initialClientMessages() -> [NetMessage] {
@@ -4127,7 +4275,7 @@ public final class ImprovSession: @unchecked Sendable {
     }
 
     public func disconnectFromServer() {
-        guard case .client = networkRole else { return }
+        guard networkRole.isClientRole else { return }
         netClient?.disconnect()
         netClient = nil
         liveInputQueue.sync { removeAllRemoteTracks() }
@@ -4248,7 +4396,7 @@ public final class ImprovSession: @unchecked Sendable {
     }
 
     private func broadcastSyncSoon() {
-        guard case .server = networkRole, let netServer else { return }
+        guard networkRole.isServerRole, let netServer else { return }
         let snapshot: [RemoteTrackSnapshot] = liveInputQueue.sync {
             tracks.compactMap { track -> RemoteTrackSnapshot? in
                 guard let (clientID, wireTrackID) = ownerAndWireID(of: track.id) else { return nil }
@@ -4303,17 +4451,17 @@ public final class ImprovSession: @unchecked Sendable {
     // MARK: Client-side outbound forwarding (called from startTrack/stopTrack/updateRecognitionState)
 
     private func announceTrackToServerIfClient(_ track: TrackInfo) {
-        guard case .client = networkRole, let netClient, let wireID = track.id.wireIDText else { return }
+        guard networkRole.isClientRole, let netClient, let wireID = track.id.wireIDText else { return }
         netClient.send(NetMessage(kind: .trackAnnounce, clientID: localClientID, trackID: wireID, label: track.label, canHaveSound: track.canHaveSound))
     }
 
     private func unannounceTrackToServerIfClient(_ id: TrackID) {
-        guard case .client = networkRole, let netClient, let wireID = id.wireIDText else { return }
+        guard networkRole.isClientRole, let netClient, let wireID = id.wireIDText else { return }
         netClient.send(NetMessage(kind: .trackUnannounce, clientID: localClientID, trackID: wireID))
     }
 
     private func forwardNoteEventToServerIfClient(track: TrackID, isNoteOn: Bool, pitch: Int, velocity: Int, channel: Int) {
-        guard case .client = networkRole, let netClient, let wireID = track.wireIDText else { return }
+        guard networkRole.isClientRole, let netClient, let wireID = track.wireIDText else { return }
         netClient.send(NetMessage(
             kind: .noteEvent, clientID: localClientID, trackID: wireID,
             isNoteOn: isNoteOn, pitch: pitch, velocity: velocity, channel: channel

@@ -54,6 +54,15 @@ targets:
         # has no equivalent entitlement key), but harmless to declare on both since XcodeGen
         # applies the same entitlements dict to the single multiplatform target.
         com.apple.security.files.user-selected.read-write: true
+        # Game Center matchmaking (JamSessionView's "Jam Game Center" modes) needs
+        # `com.apple.developer.game-center: true` here PLUS the capability enabled for this
+        # app's App ID at developer.apple.com. Deliberately NOT added to this file: unlike
+        # every entitlement above (compatible with ad-hoc "Sign to Run Locally"), that one key
+        # alone made `xcodebuild` demand a real provisioning profile — confirmed by trying it
+        # and watching every build fail, not assumed. Add it yourself via Xcode's Signing &
+        # Capabilities > "+ Capability" > "Game Center" (this also handles the App ID
+        # registration, which needs your own Apple Developer sign-in) once you're ready to
+        # test the Game Center modes for real — the code is already there waiting for it.
     dependencies:
       - package: MusicTheoryKit
         product: JamShackUI

@@ -1,29 +1,32 @@
 import SwiftUI
 import AppCore
 import NetEngine
+import GameKit
 
-/// Second sub-tab of the "JamShack" tab: the collaborative jam session (server/client, with
-/// local-network discovery for the client side) — mirrors the terminal CLI's own "Jam
-/// Session" menu category (`server`/`stop-server`/`client`/`discover`/`disconnect` commands).
+/// Second sub-tab of the "JamShack" tab: the collaborative jam session — either over the
+/// local network (server/client, with Bonjour discovery for the client side — mirrors the
+/// terminal CLI's own "Jam Session" menu category) or over the internet via Game Center
+/// matchmaking (`GameCenterCoordinator`/`ImprovSession.startGameCenterServer`/
+/// `joinGameCenterSession`).
 ///
-/// Presented as an explicit 3-way choice — Isole / Organisateur / Participant — rather than
-/// showing every control at once (the previous design showed "Heberger", "Rejoindre" AND
-/// "Rechercher" simultaneously while `networkRole == .standalone`, which is cluttered and
-/// doesn't tell the user which of those three things they're actually trying to do). The mode
-/// picker only matters while `networkRole` is `.standalone` — once a server/client connection
-/// is actually live, the screen shows that connection's own status regardless of the picker
-/// (there's nothing left to choose at that point).
+/// Presented as an explicit 5-way choice — Isole / Jam locale-organisateur /
+/// Jam locale-participant / Jam Game Center-organisateur / Jam Game Center-participant —
+/// rather than showing every control at once. The mode picker only matters while
+/// `networkRole == .standalone`; once a server/client connection is actually live (either
+/// transport), the screen shows that connection's own status regardless of the picker.
 struct JamSessionView: View {
     let session: ImprovSession
 
     private enum CollaborationMode: String, CaseIterable, Identifiable {
-        case isolated, organizer, participant
+        case isolated, localOrganizer, localParticipant, gameCenterOrganizer, gameCenterParticipant
         var id: Self { self }
         var label: String {
             switch self {
             case .isolated: return "Isole"
-            case .organizer: return "Organisateur"
-            case .participant: return "Participant"
+            case .localOrganizer: return "Jam locale - organisateur"
+            case .localParticipant: return "Jam locale - participant"
+            case .gameCenterOrganizer: return "Jam Game Center - organisateur"
+            case .gameCenterParticipant: return "Jam Game Center - participant"
             }
         }
     }
@@ -36,6 +39,7 @@ struct JamSessionView: View {
     @State private var isDiscovering = false
     @State private var discoveredServers: [DiscoveredServer] = []
     @State private var networkError: String?
+    @State private var gameCenter = GameCenterCoordinator()
 
     var body: some View {
         Form {
@@ -52,8 +56,23 @@ struct JamSessionView: View {
             // the picker instead of silently defaulting back to "Isole".
             switch session.networkRole {
             case .standalone: break
-            case .server: mode = .organizer
-            case .client: mode = .participant
+            case .server: mode = .localOrganizer
+            case .client: mode = .localParticipant
+            case .gameCenterServer: mode = .gameCenterOrganizer
+            case .gameCenterClient: mode = .gameCenterParticipant
+            }
+        }
+        .onChange(of: mode) { _, newMode in
+            if newMode == .gameCenterOrganizer || newMode == .gameCenterParticipant {
+                gameCenter.authenticateIfNeeded()
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { gameCenter.presentedController != nil },
+            set: { if !$0 { gameCenter.dismissPresentedController() } }
+        )) {
+            if let controller = gameCenter.presentedController {
+                PresentedControllerView(controller: controller)
             }
         }
     }
@@ -64,26 +83,22 @@ struct JamSessionView: View {
             Picker("Mode", selection: $mode) {
                 ForEach(CollaborationMode.allCases) { Text($0.label).tag($0) }
             }
-            #if os(iOS)
-            .pickerStyle(.segmented)
-            #endif
         } header: {
             Text("Session collaborative (Jam Session)")
         }
-        .disabled({
-            switch session.networkRole {
-            case .standalone: return false
-            default: return true // a live connection is already committed to its own mode
-            }
-        }())
+        .disabled(session.networkRole != .standalone)
     }
 
     @ViewBuilder
     private var networkErrorSection: some View {
         if let networkError {
-            Section {
-                Text(networkError).foregroundStyle(.red).font(.caption)
-            }
+            Section { Text(networkError).foregroundStyle(.red).font(.caption) }
+        }
+        if let matchError = gameCenter.matchError {
+            Section { Text(matchError).foregroundStyle(.red).font(.caption) }
+        }
+        if let authError = gameCenter.authenticationError {
+            Section { Text("Game Center : \(authError)").foregroundStyle(.red).font(.caption) }
         }
     }
 
@@ -108,23 +123,41 @@ struct JamSessionView: View {
         case .standalone:
             switch mode {
             case .isolated: isolatedSection
-            case .organizer:
+            case .localOrganizer:
                 pseudoSection
                 hostSection
-            case .participant:
+            case .localParticipant:
                 pseudoSection
                 joinSection
                 discoverSection
+            case .gameCenterOrganizer:
+                pseudoSection
+                gameCenterOrganizerSection
+            case .gameCenterParticipant:
+                pseudoSection
+                gameCenterParticipantSection
             }
         case .server(let port):
             pseudoSection
-            Section("Heberger") {
+            Section("Heberger (reseau local)") {
                 Text("Serveur actif sur le port \(port)").foregroundStyle(.green)
                 Button("Arreter le serveur", role: .destructive) { session.stopServer() }
             }
         case .client(let description):
             pseudoSection
-            Section("Rejoindre") {
+            Section("Rejoindre (reseau local)") {
+                Text("Connecte a \(description)").foregroundStyle(.green)
+                Button("Se deconnecter", role: .destructive) { session.disconnectFromServer() }
+            }
+        case .gameCenterServer:
+            pseudoSection
+            Section("Organisateur Game Center") {
+                Text("Session Game Center active").foregroundStyle(.green)
+                Button("Arreter la session", role: .destructive) { session.stopServer() }
+            }
+        case .gameCenterClient(let description):
+            pseudoSection
+            Section("Participant Game Center") {
                 Text("Connecte a \(description)").foregroundStyle(.green)
                 Button("Se deconnecter", role: .destructive) { session.disconnectFromServer() }
             }
@@ -141,7 +174,7 @@ struct JamSessionView: View {
 
     @ViewBuilder
     private var hostSection: some View {
-        Section("Heberger") {
+        Section("Heberger (reseau local)") {
             HStack {
                 Text("Port")
                 Spacer()
@@ -157,7 +190,7 @@ struct JamSessionView: View {
 
     @ViewBuilder
     private var joinSection: some View {
-        Section("Rejoindre") {
+        Section("Rejoindre (reseau local)") {
             HStack {
                 Text("Hote")
                 Spacer()
@@ -194,7 +227,55 @@ struct JamSessionView: View {
         } header: {
             Text("Rechercher")
         } footer: {
-            Text("Le serveur (cote 'Organisateur') doit tourner sur le meme reseau local, et la permission 'Reseau local' doit etre accordee a cette app.")
+            Text("Le serveur (cote 'Jam locale - organisateur') doit tourner sur le meme reseau local, et la permission 'Reseau local' doit etre accordee a cette app.")
+        }
+    }
+
+    @ViewBuilder
+    private var gameCenterOrganizerSection: some View {
+        Section {
+            if !gameCenter.isAuthenticated {
+                Text("Connexion a Game Center...").foregroundStyle(.secondary)
+            } else {
+                Button("Inviter / trouver des participants...") {
+                    session.localClientName = pseudo
+                    gameCenter.presentMatchmaker { match in
+                        do {
+                            try session.startGameCenterServer(with: match)
+                        } catch {
+                            networkError = "\(error)"
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("Organisateur Game Center")
+        } footer: {
+            Text("Ouvre la fenetre Game Center pour inviter des amis ou trouver automatiquement des participants, via internet (pas besoin du meme reseau local).")
+        }
+    }
+
+    @ViewBuilder
+    private var gameCenterParticipantSection: some View {
+        Section {
+            if !gameCenter.isAuthenticated {
+                Text("Connexion a Game Center...").foregroundStyle(.secondary)
+            } else {
+                Button("Rejoindre via Game Center...") {
+                    session.localClientName = pseudo
+                    gameCenter.presentMatchmaker { match in
+                        do {
+                            try session.joinGameCenterSession(with: match)
+                        } catch {
+                            networkError = "\(error)"
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("Participant Game Center")
+        } footer: {
+            Text("Accepte une invitation Game Center recue, ou trouve automatiquement une session ouverte.")
         }
     }
 

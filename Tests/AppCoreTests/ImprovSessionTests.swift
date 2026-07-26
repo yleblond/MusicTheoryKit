@@ -1800,6 +1800,114 @@ final class ImprovSessionTests: XCTestCase {
         // have cleared anything.
         XCTAssertEqual(session.colorPalettes.count, 1)
     }
+
+    // MARK: - Sample folder: recursive subfolder scanning
+
+    func testListSampleFilesRecursesIntoSubfoldersUsingRelativePaths() throws {
+        let session = ImprovSession()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let libFolder = folder.appendingPathComponent("OrchestralLib/Strings")
+        try FileManager.default.createDirectory(at: libFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        try Data().write(to: folder.appendingPathComponent("Piano.sf2"))
+        try Data().write(to: libFolder.appendingPathComponent("Violin.sf2"))
+        try Data().write(to: libFolder.appendingPathComponent("ReadMe.txt")) // not a sample extension
+
+        try session.listSampleFiles(in: folder.path)
+
+        XCTAssertEqual(session.sampleFiles, ["OrchestralLib/Strings/Violin.sf2", "Piano.sf2"])
+    }
+
+    func testLoadSampleResolvesARelativeSubfolderPath() throws {
+        let session = ImprovSession()
+        try session.start()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let libFolder = folder.appendingPathComponent("Lib")
+        try FileManager.default.createDirectory(at: libFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data().write(to: libFolder.appendingPathComponent("Violin.sf2"))
+
+        try session.listSampleFiles(in: folder.path)
+        XCTAssertEqual(session.sampleFiles, ["Lib/Violin.sf2"])
+        // An empty/garbage .sf2 fails to actually load as a sound bank, but the point here is
+        // that the relative path resolves to the right file at all (a real load attempt, not a
+        // silently-wrong path) — AVAudioUnitSampler throws on the malformed file, not on a
+        // missing one.
+        XCTAssertThrowsError(try session.loadSample(named: "Lib/Violin.sf2"))
+    }
+
+    // MARK: - Sound aliases & favorites
+
+    func testSetSoundAliasAndFavoritePersistToSoundSettingsFile() throws {
+        let session = ImprovSession()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try session.setSettingsFolder(folder.path)
+
+        try session.setSoundAlias("OrchestralLib/Strings/Violin.sf2", alias: "Violon chaud")
+        try session.setSoundFavorite("OrchestralLib/Strings/Violin.sf2", isFavorite: true)
+        try session.setSoundFavorite("Piano.sf2", isFavorite: true)
+
+        XCTAssertEqual(session.soundAlias(forPath: "OrchestralLib/Strings/Violin.sf2"), "Violon chaud")
+        XCTAssertTrue(session.isSoundFavorite("OrchestralLib/Strings/Violin.sf2"))
+        XCTAssertTrue(session.isSoundFavorite("Piano.sf2"))
+        XCTAssertFalse(session.isSoundFavorite("Cello.sf2"))
+
+        let reloaded = ImprovSession()
+        try reloaded.setSettingsFolder(folder.path)
+        XCTAssertEqual(reloaded.soundAlias(forPath: "OrchestralLib/Strings/Violin.sf2"), "Violon chaud")
+        XCTAssertTrue(reloaded.isSoundFavorite("Piano.sf2"))
+    }
+
+    func testFavoriteSampleFilesFiltersSampleFilesToFavoritesOnly() throws {
+        let session = ImprovSession()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data().write(to: folder.appendingPathComponent("Piano.sf2"))
+        try Data().write(to: folder.appendingPathComponent("Cello.sf2"))
+        try session.listSampleFiles(in: folder.path)
+        try session.setSettingsFolder(folder.appendingPathComponent("Settings").path)
+
+        XCTAssertEqual(session.favoriteSampleFiles, [], "nothing favorited yet")
+
+        try session.setSoundFavorite("Piano.sf2", isFavorite: true)
+        XCTAssertEqual(session.favoriteSampleFiles, ["Piano.sf2"])
+
+        try session.setSoundFavorite("Piano.sf2", isFavorite: false)
+        XCTAssertEqual(session.favoriteSampleFiles, [])
+    }
+
+    func testDisplayNameForSamplePathFallsBackToPathWithoutAlias() throws {
+        let session = ImprovSession()
+        XCTAssertEqual(session.displayName(forSamplePath: "Piano.sf2"), "Piano.sf2")
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try session.setSettingsFolder(folder.path)
+        try session.setSoundAlias("Piano.sf2", alias: "  Piano chaud  ")
+        XCTAssertEqual(session.displayName(forSamplePath: "Piano.sf2"), "Piano chaud", "alias is trimmed")
+    }
+
+    func testSettingAliasToEmptyOrFavoriteToFalseRemovesTheEntryEntirely() throws {
+        let session = ImprovSession()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try session.setSettingsFolder(folder.path)
+
+        try session.setSoundAlias("Piano.sf2", alias: "Piano chaud")
+        XCTAssertEqual(session.soundEntries.count, 1)
+        try session.setSoundAlias("Piano.sf2", alias: "")
+        XCTAssertEqual(session.soundEntries.count, 0, "clearing the only field an entry had removes it")
+
+        try session.setSoundFavorite("Cello.sf2", isFavorite: true)
+        XCTAssertEqual(session.soundEntries.count, 1)
+        try session.setSoundFavorite("Cello.sf2", isFavorite: false)
+        XCTAssertEqual(session.soundEntries.count, 0)
+    }
 }
 
 extension ImprovSession.SessionError: Equatable {

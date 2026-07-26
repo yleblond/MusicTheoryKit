@@ -48,11 +48,11 @@ struct PiecesPlayView: View {
     @ViewBuilder
     private var soundSection: some View {
         Section {
-            if session.sampleFiles.isEmpty {
-                Text("Aucun son trouve — JamShack > Dossiers > Sons (samples).").font(.caption).foregroundStyle(.secondary)
+            if session.favoriteSampleFiles.isEmpty {
+                Text("Aucun son favori — JamShack > Sons pour en marquer.").font(.caption).foregroundStyle(.secondary)
             } else {
-                ForEach(session.sampleFiles, id: \.self) { name in
-                    Button(name) {
+                ForEach(session.favoriteSampleFiles, id: \.self) { name in
+                    Button(session.displayName(forSamplePath: name)) {
                         do {
                             try session.loadSample(named: name)
                         } catch {

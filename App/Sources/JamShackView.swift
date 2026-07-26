@@ -6,17 +6,22 @@ import JamShackUI
 /// category, grouped into sub-tabs the same way that menu grouped its own entries:
 /// 1. **Dossiers**: every folder the app needs (pieces/samples/soundtracks/guides/scenes/
 ///    reglages/composition IA) — see `JamShackFoldersView`.
-/// 2. **MIDI**: fusion mode, refresh, visible source list, live notes — see `JamShackMIDIView`.
-/// 3. **Microphone**: start/stop the microphone track, level meter, live notes — see
+/// 2. **Sons**: alias + favori per fichier son trouve dans le dossier "Sons (samples)" — see
+///    `SoundsView`. Le dossier lui-meme peut contenir des sous-dossiers (ex: une librairie
+///    decompressee avec plusieurs .sf2) — `favoriteSampleFiles` (les favoris marques ici) est
+///    ce que tout autre picker de son (Morceaux/Enregistrement/Scenes) affiche ensuite, pour
+///    ne pas noyer ces pickers dans une grosse librairie non triee.
+/// 3. **MIDI**: fusion mode, refresh, visible source list, live notes — see `JamShackMIDIView`.
+/// 4. **Microphone**: start/stop the microphone track, level meter, live notes — see
 ///    `MicrophoneControlsView`.
-/// 4. **Jam Session**: the collaborative server/client mode — see `JamSessionView`.
-/// 5. **Serveurs**: the web console + virtual keyboard HTTP servers — see `ServerControlsView`.
-/// 6. **Couleurs**: active color palette + LUMI Keys settings — see `JamShackColorsView`.
-/// 7. **Langue**: UI language — see `JamShackLanguageView`.
-/// 8. **LLM**: active LLM connection + a quick test call — see `JamShackLLMView`.
+/// 5. **Jam Session**: the collaborative server/client mode — see `JamSessionView`.
+/// 6. **Serveurs**: the web console + virtual keyboard HTTP servers — see `ServerControlsView`.
+/// 7. **Couleurs**: active color palette + LUMI Keys settings — see `JamShackColorsView`.
+/// 8. **Langue**: UI language — see `JamShackLanguageView`.
+/// 9. **LLM**: active LLM connection + a quick test call — see `JamShackLLMView`.
 ///
 /// A vertical strip of icon-only buttons (a "sidebar" tab bar) rather than a horizontal
-/// segmented control — 8 entries don't fit comfortably as horizontal text labels on an
+/// segmented control — this many entries don't fit comfortably as horizontal text labels on an
 /// iPhone-width screen without truncation, and icon-only avoids that entirely regardless of
 /// width.
 struct JamShackView: View {
@@ -24,13 +29,14 @@ struct JamShackView: View {
     let bridge: SessionUIBridge
 
     private enum SubTab: CaseIterable, Identifiable {
-        case dossiers, midi, microphone, jamSession, serveurs, couleurs, langue, llm
+        case dossiers, sons, midi, microphone, jamSession, serveurs, couleurs, langue, llm
 
         var id: Self { self }
 
         var systemImage: String {
             switch self {
             case .dossiers: return "folder"
+            case .sons: return "music.note.list"
             case .midi: return "pianokeys"
             case .microphone: return "mic"
             case .jamSession: return "person.2.fill"
@@ -44,6 +50,7 @@ struct JamShackView: View {
         var accessibilityLabel: String {
             switch self {
             case .dossiers: return "Dossiers"
+            case .sons: return "Sons"
             case .midi: return "MIDI"
             case .microphone: return "Microphone"
             case .jamSession: return "Jam Session"
@@ -83,6 +90,7 @@ struct JamShackView: View {
             Group {
                 switch subTab {
                 case .dossiers: JamShackFoldersView(session: session)
+                case .sons: SoundsView(session: session)
                 case .midi: JamShackMIDIView(session: session, bridge: bridge)
                 case .microphone: MicrophoneControlsView(session: session, bridge: bridge)
                 case .jamSession: JamSessionView(session: session)
