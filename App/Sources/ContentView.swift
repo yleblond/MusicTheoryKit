@@ -26,8 +26,31 @@ struct ContentView: View {
                 // iPhone-width, can show as a sidebar on iPad) — chosen so this one change
                 // covers both platforms without a `#if os()` fork of the whole TabView.
                 TabView(selection: $selectedTab) {
-                    Tab(L10n.string(.catJamShack, session.currentLanguage), systemImage: "folder", value: AppTab.jamShack) {
+                    // Custom label (not `systemImage:`) so the tab shows the app's own icon
+                    // artwork, in color, instead of an SF Symbol — per explicit user request.
+                    // `AppIconTabIcon` is a plain imageset (NOT the `AppIcon` appiconset itself,
+                    // which the OS consumes for app-bundling purposes and isn't meant to be
+                    // loaded as a regular `Image` at runtime) holding the same artwork PRE-
+                    // SCALED to 24/48/72px (1x/2x/3x) — marked "original" rendering so it's
+                    // never tinted like a monochrome symbol. Deliberately NOT `.resizable()` +
+                    // `.frame(...)`: that combination rendered correctly in isolation but, once
+                    // placed as a `Label`'s icon inside `Tab(value:content:label:)` under
+                    // `.sidebarAdaptable`, the icon stretched to fill the ENTIRE sidebar height
+                    // (confirmed via a real screenshot, not guessed) — some interaction between
+                    // a resizable image and this specific container's layout on this OS version.
+                    // A plain, non-resizable, already-correctly-sized `Image` sidesteps the bug
+                    // entirely by never entering that resizing code path, the same way a plain
+                    // SF Symbol (also never explicitly resized here) renders at its own natural
+                    // size without issue.
+                    Tab(value: AppTab.jamShack) {
                         JamShackView(session: session, bridge: bridge)
+                    } label: {
+                        Label {
+                            Text(L10n.string(.catJamShack, session.currentLanguage))
+                        } icon: {
+                            Image("AppIconTabIcon")
+                                .clipShape(RoundedRectangle(cornerRadius: 5))
+                        }
                     }
                     Tab(L10n.string(.tabScene, session.currentLanguage), systemImage: "theatermasks", value: AppTab.scene) {
                         SceneManagementView(session: session)

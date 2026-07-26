@@ -297,6 +297,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appFieldAffichage, appLabelNotesRecues, appLabelSpectrometre, appHintSpectreFFT, appToggleActiverSpectrometre
     case appButtonTerminerCapture, appButtonCapturer, appLabelNoteFaible, appLabelNoteForte
     case appHintCalibrationNiveau, appFormatEnCoursDeCapture
+    case appLabelSpectrogramme, appHintSpectrogramme, appLabelCalibrationCourt
 
     // MARK: - App: Serveurs tab
     case appHintServeurPremierPlan, appFormatRejoinsMoiSur, appHintConsoleWebCaption, appHintClavierVirtuelCaption

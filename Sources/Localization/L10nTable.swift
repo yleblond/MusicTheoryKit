@@ -618,6 +618,13 @@ enum L10nTable {
         .appLabelNoteForte: [.fr: "Note forte", .en: "Loud note", .de: "Laute Note"],
         .appHintCalibrationNiveau: [.fr: "Joue quelques notes faibles puis fortes pour calibrer le niveau affiche ci-dessus a ce microphone/instrument.", .en: "Play a few quiet then loud notes to calibrate the level shown above to this microphone/instrument.", .de: "Spiele ein paar leise, dann laute Noten, um den oben angezeigten Pegel auf dieses Mikrofon/Instrument zu kalibrieren."],
         .appFormatEnCoursDeCapture: [.fr: "En cours de capture : jouez maintenant, puis appuyez sur \u{201c}%@\u{201d}.", .en: "Capturing: play now, then tap \u{201c}%@\u{201d}.", .de: "Erfassung läuft: jetzt spielen, dann auf \u{201e}%@\u{201c} tippen."],
+        .appLabelSpectrogramme: [.fr: "Spectrogramme", .en: "Spectrogram", .de: "Spektrogramm"],
+        .appLabelCalibrationCourt: [.fr: "Calibration", .en: "Calibration", .de: "Kalibrierung"],
+        .appHintSpectrogramme: [
+            .fr: "Historique du spectre au fil du temps — le temps en abscisse, la frequence en ordonnee, l'intensite en couleur. Meme cout de calcul et meme arret automatique en quittant cet onglet que le spectrometre.",
+            .en: "Spectrum history over time — time on the x-axis, frequency on the y-axis, intensity as color. Same computation cost and same auto-stop when leaving this tab as the spectrometer.",
+            .de: "Spektrumverlauf über die Zeit — Zeit auf der x-Achse, Frequenz auf der y-Achse, Intensität als Farbe. Gleicher Rechenaufwand und gleicher automatischer Stopp beim Verlassen dieses Tabs wie beim Spektrometer.",
+        ],
 
         // MARK: - App: Serveurs tab
         .appHintServeurPremierPlan: [.fr: "Le serveur n'accepte des connexions que tant que l'app reste au premier plan.", .en: "The server only accepts connections while the app stays in the foreground.", .de: "Der Server akzeptiert nur Verbindungen, solange die App im Vordergrund bleibt."],
