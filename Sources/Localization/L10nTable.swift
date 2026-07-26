@@ -535,6 +535,15 @@ enum L10nTable {
         .appFormatSonsCompte: [.fr: "Sons (%d/%d)", .en: "Sounds (%d/%d)", .de: "Klänge (%d/%d)"],
         .appHintCocheEtoileFavoris: [.fr: "Coche l'etoile pour ajouter un son aux favoris : c'est cette liste reduite qui apparait ensuite partout ou un son se choisit (Morceaux, Enregistrement, Scenes) plutot que la liste complete ci-dessus.", .en: "Check the star to add a sound to favorites: this shorter list is what appears everywhere a sound is picked (Pieces, Recording, Scenes) instead of the full list above.", .de: "Markiere den Stern, um einen Klang zu den Favoriten hinzuzufügen: Diese kürzere Liste erscheint überall dort, wo ein Klang ausgewählt wird (Stücke, Aufnahme, Szenen), statt der vollständigen Liste oben."],
         .appFieldAlias: [.fr: "Alias", .en: "Alias", .de: "Alias"],
+        .appToggleModeTestSon: [.fr: "Mode test du son", .en: "Sound test mode", .de: "Klangtest-Modus"],
+        .appFieldSourceTest: [.fr: "Source", .en: "Source", .de: "Quelle"],
+        .appPlaceholderChoisirSourceTest: [.fr: "Choisis une source pour tester.", .en: "Choose a source to test.", .de: "Wähle eine Quelle zum Testen."],
+        .appHeadingTesterLeSon: [.fr: "Tester le son", .en: "Test the sound", .de: "Klang testen"],
+        .appHintTesterLeSon: [
+            .fr: "N'ecoute que la source choisie le temps du test — les autres pistes en ecoute sont mises en pause pour eviter une confusion de detection, puis reactivees en quittant le mode test. Appuie sur l'icone haut-parleur d'un son ci-dessous pour le charger et l'essayer.",
+            .en: "Only listens to the chosen source while testing — other listening tracks are paused to avoid detection confusion, then restarted when leaving test mode. Tap a sound's speaker icon below to load and try it.",
+            .de: "Hört während des Tests nur auf die gewählte Quelle — andere aktive Spuren werden pausiert, um Erkennungsverwirrung zu vermeiden, und beim Verlassen des Testmodus wieder gestartet. Tippe auf das Lautsprecher-Symbol eines Klangs unten, um ihn zu laden und auszuprobieren.",
+        ],
 
         // MARK: - App: JamShack > MIDI
         .appOptionFusionne: [.fr: "Fusionne", .en: "Merged", .de: "Zusammengeführt"],

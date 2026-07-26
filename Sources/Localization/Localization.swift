@@ -267,6 +267,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
     // MARK: - App: JamShack > Sons (SoundsView)
     case appPlaceholderAucunSonTrouve, appPlaceholderRechercherSonAlias, appFormatSonsCompte
     case appHintCocheEtoileFavoris, appFieldAlias
+    case appToggleModeTestSon, appFieldSourceTest, appPlaceholderChoisirSourceTest
+    case appHeadingTesterLeSon, appHintTesterLeSon
 
     // MARK: - App: JamShack > MIDI
     case appOptionFusionne, appOptionIndividuel, appHintModeMidiDetail

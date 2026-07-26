@@ -91,7 +91,7 @@ struct JamShackView: View {
             Group {
                 switch subTab {
                 case .dossiers: JamShackFoldersView(session: session)
-                case .sons: SoundsView(session: session)
+                case .sons: SoundsView(session: session, bridge: bridge)
                 case .midi: JamShackMIDIView(session: session, bridge: bridge)
                 case .microphone: MicrophoneControlsView(session: session, bridge: bridge)
                 case .jamSession: JamSessionView(session: session)

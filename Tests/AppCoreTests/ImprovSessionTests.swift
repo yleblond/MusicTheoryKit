@@ -1434,6 +1434,44 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertFalse(session.tracks.first { $0.id == .computerKeyboard }?.soundEnabled ?? true)
     }
 
+    /// Regression test for a real "plays but no sound comes out" bug, reported after using the
+    /// Scene tab's normal workflow (attach an instrument to a role, pick its sound): once a real
+    /// sound was successfully assigned, re-attaching the SAME instrument to the SAME role (what
+    /// happens on a scene reload, or moving an instrument to another role and back) silently
+    /// muted it again. Root cause: `SceneRole.soundEnabled` defaulted to `false` and nothing in
+    /// `setSceneRoleSound` ever set it `true` even on a successful assignment, so
+    /// `applyRoleConfiguration` (re-run on every attach) always saw a "declared disabled" role
+    /// and force-disabled the track's sampler right after `setInstrument` had just enabled it.
+    /// Uses macOS's own built-in General MIDI DLS bank (always present at this fixed path,
+    /// unlike a project-bundled .sf2 which doesn't exist in this repo) as a REAL, loadable
+    /// instrument — needed to actually exercise `setInstrument`'s success path, not just its
+    /// already-tested failure path above.
+    func testSceneRoleSoundStaysEnabledWhenTheSameInstrumentIsReattached() throws {
+        let systemDLS = URL(fileURLWithPath: "/System/Library/Components/CoreAudio.component/Contents/Resources/gs_instruments.dls")
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: systemDLS.path), "macOS system GM soundbank not found on this machine")
+
+        let sampleDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: sampleDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sampleDir) }
+        let sampleName = "gs_instruments.dls"
+        try FileManager.default.copyItem(at: systemDLS, to: sampleDir.appendingPathComponent(sampleName))
+
+        let session = ImprovSession()
+        try session.start()
+        try session.listSampleFiles(in: sampleDir.path)
+        session.newScene(title: "Test")
+        let roleID = try session.addSceneRole(name: "Piano")
+        try session.attachInstrument(.computerKeyboard, toRole: roleID)
+
+        try session.setSceneRoleSound(roleID, soundName: sampleName)
+        XCTAssertTrue(session.tracks.first { $0.id == .computerKeyboard }?.soundEnabled ?? false)
+        XCTAssertEqual(session.currentScene?.roles.first { $0.id == roleID }?.soundEnabled, true)
+
+        // The actual regression: re-attaching used to silently re-mute the track here.
+        try session.attachInstrument(.computerKeyboard, toRole: roleID)
+        XCTAssertTrue(session.tracks.first { $0.id == .computerKeyboard }?.soundEnabled ?? false)
+    }
+
     func testLoadSceneMigratesLegacyFlatTrackFormat() throws {
         let legacyJSON = """
         {"title": "Ancienne Scene", "tracks": [

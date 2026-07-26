@@ -1206,14 +1206,29 @@ public final class ImprovSession: @unchecked Sendable {
     /// if that succeeds (real `try`, not `try?`) — this used to swallow a failed sample load,
     /// leaving the role showing a "sound" that was never actually loaded onto any sampler:
     /// the UI looked assigned, but nothing was reachable to explain total silence when played.
+    ///
+    /// **Real bug fixed here**: `scene.roles[index].soundEnabled` never used to be touched by
+    /// this method, only `soundName` — but `SceneRole.soundEnabled` defaults to `false` and
+    /// nothing in the UI ever set it any other way, so `applyRoleConfiguration` (run again on
+    /// every subsequent `attachInstrument`/scene reload) always saw a "declared disabled" role
+    /// and force-called `setSoundEnabled(false, ...)`, silently re-muting a track that had JUST
+    /// had a real sound successfully loaded onto it. Symptom reported: "plays but no sound" the
+    /// next time an instrument was (re)attached to a role that already had a sound assigned.
+    /// Now `soundEnabled` tracks whether a sound is actually assigned, kept in sync with what
+    /// `setInstrument`/`setSoundEnabled` already do to the live track.
     public func setSceneRoleSound(_ roleID: SceneRole.ID, soundName: String?) throws {
         guard var scene = currentScene else { throw SessionError.noSceneLoaded }
         guard let index = scene.roles.firstIndex(where: { $0.id == roleID }) else { throw SessionError.unknownSceneRole }
         let attachedTrackID = scene.roles[index].attachedTrackID
-        if let attachedTrackID, let soundName {
-            try setInstrument(named: soundName, for: attachedTrackID)
+        if let attachedTrackID {
+            if let soundName {
+                try setInstrument(named: soundName, for: attachedTrackID)
+            } else {
+                try? setSoundEnabled(false, for: attachedTrackID)
+            }
         }
         scene.roles[index].soundName = soundName
+        scene.roles[index].soundEnabled = soundName != nil
         currentScene = scene
         append("Son du role '\(scene.roles[index].name)' : \(soundName ?? "aucun")")
     }
