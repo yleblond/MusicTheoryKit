@@ -1991,6 +1991,360 @@ complète et à jour dans `Docs/GUIDE_UTILISATEUR.md`.
   par piste active, au lieu d'un unique clavier partagé — `renderTrackKeyboard(_:)` isole le
   rendu d'un clavier à partir de l'état d'une seule `TrackInfo`.
 
+## JamShackUI / App — interface graphique SwiftUI (iOS + macOS)
+
+Deux cibles distinctes portent l'interface graphique, pour une raison précise : `Sources/JamShackUI`
+est une cible SwiftPM ordinaire (dépend de `["AppCore", "Localization"]`, voir `Package.swift`) —
+buildable, testable et *previewable* sans Xcode, comme tout le reste du package — tandis que
+`App/Sources` est la coquille Xcode proprement dite (projet généré par XcodeGen à partir de
+`App/project.yml`, voir `App/README.md`), qui n'existe que pour héberger l'app iOS/macOS (icône,
+entitlements sandbox, cible de test, etc.) et n'a pas de sens en dehors d'Xcode. Toute vue
+réutilisable/générique (claviers, roue des quintes, portée, spectromètre...) vit dans
+`JamShackUI` ; tout ce qui est spécifique à *cette* app précise (écrans par onglet, navigation,
+persistance de dossier par défaut) vit dans `App/Sources`. Cette app est devenue l'interface
+principale du projet (la CLI `JamShack` reste l'interface de référence, documentée par ailleurs
+dans ce fichier, et partage exactement le même moteur `AppCore`/`ImprovSession`).
+
+### `SessionUIBridge` — le pont entre `ImprovSession` et SwiftUI
+
+`Sources/JamShackUI/SessionUIBridge.swift` est la pièce d'architecture centrale de toute cette
+couche (39 lignes, mais chaque ligne compte). Il ne bind **délibérément pas** les vues SwiftUI
+directement sur `session.tracks`/`session.isPlaying`/etc. : ces propriétés sont mutées depuis des
+threads d'arrière-plan (callbacks MIDI/microphone/réseau) via les queues série internes
+d'`ImprovSession` (`liveInputQueue`/`playbackStateQueue` — voir la section concurrence en fin de
+fichier), sans synchronisation côté lecture pour un appelant externe. C'est exactement le motif
+qui a déjà causé de vrais plantages dans ce projet (voir `Docs/BACKLOG.md`) — confirmé encore
+présent par un run de Thread Sanitizer sur `ImprovSessionConcurrencyStressTests` : une race
+bénigne lecture/écriture sur `isPlaying`/`playbackHeldPitches`, distincte des trois races
+écriture/écriture déjà corrigées.
+
+À la place, `SessionUIBridge` :
+- est `@MainActor @Observable`, expose un seul `state: WebConsoleState` en lecture ;
+- poll `session.buildWebConsoleState()` — la seule fonction du code qui prend déjà elle-même un
+  `.sync` sur les deux queues et retourne une valeur entièrement résolue (pas de référence
+  partagée) — exactement la même technique que l'endpoint `/state` de la console web, en interne
+  et plus rapide (~30 Hz configurable contre 4 Hz en HTTP, pas d'aller-retour JSON) ;
+- lance le calcul via `Task.detached` à chaque tick, pour ne jamais bloquer le thread principal
+  le temps du `.sync` ;
+- ne s'annule jamais explicitement au `deinit` : `deinit` s'exécute `nonisolated` et ne peut pas
+  toucher l'état main-actor de façon synchrone — inutile de toute façon, la capture `[weak self]`
+  devient `nil` dès que `self` est désalloué et la boucle s'arrête au tick suivant.
+
+Toute nouvelle vue qui a besoin d'un état live d'`ImprovSession` doit lire `bridge.state`, jamais
+`session` directement pour un champ mutable en arrière-plan — les rares exceptions documentées
+(`session.midiFusionMode`, `session.currentScene`, `session.tracks.first { ... }
+.microphoneRecognitionMode`) ne changent que depuis le thread principal via une action explicite
+de l'écran lui-même, jamais depuis un callback audio/MIDI/réseau.
+
+### La coquille de l'app : `JamShackApp` → `ContentView`
+
+`JamShackApp.swift` (11 lignes) ne fait qu'ouvrir une `WindowGroup` sur `ContentView` en
+`.preferredColorScheme(.dark)`. `ContentView` possède l'unique `ImprovSession` et l'unique
+`SessionUIBridge` de toute l'app (`@State`), démarrés dans un `.task` :
+
+- `try session.start()`, puis `startTrack(.computerKeyboard)`.
+- **Vrai bug corrigé** : une version antérieure forçait `.midiFusionMode = .merged` ici,
+  écrasant silencieusement le mode par défaut de la session (`.individual`, une piste par port
+  MIDI visible) à chaque lancement. Corrigé en démarrant plutôt chaque piste
+  `.midiMerged`/`.midiSource` réellement présente dans `session.tracks`.
+- **Vrai bug corrigé** : `startTrack` ne fait que démarrer l'écoute (reconnaissance, affichage
+  des notes tenues) — il ne touche jamais `TrackInfo.soundEnabled` (`false` par défaut) ni ne
+  crée le `SamplerUnit` de la piste, les deux étant à la charge de `setSoundEnabled`. Sans
+  l'appel explicite `setSoundEnabled(true, for: .computerKeyboard)` (et pour chaque piste MIDI),
+  jouer en direct était totalement silencieux au premier lancement — les notes s'enregistraient
+  et s'affichaient tenues, mais rien n'était routé vers un sampler. La lecture de
+  morceau/soundtrack n'était jamais affectée (chacun possède son propre sampler toujours prêt).
+- Si un dossier racine par défaut a déjà été choisi lors d'un lancement précédent,
+  `DefaultFolderBookmark.resolve()` le restaure sans interaction utilisateur (voir plus bas).
+
+La navigation de premier niveau est un `TabView` à 7 onglets (JamShack, Scène, Live, Guide,
+Enregistrement, Morceaux, Composition), en style `.sidebarAdaptable` (via
+`Tab(_:systemImage:)`, pas l'ancien `.tabItem { Label }`) — **choisi après vérification empirique
+réelle** (application de test hors-écran, pas une supposition) : sur le style de barre d'onglets
+« pilule » actuel de macOS, aucune des deux API n'affiche une icône à côté du label (texte seul),
+sauf `.sidebarAdaptable`, qui en plus s'adapte nativement sur iOS (barre du bas sur iPhone,
+sidebar possible sur iPad) — un seul changement couvre les deux plateformes sans fork `#if os()`.
+L'onglet JamShack utilise une icône personnalisée (`Image("AppIconTabIcon")`, un imageset
+distinct de l'`AppIcon` appiconset, pré-mis à l'échelle 24/48/72px) plutôt qu'un SF Symbol, en
+couleur, per demande explicite. **Vrai bug corrigé** : cette image est délibérément *non*
+`.resizable()` — une version avec `.resizable() + .frame(...)` fonctionnait isolément mais, une
+fois placée comme icône de `Label` dans `Tab(value:content:label:)` sous `.sidebarAdaptable`,
+s'étirait pour remplir toute la hauteur de la sidebar (confirmé par une vraie capture d'écran,
+pas deviné) ; une image déjà à sa taille correcte, jamais redimensionnée explicitement, contourne
+le chemin de code fautif — la même raison qu'un SF Symbol classique s'affiche sans souci à sa
+taille naturelle. L'onglet par défaut au lancement est **Scène** (pas JamShack), sur demande
+explicite — c'est là qu'on assigne quel instrument sonne à travers quel rôle avant de jouer,
+l'écran de départ naturel. `computerKeyboardInput(...)` (voir plus bas) est attaché au niveau de
+`ContentView` tout entier, pas par écran — le clavier de l'ordinateur joue depuis n'importe quel
+onglet.
+
+### Inventaire des écrans
+
+Chaque onglet complexe suit le même patron : une bande verticale d'icônes (pas un contrôle
+segmenté horizontal — trop d'entrées pour tenir sans troncature sur la largeur d'un iPhone) qui
+bascule entre plusieurs sous-onglets « Fichier » (charger/sauvegarder), un ou plusieurs onglets
+d'action, et parfois un sous-onglet dédié à la lecture/exécution en direct.
+
+- **JamShack** (`JamShackView`, 9 sous-onglets, ordre fixé par demande explicite du
+  2026-07-26) :
+  - **Sons** (`SoundsView`) — curate `session.sampleFiles` (tout `.sf2`/`.dls`/`.aupreset`
+    trouvé, sous-dossiers compris) en favoris nommés/aliasés ; c'est le seul écran qui montre la
+    bibliothèque complète (les autres pickers ne montrent que `favoriteSampleFiles`). Inclut un
+    **mode test du son** : on choisit une source jouable (clavier ordinateur ou piste MIDI), qui
+    met en pause *toutes* les autres pistes en écoute le temps du test (pour éviter la confusion
+    d'une double détection sur la même note) et les restaure exactement dans leur état antérieur
+    en sortant du mode test ou en changeant de source — gestion symétrique du cas `nil` (choix
+    "Aucune"), pas seulement du chemin "désactiver" le plus courant.
+  - **MIDI** (`JamShackMIDIView`) — mode de fusion (une piste par port vs. fusionné),
+    rafraîchissement manuel (l'app ne surveille pas les notifications de branchement à chaud
+    CoreMIDI), clavier live sans overlay de reconnaissance (déjà sur l'écran Live) par piste
+    MIDI en écoute.
+  - **Microphone** (`MicrophoneControlsView`) — voir la sous-section dédiée au
+    spectromètre/spectrogramme ci-dessous.
+  - **Serveurs** (`ServerControlsView`) — démarre les mêmes serveurs HTTP que la CLI (console
+    web, clavier virtuel), affiche la (les) vraie(s) adresse(s) LAN à taper depuis un autre
+    appareil (`localhost` ne résout que localement) via `LocalNetworkAddress.ipv4Addresses()`,
+    avec un `ShareLink` par adresse. Fonctionne aussi sur iOS : `Network.framework` y est
+    disponible et il n'existe pas d'entitlement distinct « connexions entrantes » comme le
+    sandbox App de macOS — seule l'invite système du réseau local
+    (`NSLocalNetworkUsageDescription`) s'applique. Réserve documentée côté iOS : le serveur
+    n'accepte des connexions que tant que l'app est au premier plan (un socket en écoute est
+    suspendu par l'OS une fois l'app en arrière-plan/verrouillée).
+  - **Jam Session** (`JamSessionView`) — choix explicite à 5 branches (Isolé / Jam
+    locale-organisateur / Jam locale-participant / Jam Game Center-organisateur / Jam Game
+    Center-participant), le picker n'ayant d'effet que tant qu'aucune connexion n'est active. La
+    découverte Bonjour (`discoverServers`, ~2s bloquant) est rebasculée hors du thread principal
+    via `Task.detached` pour garder l'UI réactive (spinner) — même technique que
+    `SessionUIBridge`. `GameCenterCoordinator.swift` fait le pont entre l'authentification/
+    matchmaking GameKit (UIKit/AppKit only, aucun équivalent SwiftUI natif) et cette vue, via
+    `presentedController` observé et rendu dans un `.sheet` par `PresentedControllerView`
+    (`UIViewControllerRepresentable`/`NSViewControllerRepresentable` selon la plateforme) — même
+    séparation « la session ne connaît que host/port ou un `GKMatch` déjà connecté, tout ce qui
+    concerne l'obtention de cet objet est une préoccupation de la couche UI » que pour la
+    découverte Bonjour.
+  - **Couleurs** (`JamShackColorsView` + `PaletteEditorView`) — palette active
+    (sélection/création/édition, un `ColorPicker` par classe de hauteur), réglages LUMI Keys
+    (couleurs racine/gamme, luminosité, propagation automatique Run/Guide), et un testeur LUMI
+    manuel : liste des destinations MIDI visibles, un champ hexadécimal éditable pour l'octet
+    device-ID de l'enveloppe SysEx (`LumiSysex.envelope`) — cet ID peut être ré-assigné par la
+    topologie après un débranchement/rebranchement, le suspect principal des rapports « le LUMI
+    marchait, puis plus rien » — et des boutons « tester mode piano »/« tester carte guide » qui
+    envoient de vraies commandes en court-circuitant complètement la propagation automatique
+    Run/Guide, pour diagnostiquer isolément.
+  - **LLM** (`JamShackLLMView`) — connexion active (fichiers JSON sous
+    `Settings/LLMConnections/`) et test d'appel minimal ; la clef API est saisie via
+    `SecureField` mais persistée par `session.setLLMAPIKey` en JSON en clair — dette technique
+    assumée, voir `Docs/BACKLOG.md`, avec un avertissement affiché dans le pied de section.
+  - **Dossiers** (`JamShackFoldersView`) — un point d'entrée unique pour les 7 dossiers dont
+    l'app a besoin, miroir un-pour-un de la catégorie de menu `catJamShack` de la CLI. Un
+    sélecteur de dossier racine par défaut (suggestion iCloud Drive côté macOS via
+    `iCloudDriveURLIfAvailable()`, juste un hint de navigation pour le panel puisque l'app n'a
+    pas d'entitlement iCloud propre). **Vrai bug corrigé, plantage réel observé sur appareil** :
+    `configureDefaultFolders` fait ~8 opérations disque synchrones (mkdir + plusieurs
+    chargements JSON via `setSettingsFolder`) directement depuis la fermeture d'un
+    `.fileImporter`/document picker, sur le thread principal, pendant l'animation de fermeture
+    du picker — au-dessus d'une racine iCloud Drive dont les fichiers ne sont pas encore mis en
+    cache localement, cela pouvait dépasser le chien de garde ~5s du thread principal et faire
+    tuer l'app par SIGKILL (trace : `documentPicker(_:didPickDocumentsAt:)` →
+    `applyRootFolder` → `configureDefaultFolders` → bloqué dans
+    `Data(contentsOf:)`/`mkdirat`). Corrigé en déportant l'appel dans un `Task.detached` —
+    `session` est déjà pensé pour être appelé hors du thread principal.
+  - **Langue** (`JamShackLanguageView`) — bascule FR/EN/DE, s'applique aussi à la console web et
+    au clavier virtuel (`session.currentLanguage`).
+
+- **Scène** (`SceneManagementView`) — **Fichier** (`SceneFileView`) et **Disposition**
+  (`SceneLayoutView`, instruments ↔ rôles côte à côte, attache bidirectionnelle — le menu
+  « Attacher à... » d'un instrument libre liste TOUS les rôles, y compris occupés, marqués
+  « (occupé par ...) », puisque `attachInstrument` déplace déjà l'occupant). `SceneFileView`
+  passe par `.fileExporter`/`.fileImporter` pour l'export/import fichier unique, sur les deux
+  plateformes, **pas** un chemin tapé même sur macOS comme le fait la CLI — l'app a
+  `com.apple.security.app-sandbox` activé (une vraie frontière de sécurité, gardée
+  délibérément), et une app sandboxée ne peut atteindre un chemin qu'elle n'a pas créé
+  elle-même qu'en passant par un vrai panneau Ouvrir/Enregistrer ; taper un chemin est
+  silencieusement/visiblement refusé.
+
+- **Live** (`RunScreen`, dans `JamShackUI`) — la roue des quintes (toujours présente, jamais
+  conditionnée par un guide actif) à gauche, et à droite chaque piste en écoute avec ses notes
+  tenues et ses labels d'accord/mode, pilotés en direct par un `SessionUIBridge`. Le premier
+  écran qui a prouvé toute la chaîne bout en bout (bridge qui poll → adaptateur par piste →
+  `PitchKeyboardView`) ; la roue avait son propre onglet avant d'être fusionnée ici pour que les
+  deux soient visibles ensemble sans changer d'onglet. `interactiveTrackID` marque la piste
+  clavier-ordinateur comme la seule jouable au clic — les autres restent en lecture seule.
+
+- **Guide** (`GuideView`) — **Fichier** (`GuideFileView`), **Edition** (`GuideEditionView`,
+  ajout d'étape mode + progression d'accords, partage `GuideStepsSection` avec Lecture pour ne
+  jamais avoir deux rendus de la liste d'étapes à synchroniser) et **Lecture**
+  (`GuideLectureView`). Cette dernière découpe l'écran en colonnes (roue 13/30, description +
+  « indication de jeu » + clavier live 17/30, proportions élargies de 30 % sur demande
+  explicite) et gère la navigation flèches (haut/bas = étape précédente/suivante, gauche/droite
+  = accord précédent/suivant dans la progression), active seulement quand ce sous-onglet a le
+  focus (`.focusable()`/`.focusEffectDisabled()`). **Vrai bug corrigé** : cet écran ne
+  prévenait jamais `ImprovSession` qu'il était l'écran actif — le mode LUMI « suivre le guide »
+  (`notifyActiveScreen`/`lumiSettings.autoPropagateGuideMode`) n'avait donc jamais réellement
+  démarré depuis l'app SwiftUI, alors que la CLI câble cela à chaque changement d'écran. Corrigé
+  (`onAppear`/`onDisappear`, idempotent) — le même câblage a aussi été ajouté pour l'onglet Live
+  (jamais fait avant, pour le mode Run non plus). `GuidePlayIndicationRow` (proportions
+  1:6/3:6/2:6, `availableWidth` transmis par le `GeometryReader` externe de l'écran plutôt que
+  mesuré par un second, imbriqué — un `GeometryReader` imbriqué rapporterait la taille proposée
+  complète du contexte parent, pas la hauteur naturelle de ce contenu, risquant de rogner la
+  portée dont la hauteur naturelle dépasse toute estimation plausible) affiche `ChordStaffView`
+  (portée), les claviers de référence (mode + accord, à `PitchKeyboardView.height` réduit de
+  30 %) et `GuitarChordDiagramView`.
+
+- **Enregistrement** (`RecordingView`) — **Fichier** (`RecordingFileView`), **Record**
+  (`RecordingRecordView`, sélection des pistes à enregistrer), **Play** (`RecordingPlayView`) et
+  **IA** (`RecordingIAView`, composition depuis l'enregistrement via la connexion LLM active,
+  appel `Task.detached` pour ne pas geler l'UI).
+
+- **Morceaux** (`PiecesView`) — **Fichier** (`PiecesFileView`, démo + navigateur de dossier) et
+  **Play** (`PiecesPlayView`, `PlaybackControlButton` partagé — icône au-dessus du label,
+  demande explicite — et choix du son parmi les favoris).
+
+- **Composition** (`CompositionView`) — **Fichier** (`CompositionFileView`) et **Composer**
+  (`CompositionComposerView`, titre/texte libre/instructions de style ; lit l'état de `session`
+  au `onAppear` plutôt que d'être couplé directement au sous-onglet Fichier, donc un chargement
+  depuis Fichier se reflète sans coupling explicite entre les deux vues sœurs).
+
+### Le sous-système spectromètre/spectrogramme
+
+Ajouté récemment sous le sous-onglet **Microphone**, en 4 modes segmentés (`Calibration` /
+`Notes reçues` / `Spectromètre` / `Spectrogramme`), les deux derniers partageant un seul
+pipeline de capture FFT (`session.setMicrophoneSpectrumCaptureEnabled`) via un unique toggle —
+quitter les deux onglets spectre (pas seulement désactiver le toggle) arrête aussi la capture,
+pour ne jamais la laisser tourner sans être vue.
+
+- **`SpectrumView`** (single-frame) — un graphe d'aire rempli des magnitudes FFT, avec un
+  marqueur vertical par note détectée et une bande de clavier chromatique alignée en dessous sur
+  le même axe x. L'axe x est **linéaire en hauteur (log-fréquence), pas en Hz** : les notes du
+  piano sont régulièrement espacées en log-fréquence (chaque demi-ton = Hz × 2^(1/12)) — un axe
+  linéaire-Hz écraserait les graves à gauche et étalerait les aigus sur presque toute la largeur,
+  et un clavier dessiné dessous ne pourrait jamais aligner ses touches sur les pics du spectre ;
+  mapper x par hauteur permet des touches de largeur égale par demi-ton (pas un vrai clavier 7
+  blanches/5 noires, dont les touches ne sont pas de largeur égale). L'axe y est **stable, pas
+  relatif au pic le plus fort de l'instant** — échelle fixée à 120 % de
+  `calibrationLoudMagnitude` (une vraie valeur résolue par la calibration, pas « le plus fort de
+  cette frame ») ; tout signal plus fort est explicitement écrêté à plat en haut — perte du
+  sommet du pic assumée comme la contrepartie d'un axe stable, pas un bug à lisser. **Vrai bug
+  corrigé** : `axisMinPitch`/`axisMaxPitch` sont élargis jusqu'à la limite de touche entière la
+  plus proche à chaque extrémité — sans quoi la touche visible la plus basse/haute était une
+  simple tranche partielle (coupée net au bord de la vue), rapporté comme « il manque la
+  dernière octave et les premières notes » puisqu'une touche à moitié dessinée se lit comme
+  absente. Un seul domaine partagé (pas un pour la courbe, un autre pour le clavier) garde les
+  deux canevas alignés au pixel près — tout l'intérêt de cette vue.
+- **`SpectrogramView`** (waterfall) — temps en x (fenêtre FIXE de `totalColumns` créneaux, les
+  vraies données arrivent alignées à DROITE et remplissent depuis la droite, pas un étirement de
+  ce qui existe déjà), fréquence en y (même convention log-pitch), couleur = intensité. **Vrai
+  bug corrigé** : `columnWidth` (`pixelWidth / totalColumns`) est gardée en `Double`, jamais
+  arrondie avant la multiplication finale — tronquer à l'entier (ex. 2px au lieu de 2,91px pour
+  un canevas de 700px sur 240 colonnes) laissait un espace mort permanent d'environ 200px à
+  gauche qui ne se comblait jamais, quelle que soit la durée de capture — confirmé par une vraie
+  capture d'écran, pas deviné. **Vrai bug corrigé** : la bande de clavier verticale à gauche
+  nécessite un `frame(maxWidth: .infinity)` explicite — un `Canvas` n'a pas de taille de contenu
+  intrinsèque, et sans ce signal, il se retrouvait bien plus étroit que l'espace réellement
+  disponible dans une ligne de `Form`/`Section` sous macOS — confirmé par une capture d'écran
+  montrant un espace mort large entre la bande de clavier et le début réel du tracé. L'image
+  entière est construite comme un seul `CGImage` via un buffer de pixels bruts, pas un
+  `context.fill` par cellule (colonne × ligne de fréquence) — à quelques centaines de colonnes
+  par une centaine de lignes, ce seraient des dizaines de milliers d'appels `fill` à chaque
+  redessin, le vrai goulot (surcoût par-chemin de Core Graphics), pas le calcul de pixel
+  lui-même. Un overlay optionnel (désactivé par défaut, sur demande explicite) dessine chaque
+  note tenue à sa position (temps, fréquence) — plusieurs colonnes adjacentes tenant la même
+  hauteur se lisent naturellement comme une seule barre continue.
+- **`SpectrogramColorScale`** — le calcul intensité/couleur (échelle log10, clampée [0,1])
+  partagé entre le waterfall et sa légende, pour que les deux ne puissent jamais diverger (toute
+  la raison d'être d'une légende, c'est que sa couleur signifie exactement ce que signifie la
+  couleur du graphe). Trois palettes (`thermal`/`blue`/`grayscale`), choix utilisateur explicite,
+  échos de captures d'écran de référence d'un autre outil de spectrogramme — la rampe thermique
+  est délibérément sombre à la base pour bien lire sur le thème sombre de l'app et garder les
+  zones calmes réellement noires (pour que les transitoires forts ressortent visuellement).
+- **`SpectrogramColorScaleView`** — légende verticale doublant de mesureur de niveau live (un
+  marqueur blanc pointe le pic courant), avec des repères aux niveaux de calibration
+  faible/fort.
+- **`CalibratedLevelMeterView`** — une barre horizontale à échelle FIXE (130 % de la référence
+  forte, ou du niveau courant/référence faible si l'un des deux dépasse) plutôt que 0–1
+  normalisé : `normalized(_:)` mappe déjà la plage calibrée sur 0–1, donc les repères
+  faible/forte tomberaient trivialement aux deux extrémités de la barre — jamais informatif ;
+  un `ProgressView` classique ne peut pas montrer ceci du tout.
+- **Orchestration dans `MicrophoneControlsView`** — **vrai bug corrigé, pas deviné** : la
+  première version du spectrogramme utilisait un `Timer.publish(...)` Combine construit
+  *inline* dans le `body`, attaché via `.onReceive`. Un `Timer.publish(...)` construit inline
+  est une nouvelle *valeur* `Publisher` à chaque évaluation du `body` (bien plus fréquente que
+  toutes les 100ms — par exemple à chaque changement de `bridge.state` ailleurs sur ce même
+  écran) — confirmé par une vraie capture d'écran montrant le waterfall figé/vide plutôt que
+  défilant. `.task` (sans `id:` explicite) est lié à l'IDENTITÉ de la vue, pas ré-exécuté à
+  chaque évaluation du body — il démarre une fois à l'apparition, s'annule une fois à la
+  disparition, exactement la garantie « démarré/arrêté avec cet onglet » recherchée. La boucle
+  relit les notes tenues **fraîches depuis le bridge** à l'intérieur de la tâche plutôt que
+  depuis le paramètre `track` de la vue (qui n'est ré-évalué que quand le PARENT se redessine,
+  environ toutes les ~250ms via le polling de `bridge.state`) — sinon la tâche, longue durée de
+  vie unique entre ces redessins, capturerait un instantané figé des notes tenues pour toute sa
+  durée de vie.
+
+### La famille de widgets réutilisables — la console web portée en `Canvas` natif
+
+Chaque widget de `JamShackUI` est un port `Canvas`/`Path` pur (pas de
+`UIViewRepresentable`/`NSViewRepresentable`) d'un rendu déjà existant côté console web
+(`Sources/WebConsole/StaticAssets.swift`), maintenu manuellement en synchronisation entre les
+deux couches de présentation — la même convention que la table `ACTIONS` de
+`mcp-server/server.py`, recopiée à la main depuis Swift.
+
+- **`PitchKeyboardView`** — clavier vectoriel sur une plage MIDI absolue, coloré via
+  `pitchDisplayState(...)` (`Sources/AppCore/PitchDisplayState.swift`), la même logique de
+  classification que le clavier ASCII terminal et `keyboardHTML` de la console web, pour que les
+  trois surfaces s'accordent sur ce que signifient racine/tonalité/hors-accord/tenue/mode.
+  Jouable (tap/clic, glissando au drag — chaque touche nouvellement entrée déclenche son propre
+  note-on, la précédente son note-off) quand `onNoteOn`/`onNoteOff` sont fournis ; en lecture
+  seule sinon.
+- **`AutoCenteredKeyboardView`** — extrait 3 octaves auto-centré sur la note tenue la plus
+  basse (son do-ou-en-dessous le plus proche), réutilisé tel quel (chord/mode vides) par les
+  écrans qui veulent juste montrer les notes entrantes sans overlay de reconnaissance
+  (sous-onglets Microphone/MIDI).
+- **`MiniPianoOverviewView`** — vue d'ensemble en lecture seule sur toute la plage (0–108),
+  colorant la touche ENTIÈRE (pas juste un point comme le fait l'onglet Observer de la console
+  web) — se lit de la même façon que le clavier pleine taille en dessous ; un rectangle rouge
+  non rempli marque la fenêtre actuellement affichée.
+- **`CircleOfFifthsWheelView`** — port polaire de `renderWheel`/CSS de la console web,
+  correspondance délibérée disposition-pour-disposition (même disque/grille/anneaux, mêmes
+  couleurs de palette par note, mêmes formes de cellule, même texte accord+degré relatif, mêmes
+  anneaux d'occupation par piste, même contour de zone diatonique) — tailles de police mises à
+  l'échelle par rapport aux valeurs SVG brutes du web (qui ne se lisent bien que jusqu'à 820px
+  de large) puisque cette vue rend typiquement bien plus petit.
+- **`ChordStaffView`** — portée (clé de sol + clé de fa) port de `renderStaffSVG`, calcul de
+  parité ligne/espace à partir d'une seule ligne de référence connue (Mi4), calcul des lignes
+  supplémentaires, décalage en zigzag pour les secondes consécutives (reproduit l'engraving
+  standard). `heightScale` ne redimensionne que la hauteur, jamais la largeur (l'écran Guide
+  utilise 0,9× sur demande explicite).
+- **`GuitarChordDiagramView`** — port de `guitarChordDiagramHTML`, consomme directement
+  `GuitarChordShape.Diagram` (déjà agnostique de toute présentation). Deux initialiseurs : un
+  qui dérive lui-même le diagramme, un second qui consomme un `WebConsoleGuitarChordDiagram`
+  déjà résolu venant du bridge (évite de re-dériver deux fois le même diagramme).
+- **`ComputerKeyboardInput`** — réutilise la même correspondance clavier façon « Musical
+  Typing » de GarageBand que la CLI (copie séparée, volontairement : la copie de la CLI vit
+  dans une cible exécutable, pas une librairie). Une vraie amélioration que l'environnement de
+  la CLI ne peut pas offrir : une vraie GUI reçoit des événements key-down/key-up authentiques,
+  donc un vrai sustain-tant-que-tenu, plutôt qu'un « pluck » de durée fixe simulé (la CLI n'a
+  que « ce caractère a été tapé », jamais de key-up). Ignore explicitement la répétition auto de
+  touche (le système d'exploitation ré-émettrait sinon un keyDown à chaque tick d'auto-repeat).
+
+### Sandbox et accès fichiers
+
+L'app a `com.apple.security.app-sandbox` activé. `FolderPickerRow` (partagé entre les 7
+catégories de dossiers) passe par `.fileImporter` + accès *security-scoped*, qui ne dure que le
+temps de vie de l'app (pas encore de bookmark persisté par dossier — le compromis accepté pour
+l'instant, il faut re-choisir après un relancement). `DefaultFolderBookmark` fait exception : UN
+SEUL bookmark security-scoped persisté (`UserDefaults`) pour la racine entière — plus simple que
+six bookmarks indépendants, et cohérent avec la façon dont la configuration par défaut de la CLI
+déplace toujours `User`/`Library` ensemble comme enfants fixes d'une même racine.
+
+### Dette technique déjà connue à ce niveau
+
+- La clef API LLM est persistée en JSON en clair (`JamShackLLMView`, `Docs/BACKLOG.md`) malgré
+  une saisie via `SecureField`.
+- Aucune notification de branchement à chaud CoreMIDI n'est surveillée — seul un rafraîchissement
+  manuel (`JamShackMIDIView`) existe.
+- Seule la racine des dossiers par défaut est persistée entre lancements ; un dossier choisi
+  manuellement par catégorie (`FolderPickerRow`) doit être re-choisi après un relancement.
+
 ## Vérification/tests
 
 Xcode complet est installé — `swift test` fonctionne nativement, plus besoin de filet de

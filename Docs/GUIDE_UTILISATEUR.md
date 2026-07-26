@@ -1122,6 +1122,106 @@ harmonique, dorien, phrygien, lydien, mixolydien, locrien, ton entier) ont une c
 directe sur le LUMI ; les autres s'affichent en couleur uniforme (racine correcte, mais sans
 distinction dans/hors gamme) plutôt que de risquer une correspondance trompeuse.
 
+## 20. L'application SwiftUI (iOS et macOS) — l'interface principale
+
+En plus de la CLI décrite dans le reste de ce guide, une vraie application graphique existe
+pour iOS et macOS (dossier `App/`, projet Xcode généré via XcodeGen — voir `App/README.md`) et
+**c'est désormais l'interface principale du projet au quotidien** : mêmes fonctionnalités que
+la CLI (même moteur, mêmes fichiers de morceaux/scènes/guides/soundtracks, entièrement
+compatibles entre les deux interfaces), mais avec de vrais écrans tactiles/souris au lieu de
+commandes tapées. Ce chapitre décrit comment l'utiliser ; les chapitres numérotés précédents de
+ce guide restent la référence pour comprendre le *sens* de chaque fonctionnalité (reconnaissance
+d'accords, guides musicaux, sessions collaboratives, etc.), qui ne change pas d'une interface à
+l'autre.
+
+Au premier lancement, l'app démarre directement sur l'onglet **Scène** — c'est là qu'on associe
+chaque instrument (clavier de l'ordinateur, port MIDI, microphone) à un rôle avant de commencer
+à jouer. Les dossiers de travail (morceaux, sons, guides, scènes, soundtracks, réglages,
+composition IA) se choisissent depuis l'onglet **JamShack > Dossiers** : sur iOS/macOS, l'app
+étant en bac à sable (sandbox), il faut passer par un vrai sélecteur de fichiers/dossiers plutôt
+que taper un chemin comme le fait la CLI — un bouton « Choisir/créer le dossier JamShack »
+propose de choisir un seul dossier racine (par exemple sur iCloud Drive, pour retrouver ses
+morceaux sur tous ses appareils), qui configure alors automatiquement les sept sous-dossiers
+nécessaires ; ce choix est mémorisé d'un lancement à l'autre.
+
+### Les onglets principaux
+
+- **Scène** — deux sous-onglets : *Fichier* (créer/charger/exporter une scène) et *Disposition*
+  (attacher chaque instrument à un rôle, choisir son son, l'activer/désactiver — un clic sur le
+  menu d'un instrument non affecté ou d'un rôle libre suffit dans les deux sens).
+- **Live** — la roue des quintes à gauche et, à droite, chaque instrument en écoute avec ses
+  notes tenues et l'accord/mode reconnu en direct. Le clavier de l'ordinateur y est jouable
+  directement au clic/tactile (les autres claviers affichés — MIDI, micro — restent en lecture
+  seule, on ne peut pas y jouer en cliquant dessus).
+- **Guide** — trois sous-onglets : *Fichier* (créer/charger un guide musical), *Edition*
+  (ajouter une étape mode/gamme, éventuellement avec une progression d'accords, voir la liste
+  des étapes) et *Lecture* (démarrer le guide, naviguer avec les flèches du clavier —
+  haut/bas pour l'étape, gauche/droite pour l'accord dans la progression — et voir
+  simultanément la roue, la description textuelle, la portée, les claviers de référence et la
+  tablature guitare). Si un LUMI Keys est connecté et le suivi automatique du guide activé
+  (onglet Couleurs), ses touches suivent le mode/l'accord affiché sur cet écran.
+- **Enregistrement** — quatre sous-onglets : *Fichier* (charger un enregistrement existant),
+  *Record* (choisir quelles pistes enregistrer, démarrer/arrêter), *Play* (rejouer, choisir le
+  son) et *IA* (proposer une composition à partir de l'enregistrement, via la connexion LLM
+  active).
+- **Morceaux** — *Fichier* (charger la démo ou un morceau du dossier) et *Play* (jouer/arrêter,
+  choisir le son de lecture).
+- **Composition** — *Fichier* (charger/sauvegarder une description) et *Composer* (titre, texte
+  libre décrivant le morceau souhaité, indications de style, puis composition via l'IA).
+- **JamShack** — un menu de réglages regroupé en neuf sous-onglets accessibles par une colonne
+  d'icônes à gauche de l'écran :
+  - **Sons** : la bibliothèque complète des sons trouvés (avec alias et favoris — seuls les
+    favoris apparaissent ensuite dans les autres écrans, pour ne pas noyer les listes dans une
+    grosse bibliothèque). Un mode « Tester le son » permet de brancher un son sur le clavier ou
+    une piste MIDI et de jouer directement dessus pour l'écouter, sans perturber ce qui est déjà
+    en écoute par ailleurs.
+  - **MIDI** : mode fusionné ou une piste par port MIDI, rafraîchir la liste des sources
+    visibles, voir les notes reçues en direct.
+  - **Microphone** : démarrer/arrêter l'écoute du micro, puis choisir entre quatre affichages :
+    *Calibration* (deux boutons « Capturer » pour un niveau faible et un niveau fort de
+    référence, avec une jauge de niveau), *Notes reçues* (le clavier live + l'accord/mode
+    reconnu + le choix du mode de reconnaissance), *Spectromètre* (le spectre de fréquences
+    instantané, avec un clavier aligné en dessous) et *Spectrogramme* (le même spectre, mais
+    déroulé dans le temps sous forme de « chute d'eau » colorée — trois palettes de couleur au
+    choix, un overlay optionnel superposant les notes reconnues sur le graphe). Les deux modes
+    spectre partagent un même bouton d'activation (« Activer le spectromètre ») — désactiver la
+    capture, ou simplement changer d'onglet, l'arrête.
+  - **Serveurs** : démarrer la console web et le clavier virtuel, avec l'adresse à taper depuis
+    un autre appareil du même réseau et un bouton de partage direct de cette adresse (utile pour
+    l'envoyer par message à quelqu'un). Fonctionne aussi sur iOS, tant que l'app reste au
+    premier plan.
+  - **Jam Session** : choisir entre rester isolé, héberger ou rejoindre une session sur le
+    réseau local (avec une recherche automatique des sessions à proximité), ou héberger/rejoindre
+    via Game Center (utile pour jouer avec quelqu'un qui n'est pas sur le même réseau — Game
+    Center s'occupe alors de la connexion).
+  - **Couleurs** : choisir/créer/modifier une palette de couleurs par note, régler le LUMI Keys
+    (couleurs racine/gamme, luminosité, suivi automatique du mode Live/Guide) et, en bas, un
+    testeur manuel du LUMI (utile si le clavier lumineux ne réagit plus après un débranchement).
+  - **LLM** : choisir la connexion IA active (voir chapitre dédié plus haut dans ce guide) et la
+    tester en un clic.
+  - **Dossiers** : tous les dossiers de travail au même endroit (voir plus haut).
+  - **Langue** : français/anglais/allemand — s'applique aussi à la console web et au clavier
+    virtuel.
+
+### Ce que l'app apporte en plus de la CLI
+
+- **Un vrai sustain au clavier de l'ordinateur** : contrairement au terminal (qui ne reçoit que
+  « telle touche a été tapée », jamais de relâchement, et simule donc une note de durée fixe),
+  l'app détecte le relâchement réel de la touche — une note tenue reste tenue tant que la touche
+  est enfoncée.
+- **Des claviers tactiles/souris jouables** : sur l'écran Live, on peut jouer directement en
+  touchant/cliquant le clavier virtuel du clavier ordinateur, avec un vrai glissando au balayage.
+- **Le spectromètre et le spectrogramme micro**, absents de la CLI et de la console web, pour
+  visualiser précisément ce que le micro capte et affiner sa calibration.
+- **La session Game Center**, une alternative à l'hébergement réseau local pour jouer avec
+  quelqu'un qui n'est pas sur le même Wi-Fi.
+- **Le partage direct** des adresses de serveur (console web/clavier virtuel) par un bouton de
+  partage système.
+
+Un point de vigilance propre à l'app : la clef API d'une connexion LLM, bien que saisie dans un
+champ masqué, est enregistrée en clair sur le disque (même limitation que côté CLI) — à
+réserver à un usage personnel, pas à partager l'appareil.
+
 ## Liste complète des commandes
 
 `help` les affiche déjà regroupées par catégorie (Général / Morceaux / Pistes d'entrée /
