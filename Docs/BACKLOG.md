@@ -4,6 +4,43 @@ Idées et chantiers identifiés mais pas encore engagés. Chaque entrée garde l
 nécessaire pour être reprise sans redérivation ; à supprimer ou déplacer vers le README/
 CHANGELOG une fois traitée.
 
+## Prioritaire
+
+1. **Support des presets multiples au sein d'un même fichier SoundFont (.sf2).** Un `.sf2` peut
+   contenir plusieurs dizaines d'instruments/presets différents (comme une banque General MIDI
+   complète), chacun identifié par un triplet `program`/`bankMSB`/`bankLSB`. Aujourd'hui, le
+   code ne charge jamais que le premier (`program=0`, bank GM par défaut) et n'a aucun moyen de
+   lire/lister les autres presets d'un fichier donné — un `.sf2` multi-instruments est donc
+   traité comme un son unique, les autres presets étant invisibles pour l'utilisateur.
+
+   Points de blocage identifiés (2026-07-27) :
+   - `Sources/AudioEngine/SamplerUnit.swift:47` (`loadSample(at:program:)`) et ses 3 clones —
+     `PiecePlayer.swift:206`, `SoundTrackPlayer.swift:38`, `GuideAuditionPlayer.swift:45` —
+     appellent tous `loadSoundBankInstrument`/`loadInstrument` avec `program: UInt8 = 0` fixe et
+     bank GM par défaut ; aucun n'expose `bankMSB`/`bankLSB` en paramètre appelant. Commentaire
+     explicite à `PiecePlayer.swift:204-205` : *"program 0 = first instrument in the bank"*.
+   - Aucun parsing du format SoundFont2 (chunks `phdr`/`pbag`/etc.) n'existe dans le repo pour
+     extraire la liste des presets (nom, program, bank) d'un fichier `.sf2` — c'est le morceau
+     technique le plus conséquent du chantier.
+   - `Sources/AppCore/SoundSettings.swift:12-22` (`SoundEntry`) modélise un "son" uniquement par
+     `path` (fichier) + `alias` + `isFavorite` — aucune notion de preset. Alias (`soundAlias`,
+     `ImprovSession.swift:2383`) et favoris (`isSoundFavorite`, ligne 2387) font tous deux un
+     lookup linéaire sur `path` seul, via la même structure/mutateur (`updateSoundEntry`, ligne
+     2413) — donc une même extension de clé (fichier + program/bank composite) couvre alias et
+     favoris en un seul changement.
+   - Catalogue actuel (`sampleFiles`, `ImprovSession.swift:72`, peuplé par `listSampleFiles`,
+     ligne 2295) : un fichier = une entrée, quel que soit son nombre de presets internes.
+   - `App/Sources/SoundsView.swift` (onglet "Sons") liste les fichiers à plat (`soundRow`, ligne
+     199) ; il faudra passer à une liste à deux niveaux (fichier → presets).
+   - Trace de raffinement futur déjà envisagée mais non implémentée : `PieceModel/Track.swift:8`,
+     champ `instrument: String` commenté *"free-form for now (e.g. General MIDI program name,
+     later)"*.
+
+   Étapes du chantier : (a) parseur minimal des presets d'un `.sf2` ; (b) étendre `SoundEntry` à
+   un identifiant composite (fichier + program/bankMSB/bankLSB) ; (c) propager ce triplet dans
+   les 4 points d'appel `loadSample`/`loadSoundBankInstrument` ; (d) UI à deux niveaux dans
+   `SoundsView.swift`.
+
 ## Stabilisation de l'environnement (2026-07-11)
 
 1. **Remplacer les queues série manuelles de `ImprovSession` par un `actor`.** La concurrence
@@ -78,3 +115,52 @@ CHANGELOG une fois traitée.
    `kSecClassGenericPassword`) sans changer la surface d'API (`ImprovSession.setLLMAPIKey`/
    `APIKeyStore.resolve` dans `Sources/LLMEngine/APIKeyStore.swift` resteraient les mêmes
    points d'entrée, seule l'implémentation de la persistance changerait).
+
+## Fonctionnalités (2026-07-27)
+
+1. **Intégrer le serveur MCP (actuellement `mcp-server/`, Python externe) directement dans
+   l'app Swift**, plutôt que de le garder comme process séparé à lancer/configurer à la main.
+   Ajouter son démarrage dans le même sous-onglet que "Connexion LLM" (`JamShackLLMView`) — ce
+   sous-onglet contiendrait alors deux sections : Connexion LLM et Serveur MCP. Point à
+   éclaircir à l'implémentation : le serveur MCP actuel est un simple proxy HTTP vers les routes
+   `/menu-action`/`/menu-lists` déjà exposées par `WebConsole` (voir `mcp-server/README.md`) —
+   un portage Swift devra définir son propre transport MCP (stdio pour un client comme Claude
+   Desktop, ou HTTP+SSE), pas juste réutiliser tel quel le protocole HTTP existant. **Sorti
+   explicitement d'un premier plan d'implémentation (2026-07-26)** — trop gros pour être bundlé
+   avec le reste, mérite sa propre exploration dédiée.
+
+2. **Gestion multi-microphone**, avec possibilité d'ajuster individuellement le niveau d'entrée
+   de chacun. Étend le flux de calibration/spectroscope micro existant (mono aujourd'hui) à
+   plusieurs entrées simultanées — implique probablement une UI de calibration par device et un
+   mixage des niveaux en amont de la détection FFT plutôt qu'un simple choix de device unique.
+
+3. **Connexion à des librairies/repositories de fichiers SoundFont publics** : accès à la
+   librairie, listing, download et test du son avant usage. Nécessite un client réseau vers un
+   ou plusieurs dépôts publics (à identifier), un cache local des fichiers téléchargés, et un
+   aperçu sonore avant de les rendre disponibles au reste de l'app. Le download comme le "test
+   du son" doivent afficher une progression si le chargement n'est pas instantané (voir item 6
+   ci-dessous, qui couvre l'état actuel du chargement local).
+
+4. **Layout portrait / layout dédié iPhone.** L'app est aujourd'hui pensée pour un usage
+   paysage/tablette-desktop (voir aussi l'item "Clavier virtuel : adapter la taille du piano à
+   la largeur de la page" ci-dessus, qui ne couvre que le paysage). Un vrai layout portrait/iPhone
+   est un chantier distinct : réorganisation des colonnes/panneaux, pas seulement un
+   redimensionnement du clavier.
+
+5. **Sorties MIDI** : pouvoir jouer vers d'autres devices MIDI externes pour le rendu sonore, en
+   plus (ou à la place) du rendu interne actuel. Implique de brancher une sortie CoreMIDI
+   (sélection du device de destination) en parallèle du chemin de synthèse/audio existant.
+
+6. **Afficher une progression pendant le chargement d'un son (SoundFont), partout où ça a du
+   sens.** Aujourd'hui `SamplerUnit.loadSample(at:)` (`Sources/AudioEngine/SamplerUnit.swift`)
+   charge le fichier de façon synchrone (`loadSoundBankInstrument`/`loadInstrument`) sans aucun
+   état de progression, et son point d'entrée `ImprovSession.setInstrument(named:for:)`
+   (`Sources/AppCore/ImprovSession.swift:2205`) est appelé directement depuis l'UI sans
+   `async`/`Task` — toute latence de lecture disque bloque l'appelant sans feedback visuel.
+   Concerné dès maintenant : le bouton "test du son" de `App/Sources/SoundsView.swift` (section
+   "Sound test mode", ~lignes 23-196, appel en ligne 228), qui se contente de changer l'icône du
+   haut-parleur une fois le chargement terminé, sans indicateur pendant. Deviendra plus
+   nécessaire encore une fois l'item 3 (librairies SoundFont publiques, avec download réseau)
+   implémenté. À explorer : rendre `setInstrument`/`loadSample` asynchrones avec un état de
+   chargement observable, et l'exposer dans `SoundsView` (et tout autre écran de sélection
+   d'instrument par piste) via un indicateur (spinner ou barre) le temps du chargement.

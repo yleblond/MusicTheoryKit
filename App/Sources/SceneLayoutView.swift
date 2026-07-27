@@ -88,7 +88,7 @@ struct SceneLayoutView: View {
     private var rolesSection: some View {
         Section {
             ForEach(scene?.roles ?? []) { role in
-                SceneRoleRow(session: session, role: role, sampleFiles: session.favoriteSampleFiles, onError: { actionError = $0 })
+                SceneRoleRow(session: session, role: role, sounds: session.favoriteSounds, onError: { actionError = $0 })
             }
             Button(L10n.string(.appButtonAjouterUnRole, session.currentLanguage)) { showNewRoleAlert = true }
         } header: {
@@ -128,6 +128,7 @@ private struct UnassignedInstrumentRow: View {
                     onError("\(error)")
                 }
                 newRoleName = ""
+                session.requestComputerKeyboardFocus()
             }
             Button(L10n.string(.appAnnuler, session.currentLanguage), role: .cancel) {}
         }
@@ -149,21 +150,23 @@ private struct UnassignedInstrumentRow: View {
         } catch {
             onError("\(error)")
         }
+        session.requestComputerKeyboardFocus()
     }
 }
 
 private struct SceneRoleRow: View {
     let session: ImprovSession
     let role: SceneRole
-    let sampleFiles: [String]
+    let sounds: [ImprovSession.FavoriteSound]
     let onError: (String) -> Void
 
-    private func setSound(_ name: String?) {
+    private func setSound(_ sound: ImprovSession.FavoriteSound?) {
         do {
-            try session.setSceneRoleSound(role.id, soundName: name)
+            try session.setSceneRoleSound(role.id, soundName: sound?.path, preset: sound?.preset)
         } catch {
             onError("\(error)")
         }
+        session.requestComputerKeyboardFocus()
     }
 
     private func attach(_ trackID: TrackID) {
@@ -172,6 +175,7 @@ private struct SceneRoleRow: View {
         } catch {
             onError("\(error)")
         }
+        session.requestComputerKeyboardFocus()
     }
 
     private func detach() {
@@ -180,6 +184,7 @@ private struct SceneRoleRow: View {
         } catch {
             onError("\(error)")
         }
+        session.requestComputerKeyboardFocus()
     }
 
     var body: some View {
@@ -208,13 +213,13 @@ private struct SceneRoleRow: View {
             HStack {
                 Text(L10n.string(.fieldSon, session.currentLanguage))
                 Spacer()
-                if sampleFiles.isEmpty {
+                if sounds.isEmpty {
                     Text(L10n.string(.appPlaceholderAucunSonFavoriParenthese, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Menu(role.soundName.map(session.displayName(forSamplePath:)) ?? L10n.string(.appButtonAucun, session.currentLanguage)) {
+                    Menu(role.soundName.map { session.displayName(forSamplePath: $0, preset: role.soundPreset) } ?? L10n.string(.appButtonAucun, session.currentLanguage)) {
                         Button(L10n.string(.appButtonAucun, session.currentLanguage)) { setSound(nil) }
-                        ForEach(sampleFiles, id: \.self) { name in
-                            Button(session.displayName(forSamplePath: name)) { setSound(name) }
+                        ForEach(sounds) { sound in
+                            Button(sound.displayName) { setSound(sound) }
                         }
                     }
                 }

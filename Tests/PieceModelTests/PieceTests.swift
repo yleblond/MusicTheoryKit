@@ -1,5 +1,6 @@
 import XCTest
 @testable import PieceModel
+import SoundFontModel
 
 final class PieceTests: XCTestCase {
 
@@ -48,5 +49,45 @@ final class PieceTests: XCTestCase {
         let decoded = try JSONDecoder().decode(Piece.self, from: data)
 
         XCTAssertEqual(decoded, piece)
+    }
+
+    /// `Track.instrumentPreset`/`Section.chordInstrumentPreset` were added after pieces were
+    /// already being saved on real installs — a piece file saved before multi-preset `.sf2`
+    /// support (no `instrumentPreset`/`chordInstrumentPreset` keys at all) must still decode,
+    /// both defaulting to `nil` (that instrument just uses its file's own default preset,
+    /// exactly as before).
+    func testTrackAndSectionDecodePreExistingJSONWithNoPresetKeysAsNilPresets() throws {
+        let json = """
+        {
+            "id": "s1", "name": "A", "lengthInMeasures": 4,
+            "mode": {"tonic": 0, "scaleID": "dorian"},
+            "chordProgression": [], "chordInstrument": "mcb.sf2",
+            "tracks": [
+                {"id": "t1", "name": "lead", "instrument": "piano.sf2", "melodyEvents": [], "fragmentPlacements": []}
+            ]
+        }
+        """
+        let section = try JSONDecoder().decode(Section.self, from: Data(json.utf8))
+
+        XCTAssertEqual(section.chordInstrument, "mcb.sf2")
+        XCTAssertNil(section.chordInstrumentPreset)
+        XCTAssertEqual(section.tracks.first?.instrument, "piano.sf2")
+        XCTAssertNil(section.tracks.first?.instrumentPreset)
+    }
+
+    func testTrackAndSectionRoundTripAPresetThroughJSON() throws {
+        let preset = SoundFontPresetIdentity(program: 19, bank: 0)
+        let section = Section(
+            name: "A", lengthInMeasures: 4, mode: ModeReference(tonic: 0, scaleID: "dorian"),
+            tracks: [Track(name: "lead", instrument: "piano.sf2", instrumentPreset: preset)],
+            chordInstrument: "mcb.sf2", chordInstrumentPreset: preset
+        )
+
+        let data = try JSONEncoder().encode(section)
+        let decoded = try JSONDecoder().decode(Section.self, from: data)
+
+        XCTAssertEqual(decoded, section)
+        XCTAssertEqual(decoded.chordInstrumentPreset, preset)
+        XCTAssertEqual(decoded.tracks.first?.instrumentPreset, preset)
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import SoundFontModel
 
 /// A structural block of a piece (Intro, Verse, Chorus...): a shared harmonic context
 /// (mode, optional transition, chord progression) plus one or more instrument tracks.
@@ -16,6 +17,9 @@ public struct Section: Codable, Identifiable, Equatable, Sendable {
     /// every pre-existing piece file decodes to, since the key is simply absent) means "use
     /// the piece-playback default sound," exactly like today.
     public var chordInstrument: String?
+    /// Which preset within `chordInstrument`, when it names a multi-preset `.sf2` — same
+    /// convention as `Track.instrumentPreset`.
+    public var chordInstrumentPreset: SoundFontPresetIdentity?
 
     public init(
         id: String = UUID().uuidString,
@@ -25,7 +29,8 @@ public struct Section: Codable, Identifiable, Equatable, Sendable {
         modeTransition: ModeTransition? = nil,
         chordProgression: [ChordEvent] = [],
         tracks: [Track] = [],
-        chordInstrument: String? = nil
+        chordInstrument: String? = nil,
+        chordInstrumentPreset: SoundFontPresetIdentity? = nil
     ) {
         self.id = id
         self.name = name
@@ -35,5 +40,6 @@ public struct Section: Codable, Identifiable, Equatable, Sendable {
         self.chordProgression = chordProgression
         self.tracks = tracks
         self.chordInstrument = chordInstrument
+        self.chordInstrumentPreset = chordInstrumentPreset
     }
 }

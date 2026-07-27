@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "MusicTheoryKit", targets: ["MusicTheoryKit"]),
         .library(name: "PieceModel", targets: ["PieceModel"]),
         .library(name: "SoundTrackModel", targets: ["SoundTrackModel"]),
+        .library(name: "SoundFontModel", targets: ["SoundFontModel"]),
         .library(name: "AudioEngine", targets: ["AudioEngine"]),
         .library(name: "MIDIEngine", targets: ["MIDIEngine"]),
         .library(name: "AppCore", targets: ["AppCore"]),
@@ -30,15 +31,23 @@ let package = Package(
         .target(name: "Localization"),
         .testTarget(name: "LocalizationTests", dependencies: ["Localization"]),
         .testTarget(name: "MusicTheoryKitTests", dependencies: ["MusicTheoryKit"]),
-        .target(name: "PieceModel", dependencies: ["MusicTheoryKit"]),
-        .testTarget(name: "PieceModelTests", dependencies: ["PieceModel"]),
+        .target(name: "PieceModel", dependencies: ["MusicTheoryKit", "SoundFontModel"]),
+        .testTarget(name: "PieceModelTests", dependencies: ["PieceModel", "SoundFontModel"]),
         // A purely event-based (real-seconds) recording model — deliberately separate from
         // `PieceModel` (measures/beats/chords): incompatible shapes for the same underlying
         // idea of "musical content over time," not a variant of one another.
         .target(name: "SoundTrackModel"),
         .testTarget(name: "SoundTrackModelTests", dependencies: ["SoundTrackModel"]),
-        .target(name: "AudioEngine", dependencies: ["PieceModel", "SoundTrackModel"]),
-        .testTarget(name: "AudioEngineTests", dependencies: ["AudioEngine"]),
+        // A `.sf2`'s own preset identity (`SoundFontPreset`/`SoundFontPresetIdentity`) plus the
+        // RIFF/`phdr` reader that lists them — zero dependencies, like `SoundTrackModel`/
+        // `Localization`, specifically so both `AudioEngine` (which maps a preset identity to
+        // `AVAudioUnitSampler`'s bankMSB/bankLSB) AND `PieceModel` (which stores a track's chosen
+        // preset) can depend on it without `PieceModel` ever depending on `AudioEngine` (which
+        // itself already depends on `PieceModel` — a cycle otherwise).
+        .target(name: "SoundFontModel"),
+        .testTarget(name: "SoundFontModelTests", dependencies: ["SoundFontModel"]),
+        .target(name: "AudioEngine", dependencies: ["PieceModel", "SoundTrackModel", "SoundFontModel"]),
+        .testTarget(name: "AudioEngineTests", dependencies: ["AudioEngine", "SoundFontModel", "PieceModel"]),
         .target(name: "MIDIEngine"),
         .testTarget(name: "MIDIEngineTests", dependencies: ["MIDIEngine"]),
         .target(name: "RecognitionEngine", dependencies: ["MusicTheoryKit"]),
@@ -56,8 +65,8 @@ let package = Package(
         .testTarget(name: "WebConsoleTests", dependencies: ["WebConsole"]),
         // Presentation-agnostic app state/behavior: a CLI drives it today, a future
         // SwiftUI front-end can bind to the same `ImprovSession` instance later.
-        .target(name: "AppCore", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "AudioEngine", "MIDIEngine", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole", "Localization"]),
-        .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit", "LLMEngine", "NetEngine", "SoundTrackModel", "AudioEngine"]),
+        .target(name: "AppCore", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "SoundFontModel", "AudioEngine", "MIDIEngine", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole", "Localization"]),
+        .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit", "LLMEngine", "NetEngine", "SoundTrackModel", "SoundFontModel", "AudioEngine"]),
         .executableTarget(name: "JamShack", dependencies: ["AppCore", "Localization"]),
         // Standalone hardware-validation CLI for the ROLI LUMI Keys' reverse-engineered LED
         // SysEx protocol (see MIDIEngine's LumiSysex/MIDIOutputPort) — kept separate from

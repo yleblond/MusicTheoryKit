@@ -4,6 +4,7 @@ import MusicTheoryKit
 import PieceModel
 import JamShackUI
 import Localization
+import SoundFontModel
 
 /// "Edition" sub-tab of the Guide tab: add a mode step to the active guide, and see the
 /// current step list — structural editing, as opposed to the "Lecture" sub-tab's playback
@@ -20,7 +21,7 @@ struct GuideEditionView: View {
     @State private var selectedScaleID = ScaleLibrary.all[0].id
     @State private var selectedProgressionName: String?
     @State private var actionError: String?
-    @State private var auditionSampleName: String?
+    @State private var auditionSampleID: String?
     @State private var auditionSpeed: Double = 1.0
 
     private static let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -95,13 +96,13 @@ struct GuideEditionView: View {
     @ViewBuilder
     private var listenSection: some View {
         Section {
-            if session.favoriteSampleFiles.isEmpty {
+            if session.favoriteSounds.isEmpty {
                 Text(L10n.string(.appPlaceholderAucunSonFavori, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
             } else {
-                Picker(L10n.string(.fieldSon, session.currentLanguage), selection: $auditionSampleName) {
+                Picker(L10n.string(.fieldSon, session.currentLanguage), selection: $auditionSampleID) {
                     Text(L10n.string(.appButtonAucun, session.currentLanguage)).tag(String?.none)
-                    ForEach(session.favoriteSampleFiles, id: \.self) { name in
-                        Text(session.displayName(forSamplePath: name)).tag(String?.some(name))
+                    ForEach(session.favoriteSounds) { sound in
+                        Text(sound.displayName).tag(String?.some(sound.id))
                     }
                 }
             }
@@ -115,8 +116,8 @@ struct GuideEditionView: View {
                 }
             } else {
                 Button(L10n.string(.appButtonDemarrer, session.currentLanguage)) {
-                    if let auditionSampleName {
-                        try? session.loadGuideAuditionSample(named: auditionSampleName)
+                    if let sound = session.favoriteSounds.first(where: { $0.id == auditionSampleID }) {
+                        try? session.loadGuideAuditionSample(named: sound.path, preset: sound.preset)
                     }
                     session.startGuideAudition(speedFactor: auditionSpeed)
                 }

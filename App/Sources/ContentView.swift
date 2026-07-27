@@ -29,57 +29,80 @@ struct ContentView: View {
                 // both. Adaptive by design on iOS too (collapses to a normal bottom tab bar on
                 // iPhone-width, can show as a sidebar on iPad) — chosen so this one change
                 // covers both platforms without a `#if os()` fork of the whole TabView.
-                TabView(selection: $selectedTab) {
-                    // Custom label (not `systemImage:`) so the tab shows the app's own icon
-                    // artwork, in color, instead of an SF Symbol — per explicit user request.
-                    // `AppIconTabIcon` is a plain imageset (NOT the `AppIcon` appiconset itself,
-                    // which the OS consumes for app-bundling purposes and isn't meant to be
-                    // loaded as a regular `Image` at runtime) holding the same artwork PRE-
-                    // SCALED to 24/48/72px (1x/2x/3x) — marked "original" rendering so it's
-                    // never tinted like a monochrome symbol. Deliberately NOT `.resizable()` +
-                    // `.frame(...)`: that combination rendered correctly in isolation but, once
-                    // placed as a `Label`'s icon inside `Tab(value:content:label:)` under
-                    // `.sidebarAdaptable`, the icon stretched to fill the ENTIRE sidebar height
-                    // (confirmed via a real screenshot, not guessed) — some interaction between
-                    // a resizable image and this specific container's layout on this OS version.
-                    // A plain, non-resizable, already-correctly-sized `Image` sidesteps the bug
-                    // entirely by never entering that resizing code path, the same way a plain
-                    // SF Symbol (also never explicitly resized here) renders at its own natural
-                    // size without issue.
-                    Tab(value: AppTab.jamShack) {
-                        JamShackView(session: session, bridge: bridge)
-                    } label: {
-                        Label {
-                            Text(L10n.string(.catJamShack, session.currentLanguage))
-                        } icon: {
-                            Image("AppIconTabIcon")
-                                .clipShape(RoundedRectangle(cornerRadius: 5))
+                VStack(spacing: 0) {
+                    TabView(selection: $selectedTab) {
+                        // Custom label (not `systemImage:`) so the tab shows the app's own icon
+                        // artwork, in color, instead of an SF Symbol — per explicit user request.
+                        // `AppIconTabIcon` is a plain imageset (NOT the `AppIcon` appiconset itself,
+                        // which the OS consumes for app-bundling purposes and isn't meant to be
+                        // loaded as a regular `Image` at runtime) holding the same artwork PRE-
+                        // SCALED to 24/48/72px (1x/2x/3x) — marked "original" rendering so it's
+                        // never tinted like a monochrome symbol. Deliberately NOT `.resizable()` +
+                        // `.frame(...)`: that combination rendered correctly in isolation but, once
+                        // placed as a `Label`'s icon inside `Tab(value:content:label:)` under
+                        // `.sidebarAdaptable`, the icon stretched to fill the ENTIRE sidebar height
+                        // (confirmed via a real screenshot, not guessed) — some interaction between
+                        // a resizable image and this specific container's layout on this OS version.
+                        // A plain, non-resizable, already-correctly-sized `Image` sidesteps the bug
+                        // entirely by never entering that resizing code path, the same way a plain
+                        // SF Symbol (also never explicitly resized here) renders at its own natural
+                        // size without issue.
+                        Tab(value: AppTab.jamShack) {
+                            JamShackView(session: session, bridge: bridge, isActiveTab: selectedTab == .jamShack)
+                        } label: {
+                            Label {
+                                Text(L10n.string(.catJamShack, session.currentLanguage))
+                            } icon: {
+                                Image("AppIconTabIcon")
+                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                            }
+                        }
+                        Tab(L10n.string(.tabScene, session.currentLanguage), systemImage: "theatermasks", value: AppTab.scene) {
+                            SceneManagementView(session: session)
+                        }
+                        // "Studio" — merges what used to be two separate tabs, Live and
+                        // Enregistrement (2026-07-26): recording is something you do WHILE playing
+                        // live, not a separate destination. See `StudioView`.
+                        Tab(L10n.string(.appTabStudio, session.currentLanguage), systemImage: "pianokeys", value: AppTab.live) {
+                            StudioView(session: session, bridge: bridge)
+                        }
+                        Tab(L10n.string(.headingGuide, session.currentLanguage), systemImage: "map", value: AppTab.guide) {
+                            GuideView(session: session, bridge: bridge)
+                        }
+                        Tab(L10n.string(.catComposition, session.currentLanguage), systemImage: "wand.and.stars", value: AppTab.composition) {
+                            CompositionView(session: session)
+                        }
+                        // "Morceaux" moved to last position, per explicit user request (2026-07-26).
+                        Tab(L10n.string(.catMorceaux, session.currentLanguage), systemImage: "music.note.list", value: AppTab.pieces) {
+                            PiecesView(session: session)
                         }
                     }
-                    Tab(L10n.string(.tabScene, session.currentLanguage), systemImage: "theatermasks", value: AppTab.scene) {
-                        SceneManagementView(session: session)
-                    }
-                    // "Studio" — merges what used to be two separate tabs, Live and
-                    // Enregistrement (2026-07-26): recording is something you do WHILE playing
-                    // live, not a separate destination. See `StudioView`.
-                    Tab(L10n.string(.appTabStudio, session.currentLanguage), systemImage: "pianokeys", value: AppTab.live) {
-                        StudioView(session: session, bridge: bridge)
-                    }
-                    Tab(L10n.string(.headingGuide, session.currentLanguage), systemImage: "map", value: AppTab.guide) {
-                        GuideView(session: session, bridge: bridge)
-                    }
-                    Tab(L10n.string(.catComposition, session.currentLanguage), systemImage: "wand.and.stars", value: AppTab.composition) {
-                        CompositionView(session: session)
-                    }
-                    // "Morceaux" moved to last position, per explicit user request (2026-07-26).
-                    Tab(L10n.string(.catMorceaux, session.currentLanguage), systemImage: "music.note.list", value: AppTab.pieces) {
-                        PiecesView(session: session)
+                    .tabViewStyle(.sidebarAdaptable)
+
+                    // Persistent, always-visible "long" keyboard — only while the computer
+                    // keyboard mode is explicitly turned on (see `JamShackKeyboardSettingsView`,
+                    // under the JamShack tab). Sits OUTSIDE the TabView so it stays put across
+                    // every tab switch, a constant reminder that typing anywhere now plays notes.
+                    if session.computerKeyboardInputEnabled {
+                        Divider()
+                        ComputerKeyboardInputBar(
+                            heldPitches: session.tracks.first { $0.id == .computerKeyboard }?.heldPitches ?? [],
+                            palette: bridge.state.palette, paletteTextColors: bridge.state.paletteTextColors,
+                            label: L10n.string(.appLabelClavierOrdinateurActif, session.currentLanguage),
+                            octaveShift: session.computerKeyboardOctaveShift,
+                            onNoteOn: { pitch in session.pressKey(pitch: pitch) },
+                            onNoteOff: { pitch in session.releaseKey(pitch: pitch) },
+                            onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) }
+                        )
                     }
                 }
-                .tabViewStyle(.sidebarAdaptable)
                 .computerKeyboardInput(
+                    isActive: session.computerKeyboardInputEnabled,
+                    focusRequestToken: session.computerKeyboardFocusRequestToken,
+                    octaveShift: session.computerKeyboardOctaveShift,
                     onNoteOn: { pitch in session.pressKey(pitch: pitch) },
-                    onNoteOff: { pitch in session.releaseKey(pitch: pitch) }
+                    onNoteOff: { pitch in session.releaseKey(pitch: pitch) },
+                    onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) }
                 )
             } else if let startError {
                 Text(startError).foregroundStyle(.red).padding()

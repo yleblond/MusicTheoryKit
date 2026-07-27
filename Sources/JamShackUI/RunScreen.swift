@@ -8,32 +8,20 @@ import Localization
 /// notes on a `PitchKeyboardView` plus its recognized chord/mode labels — driven live by a
 /// `SessionUIBridge`. The first screen that proves the full chain end to end (bridge
 /// polling -> per-track adapter -> `PitchKeyboardView`); the wheel used to be its own tab,
-/// merged in here so both are visible together without switching tabs.
+/// merged in here so both are visible together without switching tabs. Every track's keyboard
+/// here is read-only display — actual computer-keyboard input now goes exclusively through the
+/// persistent bottom bar (`ComputerKeyboardInputBar`, see `ContentView`), not through tapping a
+/// track's own mini keyboard (that capability existed before the bar did and was removed once
+/// it made the bar redundant/confusing to have two active input surfaces at once).
 public struct RunScreen: View {
     public let session: ImprovSession
     public let bridge: SessionUIBridge
-    /// The `WebConsoleTrackState.id` (e.g. `"clavier"` for `.computerKeyboard`) allowed to be
-    /// played by tapping/clicking its own keyboard — the "clavier virtuel" counterpart to the
-    /// web console's clickable virtual-keyboard page. Every other track's keyboard stays
-    /// read-only (tapping a MIDI-sourced track's display shouldn't inject a note into it).
-    public let interactiveTrackID: String?
-    public let onNoteOn: ((Int) -> Void)?
-    public let onNoteOff: ((Int) -> Void)?
 
     @State private var recordingError: String?
 
-    public init(
-        session: ImprovSession,
-        bridge: SessionUIBridge,
-        interactiveTrackID: String? = nil,
-        onNoteOn: ((Int) -> Void)? = nil,
-        onNoteOff: ((Int) -> Void)? = nil
-    ) {
+    public init(session: ImprovSession, bridge: SessionUIBridge) {
         self.session = session
         self.bridge = bridge
-        self.interactiveTrackID = interactiveTrackID
-        self.onNoteOn = onNoteOn
-        self.onNoteOff = onNoteOff
     }
 
     public var body: some View {
@@ -50,13 +38,10 @@ public struct RunScreen: View {
             VStack(spacing: 0) {
                 recordingBar
                 List(bridge.state.tracks, id: \.id) { track in
-                    let isInteractive = track.id == interactiveTrackID
                     TrackRunRow(
                         track: track,
                         palette: bridge.state.palette,
-                        paletteTextColors: bridge.state.paletteTextColors,
-                        onNoteOn: isInteractive ? onNoteOn : nil,
-                        onNoteOff: isInteractive ? onNoteOff : nil
+                        paletteTextColors: bridge.state.paletteTextColors
                     )
                 }
                 #if os(macOS)
@@ -108,8 +93,6 @@ private struct TrackRunRow: View {
     let track: WebConsoleTrackState
     let palette: [String]
     let paletteTextColors: [String]
-    let onNoteOn: ((Int) -> Void)?
-    let onNoteOff: ((Int) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -138,8 +121,6 @@ private struct TrackRunRow: View {
                 modeTones: track.modeTones,
                 palette: palette,
                 paletteTextColors: paletteTextColors,
-                onNoteOn: onNoteOn,
-                onNoteOff: onNoteOff,
                 keyboardHeight: 144 * 0.7 // -30%, explicit user request — same ratio already
                                           // used by `GuidePlayIndicationRow`'s reference keyboards.
             )

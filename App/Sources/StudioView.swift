@@ -67,13 +67,7 @@ struct StudioView: View {
             Group {
                 switch subTab {
                 case .live:
-                    RunScreen(
-                        session: session,
-                        bridge: bridge,
-                        interactiveTrackID: TrackID.computerKeyboard.wireIDText,
-                        onNoteOn: { pitch in session.pressKey(pitch: pitch) },
-                        onNoteOff: { pitch in session.releaseKey(pitch: pitch) }
-                    )
+                    RunScreen(session: session, bridge: bridge)
                     // Same LUMI-follows-the-active-screen wiring as Guide > Lecture.
                     .onAppear { session.notifyActiveScreen(.run) }
                     .onDisappear { session.notifyActiveScreen(.other) }

@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import SoundFontModel
 import SoundTrackModel
 
 /// Non-realtime playback of a `SoundTrack` — the temporal-recording counterpart to
@@ -35,8 +36,8 @@ public final class SoundTrackPlayer: @unchecked Sendable {
     /// play through entirely different `AVAudioUnitSampler`s. `nil`/never called means the
     /// default sine synth, same "no explicit choice = the built-in default" convention
     /// `PiecePlayer.loadSample` already uses.
-    public func loadSample(at url: URL, program: UInt8 = 0) throws {
-        try sampler.loadSample(at: url, program: program)
+    public func loadSample(at url: URL, preset: SoundFontPresetIdentity? = nil) throws {
+        try sampler.loadSample(at: url, preset: preset)
     }
 
     /// Schedules every event in `soundTrack` relative to "now" and returns immediately —

@@ -5,6 +5,7 @@ import MIDIEngine
 import MusicTheoryKit
 import LLMEngine
 import SoundTrackModel
+import SoundFontModel
 import AudioEngine
 
 final class ImprovSessionTests: XCTestCase {
@@ -370,6 +371,32 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertFalse(session.tracks.contains { $0.id == .midiMerged })
         XCTAssertTrue(session.tracks.contains { $0.id == .computerKeyboard })
         XCTAssertTrue(session.tracks.contains { $0.id == .microphone })
+    }
+
+    func testComputerKeyboardInputDefaultsOffAndIsToggleable() {
+        let session = ImprovSession()
+        XCTAssertFalse(session.computerKeyboardInputEnabled)
+        session.setComputerKeyboardInputEnabled(true)
+        XCTAssertTrue(session.computerKeyboardInputEnabled)
+        session.setComputerKeyboardInputEnabled(false)
+        XCTAssertFalse(session.computerKeyboardInputEnabled)
+    }
+
+    func testRequestComputerKeyboardFocusIncrementsToken() {
+        let session = ImprovSession()
+        let before = session.computerKeyboardFocusRequestToken
+        session.requestComputerKeyboardFocus()
+        session.requestComputerKeyboardFocus()
+        XCTAssertEqual(session.computerKeyboardFocusRequestToken, before + 2)
+    }
+
+    func testShiftComputerKeyboardOctaveAppliesTwelveSemitonesPerStep() {
+        let session = ImprovSession()
+        XCTAssertEqual(session.computerKeyboardOctaveShift, 0)
+        session.shiftComputerKeyboardOctave(by: 1)
+        XCTAssertEqual(session.computerKeyboardOctaveShift, 12)
+        session.shiftComputerKeyboardOctave(by: -2)
+        XCTAssertEqual(session.computerKeyboardOctaveShift, -12)
     }
 
     func testMicrophoneTrackCannotHaveSound() {
@@ -1517,6 +1544,56 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertEqual(role?.lastAttachedInstrument, .computerKeyboard)
     }
 
+    /// `SceneRole.soundPreset` was added after `soundName` was already in use on real saved
+    /// scenes — a scene file saved before multi-preset support (no `soundPreset` key at all
+    /// in its `roles` entries, only `soundName`) must still decode, with `soundPreset == nil`
+    /// (that role's sound just uses the file's own default preset, exactly as before).
+    func testSceneRoleDecodesPreExistingJSONWithNoSoundPresetKeyAsNilPreset() throws {
+        let json = """
+        {"title": "Ancienne Scene", "roles": [
+            {"id": "\(UUID().uuidString)", "name": "Piano 1", "soundName": "Piano.sf2", "isListening": false, "soundEnabled": true}
+        ]}
+        """
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try json.write(to: tempFile, atomically: true, encoding: .utf8)
+
+        let session = ImprovSession()
+        try session.start()
+        try session.loadScene(fromJSONFile: tempFile.path)
+
+        let role = session.currentScene?.roles.first
+        XCTAssertEqual(role?.soundName, "Piano.sf2")
+        XCTAssertNil(role?.soundPreset)
+    }
+
+    func testSetSceneRoleSoundRoundTripsAPresetThroughSaveAndLoad() throws {
+        let session = ImprovSession()
+        try session.start()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data().write(to: folder.appendingPathComponent("Bank.sf2"))
+        try session.listSampleFiles(in: folder.path)
+
+        session.newScene(title: "Scene")
+        let roleID = try session.addSceneRole(name: "Piano")
+        let preset = SoundFontPresetIdentity(program: 19, bank: 0)
+        // No instrument attached to the role yet, so `setInstrument` isn't reached — this only
+        // exercises persistence of the role's own declared sound/preset, same scoping as
+        // `testSceneSaveAndLoadRoundTripsTrackListeningAndSound`.
+        try session.setSceneRoleSound(roleID, soundName: "Bank.sf2", preset: preset)
+
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try session.saveScene(title: "Scene", toJSONFile: tempFile.path)
+
+        let reloaded = ImprovSession()
+        try reloaded.start()
+        try reloaded.loadScene(fromJSONFile: tempFile.path)
+        XCTAssertEqual(reloaded.currentScene?.roles.first?.soundPreset, preset)
+    }
+
     func testLoadSceneDoesNotReattachMidiMergedHintInIndividualMode() throws {
         // `.midiMerged` has no CoreMIDI dependency (a singleton, unlike `.midiSource`), so this
         // is the one `matches(_:_:)` case fully testable without real hardware — see
@@ -1810,12 +1887,15 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertEqual(after?.soundEnabled, true)
     }
 
-    func testLoadSceneLeavesTracksNotMentionedUntouched() throws {
+    /// Real bug fixed 2026-07-27: loading a scene used to leave any track NOT mentioned by a
+    /// role exactly as it already was (e.g. still listening from this app's own "start every
+    /// MIDI track at launch" convenience) — so Studio could show an instrument actively
+    /// listening/sounding that the loaded scene's own role list said nothing about, or even
+    /// explicitly declared muted. The scene is now authoritative: anything it doesn't attach
+    /// gets stopped, so what's actually happening always matches what the scene declares.
+    func testLoadSceneStopsTracksNotMentionedByAnyRole() throws {
         let session = ImprovSession()
         try session.start()
-        // An explicitly empty scene (built by hand, not via `saveScene` — which always
-        // captures every local track, including as "not listening") must not touch
-        // whatever's currently listening: only tracks it actually mentions are restored.
         let emptyScene = Scene(title: "Empty", roles: [])
         let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: tempFile) }
@@ -1823,7 +1903,43 @@ final class ImprovSessionTests: XCTestCase {
 
         try session.startTrack(.computerKeyboard)
         try session.loadScene(fromJSONFile: tempFile.path)
+        XCTAssertEqual(session.tracks.first { $0.id == .computerKeyboard }?.isListening, false)
+    }
+
+    /// The flip side of the above: a role explicitly attached AND declared listening must
+    /// still end up actually listening (the scene being authoritative cuts both ways).
+    func testLoadSceneStartsAttachedRoleDeclaredListening() throws {
+        let session = ImprovSession()
+        try session.start()
+        var scene = Scene(title: "Test", roles: [
+            SceneRole(name: "Clavier", isListening: true, attachedTrackID: .computerKeyboard),
+        ])
+        scene.roles[0].lastAttachedInstrument = .computerKeyboard
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try JSONEncoder().encode(scene).write(to: tempFile)
+
+        try session.loadScene(fromJSONFile: tempFile.path)
         XCTAssertEqual(session.tracks.first { $0.id == .computerKeyboard }?.isListening, true)
+    }
+
+    /// A role attached but declared MUTED (`isListening: false`) must stop a track that was
+    /// already listening beforehand — the exact bug reported: a scene's role shown muted in
+    /// the UI, but the same instrument kept listening/recognizing chords in Studio regardless.
+    func testLoadSceneStopsAttachedRoleDeclaredMuted() throws {
+        let session = ImprovSession()
+        try session.start()
+        var scene = Scene(title: "Test", roles: [
+            SceneRole(name: "Clavier", isListening: false, attachedTrackID: .computerKeyboard),
+        ])
+        scene.roles[0].lastAttachedInstrument = .computerKeyboard
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try JSONEncoder().encode(scene).write(to: tempFile)
+
+        try session.startTrack(.computerKeyboard) // already listening BEFORE the scene loads
+        try session.loadScene(fromJSONFile: tempFile.path)
+        XCTAssertEqual(session.tracks.first { $0.id == .computerKeyboard }?.isListening, false)
     }
 
     // MARK: - Color palettes
@@ -1996,6 +2112,44 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertThrowsError(try session.loadSample(named: "Lib/Violin.sf2"))
     }
 
+    // MARK: - SoundFont presets (multi-preset .sf2)
+
+    func testSoundFontPresetsThrowsWhenNoSampleFolderListed() {
+        let session = ImprovSession()
+        XCTAssertThrowsError(try session.soundFontPresets(forPath: "Whatever.sf2"))
+    }
+
+    func testSoundFontPresetsResolvesRelativePathAndPropagatesReaderErrors() throws {
+        let session = ImprovSession()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data().write(to: folder.appendingPathComponent("Empty.sf2"))
+        try session.listSampleFiles(in: folder.path)
+
+        // Confirms `soundFontPresets(forPath:)` resolves against `sampleFolder` the same way
+        // `loadSample(named:)` does, and surfaces the reader's own typed error rather than
+        // swallowing or wrapping it.
+        XCTAssertThrowsError(try session.soundFontPresets(forPath: "Empty.sf2")) { error in
+            XCTAssertEqual(error as? SoundFontPresetReaderError, .truncatedData)
+        }
+    }
+
+    func testSetInstrumentAcceptsAnOptionalPresetWithoutBreakingTheDefaultCase() throws {
+        let session = ImprovSession()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data().write(to: folder.appendingPathComponent("Empty.sf2"))
+        try session.listSampleFiles(in: folder.path)
+
+        // Same "malformed file still resolves to the right path and fails at load, not before"
+        // shape as `testLoadSampleResolvesARelativeSubfolderPath`, for both the default (no
+        // preset — unchanged behavior) and explicit-preset overloads of `setInstrument`.
+        XCTAssertThrowsError(try session.setInstrument(named: "Empty.sf2", for: .computerKeyboard))
+        XCTAssertThrowsError(try session.setInstrument(named: "Empty.sf2", for: .computerKeyboard, preset: SoundFontPresetIdentity(program: 5, bank: 0)))
+    }
+
     // MARK: - Sound aliases & favorites
 
     func testSetSoundAliasAndFavoritePersistToSoundSettingsFile() throws {
@@ -2020,7 +2174,7 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertTrue(reloaded.isSoundFavorite("Piano.sf2"))
     }
 
-    func testFavoriteSampleFilesFiltersSampleFilesToFavoritesOnly() throws {
+    func testFavoriteSoundsFiltersSampleFilesToFavoritesOnly() throws {
         let session = ImprovSession()
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -2030,13 +2184,85 @@ final class ImprovSessionTests: XCTestCase {
         try session.listSampleFiles(in: folder.path)
         try session.setSettingsFolder(folder.appendingPathComponent("Settings").path)
 
-        XCTAssertEqual(session.favoriteSampleFiles, [], "nothing favorited yet")
+        XCTAssertEqual(session.favoriteSounds, [], "nothing favorited yet")
 
         try session.setSoundFavorite("Piano.sf2", isFavorite: true)
-        XCTAssertEqual(session.favoriteSampleFiles, ["Piano.sf2"])
+        XCTAssertEqual(session.favoriteSounds.map(\.path), ["Piano.sf2"])
 
         try session.setSoundFavorite("Piano.sf2", isFavorite: false)
-        XCTAssertEqual(session.favoriteSampleFiles, [])
+        XCTAssertEqual(session.favoriteSounds, [])
+    }
+
+    func testFavoriteSoundsDistinguishesPresetsOfTheSameFile() throws {
+        let session = ImprovSession()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data().write(to: folder.appendingPathComponent("GMBank.sf2"))
+        try session.listSampleFiles(in: folder.path)
+        try session.setSettingsFolder(folder.appendingPathComponent("Settings").path)
+
+        let piano = SoundFontPresetIdentity(program: 0, bank: 0)
+        let organ = SoundFontPresetIdentity(program: 19, bank: 0)
+        try session.setSoundFavorite("GMBank.sf2", preset: piano, isFavorite: true)
+        try session.setSoundAlias("GMBank.sf2", preset: organ, alias: "Orgue")
+        try session.setSoundFavorite("GMBank.sf2", preset: organ, isFavorite: true)
+
+        XCTAssertEqual(Set(session.favoriteSounds.map(\.id)), [
+            "GMBank.sf2#0:0", "GMBank.sf2#19:0",
+        ])
+        XCTAssertTrue(session.isSoundFavorite("GMBank.sf2", preset: piano))
+        XCTAssertFalse(session.isSoundFavorite("GMBank.sf2"), "the file's own default preset (nil) was never favorited, only program 0 explicitly")
+        XCTAssertEqual(session.soundAlias(forPath: "GMBank.sf2", preset: organ), "Orgue")
+        XCTAssertNil(session.soundAlias(forPath: "GMBank.sf2", preset: piano))
+    }
+
+    /// `favoriteSounds` must show "file — sound name" when no alias was set (the user's own
+    /// explicit ask, 2026-07-27: a bare file/preset id isn't enough to recognize a favorite in
+    /// a picker), and just the alias once one exists.
+    func testFavoriteSoundsDisplayNameFallsBackToFileAndSoundNameWithoutAlias() throws {
+        let session = ImprovSession()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Self.minimalSoundFont(presets: [(name: "Grand Piano", program: 0, bank: 0)])
+            .write(to: folder.appendingPathComponent("Bank.sf2"))
+        try session.listSampleFiles(in: folder.path)
+        try session.setSettingsFolder(folder.appendingPathComponent("Settings").path)
+
+        let piano = SoundFontPresetIdentity(program: 0, bank: 0)
+        try session.setSoundFavorite("Bank.sf2", preset: piano, isFavorite: true)
+        XCTAssertEqual(session.favoriteSounds.first?.displayName, "Bank.sf2 — Grand Piano")
+
+        try session.setSoundAlias("Bank.sf2", preset: piano, alias: "Mon Piano")
+        XCTAssertEqual(session.favoriteSounds.first?.displayName, "Mon Piano")
+    }
+
+    /// Minimal synthetic `.sf2` byte buffer (RIFF/`sfbk` -> `LIST pdta` -> `phdr`), same
+    /// technique `SoundFontModelTests.SoundFontPresetReaderTests` uses — no real `.sf2` fixture
+    /// is checked into the repo.
+    private static func minimalSoundFont(presets: [(name: String, program: UInt16, bank: UInt16)]) -> Data {
+        func uint16LE(_ value: UInt16) -> [UInt8] { [UInt8(value & 0xFF), UInt8((value >> 8) & 0xFF)] }
+        func uint32LE(_ value: UInt32) -> [UInt8] {
+            [UInt8(value & 0xFF), UInt8((value >> 8) & 0xFF), UInt8((value >> 16) & 0xFF), UInt8((value >> 24) & 0xFF)]
+        }
+        func chunk(id: String, body: [UInt8]) -> [UInt8] {
+            var bytes = Array(id.utf8) + uint32LE(UInt32(body.count)) + body
+            if body.count % 2 == 1 { bytes.append(0) }
+            return bytes
+        }
+        func phdrRecord(name: String, program: UInt16, bank: UInt16) -> [UInt8] {
+            var nameBytes = Array(name.utf8.prefix(20))
+            nameBytes += Array(repeating: UInt8(0), count: 20 - nameBytes.count)
+            return nameBytes + uint16LE(program) + uint16LE(bank) + uint16LE(0) + uint32LE(0) + uint32LE(0) + uint32LE(0)
+        }
+        var phdrBody: [UInt8] = []
+        for preset in presets { phdrBody += phdrRecord(name: preset.name, program: preset.program, bank: preset.bank) }
+        phdrBody += phdrRecord(name: "EOP", program: 0, bank: 0)
+
+        let pdtaBody = Array("pdta".utf8) + chunk(id: "phdr", body: phdrBody)
+        let riffBody = Array("sfbk".utf8) + chunk(id: "LIST", body: pdtaBody)
+        return Data(chunk(id: "RIFF", body: riffBody))
     }
 
     func testDisplayNameForSamplePathFallsBackToPathWithoutAlias() throws {

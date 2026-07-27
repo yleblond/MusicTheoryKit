@@ -1,5 +1,6 @@
 import AudioEngine
 import RecognitionEngine
+import SoundFontModel
 
 /// Identifies one independent live-input "piste" (track). MIDI can be heard as a single
 /// merged stream or as one track per visible port, depending on `MIDIFusionMode` — see
@@ -158,6 +159,9 @@ public struct TrackInfo: Identifiable, Sendable {
     public let canHaveSound: Bool
     public var soundEnabled: Bool
     public var instrumentName: String?
+    /// Which preset within `instrumentName`, when it names a multi-preset `.sf2` — see
+    /// `SoundFontPresetReader`/`ImprovSession.setInstrument(named:for:preset:)`.
+    public var instrumentPreset: SoundFontPresetIdentity?
     public var heldPitches: Set<Int>
     /// Real, structured recognition — only ever populated on whichever machine actually
     /// runs this track's `RecognitionEngine` (its owner if local, or the server if
@@ -197,7 +201,8 @@ public struct TrackInfo: Identifiable, Sendable {
 
     public init(
         id: TrackID, label: String, isListening: Bool = false, canHaveSound: Bool,
-        soundEnabled: Bool = false, instrumentName: String? = nil, heldPitches: Set<Int> = [],
+        soundEnabled: Bool = false, instrumentName: String? = nil, instrumentPreset: SoundFontPresetIdentity? = nil,
+        heldPitches: Set<Int> = [],
         recognizedChord: RecognizedChord? = nil, recognizedModes: [RecognizedMode] = [],
         lastDetectedPitches: [DetectedPitch] = [], microphoneInputLevel: Float = 0,
         microphoneRecognitionMode: MicrophoneRecognitionMode = .default,
@@ -210,6 +215,7 @@ public struct TrackInfo: Identifiable, Sendable {
         self.canHaveSound = canHaveSound
         self.soundEnabled = soundEnabled
         self.instrumentName = instrumentName
+        self.instrumentPreset = instrumentPreset
         self.heldPitches = heldPitches
         self.recognizedChord = recognizedChord
         self.recognizedModes = recognizedModes

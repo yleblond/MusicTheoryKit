@@ -1,4 +1,5 @@
 import AVFoundation
+import SoundFontModel
 
 /// One `AVAudioUnitSampler` on its own dedicated `AVAudioEngine` — instrument loading plus
 /// realtime note on/off, with no notion of a pre-authored score (see `PiecePlayer` for
@@ -43,15 +44,18 @@ public final class SamplerUnit: @unchecked Sendable {
         engine.mainMixerNode.outputVolume = max(0, min(1, volume))
     }
 
-    /// Same three formats `PiecePlayer.loadSample` supports.
-    public func loadSample(at url: URL, program: UInt8 = 0) throws {
+    /// Same three formats `PiecePlayer.loadSample` supports. `preset` selects which instrument
+    /// inside a multi-preset `.sf2` to load (see `SoundFontPresetReader`) — `nil` keeps the
+    /// previous behavior of always loading program 0 in the default GM melodic bank (still the
+    /// only sound in a single-preset `.sf2`/`.dls`).
+    public func loadSample(at url: URL, preset: SoundFontPresetIdentity? = nil) throws {
         switch url.pathExtension.lowercased() {
         case "sf2", "dls":
             try sampler.loadSoundBankInstrument(
                 at: url,
-                program: program,
-                bankMSB: UInt8(kAUSampler_DefaultMelodicBankMSB),
-                bankLSB: UInt8(kAUSampler_DefaultBankLSB)
+                program: preset?.samplerProgram ?? 0,
+                bankMSB: preset?.bankMSB ?? UInt8(kAUSampler_DefaultMelodicBankMSB),
+                bankLSB: preset?.bankLSB ?? UInt8(kAUSampler_DefaultBankLSB)
             )
         case "aupreset":
             try sampler.loadInstrument(at: url)
