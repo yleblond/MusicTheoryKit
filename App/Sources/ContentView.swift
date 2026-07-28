@@ -48,7 +48,7 @@ struct ContentView: View {
                         // SF Symbol (also never explicitly resized here) renders at its own natural
                         // size without issue.
                         Tab(value: AppTab.jamShack) {
-                            JamShackView(session: session, bridge: bridge)
+                            JamShackView(session: session, bridge: bridge, isActiveTab: selectedTab == .jamShack)
                         } label: {
                             Label {
                                 Text(L10n.string(.catJamShack, session.currentLanguage))

@@ -1,4 +1,5 @@
 import Foundation
+import SoundFontModel
 
 /// A best-effort hint of which physical/virtual instrument last occupied a `SceneRole`, used
 /// only to decide whether to automatically reattach it on `loadScene` (see
@@ -40,6 +41,9 @@ public struct SceneRole: Identifiable, Equatable, Sendable {
     /// The ROLE's own instrument sound — applied to whoever attaches to it (see
     /// `ImprovSession.attachInstrument(_:toRole:)`), not tied to any specific device.
     public var soundName: String?
+    /// Which preset within `soundName`, when it names a multi-preset `.sf2` — see
+    /// `SoundFontPresetReader`/`ImprovSession.setSceneRoleSound(_:soundName:preset:)`.
+    public var soundPreset: SoundFontPresetIdentity?
     public var isListening: Bool
     public var soundEnabled: Bool
     /// Linear 0...1, applied to the role's attached `SamplerUnit.setVolume(_:)` — the role owns
@@ -64,13 +68,15 @@ public struct SceneRole: Identifiable, Equatable, Sendable {
     public var attachedTrackID: TrackID?
 
     public init(
-        id: UUID = UUID(), name: String, soundName: String? = nil, isListening: Bool = false,
+        id: UUID = UUID(), name: String, soundName: String? = nil, soundPreset: SoundFontPresetIdentity? = nil,
+        isListening: Bool = false,
         soundEnabled: Bool = false, volume: Float = 1.0, lastAttachedInstrument: InstrumentIdentityHint? = nil,
         microphoneRecognitionMode: MicrophoneRecognitionMode? = nil, attachedTrackID: TrackID? = nil
     ) {
         self.id = id
         self.name = name
         self.soundName = soundName
+        self.soundPreset = soundPreset
         self.isListening = isListening
         self.soundEnabled = soundEnabled
         self.volume = volume
@@ -82,7 +88,7 @@ public struct SceneRole: Identifiable, Equatable, Sendable {
 
 extension SceneRole: Codable {
     private enum CodingKeys: String, CodingKey {
-        case id, name, soundName, isListening, soundEnabled, volume, lastAttachedInstrument, microphoneRecognitionMode
+        case id, name, soundName, soundPreset, isListening, soundEnabled, volume, lastAttachedInstrument, microphoneRecognitionMode
         // `attachedTrackID` deliberately absent — see this type's own doc comment.
     }
 
@@ -91,6 +97,7 @@ extension SceneRole: Codable {
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         soundName = try container.decodeIfPresent(String.self, forKey: .soundName)
+        soundPreset = try container.decodeIfPresent(SoundFontPresetIdentity.self, forKey: .soundPreset)
         isListening = try container.decode(Bool.self, forKey: .isListening)
         soundEnabled = try container.decode(Bool.self, forKey: .soundEnabled)
         volume = try container.decodeIfPresent(Float.self, forKey: .volume) ?? 1.0
@@ -104,6 +111,7 @@ extension SceneRole: Codable {
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
         try container.encodeIfPresent(soundName, forKey: .soundName)
+        try container.encodeIfPresent(soundPreset, forKey: .soundPreset)
         try container.encode(isListening, forKey: .isListening)
         try container.encode(soundEnabled, forKey: .soundEnabled)
         try container.encode(volume, forKey: .volume)

@@ -6,6 +6,7 @@ import PieceModel
 import SoundTrackModel
 import AudioEngine
 import MIDIEngine
+import SoundFontModel
 import RecognitionEngine
 import LLMEngine
 import NetEngine
@@ -1373,18 +1374,19 @@ public final class ImprovSession: @unchecked Sendable {
     /// next time an instrument was (re)attached to a role that already had a sound assigned.
     /// Now `soundEnabled` tracks whether a sound is actually assigned, kept in sync with what
     /// `setInstrument`/`setSoundEnabled` already do to the live track.
-    public func setSceneRoleSound(_ roleID: SceneRole.ID, soundName: String?) throws {
+    public func setSceneRoleSound(_ roleID: SceneRole.ID, soundName: String?, preset: SoundFontPresetIdentity? = nil) throws {
         guard var scene = currentScene else { throw SessionError.noSceneLoaded }
         guard let index = scene.roles.firstIndex(where: { $0.id == roleID }) else { throw SessionError.unknownSceneRole }
         let attachedTrackID = scene.roles[index].attachedTrackID
         if let attachedTrackID {
             if let soundName {
-                try setInstrument(named: soundName, for: attachedTrackID)
+                try setInstrument(named: soundName, for: attachedTrackID, preset: preset)
             } else {
                 try? setSoundEnabled(false, for: attachedTrackID)
             }
         }
         scene.roles[index].soundName = soundName
+        scene.roles[index].soundPreset = soundName != nil ? preset : nil
         scene.roles[index].soundEnabled = soundName != nil
         currentScene = scene
         append("Son du role '\(scene.roles[index].name)' : \(soundName ?? "aucun")")
@@ -1492,11 +1494,19 @@ public final class ImprovSession: @unchecked Sendable {
         if let mode = role.microphoneRecognitionMode, trackID == .microphone {
             try? setMicrophoneRecognitionMode(mode, for: trackID)
         }
+        // Real bug fixed here: this used to only ever turn listening ON (`if role.isListening
+        // { startTrack }`), never OFF — so a role explicitly declared muted/not-listening in
+        // the scene file had zero effect on a track that happened to already be listening
+        // (e.g. every MIDI track this app auto-starts at launch, regardless of any scene).
+        // Reported symptom: a scene's role shown "muted" in the UI, but Studio still showed
+        // that same instrument actively listening/recognizing chords.
         if role.isListening {
             try? startTrack(trackID)
+        } else {
+            stopTrack(trackID)
         }
         if let soundName = role.soundName {
-            try? setInstrument(named: soundName, for: trackID)
+            try? setInstrument(named: soundName, for: trackID, preset: role.soundPreset)
             if !role.soundEnabled { try? setSoundEnabled(false, for: trackID) }
         } else {
             try? setSoundEnabled(role.soundEnabled, for: trackID)
@@ -1706,6 +1716,17 @@ public final class ImprovSession: @unchecked Sendable {
             try? applyRoleConfiguration(role, to: trackID)
         }
 
+        // Real bug fixed here: a live track NOT attached to any role in the scene just loaded
+        // used to keep whatever listening/sound state it already had (e.g. every MIDI track
+        // this app auto-starts listening+sounding at launch) — the scene had no way to say
+        // "this input isn't part of me," only to configure the ones it DOES claim. Now the
+        // scene is authoritative: anything it doesn't attach is stopped and muted, so what
+        // Studio shows always matches what the loaded scene actually declares.
+        for track in tracks where !claimedTrackIDs.contains(track.id) {
+            stopTrack(track.id)
+            try? setSoundEnabled(false, for: track.id)
+        }
+
         let freeRoles = scene.roles.filter { $0.attachedTrackID == nil }
         var message = "Scene chargee : \(scene.title) — \(scene.roles.count) role(s), "
             + "\(reattachedCount) reattache(s) automatiquement, \(freeRoles.count) libre(s)."
@@ -1906,21 +1927,23 @@ public final class ImprovSession: @unchecked Sendable {
     /// `sampleFolder` at play time — see `resolvedInstrumentURLs`) within the current
     /// piece's `sectionIndex`-th section. Pass `nil`/empty to revert to the default sound.
     /// Doesn't persist by itself — follow with `save()`/`saveAs(_:)` to keep the change.
-    public func setPieceTrackInstrument(sectionIndex: Int, trackIndex: Int, instrumentName: String?) throws {
+    public func setPieceTrackInstrument(sectionIndex: Int, trackIndex: Int, instrumentName: String?, preset: SoundFontPresetIdentity? = nil) throws {
         guard var piece else { throw SessionError.noPieceLoaded }
         guard piece.sections.indices.contains(sectionIndex) else { throw SessionError.invalidPieceSectionIndex }
         guard piece.sections[sectionIndex].tracks.indices.contains(trackIndex) else { throw SessionError.invalidPieceTrackIndex }
         piece.sections[sectionIndex].tracks[trackIndex].instrument = instrumentName ?? ""
+        piece.sections[sectionIndex].tracks[trackIndex].instrumentPreset = instrumentName != nil ? preset : nil
         self.piece = piece
         append("Piste '\(piece.sections[sectionIndex].tracks[trackIndex].name)' (section '\(piece.sections[sectionIndex].name)') : instrument \(instrumentName.map { "'\($0)'" } ?? "par defaut").")
     }
 
     /// Sets a section's chord-progression instrument — the harmonic-accompaniment
     /// counterpart to `setPieceTrackInstrument`, since chords have no track of their own.
-    public func setPieceChordInstrument(sectionIndex: Int, instrumentName: String?) throws {
+    public func setPieceChordInstrument(sectionIndex: Int, instrumentName: String?, preset: SoundFontPresetIdentity? = nil) throws {
         guard var piece else { throw SessionError.noPieceLoaded }
         guard piece.sections.indices.contains(sectionIndex) else { throw SessionError.invalidPieceSectionIndex }
         piece.sections[sectionIndex].chordInstrument = instrumentName
+        piece.sections[sectionIndex].chordInstrumentPreset = instrumentName != nil ? preset : nil
         self.piece = piece
         append("Accords de la section '\(piece.sections[sectionIndex].name)' : instrument \(instrumentName.map { "'\($0)'" } ?? "par defaut").")
     }
@@ -2254,7 +2277,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// Loads a sample-based instrument by name from `sampleFolder` (see `listSampleFiles`)
     /// onto one track's own sampler, enabling its sound if it wasn't already — each track
     /// can carry a different instrument, sounding at the same time as any other track's.
-    public func setInstrument(named name: String, for id: TrackID) throws {
+    public func setInstrument(named name: String, for id: TrackID, preset: SoundFontPresetIdentity? = nil) throws {
         let index = try trackIndex(id)
         guard tracks[index].canHaveSound else { throw SessionError.trackCannotHaveSound }
         guard let sampleFolder else { throw SessionError.noSampleFolderListed }
@@ -2274,16 +2297,28 @@ public final class ImprovSession: @unchecked Sendable {
         // matching a track reporting `soundEnabled=true` + sampler present + startNote called,
         // yet totally silent. `SamplerUnit.start()` is safe to call on an already-running engine.
         try unit.start()
-        try unit.loadSample(at: url)
+        try unit.loadSample(at: url, preset: preset)
         tracks[index].soundEnabled = true
         tracks[index].instrumentName = name
+        tracks[index].instrumentPreset = preset
         append("Piste '\(tracks[index].label)' : instrument '\(name)' charge, son active.")
     }
 
+    /// The presets bundled inside a multi-preset `.sf2` file (see `SoundFontPresetReader`) —
+    /// `path` is relative to `sampleFolder`, same convention as `sampleFiles`. Throws whatever
+    /// the reader throws for anything that isn't a `.sf2` shaped like one (a `.dls`/`.aupreset`,
+    /// or a `.sf2` the reader can't parse) — callers should treat that the same as "just the
+    /// file's own single default sound," same as before multi-preset support existed.
+    public func soundFontPresets(forPath path: String) throws -> [SoundFontPreset] {
+        guard let sampleFolder else { throw SessionError.noSampleFolderListed }
+        let url = URL(fileURLWithPath: sampleFolder).appendingPathComponent(path)
+        return try SoundFontPresetReader.presets(at: url)
+    }
+
     /// Convenience over `setInstrument(named:for:)` using the 0-based position in `sampleFiles`.
-    public func setInstrument(atIndex sampleIndex: Int, for id: TrackID) throws {
+    public func setInstrument(atIndex sampleIndex: Int, for id: TrackID, preset: SoundFontPresetIdentity? = nil) throws {
         guard sampleFiles.indices.contains(sampleIndex) else { throw SessionError.invalidSampleIndex }
-        try setInstrument(named: sampleFiles[sampleIndex], for: id)
+        try setInstrument(named: sampleFiles[sampleIndex], for: id, preset: preset)
     }
 
     /// Changes how the microphone track turns raw FFT detections into confirmed notes — see
@@ -2371,41 +2406,41 @@ public final class ImprovSession: @unchecked Sendable {
     /// `listSampleFiles`), replacing the piece-playback sampler's current sound (the
     /// default sine synth, or whatever was loaded before) — used by `play()`, entirely
     /// separate from any live-input track's own instrument (see `setInstrument(named:for:)`).
-    public func loadSample(named name: String) throws {
+    public func loadSample(named name: String, preset: SoundFontPresetIdentity? = nil) throws {
         guard let sampleFolder else { throw SessionError.noSampleFolderListed }
         let url = URL(fileURLWithPath: sampleFolder).appendingPathComponent(name)
-        try player.loadSample(at: url)
+        try player.loadSample(at: url, preset: preset)
         append("Loaded instrument: \(name)")
     }
 
     /// Convenience over `loadSample(named:)` using the 0-based position in `sampleFiles`.
-    public func loadSample(atIndex index: Int) throws {
+    public func loadSample(atIndex index: Int, preset: SoundFontPresetIdentity? = nil) throws {
         guard sampleFiles.indices.contains(index) else { throw SessionError.invalidSampleIndex }
-        try loadSample(named: sampleFiles[index])
+        try loadSample(named: sampleFiles[index], preset: preset)
     }
 
     /// Same as `loadSample(named:)`, for `soundTrackPlayer`'s own sampler instead of the
     /// piece-playback one — until this is called, a `SoundTrack` recording plays back through
     /// the default sine synth, exactly like a piece would before its own `loadSample`.
-    public func loadSoundTrackSample(named name: String) throws {
+    public func loadSoundTrackSample(named name: String, preset: SoundFontPresetIdentity? = nil) throws {
         guard let sampleFolder else { throw SessionError.noSampleFolderListed }
         let url = URL(fileURLWithPath: sampleFolder).appendingPathComponent(name)
-        try soundTrackPlayer.loadSample(at: url)
+        try soundTrackPlayer.loadSample(at: url, preset: preset)
         append("Son de lecture (enregistrement): \(name)")
     }
 
     /// Convenience over `loadSoundTrackSample(named:)` using the 0-based position in `sampleFiles`.
-    public func loadSoundTrackSample(atIndex index: Int) throws {
+    public func loadSoundTrackSample(atIndex index: Int, preset: SoundFontPresetIdentity? = nil) throws {
         guard sampleFiles.indices.contains(index) else { throw SessionError.invalidSampleIndex }
-        try loadSoundTrackSample(named: sampleFiles[index])
+        try loadSoundTrackSample(named: sampleFiles[index], preset: preset)
     }
 
     /// Same as `loadSoundTrackSample(named:)`, for `guideAuditionPlayer`'s own sampler — until
     /// this is called, "Ecouter le guide" plays back through the default sine synth.
-    public func loadGuideAuditionSample(named name: String) throws {
+    public func loadGuideAuditionSample(named name: String, preset: SoundFontPresetIdentity? = nil) throws {
         guard let sampleFolder else { throw SessionError.noSampleFolderListed }
         let url = URL(fileURLWithPath: sampleFolder).appendingPathComponent(name)
-        try guideAuditionPlayer.loadSample(at: url)
+        try guideAuditionPlayer.loadSample(at: url, preset: preset)
         append("Son d'ecoute du guide: \(name)")
     }
 
@@ -2421,62 +2456,112 @@ public final class ImprovSession: @unchecked Sendable {
         let role = scene.roles.first(where: { $0.attachedTrackID == .computerKeyboard && $0.soundName != nil })
             ?? scene.roles.first(where: { $0.attachedTrackID != nil && $0.soundName != nil })
         guard let soundName = role?.soundName else { return }
-        try? loadSoundTrackSample(named: soundName)
+        try? loadSoundTrackSample(named: soundName, preset: role?.soundPreset)
     }
 
-    /// `sampleFiles` filtered down to favorites (see `SoundEntry.isFavorite`) — this is what
-    /// every sound *picker* in the app should show (`PiecesPlayView`/`RecordingPlayView`/
-    /// `SceneLayoutView`'s role-sound menu), so a big decompressed library dumped into
-    /// `sampleFolder` doesn't turn every picker into an unusable wall of cryptic filenames. The
-    /// unfiltered `sampleFiles` (every sound found) is still what the Sounds sub-tab itself
-    /// shows, since that's where favorites get chosen from in the first place — deliberately no
-    /// "fall back to showing everything when there are zero favorites" exception: marking at
-    /// least one favorite is the expected first step before using any other sound picker.
-    public var favoriteSampleFiles: [String] {
-        let favoritePaths = Set(soundEntries.filter(\.isFavorite).map(\.path))
-        return sampleFiles.filter { favoritePaths.contains($0) }
+    /// One favorited sound — a specific preset within a `.sf2` (or a `.dls`/`.aupreset`'s own
+    /// single sound, `preset == nil`), ready to display and to pass straight back into
+    /// `setInstrument`/`setSceneRoleSound`/etc. A favorite is always a SOUND, never a whole
+    /// file: a multi-preset `.sf2` can contribute several distinct `FavoriteSound`s, one per
+    /// preset the user actually favorited.
+    public struct FavoriteSound: Identifiable, Equatable, Sendable {
+        public var path: String
+        public var preset: SoundFontPresetIdentity?
+        public var displayName: String
+
+        public var id: String {
+            guard let preset else { return path }
+            return "\(path)#\(preset.program):\(preset.bank)"
+        }
+
+        public init(path: String, preset: SoundFontPresetIdentity?, displayName: String) {
+            self.path = path
+            self.preset = preset
+            self.displayName = displayName
+        }
     }
 
-    /// The alias for a sound path if one was assigned, else `nil` — callers show the bare path
-    /// as a fallback (see `displayName(forSamplePath:)`).
-    public func soundAlias(forPath path: String) -> String? {
-        soundEntries.first { $0.path == path }?.alias
+    /// Every favorited sound (see `SoundEntry.isFavorite`) whose file still exists in
+    /// `sampleFiles` — this is what every sound *picker* in the app should show
+    /// (`PiecesPlayView`/`GuideEditionView`/`SceneLayoutView`'s role-sound menu), so a big
+    /// decompressed library dumped into `sampleFolder` doesn't turn every picker into an
+    /// unusable wall of cryptic filenames/presets. The Sounds sub-tab itself (where favorites
+    /// get chosen from in the first place) browses every file/preset directly, not through
+    /// this list — deliberately no "fall back to showing everything when there are zero
+    /// favorites" exception: marking at least one favorite is the expected first step before
+    /// using any other sound picker.
+    public var favoriteSounds: [FavoriteSound] {
+        let existingPaths = Set(sampleFiles)
+        var presetsByPath: [String: [SoundFontPreset]] = [:]
+        return soundEntries
+            .filter { $0.isFavorite && existingPaths.contains($0.path) }
+            .map { entry in
+                let displayName = entry.alias ?? "\((entry.path as NSString).lastPathComponent) — \(originalSoundName(forPath: entry.path, preset: entry.preset, cache: &presetsByPath))"
+                return FavoriteSound(path: entry.path, preset: entry.preset, displayName: displayName)
+            }
     }
 
-    public func isSoundFavorite(_ path: String) -> Bool {
-        soundEntries.first { $0.path == path }?.isFavorite ?? false
+    /// The preset's own name as authored in the `.sf2` file (e.g. "Alto Sax"), used as the
+    /// second half of `favoriteSounds`' fallback display name ("file — sound") when no alias
+    /// was set — falls back to the bare file name when the file can't be parsed as a `.sf2`
+    /// (a `.dls`/`.aupreset`, or a `.sf2` `SoundFontPresetReader` fails on) or has no preset
+    /// matching `preset` (defaulting to program 0/bank 0, the file's own implicit default, when
+    /// `preset` itself is `nil`). `cache` avoids re-parsing the same (possibly huge) file once
+    /// per favorited preset it contributes.
+    private func originalSoundName(forPath path: String, preset: SoundFontPresetIdentity?, cache: inout [String: [SoundFontPreset]]) -> String {
+        let presets: [SoundFontPreset]
+        if let cached = cache[path] {
+            presets = cached
+        } else {
+            presets = (try? soundFontPresets(forPath: path)) ?? []
+            cache[path] = presets
+        }
+        let identity = preset ?? SoundFontPresetIdentity(program: 0, bank: 0)
+        return presets.first { $0.identity == identity }?.name ?? (path as NSString).lastPathComponent
     }
 
-    /// What to show in any sound picker for a given `sampleFiles` entry — its alias if one was
+    /// The alias for a specific sound if one was assigned, else `nil` — callers show the bare
+    /// path as a fallback (see `displayName(forSamplePath:preset:)`). `preset` identifies WHICH
+    /// sound within `path`; `nil` means that file's own single/default sound (the only case
+    /// that existed before multi-preset `.sf2` support).
+    public func soundAlias(forPath path: String, preset: SoundFontPresetIdentity? = nil) -> String? {
+        soundEntries.first { $0.path == path && $0.preset == preset }?.alias
+    }
+
+    public func isSoundFavorite(_ path: String, preset: SoundFontPresetIdentity? = nil) -> Bool {
+        soundEntries.first { $0.path == path && $0.preset == preset }?.isFavorite ?? false
+    }
+
+    /// What to show in any sound picker for a given (file, preset) — its alias if one was
     /// assigned, otherwise the path itself.
-    public func displayName(forSamplePath path: String) -> String {
-        soundAlias(forPath: path) ?? path
+    public func displayName(forSamplePath path: String, preset: SoundFontPresetIdentity? = nil) -> String {
+        soundAlias(forPath: path, preset: preset) ?? path
     }
 
     /// Sets (or clears, with `nil`/empty) a sound's alias and persists. Removes the entry
     /// entirely once it has neither an alias nor a favorite flag, keeping `sound-settings.json`
     /// limited to sounds the user actually curated.
-    public func setSoundAlias(_ path: String, alias: String?) throws {
+    public func setSoundAlias(_ path: String, preset: SoundFontPresetIdentity? = nil, alias: String?) throws {
         let trimmed = alias?.trimmingCharacters(in: .whitespacesAndNewlines)
-        try updateSoundEntry(path) { $0.alias = (trimmed?.isEmpty ?? true) ? nil : trimmed }
+        try updateSoundEntry(path, preset: preset) { $0.alias = (trimmed?.isEmpty ?? true) ? nil : trimmed }
     }
 
-    /// Marks (or unmarks) a sound as a favorite and persists — see `favoriteSampleFiles`.
-    public func setSoundFavorite(_ path: String, isFavorite: Bool) throws {
-        try updateSoundEntry(path) { $0.isFavorite = isFavorite }
+    /// Marks (or unmarks) a sound as a favorite and persists — see `favoriteSounds`.
+    public func setSoundFavorite(_ path: String, preset: SoundFontPresetIdentity? = nil, isFavorite: Bool) throws {
+        try updateSoundEntry(path, preset: preset) { $0.isFavorite = isFavorite }
     }
 
     /// Shared mutator behind `setSoundAlias`/`setSoundFavorite`: finds or creates the entry for
-    /// `path`, applies `mutate`, drops the entry if it ends up with no alias and not a favorite
-    /// (the "untouched" state), then persists either way.
-    private func updateSoundEntry(_ path: String, mutate: (inout SoundEntry) -> Void) throws {
-        if let index = soundEntries.firstIndex(where: { $0.path == path }) {
+    /// `(path, preset)`, applies `mutate`, drops the entry if it ends up with no alias and not
+    /// a favorite (the "untouched" state), then persists either way.
+    private func updateSoundEntry(_ path: String, preset: SoundFontPresetIdentity?, mutate: (inout SoundEntry) -> Void) throws {
+        if let index = soundEntries.firstIndex(where: { $0.path == path && $0.preset == preset }) {
             mutate(&soundEntries[index])
             if soundEntries[index].alias == nil && !soundEntries[index].isFavorite {
                 soundEntries.remove(at: index)
             }
         } else {
-            var entry = SoundEntry(path: path)
+            var entry = SoundEntry(path: path, preset: preset)
             mutate(&entry)
             if entry.alias != nil || entry.isFavorite {
                 soundEntries.append(entry)

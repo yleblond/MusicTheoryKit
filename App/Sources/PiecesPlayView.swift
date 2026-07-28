@@ -50,13 +50,13 @@ struct PiecesPlayView: View {
     @ViewBuilder
     private var soundSection: some View {
         Section {
-            if session.favoriteSampleFiles.isEmpty {
+            if session.favoriteSounds.isEmpty {
                 Text(L10n.string(.appPlaceholderAucunSonFavori, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
             } else {
-                ForEach(session.favoriteSampleFiles, id: \.self) { name in
-                    Button(session.displayName(forSamplePath: name)) {
+                ForEach(session.favoriteSounds) { sound in
+                    Button(sound.displayName) {
                         do {
-                            try session.loadSample(named: name)
+                            try session.loadSample(named: sound.path, preset: sound.preset)
                         } catch {
                             actionError = "\(error)"
                         }

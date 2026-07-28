@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import PieceModel
+import SoundFontModel
 
 public enum SampleLoadError: Error, CustomStringConvertible {
     case unsupportedExtension(String)
@@ -25,9 +26,19 @@ public enum SampleLoadError: Error, CustomStringConvertible {
 /// touched from more than one thread — `namedSamplers`/`engine`/`sampler` are only ever
 /// touched from whichever thread calls `play(_:)`/`loadSample`) are guarded by `stateLock`.
 public final class PiecePlayer: @unchecked Sendable {
+    /// Groups notes onto the same `SamplerUnit` only when they share both the same instrument
+    /// FILE and the same PRESET within it — two tracks that happen to reference the same
+    /// multi-preset `.sf2` (e.g. one huge General MIDI bank) but pick different presets must
+    /// never share one sampler, since `AVAudioUnitSampler` can only have one preset loaded at
+    /// a time.
+    private struct InstrumentKey: Hashable {
+        let name: String
+        let preset: SoundFontPresetIdentity?
+    }
+
     private let engine = AVAudioEngine()
     private let sampler = AVAudioUnitSampler()
-    private var namedSamplers: [String: SamplerUnit] = [:]
+    private var namedSamplers: [InstrumentKey: SamplerUnit] = [:]
 
     // Guards `playGeneration`/`activePitchesByInstrument` below — both are read/written from
     // this player's own `DispatchQueue.global()`-scheduled note-on/off closures (several,
@@ -37,7 +48,7 @@ public final class PiecePlayer: @unchecked Sendable {
     // `playbackStateQueue`), so this needs real synchronization, not just a comment.
     private let stateLock = NSLock()
     private var playGeneration = 0
-    private var activePitchesByInstrument: [String?: Set<Int>] = [:]
+    private var activePitchesByInstrument: [InstrumentKey?: Set<Int>] = [:]
 
     public init() {
         engine.attach(sampler)
@@ -68,29 +79,32 @@ public final class PiecePlayer: @unchecked Sendable {
         // couldn't be found on an earlier play (e.g. the sample folder wasn't listed yet)
         // gets a real chance to load next time, rather than being stuck with the default
         // sound for this `PiecePlayer`'s whole lifetime.
-        for name in Set(notes.compactMap(\.instrumentName)) {
+        let keys = Set(notes.compactMap { note -> InstrumentKey? in
+            note.instrumentName.map { InstrumentKey(name: $0, preset: note.instrumentPreset) }
+        })
+        for key in keys {
             let unit: SamplerUnit
-            if let existing = namedSamplers[name] {
+            if let existing = namedSamplers[key] {
                 unit = existing
             } else {
                 unit = SamplerUnit()
                 do {
                     try unit.start()
                 } catch {
-                    warnings.append("instrument '\(name)': impossible de demarrer son moteur audio (\(error)) — son par defaut utilise")
-                    namedSamplers[name] = unit
+                    warnings.append("instrument '\(key.name)': impossible de demarrer son moteur audio (\(error)) — son par defaut utilise")
+                    namedSamplers[key] = unit
                     continue
                 }
-                namedSamplers[name] = unit
+                namedSamplers[key] = unit
             }
-            if let url = instrumentURLs[name] {
+            if let url = instrumentURLs[key.name] {
                 do {
-                    try unit.loadSample(at: url)
+                    try unit.loadSample(at: url, preset: key.preset)
                 } catch {
-                    warnings.append("instrument '\(name)': impossible de charger \(url.lastPathComponent) (\(error)) — son par defaut utilise")
+                    warnings.append("instrument '\(key.name)': impossible de charger \(url.lastPathComponent) (\(error)) — son par defaut utilise")
                 }
             } else {
-                warnings.append("instrument '\(name)' introuvable — son par defaut utilise")
+                warnings.append("instrument '\(key.name)' introuvable — son par defaut utilise")
             }
         }
 
@@ -101,7 +115,8 @@ public final class PiecePlayer: @unchecked Sendable {
 
         let now = DispatchTime.now()
         for note in notes {
-            let target = note.instrumentName.flatMap { namedSamplers[$0] }
+            let key = note.instrumentName.map { InstrumentKey(name: $0, preset: note.instrumentPreset) }
+            let target = key.flatMap { namedSamplers[$0] }
             DispatchQueue.global().asyncAfter(deadline: now + note.startSeconds) { [weak self, sampler] in
                 guard let self, self.isCurrentGeneration(generation) else { return }
                 if let target {
@@ -131,15 +146,16 @@ public final class PiecePlayer: @unchecked Sendable {
         // remembered in `activePitchesByInstrument` so `stopAllNotes()` (an early "Arreter"
         // button press, not just this natural end-of-piece cleanup) knows what to silence.
         let totalDuration = Self.totalDuration(of: notes)
-        var pitchesByInstrument: [String?: Set<Int>] = [:]
+        var pitchesByInstrument: [InstrumentKey?: Set<Int>] = [:]
         for note in notes {
-            pitchesByInstrument[note.instrumentName, default: []].insert(note.pitch)
+            let key = note.instrumentName.map { InstrumentKey(name: $0, preset: note.instrumentPreset) }
+            pitchesByInstrument[key, default: []].insert(note.pitch)
         }
         stateLock.lock()
         activePitchesByInstrument = pitchesByInstrument
         stateLock.unlock()
-        for (name, pitches) in pitchesByInstrument {
-            let target = name.flatMap { namedSamplers[$0] }
+        for (key, pitches) in pitchesByInstrument {
+            let target = key.flatMap { namedSamplers[$0] }
             DispatchQueue.global().asyncAfter(deadline: now + totalDuration + 0.05) { [weak self, sampler] in
                 guard let self, self.isCurrentGeneration(generation) else { return }
                 for pitch in pitches {
@@ -178,8 +194,8 @@ public final class PiecePlayer: @unchecked Sendable {
         let pitchesByInstrument = activePitchesByInstrument
         activePitchesByInstrument = [:]
         stateLock.unlock()
-        for (name, pitches) in pitchesByInstrument {
-            let target = name.flatMap { namedSamplers[$0] }
+        for (key, pitches) in pitchesByInstrument {
+            let target = key.flatMap { namedSamplers[$0] }
             for pitch in pitches {
                 if let target {
                     target.stopNote(pitch: pitch)
@@ -201,16 +217,17 @@ public final class PiecePlayer: @unchecked Sendable {
     }
 
     /// Swaps the sampler's sound for a sample-based instrument loaded from disk: a
-    /// SoundFont/DLS bank (`.sf2`/`.dls`, program 0 = first instrument in the bank) or an
-    /// Apple `.aupreset`. Replaces whatever was previously loaded (or the default sine synth).
-    public func loadSample(at url: URL, program: UInt8 = 0) throws {
+    /// SoundFont/DLS bank (`.sf2`/`.dls`, program 0 in the default GM melodic bank unless
+    /// `preset` selects a different one — see `SoundFontPresetReader`) or an Apple `.aupreset`.
+    /// Replaces whatever was previously loaded (or the default sine synth).
+    public func loadSample(at url: URL, preset: SoundFontPresetIdentity? = nil) throws {
         switch url.pathExtension.lowercased() {
         case "sf2", "dls":
             try sampler.loadSoundBankInstrument(
                 at: url,
-                program: program,
-                bankMSB: UInt8(kAUSampler_DefaultMelodicBankMSB),
-                bankLSB: UInt8(kAUSampler_DefaultBankLSB)
+                program: preset?.samplerProgram ?? 0,
+                bankMSB: preset?.bankMSB ?? UInt8(kAUSampler_DefaultMelodicBankMSB),
+                bankLSB: preset?.bankLSB ?? UInt8(kAUSampler_DefaultBankLSB)
             )
         case "aupreset":
             try sampler.loadInstrument(at: url)

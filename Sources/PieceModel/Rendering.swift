@@ -1,4 +1,5 @@
 import MusicTheoryKit
+import SoundFontModel
 
 /// A single playable note, fully resolved to an absolute time within its section —
 /// the shape a non-realtime playback engine (or a piano-roll view) would consume.
@@ -10,21 +11,29 @@ public struct ScheduledNote: Equatable, Sendable {
     /// Which sample-based instrument should sound this note (matched by name against a
     /// sample folder) — `nil` means "the piece-playback default sound," same as today.
     public var instrumentName: String?
+    /// Which preset within `instrumentName`, when it names a multi-preset `.sf2` — `nil`
+    /// alongside a non-nil `instrumentName` means that file's own default sound.
+    public var instrumentPreset: SoundFontPresetIdentity?
 
-    public init(startBeat: Double, durationBeats: Double, pitch: Int, velocity: Int, instrumentName: String? = nil) {
+    public init(
+        startBeat: Double, durationBeats: Double, pitch: Int, velocity: Int,
+        instrumentName: String? = nil, instrumentPreset: SoundFontPresetIdentity? = nil
+    ) {
         self.startBeat = startBeat
         self.durationBeats = durationBeats
         self.pitch = pitch
         self.velocity = velocity
         self.instrumentName = instrumentName
+        self.instrumentPreset = instrumentPreset
     }
 }
 
 /// Normalizes a free-form instrument field to `nil` when unset, so an empty string and a
-/// genuinely absent instrument both mean "use the default sound."
-private func normalizedInstrumentName(_ raw: String?) -> String? {
-    guard let raw, !raw.isEmpty else { return nil }
-    return raw
+/// genuinely absent instrument both mean "use the default sound." A preset only ever makes
+/// sense alongside an actual instrument name, so it's dropped along with it.
+private func normalizedInstrument(name raw: String?, preset: SoundFontPresetIdentity?) -> (name: String?, preset: SoundFontPresetIdentity?) {
+    guard let raw, !raw.isEmpty else { return (nil, nil) }
+    return (raw, preset)
 }
 
 public extension Section {
@@ -40,7 +49,7 @@ public extension Track {
     /// (with their transforms resolved) into one time-ordered list of scheduled notes.
     func scheduledNotes(in piece: Piece, section: Section) -> [ScheduledNote] {
         let beatsPerMeasure = piece.timeSignature.beatsPerMeasure
-        let instrumentName = normalizedInstrumentName(instrument)
+        let (instrumentName, instrumentPreset) = normalizedInstrument(name: instrument, preset: instrumentPreset)
 
         let fromMelodyEvents = melodyEvents.map { event in
             ScheduledNote(
@@ -48,7 +57,8 @@ public extension Track {
                 durationBeats: event.durationBeats,
                 pitch: event.pitch,
                 velocity: event.velocity,
-                instrumentName: instrumentName
+                instrumentName: instrumentName,
+                instrumentPreset: instrumentPreset
             )
         }
 
@@ -61,7 +71,10 @@ public extension Track {
             var notes: [ScheduledNote] = []
             var cursor = placementStart
             for (pitch, duration) in zip(pitches, resolved.noteDurations) {
-                notes.append(ScheduledNote(startBeat: cursor, durationBeats: duration, pitch: pitch, velocity: placement.velocity, instrumentName: instrumentName))
+                notes.append(ScheduledNote(
+                    startBeat: cursor, durationBeats: duration, pitch: pitch, velocity: placement.velocity,
+                    instrumentName: instrumentName, instrumentPreset: instrumentPreset
+                ))
                 cursor += duration
             }
             return notes
@@ -127,7 +140,7 @@ public extension Section {
     /// Flattens this section's chord progression into scheduled notes (beat offsets
     /// relative to the section start), resolving each chord's inversion/bass/playing style.
     func chordScheduledNotes(beatsPerMeasure: Int, octaveBase: Int = 48, velocity: Int = 90) -> [ScheduledNote] {
-        let instrumentName = normalizedInstrumentName(chordInstrument)
+        let (instrumentName, instrumentPreset) = normalizedInstrument(name: chordInstrument, preset: chordInstrumentPreset)
         return chordProgression.flatMap { event -> [ScheduledNote] in
             let eventStart = absoluteBeat(measure: event.measure, beat: event.beat, beatsPerMeasure: beatsPerMeasure)
             return event.voicedNotes(octaveBase: octaveBase).map { voiced in
@@ -136,7 +149,8 @@ public extension Section {
                     durationBeats: voiced.durationBeats,
                     pitch: voiced.pitch,
                     velocity: velocity,
-                    instrumentName: instrumentName
+                    instrumentName: instrumentName,
+                    instrumentPreset: instrumentPreset
                 )
             }
         }.sorted { $0.startBeat < $1.startBeat }
@@ -152,13 +166,19 @@ public struct RenderedNote: Equatable, Sendable {
     public var velocity: Int
     /// Carried over from `ScheduledNote.instrumentName` — see there for what `nil` means.
     public var instrumentName: String?
+    /// Carried over from `ScheduledNote.instrumentPreset`.
+    public var instrumentPreset: SoundFontPresetIdentity?
 
-    public init(startSeconds: Double, durationSeconds: Double, pitch: Int, velocity: Int, instrumentName: String? = nil) {
+    public init(
+        startSeconds: Double, durationSeconds: Double, pitch: Int, velocity: Int,
+        instrumentName: String? = nil, instrumentPreset: SoundFontPresetIdentity? = nil
+    ) {
         self.startSeconds = startSeconds
         self.durationSeconds = durationSeconds
         self.pitch = pitch
         self.velocity = velocity
         self.instrumentName = instrumentName
+        self.instrumentPreset = instrumentPreset
     }
 }
 
@@ -184,7 +204,8 @@ public extension Piece {
                     durationSeconds: note.durationBeats * secondsPerBeat,
                     pitch: note.pitch,
                     velocity: note.velocity,
-                    instrumentName: note.instrumentName
+                    instrumentName: note.instrumentName,
+                    instrumentPreset: note.instrumentPreset
                 ))
             }
             sectionStartBeat += Double(section.lengthInMeasures) * Double(beatsPerMeasure)

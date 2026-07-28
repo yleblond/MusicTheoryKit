@@ -1,4 +1,5 @@
 import Foundation
+import SoundFontModel
 
 /// One chord (or single note) to hold for `durationSeconds` starting `startSeconds` after
 /// audition playback begins — not shaped like `RenderedNote` (per-pitch note events from a
@@ -42,8 +43,8 @@ public final class GuideAuditionPlayer: @unchecked Sendable {
 
     /// Same three formats `PiecePlayer.loadSample`/`SoundTrackPlayer.loadSample` support —
     /// this player's own dedicated sampler, independent of every other one in the app.
-    public func loadSample(at url: URL, program: UInt8 = 0) throws {
-        try sampler.loadSample(at: url, program: program)
+    public func loadSample(at url: URL, preset: SoundFontPresetIdentity? = nil) throws {
+        try sampler.loadSample(at: url, preset: preset)
     }
 
     /// Schedules every chord relative to "now" and returns immediately — same calling

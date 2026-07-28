@@ -48,6 +48,15 @@ targets:
         com.apple.security.network.client: true
         com.apple.security.network.server: true
         com.apple.security.device.audio-input: true
+        # Under App Sandbox, CoreMIDI access to a REAL hardware keyboard (USB or Bluetooth LE)
+        # needs these explicitly — without them, `MIDIGetNumberOfSources()`/`MIDIPortConnectSource`
+        # stay silent for physical devices even though the code path is otherwise identical to
+        # the computer-keyboard one (confirmed: MIDI sound stopped working entirely, at launch,
+        # with no Swift-level regression to explain it — the actual cause was code signing
+        # starting to truly enforce the sandbox once a real `DEVELOPMENT_TEAM` got assigned,
+        # which these two keys were missing for).
+        com.apple.security.device.usb: true
+        com.apple.security.device.bluetooth: true
         # Pairs with .fileExporter/.fileImporter (scene save/load, sample-sound folder in
         # SceneManagementView): grants read/write access to whatever the user actually
         # picked via the panel these present — macOS-only concept (no effect on iOS, which

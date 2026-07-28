@@ -32,6 +32,11 @@ import Localization
 struct JamShackView: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
+    /// Whether the "JamShack" tab itself is the one currently selected in `ContentView` —
+    /// threaded down to `SoundsView` (combined with this view's own `subTab == .sons`) so it
+    /// can reliably tell when it's truly no longer visible. See `SoundsView`'s own doc comment
+    /// on why `.onDisappear` alone isn't enough for that.
+    let isActiveTab: Bool
 
     private enum SubTab: CaseIterable, Identifiable {
         case sons, clavierOrdinateur, midi, microphone, jamSession, couleurs, llm, dossiers, langue
@@ -94,7 +99,7 @@ struct JamShackView: View {
             Divider()
             Group {
                 switch subTab {
-                case .sons: SoundsView(session: session, bridge: bridge)
+                case .sons: SoundsView(session: session, bridge: bridge, isActive: isActiveTab && subTab == .sons)
                 case .clavierOrdinateur: ComputerKeyboardSettingsView(session: session)
                 case .midi: JamShackMIDIView(session: session, bridge: bridge)
                 case .microphone: MicrophoneControlsView(session: session, bridge: bridge)
@@ -112,5 +117,5 @@ struct JamShackView: View {
 
 #Preview {
     let session = ImprovSession()
-    return JamShackView(session: session, bridge: SessionUIBridge(session: session))
+    return JamShackView(session: session, bridge: SessionUIBridge(session: session), isActiveTab: true)
 }

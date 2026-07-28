@@ -544,6 +544,10 @@ enum L10nTable {
             .en: "Only listens to the chosen source while testing — other listening tracks are paused to avoid detection confusion, then restarted when leaving test mode. Tap a sound's speaker icon below to load and try it.",
             .de: "Hört während des Tests nur auf die gewählte Quelle — andere aktive Spuren werden pausiert, um Erkennungsverwirrung zu vermeiden, und beim Verlassen des Testmodus wieder gestartet. Tippe auf das Lautsprecher-Symbol eines Klangs unten, um ihn zu laden und auszuprobieren.",
         ],
+        .appPlaceholderRechercherFichier: [.fr: "Rechercher un fichier...", .en: "Search a file...", .de: "Datei suchen..."],
+        .appPlaceholderChoisirFichierSons: [.fr: "Choisis un fichier a gauche pour voir ses sons.", .en: "Choose a file on the left to see its sounds.", .de: "Wähle links eine Datei, um ihre Klänge zu sehen."],
+        .appHeadingFichiersSoundfont: [.fr: "Fichiers SoundFont", .en: "SoundFont files", .de: "SoundFont-Dateien"],
+        .appFormatFichiersCompte: [.fr: "Fichiers (%d/%d)", .en: "Files (%d/%d)", .de: "Dateien (%d/%d)"],
 
         // MARK: - App: JamShack > Clavier ordinateur
         .appTabClavierOrdinateur: [.fr: "Clavier ordinateur", .en: "Computer keyboard", .de: "Computertastatur"],
