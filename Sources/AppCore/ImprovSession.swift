@@ -32,6 +32,15 @@ public final class ImprovSession: @unchecked Sendable {
     /// .current` single out the LUMI's own track by name when other MIDI devices are also
     /// attached, rather than guessing from "whichever track happens to be listening".
     public private(set) var midiFusionMode: MIDIFusionMode = .individual
+    /// Whether the physical/hardware computer keyboard currently plays notes (see
+    /// `JamShackUI.computerKeyboardNoteMap`) — off by default, unlike a MIDI keyboard (which
+    /// only ever sends a note message when actually played): every letter key typed ANYWHERE
+    /// in the app would otherwise double as a note trigger, colliding with ordinary typing
+    /// (aliasing a sound, naming a piece, searching...) and with other screens' own keyboard
+    /// shortcuts (e.g. the Guide's arrow-key navigation). Toggled explicitly from a dedicated
+    /// "Clavier ordinateur" sub-tab (see `setComputerKeyboardInputEnabled`) — session-only, not
+    /// persisted, same "starts at a safe default every launch" convention as `midiFusionMode`.
+    public private(set) var computerKeyboardInputEnabled = false
     /// Every live-input track — MIDI (merged or one per port, per `midiFusionMode`), the
     /// computer keyboard, and the microphone — each with its own independent listening/
     /// sound/recognition state. Rebuilt by `refreshTracks()` (also called automatically
@@ -2019,6 +2028,41 @@ public final class ImprovSession: @unchecked Sendable {
         midiFusionMode = mode
         refreshTracks()
         append("Mode MIDI : \(mode == .merged ? "fusionne" : "individuel").")
+    }
+
+    /// Turns physical-computer-keyboard note input on/off — see `computerKeyboardInputEnabled`'s
+    /// own doc comment for why it defaults off. Purely a UI-facing switch: it doesn't touch
+    /// `.computerKeyboard`'s own listening/sound state (unrelated — that track can be listening
+    /// today, e.g. showing held-note display from a scene, regardless of whether typing on the
+    /// physical keyboard is what's feeding it).
+    public func setComputerKeyboardInputEnabled(_ enabled: Bool) {
+        computerKeyboardInputEnabled = enabled
+        append("Clavier ordinateur : \(enabled ? "actif" : "inactif").")
+    }
+
+    /// Bumped by `requestComputerKeyboardFocus()` — `ContentView` observes this (via
+    /// `onChange`) to reclaim actual SwiftUI keyboard focus for computer-keyboard note capture.
+    /// Exists because a native `Picker`/`Menu` (e.g. the Sounds tab's test-source picker, or a
+    /// Scene role's sound menu) keeps SwiftUI keyboard focus once used, with nothing else to
+    /// hand it back — the reported symptom this fixes: after reassigning a role's sound in the
+    /// Scene tab, typing stopped producing notes even though computer-keyboard input was on.
+    public private(set) var computerKeyboardFocusRequestToken = 0
+
+    /// Call after any interaction with a native pop-up control (`Picker`/`Menu`) that the user
+    /// would reasonably expect to be followed by typing/playing again.
+    public func requestComputerKeyboardFocus() {
+        computerKeyboardFocusRequestToken += 1
+    }
+
+    /// Semitone offset applied to every `JamShackUI.computerKeyboardNoteMap` pitch — lets the
+    /// mapped "ASDFGHJKL;"/"WE_TYU_OP" keys be moved up/down by whole octaves (12 semitones per
+    /// step) so the active zone can be shifted to match a different register without changing
+    /// which physical keys are used. Session-only (not persisted), default 0 — no shift, exactly
+    /// `computerKeyboardNoteMap`'s own pitches (60...76).
+    public private(set) var computerKeyboardOctaveShift = 0
+
+    public func shiftComputerKeyboardOctave(by steps: Int) {
+        computerKeyboardOctaveShift += steps * 12
     }
 
     /// Rebuilds `tracks` from `midiFusionMode` and the currently-visible MIDI sources,

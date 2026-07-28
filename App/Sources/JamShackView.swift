@@ -10,18 +10,20 @@ import Localization
 ///    decompressee avec plusieurs .sf2) — `favoriteSampleFiles` (les favoris marques ici) est
 ///    ce que tout autre picker de son (Morceaux/Enregistrement/Scenes) affiche ensuite, pour
 ///    ne pas noyer ces pickers dans une grosse librairie non triee.
-/// 2. **MIDI** (clavier MIDI): fusion mode, refresh, visible source list, live notes — see
+/// 2. **Clavier ordinateur**: on/off switch for physical-keyboard note input, off by default —
+///    see `ComputerKeyboardSettingsView`/`ImprovSession.computerKeyboardInputEnabled`.
+/// 3. **MIDI** (clavier MIDI): fusion mode, refresh, visible source list, live notes — see
 ///    `JamShackMIDIView`.
-/// 3. **Microphone**: start/stop the microphone track, level meter, live notes — see
+/// 4. **Microphone**: start/stop the microphone track, level meter, live notes — see
 ///    `MicrophoneControlsView`.
-/// 4. **Jam Session**: the two HTTP servers (console web, clavier virtuel — "Own devices") and
+/// 5. **Jam Session**: the two HTTP servers (console web, clavier virtuel — "Own devices") and
 ///    the collaborative server/client mode ("Connected devices") — see `JamSessionView`, merged
 ///    from what used to be two separate sub-tabs (2026-07-26).
-/// 5. **Couleurs**: active color palette + LUMI Keys settings — see `JamShackColorsView`.
-/// 6. **LLM**: active LLM connection + a quick test call — see `JamShackLLMView`.
-/// 7. **Dossiers**: every folder the app needs (pieces/samples/soundtracks/guides/scenes/
+/// 6. **Couleurs**: active color palette + LUMI Keys settings — see `JamShackColorsView`.
+/// 7. **LLM**: active LLM connection + a quick test call — see `JamShackLLMView`.
+/// 8. **Dossiers**: every folder the app needs (pieces/samples/soundtracks/guides/scenes/
 ///    reglages/composition IA) — see `JamShackFoldersView`.
-/// 8. **Langue**: UI language — see `JamShackLanguageView`.
+/// 9. **Langue**: UI language — see `JamShackLanguageView`.
 ///
 /// A vertical strip of icon-only buttons (a "sidebar" tab bar) rather than a horizontal
 /// segmented control — this many entries don't fit comfortably as horizontal text labels on an
@@ -32,13 +34,14 @@ struct JamShackView: View {
     let bridge: SessionUIBridge
 
     private enum SubTab: CaseIterable, Identifiable {
-        case sons, midi, microphone, jamSession, couleurs, llm, dossiers, langue
+        case sons, clavierOrdinateur, midi, microphone, jamSession, couleurs, llm, dossiers, langue
 
         var id: Self { self }
 
         var systemImage: String {
             switch self {
             case .sons: return "music.note.list"
+            case .clavierOrdinateur: return "keyboard"
             case .midi: return "pianokeys"
             case .microphone: return "mic"
             case .jamSession: return "person.2.fill"
@@ -52,6 +55,7 @@ struct JamShackView: View {
         func accessibilityLabel(_ language: AppLanguage) -> String {
             switch self {
             case .sons: return L10n.string(.appTabSons, language)
+            case .clavierOrdinateur: return L10n.string(.appTabClavierOrdinateur, language)
             case .midi: return L10n.string(.appTabMIDI, language)
             case .microphone: return L10n.string(.appTabMicrophone, language)
             case .jamSession: return L10n.string(.catJamSession, language)
@@ -91,6 +95,7 @@ struct JamShackView: View {
             Group {
                 switch subTab {
                 case .sons: SoundsView(session: session, bridge: bridge)
+                case .clavierOrdinateur: ComputerKeyboardSettingsView(session: session)
                 case .midi: JamShackMIDIView(session: session, bridge: bridge)
                 case .microphone: MicrophoneControlsView(session: session, bridge: bridge)
                 case .jamSession: JamSessionView(session: session)

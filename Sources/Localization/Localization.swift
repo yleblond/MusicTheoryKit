@@ -271,6 +271,10 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appToggleModeTestSon, appFieldSourceTest, appPlaceholderChoisirSourceTest
     case appHeadingTesterLeSon, appHintTesterLeSon
 
+    // MARK: - App: JamShack > Clavier ordinateur
+    case appTabClavierOrdinateur, appToggleClavierOrdinateurActif, appHintClavierOrdinateurActif
+    case appLabelClavierOrdinateurActif
+
     // MARK: - App: JamShack > MIDI
     case appOptionFusionne, appOptionIndividuel, appHintModeMidiDetail
     case appButtonRafraichirListeMidi, appPlaceholderAucuneSourceMidi, appHeadingSourcesMidiVisibles

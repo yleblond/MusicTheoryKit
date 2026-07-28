@@ -49,8 +49,10 @@ public struct PitchKeyboardColorScheme: Sendable {
 }
 
 /// One key's laid-out rectangle, shared between drawing and tap/drag hit-testing so the two
-/// can never disagree about where a key actually is.
-private struct KeyRect {
+/// can never disagree about where a key actually is. Internal (not `private`), same as
+/// `PitchKeyboardView.layout(for:)` below, purely so `PitchKeyboardViewLayoutTests` can call it
+/// directly instead of only inferring layout correctness from rendered pixels.
+struct KeyRect: Equatable {
     let pitch: Int
     let rect: CGRect
 }
@@ -92,6 +94,14 @@ public struct PitchKeyboardView: View {
     /// request. Defaults to the height every other call site already used before this became
     /// configurable.
     public let height: CGFloat
+    /// A discreet one-character label drawn near the bottom of a key, e.g. the physical
+    /// computer-keyboard letter that plays it (`ComputerKeyboardInputBar`'s own use) — empty
+    /// (the default) draws nothing extra, every other call site is unaffected.
+    public let keyLabels: [Int: String]
+    /// When set, an accent-colored (red) outline is drawn around the bounding box of every key
+    /// in this pitch range — `ComputerKeyboardInputBar` uses it to mark exactly which keys the
+    /// physical keyboard's letters currently reach. `nil` (the default) draws no outline.
+    public let highlightedPitches: ClosedRange<Int>?
 
     /// Same fallback arrays `StaticAssets.swift`'s `PITCH_CLASS_COLORS`/`_TEXT_COLORS` use
     /// before the first real palette is known — a reasonable default for any call site that
@@ -119,7 +129,9 @@ public struct PitchKeyboardView: View {
         paletteTextColors: [String] = PitchKeyboardView.defaultPaletteTextColors,
         onNoteOn: ((Int) -> Void)? = nil,
         onNoteOff: ((Int) -> Void)? = nil,
-        height: CGFloat = 144
+        height: CGFloat = 144,
+        keyLabels: [Int: String] = [:],
+        highlightedPitches: ClosedRange<Int>? = nil
     ) {
         self.minMidi = minMidi
         self.maxMidi = maxMidi
@@ -135,6 +147,8 @@ public struct PitchKeyboardView: View {
         self.onNoteOn = onNoteOn
         self.onNoteOff = onNoteOff
         self.height = height
+        self.keyLabels = keyLabels
+        self.highlightedPitches = highlightedPitches
     }
 
     // White key slot (0...6) within its octave, for the 7 white pitch classes.
@@ -147,7 +161,32 @@ public struct PitchKeyboardView: View {
     private static let badgeTopInset: CGFloat = 18
     private static let badgeDiameter: CGFloat = 14
 
-    private var octaveCount: Int { max(1, Int(ceil(Double(maxMidi - minMidi + 1) / 12.0))) }
+    /// Both `whiteSlotBySemitone`/`blackAfterWhiteSlot` are only correct relative to an octave
+    /// that starts on C — `absoluteWhiteSlot` anchors that math to the pitch's own absolute
+    /// octave (`pitch / 12`, never `(pitch - minMidi) / 12`), so ranges that DON'T start on a C
+    /// (e.g. a full 88-key piano, `minMidi = 21` = A0) lay out correctly instead of wrapping
+    /// early notes into the wrong slot. A black key sits at its preceding white slot + 0.5, a
+    /// fractional placeholder only ever used to compute `baseSlot` below (real black-key x
+    /// positions are still computed the same way as before).
+    private static func absoluteWhiteSlot(forPitch pitch: Int) -> Double {
+        let pitchClass = ((pitch % 12) + 12) % 12
+        let octave = pitch / 12
+        if let whiteSlot = whiteSlotBySemitone[pitchClass] {
+            return Double(octave * 7 + whiteSlot)
+        }
+        return Double(octave * 7 + blackAfterWhiteSlot[pitchClass]!) + 0.5
+    }
+
+    /// `minMidi`'s own absolute slot — every key's x position is expressed relative to this, so
+    /// the leftmost key in range always starts at x = 0 regardless of what `minMidi` itself is.
+    private var baseSlot: Double { Self.absoluteWhiteSlot(forPitch: minMidi) }
+
+    /// The exact count of white keys actually present in `minMidi...maxMidi` — NOT
+    /// `octaveCount * 7` (which over-counts whenever the range doesn't start/end exactly on
+    /// octave boundaries, leaving the keyboard short of the view's full width).
+    var whiteKeyCount: Int {
+        (minMidi...maxMidi).lazy.filter { Self.whiteSlotBySemitone[((($0 % 12) + 12) % 12)] != nil }.count
+    }
 
     // The pitch currently held down by a tap/click/drag, if any — nil whenever nothing is
     // being played through this view (as opposed to `heldPitches`, which reflects the
@@ -155,24 +194,24 @@ public struct PitchKeyboardView: View {
     // e.g. a MIDI keyboard playing the same track simultaneously).
     @State private var pressedPitch: Int?
 
-    private func layout(for size: CGSize) -> (white: [KeyRect], black: [KeyRect]) {
-        let whiteKeyCount = octaveCount * 7
-        let whiteW = size.width / CGFloat(whiteKeyCount)
+    func layout(for size: CGSize) -> (white: [KeyRect], black: [KeyRect]) {
+        let whiteW = size.width / CGFloat(max(1, whiteKeyCount))
         let blackW = whiteW * 0.6
         let keysHeight = max(0, size.height - Self.badgeTopInset)
         let blackH = keysHeight * 0.62
+        let base = baseSlot
         var white: [KeyRect] = []
         var black: [KeyRect] = []
 
         for pitch in minMidi...maxMidi {
             let pitchClass = ((pitch % 12) + 12) % 12
-            let octave = (pitch - minMidi) / 12
+            let octave = pitch / 12
             if let whiteSlotInOctave = Self.whiteSlotBySemitone[pitchClass] {
-                let slot = octave * 7 + whiteSlotInOctave
+                let slot = Double(octave * 7 + whiteSlotInOctave) - base
                 let x = CGFloat(slot) * whiteW
                 white.append(KeyRect(pitch: pitch, rect: CGRect(x: x, y: Self.badgeTopInset, width: whiteW, height: keysHeight)))
             } else if let whiteSlotBefore = Self.blackAfterWhiteSlot[pitchClass] {
-                let slot = octave * 7 + whiteSlotBefore + 1
+                let slot = Double(octave * 7 + whiteSlotBefore + 1) - base
                 let x = CGFloat(slot) * whiteW - blackW / 2
                 black.append(KeyRect(pitch: pitch, rect: CGRect(x: x, y: Self.badgeTopInset, width: blackW, height: blackH)))
             }
@@ -235,6 +274,26 @@ public struct PitchKeyboardView: View {
                     )
                     context.fill(Path(ellipseIn: circleRect), with: .color(bg))
                     context.draw(Text("\(badge.degree)").font(.system(size: 9, weight: .bold)).foregroundStyle(fg), at: center)
+                }
+
+                if !keyLabels.isEmpty {
+                    for key in white + black {
+                        guard let label = keyLabels[key.pitch] else { continue }
+                        let isWhite = white.contains { $0.pitch == key.pitch }
+                        let point = CGPoint(x: key.rect.midX, y: key.rect.maxY - 14)
+                        context.draw(
+                            Text(label).font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(isWhite ? .black.opacity(0.55) : .white.opacity(0.85)),
+                            at: point
+                        )
+                    }
+                }
+
+                if let highlightedPitches {
+                    let keysInRange = (white + black).filter { highlightedPitches.contains($0.pitch) }
+                    if let union = keysInRange.map(\.rect).reduce(nil, { (acc: CGRect?, rect) in acc?.union(rect) ?? rect }) {
+                        context.stroke(Path(union.insetBy(dx: -1, dy: -1)), with: .color(.red), lineWidth: 2)
+                    }
                 }
             }
             .contentShape(Rectangle())
