@@ -26,21 +26,30 @@ public func parsePitchClass(_ name: String) -> Int? {
 // MARK: - LLM-facing JSON schema (deliberately simpler than PieceModel's own Codable shape —
 // note names instead of raw pitch classes, no ids, so it's natural for an LLM to produce).
 
-struct LLMChordDTO: Decodable {
+// `Codable` (not just `Decodable`): `FoundationModelsProvider.generatePieceDTO` (LLMProvider.swift,
+// behind `#if canImport(FoundationModels)`) needs to re-encode its guided-generation result back
+// to the same JSON text shape `parseAndValidate` below already expects — see `LLMClient.generatePieceJSON`.
+// These DTOs stay plain Codable structs with no `@Generable`/`@Guide` of their own: those macros
+// themselves carry a macOS/iOS 26 availability floor, and this type is shared unconditionally by
+// all 4 providers (including on iOS 17/macOS 14) — attaching them here would force the whole
+// package's deployment target up just for this one file. Foundation Models instead generates into
+// its own `@available`-gated mirror struct family (`FMPieceDTO` etc., in LLMProvider.swift) which
+// gets converted into this shared shape afterwards.
+struct LLMChordDTO: Codable {
     var measure: Int
     var root: String
     var templateID: String
     var durationBeats: Double?
 }
 
-struct LLMMelodyNoteDTO: Decodable {
+struct LLMMelodyNoteDTO: Codable {
     var measure: Int
     var beat: Double
     var durationBeats: Double
     var pitch: Int
 }
 
-struct LLMSectionDTO: Decodable {
+struct LLMSectionDTO: Codable {
     var name: String
     var lengthInMeasures: Int
     var tonic: String
@@ -49,7 +58,7 @@ struct LLMSectionDTO: Decodable {
     var melody: [LLMMelodyNoteDTO]?
 }
 
-struct LLMPieceDTO: Decodable {
+struct LLMPieceDTO: Codable {
     var title: String
     var tempoBPM: Double
     var tonic: String

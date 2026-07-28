@@ -902,7 +902,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// when given, overrides the LLM's own chosen title — the "Nouveau morceau" wizard
     /// (title → text → indications → compose, all in one flow) uses this so the piece ends
     /// up named exactly what was typed, not whatever the LLM decided to call it.
-    public func composeFromText(title: String? = nil, generate: (String, LLMConnection) throws -> String = LLMClient.generate) throws {
+    public func composeFromText(title: String? = nil, generate: (String, LLMConnection) throws -> String = LLMClient.generatePieceJSON) throws {
         let prompt = try currentTextCompositionPrompt()
         guard let connection = currentLLMConnection else { throw SessionError.noLLMConnectionSelected }
 
@@ -5078,7 +5078,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// the usual `-candidat-N` suffix, same as an unnamed run.
     @discardableResult
     public func composeSoundTrackToPieces(
-        candidateCount: Int = 1, title: String? = nil, generate: (String, LLMConnection) throws -> String = LLMClient.generate
+        candidateCount: Int = 1, title: String? = nil, generate: (String, LLMConnection) throws -> String = LLMClient.generatePieceJSON
     ) throws -> [String] {
         guard let connection = currentLLMConnection else { throw SessionError.noLLMConnectionSelected }
         guard let pieceFolder else { throw SessionError.noPieceFolderListed }
