@@ -1424,7 +1424,15 @@ public final class ImprovSession: @unchecked Sendable {
     public func unassignedInstruments() -> [TrackInfo] {
         guard let scene = currentScene else { return [] }
         let attachedIDs = Set(scene.roles.compactMap(\.attachedTrackID))
-        return tracks.filter { !attachedIDs.contains($0.id) }
+        return tracks.filter {
+            !attachedIDs.contains($0.id)
+                // Attaching a role to the computer keyboard while its own input is turned off
+                // would produce an unfeedable role: no physical key capture (gated by this same
+                // flag) and no clickable per-track keyboard either (that fell to the persistent
+                // bottom bar, itself only shown while this flag is on) — see
+                // `computerKeyboardInputEnabled`'s own doc comment.
+                && ($0.id != .computerKeyboard || computerKeyboardInputEnabled)
+        }
     }
 
     /// The one place `SceneRole.attachedTrackID` is ever set to a non-nil value. Auto-detaches
@@ -1591,6 +1599,13 @@ public final class ImprovSession: @unchecked Sendable {
             if let relocated = tracks.first(where: { !claimedTrackIDs.contains($0.id) && matches(hint, $0.id) }) {
                 scene.roles[index].attachedTrackID = relocated.id
                 claimedTrackIDs.insert(relocated.id)
+                // Without this, the role's soundName/soundEnabled/isListening stay applied only
+                // to the OLD (now-gone) track id — the scene still displays "sound on" while the
+                // live track this id now points to is a fresh, unconfigured one (silent, no
+                // sampler). Real bug this fixed: a MIDI role's sound going silent (no error, no
+                // log) after a MIDI source reshuffle, invisible in the Scene screen since nothing
+                // there reads live track state.
+                try? applyRoleConfiguration(scene.roles[index], to: relocated.id)
                 append("Role '\(scene.roles[index].name)' : instrument MIDI retrouve a un nouvel index.")
             } else {
                 scene.roles[index].attachedTrackID = nil
@@ -1603,6 +1618,7 @@ public final class ImprovSession: @unchecked Sendable {
             guard let candidate = tracks.first(where: { !claimedTrackIDs.contains($0.id) && matches(hint, $0.id) }) else { continue }
             scene.roles[index].attachedTrackID = candidate.id
             claimedTrackIDs.insert(candidate.id)
+            try? applyRoleConfiguration(scene.roles[index], to: candidate.id)
             append("Role '\(scene.roles[index].name)' : instrument reattache automatiquement.")
             changed = true
         }

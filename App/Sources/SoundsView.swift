@@ -146,12 +146,17 @@ struct SoundsView: View {
             .formStyle(.grouped)
             #endif
         }
-        // `initial: true` covers the very first appearance too (this screen's whole purpose is
-        // browsing/testing sounds, so it starts already in test mode with the computer keyboard
-        // as the source, per explicit user request) — see `isActive`'s own doc comment for why
-        // this reacts to that flag instead of `.onAppear`/`.onDisappear`.
-        .onChange(of: isActive, initial: true) { _, active in
-            setTestMode(active)
+        // Test mode itself is now purely manual (the `Toggle` in `testModeSection`) — it no
+        // longer turns ON just because this screen becomes visible (real bug reported: made the
+        // screen's own arrival/departure feel like it was silently reaching into the active
+        // scene's track state). Leaving is still handled here, not `.onAppear`/`.onDisappear`
+        // (see `isActive`'s own doc comment for why those are unreliable): forcing test mode off
+        // when the screen stops being active is what guarantees every paused track/instrument
+        // this screen borrowed gets restored, even if the user navigates away without manually
+        // switching the toggle off first.
+        .onChange(of: isActive) { _, active in
+            guard !active else { return }
+            setTestMode(false)
         }
     }
 
