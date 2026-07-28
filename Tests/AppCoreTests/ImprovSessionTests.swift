@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 @testable import AppCore
 @testable import PieceModel
 import MIDIEngine
@@ -7,6 +8,15 @@ import LLMEngine
 import SoundTrackModel
 import SoundFontModel
 import AudioEngine
+
+/// A fresh `ImprovSession` backed by an in-memory LLM-connections store — every test that
+/// exercises `migrateLLMConnectionsFromJSONIfNeeded`/`useLLMConnection`/etc. needs its own
+/// isolated container, not the real on-disk one `ImprovSession()` lazily creates on first use
+/// (which would leak state across tests and even across separate `swift test` runs).
+private func makeLLMTestSession() -> ImprovSession {
+    let container = try! ModelContainer(for: LLMConnectionRecord.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+    return ImprovSession(llmModelContainer: container)
+}
 
 final class ImprovSessionTests: XCTestCase {
 
@@ -585,7 +595,7 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertTrue(session.log.contains { $0.contains("Source text set") })
     }
 
-    func testListLLMConnectionsFindsJSONFiles() throws {
+    func testMigrateLLMConnectionsFindsJSONFilesAndInsertsThem() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -593,37 +603,72 @@ final class ImprovSessionTests: XCTestCase {
         try JSONEncoder().encode(connection).write(to: folder.appendingPathComponent("ollama.json"))
         try Data().write(to: folder.appendingPathComponent("notes.txt"))
 
-        let session = ImprovSession()
-        try session.listLLMConnections(in: folder.path)
-        XCTAssertEqual(session.llmConnections, ["ollama.json"])
+        let session = makeLLMTestSession()
+        session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
+        XCTAssertEqual(session.llmConnections, ["Local Ollama"])
     }
 
-    func testUseLLMConnectionByIndexAndNameLoadFromTheListedFolder() throws {
+    func testMigrateLLMConnectionsSeedsBuiltInTemplatesWhenNothingToMigrate() throws {
+        let emptyFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: emptyFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: emptyFolder) }
+
+        let session = makeLLMTestSession()
+        session.migrateLLMConnectionsFromJSONIfNeeded(in: emptyFolder.path)
+        XCTAssertEqual(session.llmConnections.count, LLMConnectionTemplates.builtIn.count)
+        XCTAssertTrue(session.llmConnections.contains("Ollama (local)"))
+    }
+
+    func testMigrateLLMConnectionsIsIdempotent() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         let connection = LLMConnection(name: "Local Ollama", provider: "ollama", baseURL: "http://localhost:11434", model: "llama3")
         try JSONEncoder().encode(connection).write(to: folder.appendingPathComponent("ollama.json"))
 
-        let session = ImprovSession()
-        try session.listLLMConnections(in: folder.path)
+        let session = makeLLMTestSession()
+        session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
+        session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
+        XCTAssertEqual(session.llmConnections, ["Local Ollama"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("ollama.json").path), "the original file must survive migration")
+    }
+
+    func testAddAndDeleteLLMConnection() throws {
+        let session = makeLLMTestSession()
+        let connection = LLMConnection(name: "Custom", provider: "ollama", baseURL: "http://localhost:11434", model: "llama3")
+        try session.addLLMConnection(connection)
+        XCTAssertEqual(session.llmConnections, ["Custom"])
+
+        try session.deleteLLMConnection(atIndex: 0)
+        XCTAssertEqual(session.llmConnections, [])
+    }
+
+    func testUseLLMConnectionByIndexAndNameLoadFromTheStore() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let connection = LLMConnection(name: "Local Ollama", provider: "ollama", baseURL: "http://localhost:11434", model: "llama3")
+        try JSONEncoder().encode(connection).write(to: folder.appendingPathComponent("ollama.json"))
+
+        let session = makeLLMTestSession()
+        session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try session.useLLMConnection(atIndex: 0)
         XCTAssertEqual(session.currentLLMConnection, connection)
 
-        let byName = ImprovSession()
-        try byName.listLLMConnections(in: folder.path)
-        try byName.useLLMConnection(named: "ollama.json")
+        let byName = makeLLMTestSession()
+        byName.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
+        try byName.useLLMConnection(named: "Local Ollama")
         XCTAssertEqual(byName.currentLLMConnection, connection)
     }
 
     func testComposeFromTextWithoutSourceTextThrows() throws {
-        let session = ImprovSession()
+        let session = makeLLMTestSession()
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         try JSONEncoder().encode(LLMConnection(name: "x", provider: "ollama", baseURL: "http://x", model: "x"))
             .write(to: folder.appendingPathComponent("x.json"))
-        try session.listLLMConnections(in: folder.path)
+        session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try session.useLLMConnection(atIndex: 0)
 
         XCTAssertThrowsError(try session.composeFromText()) { error in
@@ -646,9 +691,9 @@ final class ImprovSessionTests: XCTestCase {
         try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
             .write(to: folder.appendingPathComponent("fake.json"))
 
-        let session = ImprovSession()
+        let session = makeLLMTestSession()
         session.setSourceText("a poem about the sea")
-        try session.listLLMConnections(in: folder.path)
+        session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try session.useLLMConnection(atIndex: 0)
 
         let fakeResponse = """
@@ -673,9 +718,9 @@ final class ImprovSessionTests: XCTestCase {
         try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
             .write(to: folder.appendingPathComponent("fake.json"))
 
-        let session = ImprovSession()
+        let session = makeLLMTestSession()
         session.setSourceText("a poem about the sea")
-        try session.listLLMConnections(in: folder.path)
+        session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try session.useLLMConnection(atIndex: 0)
 
         let fakeResponse = """
@@ -724,10 +769,10 @@ final class ImprovSessionTests: XCTestCase {
         try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
             .write(to: folder.appendingPathComponent("fake.json"))
 
-        let session = ImprovSession()
+        let session = makeLLMTestSession()
         session.setSourceText("a poem about the sea")
         session.setAdditionalCompositionInstructions("romantique, mode mineur")
-        try session.listLLMConnections(in: folder.path)
+        session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try session.useLLMConnection(atIndex: 0)
 
         let fakeResponse = """
@@ -748,9 +793,9 @@ final class ImprovSessionTests: XCTestCase {
         try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
             .write(to: folder.appendingPathComponent("fake.json"))
 
-        let session = ImprovSession()
+        let session = makeLLMTestSession()
         session.setSourceText("a poem")
-        try session.listLLMConnections(in: folder.path)
+        session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try session.useLLMConnection(atIndex: 0)
 
         XCTAssertThrowsError(try session.composeFromText { _, _ in "not json at all" }) { error in
@@ -840,8 +885,8 @@ final class ImprovSessionTests: XCTestCase {
         try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
             .write(to: folder.appendingPathComponent("fake.json"))
 
-        let session = ImprovSession()
-        try session.listLLMConnections(in: folder.path)
+        let session = makeLLMTestSession()
+        session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try session.useLLMConnection(atIndex: 0)
         try session.listPieceFiles(in: folder.path) // establishes pieceFolder for saving candidates
 
@@ -872,8 +917,8 @@ final class ImprovSessionTests: XCTestCase {
         try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
             .write(to: folder.appendingPathComponent("fake.json"))
 
-        let session = ImprovSession()
-        try session.listLLMConnections(in: folder.path)
+        let session = makeLLMTestSession()
+        session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try session.useLLMConnection(atIndex: 0)
         try session.listPieceFiles(in: folder.path)
         try session.startRecording(title: "ForCompose")

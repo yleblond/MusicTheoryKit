@@ -1656,7 +1656,7 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         print("Progressions d'accords:")
         for (index, template) in session.chordProgressionTemplates.enumerated() { print("  \(index + 1). \(template.name)") }
     case "use-llm":
-        guard let arg = args.first else { print("usage: use-llm <numero ou nom de fichier>"); break }
+        guard let arg = args.first else { print("usage: use-llm <numero ou nom de la connexion>"); break }
         if let index = Int(arg) {
             try session.useLLMConnection(atIndex: index - 1)
         } else {

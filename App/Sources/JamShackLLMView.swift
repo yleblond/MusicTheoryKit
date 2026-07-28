@@ -1,13 +1,16 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import AppCore
 import LLMEngine
 import Localization
 
 /// "LLM" sub-tab of the "JamShack" tab: pick the active LLM connection (used by the
-/// Composition/Enregistrement tabs' "compose" actions) and test it with a simple call —
-/// connections themselves are plain JSON files under the Reglages folder's `LLMConnections/`
-/// subfolder (see `ImprovSession.setSettingsFolder`), listed automatically once that folder is
-/// chosen (JamShack > Dossiers).
+/// Composition/Enregistrement tabs' "compose" actions) and test it with a simple call.
+/// Connections themselves live in a private SwiftData store (see `ImprovSession.addLLMConnection`
+/// et al.) — added either from the built-in catalog (`LLMConnectionTemplates.builtIn`) or by
+/// importing a JSON file of the same shape the old `LLMConnections/` folder used to hold (that
+/// folder still exists as a one-time migration source on first launch, see
+/// `ImprovSession.migrateLLMConnectionsFromJSONIfNeeded`, but is no longer read afterward).
 struct JamShackLLMView: View {
     let session: ImprovSession
 
@@ -17,6 +20,7 @@ struct JamShackLLMView: View {
     @State private var testError: String?
     @State private var apiKeyInput = ""
     @State private var apiKeySaveMessage: String?
+    @State private var showJSONImporter = false
 
     var body: some View {
         Form {
@@ -50,19 +54,63 @@ struct JamShackLLMView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(Array(session.llmConnections.enumerated()), id: \.offset) { index, name in
-                    Button(name.strippingJSONExtension) {
-                        testResult = nil
-                        testError = nil
-                        do {
-                            try session.useLLMConnection(atIndex: index)
-                        } catch {
-                            actionError = "\(error)"
+                    HStack {
+                        Button(name) {
+                            testResult = nil
+                            testError = nil
+                            do {
+                                try session.useLLMConnection(atIndex: index)
+                            } catch {
+                                actionError = "\(error)"
+                            }
                         }
+                        Spacer()
+                        Button {
+                            do {
+                                try session.deleteLLMConnection(atIndex: index)
+                            } catch {
+                                actionError = "\(error)"
+                            }
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.red)
                     }
                 }
             }
+            Menu(L10n.string(.appButtonAjouterConnexionLLM, session.currentLanguage)) {
+                Menu(L10n.string(.appButtonDepuisUnModele, session.currentLanguage)) {
+                    ForEach(LLMConnectionTemplates.builtIn, id: \.name) { template in
+                        Button(template.name) { addConnection(template) }
+                    }
+                }
+                Button(L10n.string(.appButtonImporterFichierJSON, session.currentLanguage)) { showJSONImporter = true }
+            }
         } header: {
             Text(L10n.string(.appHeadingConnexionsLLM, session.currentLanguage))
+        }
+        .fileImporter(isPresented: $showJSONImporter, allowedContentTypes: [.json]) { result in
+            switch result {
+            case .success(let url):
+                do {
+                    let data = try Data(contentsOf: url)
+                    let connection = try JSONDecoder().decode(LLMConnection.self, from: data)
+                    addConnection(connection)
+                } catch {
+                    actionError = "\(error)"
+                }
+            case .failure(let error):
+                actionError = "\(error)"
+            }
+        }
+    }
+
+    private func addConnection(_ connection: LLMConnection) {
+        do {
+            try session.addLLMConnection(connection)
+        } catch {
+            actionError = "\(error)"
         }
     }
 

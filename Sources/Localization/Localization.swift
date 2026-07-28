@@ -298,6 +298,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
 
     // MARK: - App: JamShack > LLM
     case appPlaceholderAucuneConnexionLLM, appHeadingConnexionsLLM, appStatusTestEnCours, appButtonTesterConnexion
+    case appButtonAjouterConnexionLLM, appButtonDepuisUnModele, appButtonImporterFichierJSON
     case appHeadingConnexionActive, appHintEnvoiePromptMinimal, appFormatClefAPI, appButtonSauvegarderLaClef
     case appWarningClefTexteClair, appFieldFournisseur, appFieldModele
 

@@ -63,6 +63,18 @@ targets:
         # has no equivalent entitlement key), but harmless to declare on both since XcodeGen
         # applies the same entitlements dict to the single multiplatform target.
         com.apple.security.files.user-selected.read-write: true
+        # LLM connections sync via CloudKit (see ImprovSession.llmModelContainer) — both
+        # platform bundle IDs (`-macOS`/`-iOS`, distinct on purpose) must point at this SAME
+        # explicit container identifier for data to sync between them; Xcode's Signing &
+        # Capabilities UI defaults to a per-bundle-ID container unless told otherwise. Like
+        # Game Center below, this key alone makes xcodebuild demand a real provisioning
+        # profile — local ad-hoc "Sign to Run Locally" builds need a Development Team set
+        # (Xcode > Signing & Capabilities, or `DEVELOPMENT_TEAM` in this file) before they
+        # build again.
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.jamshack.JamShackApp
+        com.apple.developer.icloud-services:
+          - CloudKit
         # Game Center matchmaking (JamSessionView's "Jam Game Center" modes) needs
         # `com.apple.developer.game-center: true` here PLUS the capability enabled for this
         # app's App ID at developer.apple.com. Deliberately NOT added to this file: unlike

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftData
 import Localization
 import MusicTheoryKit
 import PieceModel
@@ -144,11 +145,12 @@ public final class ImprovSession: @unchecked Sendable {
     /// `compose`/`composeFromText(title:)`; independent of whatever title a *previous*
     /// composition ended up with.
     public private(set) var compositionTitle: String?
-    /// The folder last listed with `listLLMConnections`, and the `.json` connection
-    /// descriptors found in it — mirrors `sampleFolder`/`sampleFiles`. Only ever set via
-    /// `setSettingsFolder` now (always `<settingsFolder>/LLMConnections`) — there is no
-    /// independent "choisir dossier de connexions LLM" entry point anymore.
-    public private(set) var llmConnectionsFolder: String?
+    /// Names of every `LLMConnectionRecord` currently stored in `llmModelContainer` — refreshed
+    /// by `refreshLLMConnections()` after every mutation. No longer folder-backed: LLM
+    /// connections live in a private SwiftData store (`Application Support`, not the user's
+    /// chosen Reglages folder), migrated once from any pre-existing `LLMConnections/*.json`
+    /// folder (see `migrateLLMConnectionsFromJSONIfNeeded`) or seeded from
+    /// `LLMConnectionTemplates.builtIn` on a fresh install.
     public private(set) var llmConnections: [String] = []
     public private(set) var currentLLMConnection: LLMConnection?
     /// Root folder for settings that are per-INSTALL, not per-PIECE (see `setSettingsFolder`)
@@ -375,7 +377,6 @@ public final class ImprovSession: @unchecked Sendable {
         case noPieceFolderListed
         case invalidPieceIndex
         case noCurrentPieceFile
-        case noLLMConnectionsFolderListed
         case invalidLLMConnectionIndex
         case noSourceText
         case noLLMConnectionSelected
@@ -430,7 +431,6 @@ public final class ImprovSession: @unchecked Sendable {
             case .noPieceFolderListed: return "no piece folder listed yet — try 'pieces <folder>' first"
             case .invalidPieceIndex: return "no piece at that index"
             case .noCurrentPieceFile: return "this piece was never loaded from or saved to a file — try 'save-as <name>'"
-            case .noLLMConnectionsFolderListed: return "no LLM connections folder listed yet — try 'llm-connections <folder>' first"
             case .invalidLLMConnectionIndex: return "no LLM connection at that index"
             case .noSourceText: return "no source text set — try 'paste-text' first"
             case .noLLMConnectionSelected: return "no LLM connection selected — try 'use-llm <n|name>' first"
@@ -481,8 +481,54 @@ public final class ImprovSession: @unchecked Sendable {
         }
     }
 
-    public init() {
+    /// Set only via `init(llmModelContainer:)` (tests inject an in-memory container here) —
+    /// `nil` means "create the real on-disk one lazily, on first actual use."
+    @ObservationIgnored private let llmModelContainerOverride: ModelContainer?
+    /// The private, app-container SwiftData store backing `LLMConnectionRecord` — deliberately
+    /// NOT inside the user-chosen Reglages folder (see `migrateLLMConnectionsFromJSONIfNeeded`):
+    /// this data has no reason to depend on an external folder/security-scoped bookmark anymore.
+    /// Lazy, not created in `init()`: hundreds of `ImprovSession()` instances across this
+    /// project's own test suite never touch an LLM connection at all, and shouldn't each pay
+    /// for (or risk sharing) a real on-disk SwiftData container just for existing.
+    ///
+    /// Three tiers, each a graceful fallback from the one before — never a crash, never a hard
+    /// requirement on iCloud:
+    /// 1. CloudKit-backed private database (`iCloud.com.jamshack.JamShackApp`, see the iCloud
+    ///    entitlements in `App/project.yml`) — syncs across every device signed into the same
+    ///    iCloud account. `LLMConnectionRecord`'s fields already satisfy CloudKit's schema
+    ///    constraints (every property has a default or is optional, no unique constraints, no
+    ///    relationships), so no model changes were needed to support this.
+    /// 2. Local-only on-disk store — exactly today's behavior, reached when there's no iCloud
+    ///    account signed in, or this build isn't signed with the CloudKit capability (e.g. an
+    ///    ad-hoc "Sign to Run Locally" build with no Development Team configured).
+    /// 3. In-memory — should never actually happen in practice (nothing external for it to
+    ///    fail on).
+    @ObservationIgnored private lazy var llmModelContainer: ModelContainer = {
+        if let llmModelContainerOverride { return llmModelContainerOverride }
+        let schema = Schema([LLMConnectionRecord.self])
+        if let container = try? ModelContainer(
+            for: schema,
+            configurations: ModelConfiguration(schema: schema, cloudKitDatabase: .private("iCloud.com.jamshack.JamShackApp"))
+        ) {
+            return container
+        }
+        append("Warning: iCloud sync unavailable for LLM connections (no iCloud account, or this build isn't signed with the CloudKit capability) — falling back to local-only storage.")
+        if let container = try? ModelContainer(for: schema) { return container }
+        // Last-resort fallback — an in-memory container has nothing external to fail on, so
+        // this should never actually happen in practice.
+        append("Warning: could not open the on-disk LLM connections store — using an in-memory one for this session (connections won't persist).")
+        return try! ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+    }()
+    /// A single context owned by this session, not `llmModelContainer.mainContext` — that
+    /// property is `@MainActor`-isolated, which would force every LLM-connection method below
+    /// to become `async`, rippling into the CLI/tests/SwiftUI call sites for no real benefit
+    /// (this class already treats itself as effectively single-threaded for its own state, per
+    /// its own `@unchecked Sendable` rationale above).
+    @ObservationIgnored private lazy var llmModelContext = ModelContext(llmModelContainer)
+
+    public init(llmModelContainer: ModelContainer? = nil) {
         localClientID = UUID().uuidString
+        llmModelContainerOverride = llmModelContainer
         refreshTracks()
     }
 
@@ -615,25 +661,55 @@ public final class ImprovSession: @unchecked Sendable {
 
     private static let supportedLLMConnectionExtensions: Set<String> = ["json"]
 
-    /// Scans `folderPath` for `.json` LLM connection descriptors — mirrors `listSampleFiles`.
-    public func listLLMConnections(in folderPath: String) throws {
+    /// Re-reads `llmConnections` (names, sorted) from `llmModelContainer` — called after every
+    /// insert/delete so the in-memory list callers already iterate (CLI menus, the SwiftUI
+    /// list, `WebConsoleMenuLists.llmConnections`) never drifts from what's actually stored.
+    private func refreshLLMConnections() {
+        let records = (try? llmModelContext.fetch(FetchDescriptor<LLMConnectionRecord>())) ?? []
+        llmConnections = records.map(\.name).sorted()
+    }
+
+    /// One-time bridge from the old `<folder>/LLMConnections/*.json` world to the SwiftData
+    /// store: called from `setSettingsFolder` in place of the old `listLLMConnections`. A
+    /// no-op if the store already has connections (idempotent — safe to call on every launch).
+    /// Otherwise, migrates any `.json` descriptors found in `folderPath` (never deleting the
+    /// originals — they stay as a safety net, same "don't remove what you didn't create"
+    /// caution used elsewhere for this kind of migration), or — a fresh install with nothing
+    /// to migrate — seeds `LLMConnectionTemplates.builtIn` so the app never starts with an
+    /// empty, unusable LLM connection list.
+    public func migrateLLMConnectionsFromJSONIfNeeded(in folderPath: String) {
+        refreshLLMConnections()
+        guard llmConnections.isEmpty else { return }
+
         let folderURL = URL(fileURLWithPath: folderPath)
-        let contents = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
-        llmConnectionsFolder = folderPath
-        llmConnections = contents
-            .filter { Self.supportedLLMConnectionExtensions.contains($0.pathExtension.lowercased()) }
-            .map(\.lastPathComponent)
-            .sorted()
-        append(llmConnections.isEmpty
-            ? "No .json LLM connection files found in \(folderPath)."
-            : "Found \(llmConnections.count) LLM connection(s) in \(folderPath).")
+        let jsonFiles = (try? FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil))?
+            .filter { Self.supportedLLMConnectionExtensions.contains($0.pathExtension.lowercased()) } ?? []
+
+        if jsonFiles.isEmpty {
+            for template in LLMConnectionTemplates.builtIn {
+                llmModelContext.insert(LLMConnectionRecord(template))
+            }
+            append("Seeded \(LLMConnectionTemplates.builtIn.count) built-in LLM connection(s).")
+        } else {
+            var migrated = 0
+            for fileURL in jsonFiles {
+                guard let data = try? Data(contentsOf: fileURL),
+                      let connection = try? JSONDecoder().decode(LLMConnection.self, from: data) else { continue }
+                llmModelContext.insert(LLMConnectionRecord(connection))
+                migrated += 1
+            }
+            append("Migrated \(migrated) LLM connection(s) from \(folderPath) (originals left in place).")
+        }
+        try? llmModelContext.save()
+        refreshLLMConnections()
     }
 
     public func useLLMConnection(named name: String) throws {
-        guard let llmConnectionsFolder else { throw SessionError.noLLMConnectionsFolderListed }
-        let url = URL(fileURLWithPath: llmConnectionsFolder).appendingPathComponent(name)
-        let data = try Data(contentsOf: url)
-        let connection = try JSONDecoder().decode(LLMConnection.self, from: data)
+        let descriptor = FetchDescriptor<LLMConnectionRecord>(predicate: #Predicate { $0.name == name })
+        guard let record = try? llmModelContext.fetch(descriptor).first else {
+            throw SessionError.invalidLLMConnectionIndex
+        }
+        let connection = record.asLLMConnection
         currentLLMConnection = connection
         append("Using LLM connection: \(connection.name) (\(connection.provider), model \(connection.model))")
     }
@@ -642,6 +718,32 @@ public final class ImprovSession: @unchecked Sendable {
     public func useLLMConnection(atIndex index: Int) throws {
         guard llmConnections.indices.contains(index) else { throw SessionError.invalidLLMConnectionIndex }
         try useLLMConnection(named: llmConnections[index])
+    }
+
+    /// Adds a new stored LLM connection — used by the "Ajouter depuis un modele" and "Importer
+    /// un fichier JSON" actions (`JamShackLLMView`) alike, both of which just produce an
+    /// `LLMConnection` value one way or another.
+    public func addLLMConnection(_ connection: LLMConnection) throws {
+        llmModelContext.insert(LLMConnectionRecord(connection))
+        try llmModelContext.save()
+        refreshLLMConnections()
+        append("Added LLM connection: \(connection.name)")
+    }
+
+    /// Removes a stored LLM connection — bookkeeping only, mirrors `detachInstrument`'s own
+    /// "no error if it was never the active one" tolerance: deleting the currently-active
+    /// connection doesn't clear `currentLLMConnection` (whatever's already loaded keeps working
+    /// until the user picks something else, same as today's file-based behavior never re-read
+    /// a deleted file out from under an active session either).
+    public func deleteLLMConnection(atIndex index: Int) throws {
+        guard llmConnections.indices.contains(index) else { throw SessionError.invalidLLMConnectionIndex }
+        let name = llmConnections[index]
+        let descriptor = FetchDescriptor<LLMConnectionRecord>(predicate: #Predicate { $0.name == name })
+        guard let record = try? llmModelContext.fetch(descriptor).first else { return }
+        llmModelContext.delete(record)
+        try llmModelContext.save()
+        refreshLLMConnections()
+        append("Deleted LLM connection: \(name)")
     }
 
     // MARK: - Composition prompts (always recomposed from parts — never loaded/replaced whole)
@@ -733,16 +835,18 @@ public final class ImprovSession: @unchecked Sendable {
 
     /// Points at the root folder for install-wide settings, creating/loading its fixed
     /// contents — mirrors `setPromptsFolder`'s "one chosen folder, several fixed sub-paths"
-    /// shape: `LLMConnections/` (via `listLLMConnections`, which no longer has its own
-    /// independent "choisir dossier" entry point — it's always `<folderPath>/LLMConnections`
-    /// now), `palettes.json` (`loadOrCreateColorPalettes`), `chordprogressions.json`
-    /// (`loadOrCreateChordProgressionTemplates`). Unlike `pieceFolder`/`sampleFolder`/etc.
-    /// (each independently redirectable), these three always move together as one unit.
+    /// shape: `LLMConnections/` (now only ever read once, by `migrateLLMConnectionsFromJSONIfNeeded`
+    /// — LLM connections themselves live in a private SwiftData store, not this folder; the
+    /// folder still exists purely as a one-time migration source/manual-drop spot for anyone
+    /// used to the old workflow), `palettes.json` (`loadOrCreateColorPalettes`),
+    /// `chordprogressions.json` (`loadOrCreateChordProgressionTemplates`). Unlike
+    /// `pieceFolder`/`sampleFolder`/etc. (each independently redirectable), these always move
+    /// together as one unit.
     public func setSettingsFolder(_ folderPath: String) throws {
         try FileManager.default.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
         let llmFolder = (folderPath as NSString).appendingPathComponent("LLMConnections")
         try FileManager.default.createDirectory(atPath: llmFolder, withIntermediateDirectories: true)
-        try listLLMConnections(in: llmFolder)
+        migrateLLMConnectionsFromJSONIfNeeded(in: llmFolder)
         try loadOrCreateColorPalettes(fromJSONFile: (folderPath as NSString).appendingPathComponent("palettes.json"))
         try loadOrCreateChordProgressionTemplates(fromJSONFile: (folderPath as NSString).appendingPathComponent("chordprogressions.json"))
         try loadOrCreateLanguageSetting(fromJSONFile: (folderPath as NSString).appendingPathComponent("language.json"))
