@@ -18,6 +18,7 @@
 		1481CD1EB22CC7D497D07C5A /* FolderPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */; };
 		1AB02A5A72BD4D7D84652261 /* GuideStepsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95942B8846FAA9B3ED42228B /* GuideStepsSection.swift */; };
 		23F3B29DEE343C8962CE837B /* StudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 240AE13F56A89701316555FB /* StudioView.swift */; };
+		D1FCE5286A3697E6B83154C0 /* TrackChannelLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E973B5DDB8D1B44CBD628BBC /* TrackChannelLabel.swift */; };
 		2636F5B565CF2E54B614292F /* PlaybackControlButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA393FDD6590DDE0D1E4FAEF /* PlaybackControlButton.swift */; };
 		2697496573116390CEDCD939 /* FileDisplayName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9144B6EB7F1029254BDA64AB /* FileDisplayName.swift */; };
 		280A9ECBDACA278B699919B9 /* SceneLayoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC498287531CCB5772C1258B /* SceneLayoutView.swift */; };
@@ -27,6 +28,7 @@
 		38F537A45F6133BAC6560CE5 /* PlainDataDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */; };
 		3D9A4A9A9A91CE71B7CD7525 /* GuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AE61DA02F48C19951B955F1 /* GuideView.swift */; };
 		44042629664C9742478E68C8 /* StudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 240AE13F56A89701316555FB /* StudioView.swift */; };
+		BC1392F70EB1C79132DB1DCA /* TrackChannelLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E973B5DDB8D1B44CBD628BBC /* TrackChannelLabel.swift */; };
 		499812C7FD4D8433B09B41AA /* FolderPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */; };
 		4B891030B381AABC680DEB7A /* JamShackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5998490361DA6721A074DBB /* JamShackApp.swift */; };
 		4BF48752328F746D8FCF5953 /* MicrophoneControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */; };
@@ -112,6 +114,7 @@
 		1DAE2E35B014C09B62C4CE0A /* PiecesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiecesView.swift; sourceTree = "<group>"; };
 		1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackMIDIView.swift; sourceTree = "<group>"; };
 		240AE13F56A89701316555FB /* StudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioView.swift; sourceTree = "<group>"; };
+		E973B5DDB8D1B44CBD628BBC /* TrackChannelLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackChannelLabel.swift; sourceTree = "<group>"; };
 		2D4854E83A4DBE291EDAA3CC /* SceneFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneFileView.swift; sourceTree = "<group>"; };
 		30A09EE36BD0499ABAC54DA1 /* JamShackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackView.swift; sourceTree = "<group>"; };
 		43140D25200D4FC00530C882 /* RecordingFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFileView.swift; sourceTree = "<group>"; };
@@ -229,6 +232,7 @@
 				8AE00B5478A71F5B75E67AE6 /* ServerControlsView.swift */,
 				4765E80FA8CA331E5728B0F0 /* SoundsView.swift */,
 				240AE13F56A89701316555FB /* StudioView.swift */,
+				E973B5DDB8D1B44CBD628BBC /* TrackChannelLabel.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -397,6 +401,7 @@
 				95F0005F0AC3755B8AC07FB3 /* ServerControlsView.swift in Sources */,
 				8E7A90E2BE9987478689DCF2 /* SoundsView.swift in Sources */,
 				44042629664C9742478E68C8 /* StudioView.swift in Sources */,
+				BC1392F70EB1C79132DB1DCA /* TrackChannelLabel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -446,6 +451,7 @@
 				BAB1C701AC9506CD9EF781D7 /* ServerControlsView.swift in Sources */,
 				34D898F93E23EC88710EAE78 /* SoundsView.swift in Sources */,
 				23F3B29DEE343C8962CE837B /* StudioView.swift in Sources */,
+				D1FCE5286A3697E6B83154C0 /* TrackChannelLabel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -363,7 +363,7 @@ struct SoundsView: View {
                 )) {
                     Text(L10n.string(.appOptionAucuneFem, session.currentLanguage)).tag(TrackID?.none)
                     ForEach(testableSources) { track in
-                        Text(track.label).tag(TrackID?.some(track.id))
+                        Text(session.labelWithChannel(track)).tag(TrackID?.some(track.id))
                     }
                 }
                 if let track = testTrackState {

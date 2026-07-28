@@ -8,6 +8,12 @@ Les items 1-4 et 6-10 (première fournée) ont été implémentés le 2026-07-26
 `Docs/ARCHITECTURE.md` §JamShackUI/App et les commits correspondants) et retirés d'ici.
 Les items 5 et 11-14 ont été consolidés dans `Docs/BACKLOG.md` (section "Fonctionnalités
 (2026-07-27)") le 2026-07-27 et retirés d'ici.
+Les items 1-3 de cette fournée (bug volume par rôle, bouton test de rôle, affichage du canal
+MIDI) ont été implémentés le 2026-07-28 et retirés d'ici : voir `setSceneRoleSound`/
+`testSceneRoleSound`/`displayedChannel(for:)` dans `Sources/AppCore/ImprovSession.swift`, et
+les tests correspondants dans `Tests/AppCoreTests/ImprovSessionTests.swift`. Le bug MIDI
+initialement rapporté (item 1) reste à confirmer résolu en usage réel — le correctif ne
+couvre que le cas précis identifié (volume non réappliqué au premier son assigné à un rôle).
 
 ## Entrées
 

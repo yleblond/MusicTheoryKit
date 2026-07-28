@@ -44,6 +44,11 @@ public final class SamplerUnit: @unchecked Sendable {
         engine.mainMixerNode.outputVolume = max(0, min(1, volume))
     }
 
+    /// Mirrors `setVolume(_:)` — lets a caller verify a freshly created/reused instance
+    /// actually carries the volume it's supposed to, rather than silently sitting at
+    /// whatever `AVAudioEngine` itself defaults a new `mainMixerNode` to.
+    public var volume: Float { engine.mainMixerNode.outputVolume }
+
     /// Same three formats `PiecePlayer.loadSample` supports. `preset` selects which instrument
     /// inside a multi-preset `.sf2` to load (see `SoundFontPresetReader`) — `nil` keeps the
     /// previous behavior of always loading program 0 in the default GM melodic bank (still the

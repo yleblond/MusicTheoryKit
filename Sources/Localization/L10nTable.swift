@@ -387,6 +387,7 @@ enum L10nTable {
         .appNouvelleScene: [.fr: "Nouvelle scene", .en: "New scene", .de: "Neue Szene"],
         .appDefaultNouvellePalette: [.fr: "Nouvelle palette", .en: "New palette", .de: "Neue Palette"],
         .appDefaultGuideTitle: [.fr: "Demo", .en: "Demo", .de: "Demo"],
+        .appFormatCanalMidi: [.fr: "%@ (canal %d)", .en: "%@ (channel %d)", .de: "%@ (Kanal %d)"],
         .appDefaultMorceauFilename: [.fr: "Morceau", .en: "Piece", .de: "Stück"],
 
         // MARK: - App: main TabView + sidebar accessibility labels
@@ -528,6 +529,7 @@ enum L10nTable {
         .appButtonSupprimer: [.fr: "Supprimer", .en: "Delete", .de: "Löschen"],
         .appFormatOccupeParRole: [.fr: "%@ (occupe par %@)", .en: "%@ (taken by %@)", .de: "%@ (belegt von %@)"],
         .appFieldVolume: [.fr: "Volume", .en: "Volume", .de: "Lautstärke"],
+        .appButtonTesterLeRole: [.fr: "Tester le son du role", .en: "Test the role's sound", .de: "Rollenklang testen"],
 
         // MARK: - App: JamShack > Sons
         .appPlaceholderAucunSonTrouve: [.fr: "Aucun son trouve. Choisis (ou decompresse une librairie dans) le dossier \"%@\" via JamShack > Dossiers.", .en: "No sound found. Choose (or decompress a library into) the \"%@\" folder via JamShack > Folders.", .de: "Kein Klang gefunden. Wähle den Ordner \"%@\" (oder entpacke dort eine Bibliothek) über JamShack > Ordner."],

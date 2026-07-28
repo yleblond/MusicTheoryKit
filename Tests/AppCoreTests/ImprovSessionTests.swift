@@ -1522,6 +1522,95 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertTrue(session.tracks.first { $0.id == .computerKeyboard }?.soundEnabled ?? false)
     }
 
+    /// Regression test for a real bug surfaced during manual testing, suspected (correctly)
+    /// to involve the per-role volume feature: picking a role's FIRST sound creates a brand
+    /// new `SamplerUnit` inside `setInstrument`, which starts at full engine volume — before
+    /// this fix, `setSceneRoleSound` never reapplied the role's own already-configured
+    /// volume onto that fresh instance, so a role deliberately turned down (e.g. to avoid
+    /// dominating the mix) would jump back to full volume the moment its sound was assigned.
+    func testSetSceneRoleSoundReappliesRoleVolumeToAFreshlyCreatedSampler() throws {
+        let systemDLS = URL(fileURLWithPath: "/System/Library/Components/CoreAudio.component/Contents/Resources/gs_instruments.dls")
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: systemDLS.path), "macOS system GM soundbank not found on this machine")
+
+        let sampleDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: sampleDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sampleDir) }
+        let sampleName = "gs_instruments.dls"
+        try FileManager.default.copyItem(at: systemDLS, to: sampleDir.appendingPathComponent(sampleName))
+
+        let session = ImprovSession()
+        try session.start()
+        try session.listSampleFiles(in: sampleDir.path)
+        session.newScene(title: "Test")
+        let roleID = try session.addSceneRole(name: "Piano")
+        try session.attachInstrument(.computerKeyboard, toRole: roleID)
+
+        // Volume set BEFORE any sound exists on the track — no sampler to apply it to yet,
+        // only recorded on the role itself.
+        try session.setSceneRoleVolume(roleID, volume: 0.3)
+        XCTAssertNil(session.samplerVolume(for: .computerKeyboard))
+
+        try session.setSceneRoleSound(roleID, soundName: sampleName)
+        XCTAssertEqual(session.samplerVolume(for: .computerKeyboard) ?? -1, 0.3, accuracy: 0.001)
+    }
+
+    func testTestSceneRoleSoundThrowsWithoutActiveScene() {
+        let session = ImprovSession()
+        XCTAssertThrowsError(try session.testSceneRoleSound(UUID())) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .noSceneLoaded)
+        }
+    }
+
+    func testTestSceneRoleSoundThrowsForUnknownRole() throws {
+        let session = ImprovSession()
+        session.newScene(title: "Test")
+        XCTAssertThrowsError(try session.testSceneRoleSound(UUID())) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .unknownSceneRole)
+        }
+    }
+
+    func testTestSceneRoleSoundThrowsWhenRoleHasNoSoundAssigned() throws {
+        let session = ImprovSession()
+        try session.start()
+        session.newScene(title: "Test")
+        let roleID = try session.addSceneRole(name: "Piano")
+
+        // Unattached: nothing to test yet.
+        XCTAssertThrowsError(try session.testSceneRoleSound(roleID)) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .sceneRoleHasNoSoundToTest)
+        }
+
+        // Attached, but no sound ever assigned.
+        try session.attachInstrument(.computerKeyboard, toRole: roleID)
+        XCTAssertThrowsError(try session.testSceneRoleSound(roleID)) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .sceneRoleHasNoSoundToTest)
+        }
+    }
+
+    func testTestSceneRoleSoundPlaysThroughTheAttachedInstrumentsSampler() throws {
+        let systemDLS = URL(fileURLWithPath: "/System/Library/Components/CoreAudio.component/Contents/Resources/gs_instruments.dls")
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: systemDLS.path), "macOS system GM soundbank not found on this machine")
+
+        let sampleDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: sampleDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sampleDir) }
+        let sampleName = "gs_instruments.dls"
+        try FileManager.default.copyItem(at: systemDLS, to: sampleDir.appendingPathComponent(sampleName))
+
+        let session = ImprovSession()
+        try session.start()
+        try session.listSampleFiles(in: sampleDir.path)
+        session.newScene(title: "Test")
+        let roleID = try session.addSceneRole(name: "Piano")
+        try session.attachInstrument(.computerKeyboard, toRole: roleID)
+        try session.setSceneRoleSound(roleID, soundName: sampleName)
+
+        // A demo note is deliberately not a real played note — must not touch heldPitches/
+        // the recognizer, unlike `pressKey`.
+        try session.testSceneRoleSound(roleID, duration: 0.01)
+        XCTAssertTrue(session.tracks.first { $0.id == .computerKeyboard }?.heldPitches.isEmpty ?? false)
+    }
+
     func testLoadSceneMigratesLegacyFlatTrackFormat() throws {
         let legacyJSON = """
         {"title": "Ancienne Scene", "tracks": [

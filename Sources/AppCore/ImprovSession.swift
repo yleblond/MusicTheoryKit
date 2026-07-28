@@ -384,6 +384,7 @@ public final class ImprovSession: @unchecked Sendable {
         case invalidSceneIndex
         case noSceneLoaded
         case unknownSceneRole
+        case sceneRoleHasNoSoundToTest
         case virtualKeyboardAlreadyActive
         case invalidColorPaletteIndex
         case invalidColorPaletteFile
@@ -439,6 +440,7 @@ public final class ImprovSession: @unchecked Sendable {
             case .invalidSceneIndex: return "no scene at that index"
             case .noSceneLoaded: return "no active scene — try 'scene-new <titre>' first, or load one"
             case .unknownSceneRole: return "no role with that id in the active scene"
+            case .sceneRoleHasNoSoundToTest: return "this role has no instrument attached or no sound assigned yet — nothing to test"
             case .virtualKeyboardAlreadyActive: return "virtual keyboard already running — stop it first"
             case .invalidColorPaletteIndex: return "no color palette at that index"
             case .invalidColorPaletteFile: return "a palette needs exactly 12 colors (one per pitch class)"
@@ -1373,6 +1375,12 @@ public final class ImprovSession: @unchecked Sendable {
         if let attachedTrackID {
             if let soundName {
                 try setInstrument(named: soundName, for: attachedTrackID, preset: preset)
+                // A track picking up its very first sound gets a brand-new `SamplerUnit`
+                // (see `setInstrument`), which starts at full volume — reapply the role's
+                // own configured mix here too, not just in `applyRoleConfiguration`, or a
+                // role with a lowered volume would jump back to full volume the moment a
+                // sound is (re)picked for it from this screen.
+                samplers[attachedTrackID]?.setVolume(scene.roles[index].volume)
             } else {
                 try? setSoundEnabled(false, for: attachedTrackID)
             }
@@ -1397,6 +1405,27 @@ public final class ImprovSession: @unchecked Sendable {
         currentScene = scene
         if let attachedTrackID {
             samplers[attachedTrackID]?.setVolume(volume)
+        }
+    }
+
+    /// Plays a short demo note through `roleID`'s attached instrument, exactly as its own
+    /// configured sound/volume would actually sound live — lets the roles screen answer
+    /// "what does this produce" without leaving it to press a real key or plug in a
+    /// controller. Talks directly to the track's `SamplerUnit.startNote`/`stopNote` (already
+    /// documented safe to call from an independent `DispatchQueue.global().asyncAfter`, same
+    /// as `PiecePlayer`'s own scheduled playback) — deliberately NOT routed through
+    /// `handleIncomingMIDIEvent`: a demo note isn't a real played note, so it shouldn't touch
+    /// `heldPitches`/the recognizer, get logged, forwarded to a server, or captured into a
+    /// recording in progress.
+    public func testSceneRoleSound(_ roleID: SceneRole.ID, pitch: Int = 60, velocity: Int = 100, duration: TimeInterval = 0.6) throws {
+        guard let scene = currentScene else { throw SessionError.noSceneLoaded }
+        guard let role = scene.roles.first(where: { $0.id == roleID }) else { throw SessionError.unknownSceneRole }
+        guard let trackID = role.attachedTrackID, role.soundEnabled, let sampler = samplers[trackID] else {
+            throw SessionError.sceneRoleHasNoSoundToTest
+        }
+        sampler.startNote(pitch: pitch, velocity: velocity)
+        DispatchQueue.global().asyncAfter(deadline: .now() + duration) {
+            sampler.stopNote(pitch: pitch)
         }
     }
 
@@ -2159,6 +2188,25 @@ public final class ImprovSession: @unchecked Sendable {
     /// message has arrived from it since the last `refreshTracks()`/`refreshPassiveChannelSniffers()`.
     public func observedChannel(forMIDISourceIndex index: Int) -> Int? {
         liveInputQueue.sync { passiveObservedChannels[index] }
+    }
+
+    /// Test-only peek at a track's actual live sampler volume (see `SamplerUnit.volume`) —
+    /// `samplers` itself stays `private`, an implementation detail no other caller needs.
+    func samplerVolume(for id: TrackID) -> Float? {
+        samplers[id]?.volume
+    }
+
+    /// The MIDI channel to show for `track` — the real, actually-observed-through-listening
+    /// value if there is one (`TrackInfo.lastChannel`), else the passive sniffer's own
+    /// observation (`observedChannel(forMIDISourceIndex:)`) for a `.midiSource` track;
+    /// `nil` for anything else, including `.midiMerged`, which has no single physical source
+    /// of its own to sniff. Shared by every UI that lists/labels a MIDI-capable track (the
+    /// CLI's own `printTracks`, the SwiftUI app's role/instrument pickers) so they can't
+    /// silently drift onto two different notions of "this track's channel."
+    public func displayedChannel(for track: TrackInfo) -> Int? {
+        if let channel = track.lastChannel { return channel }
+        guard case .midiSource(let index) = track.id else { return nil }
+        return observedChannel(forMIDISourceIndex: index)
     }
 
     private func preservedOrNewTrack(_ id: TrackID, label: String, canHaveSound: Bool = true) -> TrackInfo {

@@ -517,15 +517,10 @@ func virtualKeyboardStatusText() -> String {
 
 /// One line per track — shared by the `tracks` command and the Source/Reseau menus'
 /// prompts, so picking a track id to act on always shows the same up-to-date list first.
-/// The MIDI channel to show for `track` (see `TrackInfo.lastChannel`'s doc comment): the
-/// real, actually-observed-through-listening value if there is one, else the passive
-/// sniffer's own observation (`ImprovSession.observedChannel(forMIDISourceIndex:)`) for a
-/// `.midiSource` track — meaningless (so always `nil`) for anything else, including
-/// `.midiMerged`, which has no single physical source of its own to sniff.
+/// See `ImprovSession.displayedChannel(for:)` — shared with the SwiftUI app so both can't
+/// silently drift onto two different notions of "this track's channel."
 func displayedChannel(for track: TrackInfo) -> Int? {
-    if let channel = track.lastChannel { return channel }
-    guard case .midiSource(let index) = track.id else { return nil }
-    return session.observedChannel(forMIDISourceIndex: index)
+    session.displayedChannel(for: track)
 }
 
 func printTracks() {
