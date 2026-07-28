@@ -1903,6 +1903,23 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertEqual(session.tracks.first { $0.id == .midiMerged }?.lastChannel, 7)
     }
 
+    /// Regression test for a real reported bug: `displayedChannel(for:)` showed "canal 1" for
+    /// the computer keyboard after typing a single note. Root cause: `lastChannel` is set by
+    /// `updateRecognitionState` for ANY track, not just MIDI ones — `pressKey` defaults
+    /// `channel` to 0 — and `displayedChannel` used to return it unconditionally. The computer
+    /// keyboard isn't a MIDI device at all, so it should never report a channel.
+    func testDisplayedChannelIsNilForComputerKeyboardEvenAfterPlaying() throws {
+        let session = ImprovSession()
+        try session.start()
+        try session.startTrack(.computerKeyboard)
+        session.pressKey(pitch: 60)
+        session.releaseKey(pitch: 60)
+
+        let track = try XCTUnwrap(session.tracks.first { $0.id == .computerKeyboard })
+        XCTAssertNotNil(track.lastChannel, "sanity check: lastChannel really is set by playing")
+        XCTAssertNil(session.displayedChannel(for: track))
+    }
+
     // MARK: - Scene (basic, non-role-based)
 
     func testSceneSaveAndLoadRoundTripsTrackListeningAndSound() throws {

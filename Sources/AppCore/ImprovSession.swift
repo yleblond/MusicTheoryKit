@@ -2195,6 +2195,11 @@ public final class ImprovSession: @unchecked Sendable {
     /// CLI's own `printTracks`, the SwiftUI app's role/instrument pickers) so they can't
     /// silently drift onto two different notions of "this track's channel."
     public func displayedChannel(for track: TrackInfo) -> Int? {
+        // `lastChannel` is set by `updateRecognitionState` for ANY track, not just MIDI ones —
+        // `pressKey`/`releaseKey` (the computer keyboard's own input path) default `channel` to
+        // 0, which used to make this function report "canal 1" for the computer keyboard the
+        // moment a single key was typed, even though it was never a MIDI device to begin with.
+        guard isMIDITrack(track.id) else { return nil }
         if let channel = track.lastChannel { return channel }
         guard case .midiSource(let index) = track.id else { return nil }
         return observedChannel(forMIDISourceIndex: index)

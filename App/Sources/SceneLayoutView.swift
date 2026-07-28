@@ -103,8 +103,7 @@ private struct UnassignedInstrumentRow: View {
     let scene: AppCore.Scene
     let onError: (String) -> Void
 
-    @State private var showNewRoleAlert = false
-    @State private var newRoleName = ""
+    @State private var showNewRoleSheet = false
 
     var body: some View {
         HStack {
@@ -115,22 +114,11 @@ private struct UnassignedInstrumentRow: View {
                     Button(label(for: role)) { attach(to: role) }
                 }
                 if !scene.roles.isEmpty { Divider() }
-                Button(L10n.string(.appButtonAjouterUnRoleEllipsis, session.currentLanguage)) { showNewRoleAlert = true }
+                Button(L10n.string(.appButtonAjouterUnRoleEllipsis, session.currentLanguage)) { showNewRoleSheet = true }
             }
         }
-        .alert(L10n.string(.appAlertNouveauRole, session.currentLanguage), isPresented: $showNewRoleAlert) {
-            TextField(L10n.string(.appPlaceholderNomExPiano1, session.currentLanguage), text: $newRoleName)
-            Button(L10n.string(.appButtonCreerEtAttacher, session.currentLanguage)) {
-                do {
-                    let roleID = try session.addSceneRole(name: newRoleName.isEmpty ? L10n.string(.fieldRole, session.currentLanguage) : newRoleName)
-                    try session.attachInstrument(track.id, toRole: roleID)
-                } catch {
-                    onError("\(error)")
-                }
-                newRoleName = ""
-                session.requestComputerKeyboardFocus()
-            }
-            Button(L10n.string(.appAnnuler, session.currentLanguage), role: .cancel) {}
+        .sheet(isPresented: $showNewRoleSheet) {
+            NewRoleFromInstrumentSheet(session: session, track: track, onError: onError)
         }
     }
 
@@ -151,6 +139,83 @@ private struct UnassignedInstrumentRow: View {
             onError("\(error)")
         }
         session.requestComputerKeyboardFocus()
+    }
+}
+
+/// The "Ajouter un rôle..." flow FROM a specific unassigned instrument — unlike
+/// `SceneLayoutView`'s own bare "Ajouter un role" button (a name only, nothing to attach or
+/// play through yet), this one already has a real source in hand, so it also offers picking a
+/// sound right away and — since the whole point of attaching a source is to hear it — leaves
+/// the new role ready to play: listening on, volume at 100%. A `.sheet` rather than the plain
+/// `.alert` this used to be: an `alert` can't host a `Picker` on either platform.
+private struct NewRoleFromInstrumentSheet: View {
+    let session: ImprovSession
+    let track: TrackInfo
+    let onError: (String) -> Void
+
+    @State private var name = ""
+    @State private var selectedSoundID: String?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(L10n.string(.appPlaceholderNomExPiano1, session.currentLanguage), text: $name)
+                } header: {
+                    Text(L10n.string(.fieldRole, session.currentLanguage))
+                }
+                Section {
+                    if session.favoriteSounds.isEmpty {
+                        Text(L10n.string(.appPlaceholderAucunSonFavoriParenthese, session.currentLanguage))
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Picker(L10n.string(.fieldSon, session.currentLanguage), selection: $selectedSoundID) {
+                            Text(L10n.string(.appButtonAucun, session.currentLanguage)).tag(String?.none)
+                            ForEach(session.favoriteSounds) { sound in
+                                Text(sound.displayName).tag(String?.some(sound.id))
+                            }
+                        }
+                    }
+                } header: {
+                    Text(L10n.string(.fieldSon, session.currentLanguage))
+                }
+            }
+            #if os(macOS)
+            .formStyle(.grouped)
+            #endif
+            .navigationTitle(L10n.string(.appAlertNouveauRole, session.currentLanguage))
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.string(.appAnnuler, session.currentLanguage)) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.string(.appButtonCreerEtAttacher, session.currentLanguage)) { createAndAttach() }
+                }
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 320, minHeight: 260)
+        #endif
+    }
+
+    /// `setSceneRoleVolume(..., volume: 1.0)` duplicates `SceneRole.init`'s own default — kept
+    /// explicit anyway, since this screen's whole point is "this role is ready to play right
+    /// now," not just "this role exists at its constructor defaults."
+    private func createAndAttach() {
+        do {
+            let roleID = try session.addSceneRole(name: name.isEmpty ? L10n.string(.fieldRole, session.currentLanguage) : name)
+            try session.attachInstrument(track.id, toRole: roleID)
+            if let sound = session.favoriteSounds.first(where: { $0.id == selectedSoundID }) {
+                try session.setSceneRoleSound(roleID, soundName: sound.path, preset: sound.preset)
+            }
+            try session.setSceneRoleListening(roleID, isListening: true)
+            try session.setSceneRoleVolume(roleID, volume: 1.0)
+        } catch {
+            onError("\(error)")
+        }
+        session.requestComputerKeyboardFocus()
+        dismiss()
     }
 }
 
