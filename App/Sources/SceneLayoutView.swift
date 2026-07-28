@@ -114,7 +114,14 @@ private struct UnassignedInstrumentRow: View {
                     Button(label(for: role)) { attach(to: role) }
                 }
                 if !scene.roles.isEmpty { Divider() }
-                Button(L10n.string(.appButtonAjouterUnRoleEllipsis, session.currentLanguage)) { showNewRoleSheet = true }
+                Button(L10n.string(.appButtonAjouterUnRoleEllipsis, session.currentLanguage)) {
+                    // Deferred a tick: presenting a `.sheet` directly from a `Menu` item's own
+                    // action — same run loop turn as the menu's own dismissal/tracking-mode
+                    // teardown — is a known source of an AppKit hang on macOS (the spinning
+                    // wait cursor the user actually reported). Letting the menu fully close
+                    // first avoids the race.
+                    DispatchQueue.main.async { showNewRoleSheet = true }
+                }
             }
         }
         .sheet(isPresented: $showNewRoleSheet) {
@@ -202,20 +209,30 @@ private struct NewRoleFromInstrumentSheet: View {
     /// `setSceneRoleVolume(..., volume: 1.0)` duplicates `SceneRole.init`'s own default — kept
     /// explicit anyway, since this screen's whole point is "this role is ready to play right
     /// now," not just "this role exists at its constructor defaults."
+    ///
+    /// Dismisses FIRST, then does the actual work a beat later — a MIDI attach turns real
+    /// listening on (`setSceneRoleListening`), which for a MIDI source means synchronously
+    /// standing up a CoreMIDI client/port (`ImprovSession.startTrack`); doing that in the same
+    /// run loop turn as this sheet's own window teardown was the likely cause of a real
+    /// reported hang (spinning wait cursor right after using this exact flow). Letting the
+    /// sheet actually close first avoids stacking real CoreMIDI/AVAudioEngine work on top of
+    /// the dismiss animation.
     private func createAndAttach() {
-        do {
-            let roleID = try session.addSceneRole(name: name.isEmpty ? L10n.string(.fieldRole, session.currentLanguage) : name)
-            try session.attachInstrument(track.id, toRole: roleID)
-            if let sound = session.favoriteSounds.first(where: { $0.id == selectedSoundID }) {
-                try session.setSceneRoleSound(roleID, soundName: sound.path, preset: sound.preset)
-            }
-            try session.setSceneRoleListening(roleID, isListening: true)
-            try session.setSceneRoleVolume(roleID, volume: 1.0)
-        } catch {
-            onError("\(error)")
-        }
-        session.requestComputerKeyboardFocus()
         dismiss()
+        DispatchQueue.main.async {
+            do {
+                let roleID = try session.addSceneRole(name: name.isEmpty ? L10n.string(.fieldRole, session.currentLanguage) : name)
+                try session.attachInstrument(track.id, toRole: roleID)
+                if let sound = session.favoriteSounds.first(where: { $0.id == selectedSoundID }) {
+                    try session.setSceneRoleSound(roleID, soundName: sound.path, preset: sound.preset)
+                }
+                try session.setSceneRoleListening(roleID, isListening: true)
+                try session.setSceneRoleVolume(roleID, volume: 1.0)
+            } catch {
+                onError("\(error)")
+            }
+            session.requestComputerKeyboardFocus()
+        }
     }
 }
 
