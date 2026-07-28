@@ -45,8 +45,12 @@ struct JamShackMIDIView: View {
                 if sources.isEmpty {
                     Text(L10n.string(.appPlaceholderAucuneSourceMidi, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
                 } else {
-                    ForEach(sources, id: \.self) { name in
-                        Text(name)
+                    ForEach(Array(sources.enumerated()), id: \.offset) { index, name in
+                        if let channel = session.observedChannel(forMIDISourceIndex: index) {
+                            Text(L10n.string(.appFormatCanalMidi, session.currentLanguage, name, channel + 1))
+                        } else {
+                            Text(name)
+                        }
                     }
                 }
             } header: {

@@ -108,7 +108,7 @@ private struct UnassignedInstrumentRow: View {
 
     var body: some View {
         HStack {
-            Text(track.label)
+            Text(session.labelWithChannel(track))
             Spacer()
             Menu(L10n.string(.appMenuAttacherA, session.currentLanguage)) {
                 ForEach(scene.roles) { role in
@@ -141,7 +141,7 @@ private struct UnassignedInstrumentRow: View {
         guard let attachedID = role.attachedTrackID, let occupant = session.tracks.first(where: { $0.id == attachedID }) else {
             return role.name
         }
-        return L10n.string(.appFormatOccupeParRole, session.currentLanguage, role.name, occupant.label)
+        return L10n.string(.appFormatOccupeParRole, session.currentLanguage, role.name, session.labelWithChannel(occupant))
     }
 
     private func attach(to role: SceneRole) {
@@ -200,11 +200,11 @@ private struct SceneRoleRow: View {
                         Button(L10n.string(.appButtonDetacher, session.currentLanguage), role: .destructive) { detach() }
                     }
                     ForEach(session.unassignedInstruments()) { track in
-                        Button(track.label) { attach(track.id) }
+                        Button(session.labelWithChannel(track)) { attach(track.id) }
                     }
                 } label: {
                     if let trackID = role.attachedTrackID, let track = session.tracks.first(where: { $0.id == trackID }) {
-                        Text(track.label).foregroundStyle(.green)
+                        Text(session.labelWithChannel(track)).foregroundStyle(.green)
                     } else {
                         Text(L10n.string(.appLabelLibre, session.currentLanguage)).foregroundStyle(.secondary)
                     }

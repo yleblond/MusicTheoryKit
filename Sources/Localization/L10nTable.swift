@@ -387,6 +387,7 @@ enum L10nTable {
         .appNouvelleScene: [.fr: "Nouvelle scene", .en: "New scene", .de: "Neue Szene"],
         .appDefaultNouvellePalette: [.fr: "Nouvelle palette", .en: "New palette", .de: "Neue Palette"],
         .appDefaultGuideTitle: [.fr: "Demo", .en: "Demo", .de: "Demo"],
+        .appFormatCanalMidi: [.fr: "%@ (canal %d)", .en: "%@ (channel %d)", .de: "%@ (Kanal %d)"],
         .appDefaultMorceauFilename: [.fr: "Morceau", .en: "Piece", .de: "Stück"],
 
         // MARK: - App: main TabView + sidebar accessibility labels

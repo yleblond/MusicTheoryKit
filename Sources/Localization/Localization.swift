@@ -203,6 +203,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appChoisirEllipsis, appChangerEllipsis, appCreer, appAnnuler, appButtonSauvegarderDansCeDossier
     case appButtonArreter, appButtonDemarrer, appNouveauGuide, appNouvelleScene
     case appDefaultNouvellePalette, appDefaultGuideTitle, appDefaultMorceauFilename
+    /// "%@ (canal %d)" — reused everywhere a MIDI-capable track's own label is shown, next
+    /// to `ImprovSession.displayedChannel(for:)`.
+    case appFormatCanalMidi
 
     // MARK: - App: main TabView + JamShack sidebar + sub-tab sidebars (accessibility labels)
     case appTabStudio, appStatusDemarrage

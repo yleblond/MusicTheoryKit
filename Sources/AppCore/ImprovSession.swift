@@ -223,9 +223,31 @@ public final class ImprovSession: @unchecked Sendable {
     /// by the same index `TrackID.midiSource(Int)` uses — meaningless in merged mode, where
     /// there's no single physical source a track maps to.
     private var passiveChannelSniffers: [Int: MIDIInputListener] = [:]
-    /// Written from whichever CoreMIDI callback thread each sniffer above happens to fire
-    /// on, so every read/write goes through `liveInputQueue` like every other piece of state
-    /// touched by both a live callback and the main thread — see `observedChannel(forMIDISourceIndex:)`.
+    /// Deliberately NOT `liveInputQueue`, unlike almost everything else a live callback thread
+    /// touches — see `passiveObservedChannels`'s own doc comment for the deadlock this avoids.
+    private let passiveChannelQueue = DispatchQueue(label: "ImprovSession.passiveChannel")
+    /// Written from whichever CoreMIDI callback thread each sniffer above happens to fire on,
+    /// read via `observedChannel(forMIDISourceIndex:)` — guarded by `passiveChannelQueue`, NOT
+    /// `liveInputQueue`. This one had to be `@ObservationIgnored` (see `microphoneSpectrumSnapshot`'s
+    /// own doc comment for that half of the reasoning) AND on its own dedicated queue, confirmed
+    /// by a live `sample` of an actually-frozen process: `displayedChannel(for:)`/
+    /// `labelWithChannel(_:)` are now read from several SwiftUI view bodies on the main thread
+    /// (JamShack MIDI tab, Sons test-source picker, Scene role rows), and reading through
+    /// `liveInputQueue.sync` there deadlocked against the real-time MIDI callback thread even
+    /// AFTER `@ObservationIgnored` alone: the sample showed the callback thread parked inside
+    /// `liveInputQueue` (running `handleIncomingMIDIEvent` → `refreshRecognition`, mutating the
+    /// legitimately-observed `tracks`) waiting on SwiftUI's own Observation lock
+    /// (`_MovableLockLock`/`ObservationCenter.invalidate`), while the main thread — which had
+    /// already taken that very lock to evaluate `SceneRoleRow.body` — sat blocked waiting for
+    /// `liveInputQueue`'s ownership token via this property's own `.sync` read. Two threads,
+    /// each holding what the other one blocks on: a real deadlock, not just lock contention,
+    /// and unrelated to which specific property is Observed — sharing `liveInputQueue` at all
+    /// from a main-thread read is what creates the cycle, since ANY concurrent mutation of
+    /// `tracks` on that queue can end up wanting the same Observation lock the main thread may
+    /// already hold. A queue this property never shares with `tracks`'s own mutations breaks
+    /// the cycle outright, same "isolated, otherwise-unused queue" precedent as
+    /// `microphoneSpectrumQueue`.
+    @ObservationIgnored
     private var passiveObservedChannels: [Int: Int] = [:]
     private var microphoneListener: MicrophonePitchListener?
     /// One independent chord/mode recognizer per track — created the first time a track
@@ -2094,36 +2116,48 @@ public final class ImprovSession: @unchecked Sendable {
     /// `tracks` command so a newly plugged-in MIDI device can be picked up on demand (this
     /// app doesn't watch for CoreMIDI hot-plug notifications).
     public func refreshTracks() {
-        var updated: [TrackInfo] = []
-        switch midiFusionMode {
-        case .merged:
-            updated.append(preservedOrNewTrack(.midiMerged, label: "MIDI (fusionne)"))
-        case .individual:
-            for (index, name) in availableMIDISources().enumerated() {
-                updated.append(preservedOrNewTrack(.midiSource(index), label: "MIDI : \(name)"))
+        // Real bug reproduced under stress (concurrent `refreshTracks()` + live note traffic:
+        // "Object ... deallocated with non-zero retain count", a genuine memory-corrupting data
+        // race): every mutation `handleIncomingMIDIEvent` makes to `tracks` goes through
+        // `liveInputQueue.sync` (see that function's own doc comment), but this function used
+        // to read/write `tracks` completely unguarded — reachable any time the user hits
+        // "Rafraichir" (or changes MIDI fusion mode) while a MIDI device is actively being
+        // played, which fires on its own CoreMIDI callback thread, not the main thread. Wrapping
+        // the whole body is safe from self-deadlock: `preservedOrNewTrack`/
+        // `refreshPassiveChannelSniffers`/`reconcileSceneAttachmentsAfterTrackRefresh` never
+        // call `liveInputQueue.sync` themselves.
+        liveInputQueue.sync {
+            var updated: [TrackInfo] = []
+            switch midiFusionMode {
+            case .merged:
+                updated.append(preservedOrNewTrack(.midiMerged, label: "MIDI (fusionne)"))
+            case .individual:
+                for (index, name) in availableMIDISources().enumerated() {
+                    updated.append(preservedOrNewTrack(.midiSource(index), label: "MIDI : \(name)"))
+                }
             }
+            updated.append(preservedOrNewTrack(.computerKeyboard, label: "Clavier ordinateur"))
+            // `.webKeyboard(clientID:)` tracks are NOT recreated here — unlike every other kind,
+            // they're dynamic and per-browser (see `ensureWebKeyboardTrack`), so this would
+            // either need a fixed clientID (defeating the point) or drop every connected
+            // browser's track on every `refreshTracks()` call (e.g. after `midi-mode`). Existing
+            // ones are preserved below, just never freshly created here. `.remote` tracks get the
+            // exact same treatment, for the exact same reason — they're owned by the network
+            // layer (`addOrUpdateRemoteTrack`/`mergeRemoteSnapshot`), not by this function; before
+            // this line existed, calling `refreshTracks()` (e.g. via the `tracks`/`scene-tree`
+            // commands, or `midi-mode`) silently wiped every OTHER participant's known
+            // instruments until they next announced a track or played a note.
+            updated.append(contentsOf: tracks.filter { track in
+                switch track.id {
+                case .webKeyboard, .remote: return true
+                default: return false
+                }
+            })
+            updated.append(preservedOrNewTrack(.microphone, label: "Microphone", canHaveSound: false))
+            tracks = updated
+            refreshPassiveChannelSniffers()
+            reconcileSceneAttachmentsAfterTrackRefresh()
         }
-        updated.append(preservedOrNewTrack(.computerKeyboard, label: "Clavier ordinateur"))
-        // `.webKeyboard(clientID:)` tracks are NOT recreated here — unlike every other kind,
-        // they're dynamic and per-browser (see `ensureWebKeyboardTrack`), so this would
-        // either need a fixed clientID (defeating the point) or drop every connected
-        // browser's track on every `refreshTracks()` call (e.g. after `midi-mode`). Existing
-        // ones are preserved below, just never freshly created here. `.remote` tracks get the
-        // exact same treatment, for the exact same reason — they're owned by the network
-        // layer (`addOrUpdateRemoteTrack`/`mergeRemoteSnapshot`), not by this function; before
-        // this line existed, calling `refreshTracks()` (e.g. via the `tracks`/`scene-tree`
-        // commands, or `midi-mode`) silently wiped every OTHER participant's known
-        // instruments until they next announced a track or played a note.
-        updated.append(contentsOf: tracks.filter { track in
-            switch track.id {
-            case .webKeyboard, .remote: return true
-            default: return false
-            }
-        })
-        updated.append(preservedOrNewTrack(.microphone, label: "Microphone", canHaveSound: false))
-        tracks = updated
-        refreshPassiveChannelSniffers()
-        reconcileSceneAttachmentsAfterTrackRefresh()
     }
 
     /// Tears down every existing passive sniffer and reconnects one per currently-visible
@@ -2137,7 +2171,7 @@ public final class ImprovSession: @unchecked Sendable {
         for index in 0..<availableMIDISources().count {
             let handler: MIDIInputListener.Handler = { [weak self] event in
                 guard let self else { return }
-                self.liveInputQueue.async { self.passiveObservedChannels[index] = event.channel }
+                self.passiveChannelQueue.async { self.passiveObservedChannels[index] = event.channel }
             }
             guard let listener = try? MIDIInputListener(clientName: "MusicImprovAssistant-ChannelSniffer", handler: handler) else { continue }
             listener.connectSource(atIndex: index)
@@ -2150,7 +2184,20 @@ public final class ImprovSession: @unchecked Sendable {
     /// `.midiSource(index)` track is actually being listened to. `nil` until at least one
     /// message has arrived from it since the last `refreshTracks()`/`refreshPassiveChannelSniffers()`.
     public func observedChannel(forMIDISourceIndex index: Int) -> Int? {
-        liveInputQueue.sync { passiveObservedChannels[index] }
+        passiveChannelQueue.sync { passiveObservedChannels[index] }
+    }
+
+    /// The MIDI channel to show for `track` — the real, actually-observed-through-listening
+    /// value if there is one (`TrackInfo.lastChannel`), else the passive sniffer's own
+    /// observation (`observedChannel(forMIDISourceIndex:)`) for a `.midiSource` track;
+    /// `nil` for anything else, including `.midiMerged`, which has no single physical source
+    /// of its own to sniff. Shared by every UI that lists/labels a MIDI-capable track (the
+    /// CLI's own `printTracks`, the SwiftUI app's role/instrument pickers) so they can't
+    /// silently drift onto two different notions of "this track's channel."
+    public func displayedChannel(for track: TrackInfo) -> Int? {
+        if let channel = track.lastChannel { return channel }
+        guard case .midiSource(let index) = track.id else { return nil }
+        return observedChannel(forMIDISourceIndex: index)
     }
 
     private func preservedOrNewTrack(_ id: TrackID, label: String, canHaveSound: Bool = true) -> TrackInfo {
