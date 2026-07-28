@@ -2212,11 +2212,25 @@ public final class ImprovSession: @unchecked Sendable {
     /// The MIDI channel to show for `track` — the real, actually-observed-through-listening
     /// value if there is one (`TrackInfo.lastChannel`), else the passive sniffer's own
     /// observation (`observedChannel(forMIDISourceIndex:)`) for a `.midiSource` track;
-    /// `nil` for anything else, including `.midiMerged`, which has no single physical source
-    /// of its own to sniff. Shared by every UI that lists/labels a MIDI-capable track (the
+    /// `nil` for anything that isn't a genuine MIDI track (`.midiMerged`/`.midiSource`) — a
+    /// channel is a MIDI-protocol concept, meaningless for `.computerKeyboard`/`.webKeyboard`/
+    /// `.microphone`/`.remote`. Shared by every UI that lists/labels a MIDI-capable track (the
     /// CLI's own `printTracks`, the SwiftUI app's role/instrument pickers) so they can't
     /// silently drift onto two different notions of "this track's channel."
+    ///
+    /// **Real bug fixed here**: `TrackInfo.lastChannel` gets set by `updateRecognitionState`
+    /// for EVERY track kind, not just MIDI ones — pressing a key on the computer keyboard
+    /// (always `channel: 0`, see `pressKey`) left `lastChannel == 0` on that track same as a
+    /// real MIDI message would. Reading it unconditionally, as this used to, showed a MIDI
+    /// channel next to the computer keyboard — nonsensical, since it isn't a MIDI source at
+    /// all. Gating on the track kind first is simpler than trying to stop `lastChannel` from
+    /// ever being set on a non-MIDI track (still useful there as a purely internal diagnostic
+    /// of "what channel arg did the last simulated event carry," just never shown as one).
     public func displayedChannel(for track: TrackInfo) -> Int? {
+        switch track.id {
+        case .midiMerged, .midiSource: break
+        default: return nil
+        }
         if let channel = track.lastChannel { return channel }
         guard case .midiSource(let index) = track.id else { return nil }
         return observedChannel(forMIDISourceIndex: index)

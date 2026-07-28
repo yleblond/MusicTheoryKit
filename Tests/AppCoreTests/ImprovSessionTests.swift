@@ -1988,6 +1988,23 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertEqual(session.tracks.first { $0.id == .midiMerged }?.lastChannel, 7)
     }
 
+    /// Regression test for a real UI bug: a MIDI channel is a MIDI-protocol concept, meaningless
+    /// for the computer keyboard — but `updateRecognitionState` sets `TrackInfo.lastChannel` for
+    /// every track kind alike (`pressKey` always uses `channel: 0`), so `displayedChannel(for:)`
+    /// used to happily report "channel 1" for the computer keyboard the moment any key was
+    /// pressed. `lastChannel` itself is still set (harmless, purely internal) — only the
+    /// user-facing `displayedChannel` needs to gate on the track actually being MIDI.
+    func testDisplayedChannelIsNilForTheComputerKeyboardEvenAfterAKeyPress() throws {
+        let session = ImprovSession()
+        try session.start()
+        try session.startTrack(.computerKeyboard)
+        session.pressKey(pitch: 60, track: .computerKeyboard)
+
+        let keyboard = session.tracks.first { $0.id == .computerKeyboard }
+        XCTAssertEqual(keyboard?.lastChannel, 0)
+        XCTAssertNil(session.displayedChannel(for: keyboard!))
+    }
+
     // MARK: - Scene (basic, non-role-based)
 
     func testSceneSaveAndLoadRoundTripsTrackListeningAndSound() throws {
