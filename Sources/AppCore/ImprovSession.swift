@@ -225,6 +225,14 @@ public final class ImprovSession: @unchecked Sendable {
     /// One independent sampler per track with sound enabled — see `setSoundEnabled`. Never
     /// present for `.microphone` (enforced there, not here).
     private var samplers: [TrackID: SamplerUnit] = [:]
+
+    /// Test-only peek at whether a track's own sampler is actually running (see
+    /// `SamplerUnit.isRunning`'s doc comment for why this matters) — `samplers` itself stays
+    /// `private`, an implementation detail no other caller needs. `nil` if this track never
+    /// had a sampler created at all.
+    func samplerIsRunning(for id: TrackID) -> Bool? {
+        samplers[id]?.isRunning
+    }
     /// One `MicrophonePitchStabilizer` per microphone track (today there's only ever one,
     /// `.microphone`, but keyed by `TrackID` for consistency with `recognizers`/`samplers`),
     /// created in `startTrack` from that track's `microphoneRecognitionMode` and discarded in
@@ -2212,9 +2220,16 @@ public final class ImprovSession: @unchecked Sendable {
             unit = existing
         } else {
             unit = SamplerUnit()
-            try unit.start()
             samplers[id] = unit
         }
+        // Always (re)start, not just for a freshly-created unit — reusing an EXISTING
+        // `SamplerUnit` whose engine was previously stopped (via `setSoundEnabled(false, ...)`,
+        // e.g. a muted-but-remembered role) without this would leave `startNote` a silent
+        // no-op forever: real bug reproduced and confirmed in isolation (a stopped
+        // `AVAudioEngine` makes `AVAudioUnitSampler.startNote` produce zero audio, no error),
+        // matching a track reporting `soundEnabled=true` + sampler present + startNote called,
+        // yet totally silent. `SamplerUnit.start()` is safe to call on an already-running engine.
+        try unit.start()
         try unit.loadSample(at: url)
         tracks[index].soundEnabled = true
         tracks[index].instrumentName = name

@@ -29,6 +29,11 @@ public final class SamplerUnit: @unchecked Sendable {
         engine.stop()
     }
 
+    /// Whether this unit's own `AVAudioEngine` is actually running — `startNote`/`stopNote`
+    /// are a silent no-op (no error, no sound) on a stopped engine, so callers that reuse an
+    /// existing `SamplerUnit` need this to tell "silently dead" apart from "working".
+    public var isRunning: Bool { engine.isRunning }
+
     public func startNote(pitch: Int, velocity: Int, channel: Int = 0) {
         sampler.startNote(Self.clampedByte(pitch), withVelocity: Self.clampedByte(velocity), onChannel: Self.clampedByte(channel))
     }

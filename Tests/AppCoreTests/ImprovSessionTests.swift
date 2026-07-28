@@ -1495,6 +1495,45 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertTrue(session.tracks.first { $0.id == .computerKeyboard }?.soundEnabled ?? false)
     }
 
+    /// Regression test for a real "plays but no sound comes out" bug, reported live on a LUMI
+    /// Keys MIDI track: `tracks[].soundEnabled` was `true`, a sampler existed, `startNote` was
+    /// genuinely being called on every keypress — yet nothing played. Root cause: `setInstrument`
+    /// reused an EXISTING `SamplerUnit` (e.g. one previously silenced by `setSoundEnabled(false,
+    /// ...)`, which calls `SamplerUnit.stop()`) without ever restarting its `AVAudioEngine` —
+    /// only the "brand new `SamplerUnit`" branch called `.start()`. A stopped `AVAudioEngine`
+    /// makes `AVAudioUnitSampler.startNote`/`stopNote` a silent no-op with no error, confirmed in
+    /// isolation. Same real GM DLS bank as the test above, needed to exercise the actual reuse
+    /// path in `setInstrument`, not just a mocked one.
+    func testSetInstrumentRestartsAPreviouslyStoppedSampler() throws {
+        let systemDLS = URL(fileURLWithPath: "/System/Library/Components/CoreAudio.component/Contents/Resources/gs_instruments.dls")
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: systemDLS.path), "macOS system GM soundbank not found on this machine")
+
+        let sampleDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: sampleDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sampleDir) }
+        let sampleName = "gs_instruments.dls"
+        try FileManager.default.copyItem(at: systemDLS, to: sampleDir.appendingPathComponent(sampleName))
+
+        let session = ImprovSession()
+        try session.start()
+        try session.listSampleFiles(in: sampleDir.path)
+
+        try session.setInstrument(named: sampleName, for: .computerKeyboard)
+        XCTAssertEqual(session.samplerIsRunning(for: .computerKeyboard), true)
+
+        // Silences the track the same way a muted-but-remembered role does — the sampler
+        // object itself survives (`samplers[id]` stays non-nil), only its engine stops.
+        try session.setSoundEnabled(false, for: .computerKeyboard)
+        XCTAssertEqual(session.samplerIsRunning(for: .computerKeyboard), false)
+
+        // The actual regression: re-picking a sound for this track used to reuse that same,
+        // still-stopped `SamplerUnit` without restarting it — `soundEnabled` would read `true`
+        // again, but every future `startNote` would stay silent forever.
+        try session.setInstrument(named: sampleName, for: .computerKeyboard)
+        XCTAssertTrue(session.tracks.first { $0.id == .computerKeyboard }?.soundEnabled ?? false)
+        XCTAssertEqual(session.samplerIsRunning(for: .computerKeyboard), true)
+    }
+
     func testLoadSceneMigratesLegacyFlatTrackFormat() throws {
         let legacyJSON = """
         {"title": "Ancienne Scene", "tracks": [
