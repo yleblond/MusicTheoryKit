@@ -1417,10 +1417,23 @@ public final class ImprovSession: @unchecked Sendable {
     /// `handleIncomingMIDIEvent`: a demo note isn't a real played note, so it shouldn't touch
     /// `heldPitches`/the recognizer, get logged, forwarded to a server, or captured into a
     /// recording in progress.
+    ///
+    /// **Real crash fixed here**: this used to gate on `role.soundEnabled` — the ROLE's own
+    /// persisted intent, which can drift from whether the attached TRACK's sampler engine is
+    /// actually running right now (e.g. `SoundsView`'s test mode borrowing the same physical
+    /// instrument stops/restarts its sampler directly, without going through any `SceneRole`
+    /// at all). Gating on `role.soundEnabled == true` while the live engine was actually
+    /// stopped meant `sampler.startNote` fired on a non-running `AVAudioEngine`, which
+    /// `AVAudioUnitSampler` doesn't fail gracefully for — it crashes the app. Gating on the
+    /// TRACK's own live `soundEnabled` instead (kept in sync with the engine by
+    /// `setSoundEnabled`/`setInstrument`, whichever code path touches it) is the same
+    /// precondition `updateRecognitionState` already relies on for real note playback.
     public func testSceneRoleSound(_ roleID: SceneRole.ID, pitch: Int = 60, velocity: Int = 100, duration: TimeInterval = 0.6) throws {
         guard let scene = currentScene else { throw SessionError.noSceneLoaded }
         guard let role = scene.roles.first(where: { $0.id == roleID }) else { throw SessionError.unknownSceneRole }
-        guard let trackID = role.attachedTrackID, role.soundEnabled, let sampler = samplers[trackID] else {
+        guard let trackID = role.attachedTrackID,
+              tracks.first(where: { $0.id == trackID })?.soundEnabled == true,
+              let sampler = samplers[trackID] else {
             throw SessionError.sceneRoleHasNoSoundToTest
         }
         sampler.startNote(pitch: pitch, velocity: velocity)

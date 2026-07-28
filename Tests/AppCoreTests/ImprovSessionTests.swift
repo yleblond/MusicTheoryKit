@@ -1611,6 +1611,41 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertTrue(session.tracks.first { $0.id == .computerKeyboard }?.heldPitches.isEmpty ?? false)
     }
 
+    /// Regression test for a real crash reported during manual testing: `role.soundEnabled`
+    /// (the role's own persisted intent) can drift from the attached track's actual live
+    /// `soundEnabled`/sampler-engine state — e.g. another screen disabling that same track's
+    /// sound directly, without going through this role at all. Before this fix,
+    /// `testSceneRoleSound` gated on the stale `role.soundEnabled` and called `startNote` on
+    /// a sampler whose engine had actually been stopped, crashing the app instead of throwing.
+    func testTestSceneRoleSoundThrowsInsteadOfCrashingWhenTrackSoundWasDisabledOutsideTheRole() throws {
+        let systemDLS = URL(fileURLWithPath: "/System/Library/Components/CoreAudio.component/Contents/Resources/gs_instruments.dls")
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: systemDLS.path), "macOS system GM soundbank not found on this machine")
+
+        let sampleDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: sampleDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sampleDir) }
+        let sampleName = "gs_instruments.dls"
+        try FileManager.default.copyItem(at: systemDLS, to: sampleDir.appendingPathComponent(sampleName))
+
+        let session = ImprovSession()
+        try session.start()
+        try session.listSampleFiles(in: sampleDir.path)
+        session.newScene(title: "Test")
+        let roleID = try session.addSceneRole(name: "Piano")
+        try session.attachInstrument(.computerKeyboard, toRole: roleID)
+        try session.setSceneRoleSound(roleID, soundName: sampleName)
+
+        // Simulates another screen (e.g. SoundsView's test mode) turning the TRACK's sound
+        // off directly — `SceneRole.soundEnabled` is untouched by this, only `TrackInfo.
+        // soundEnabled`/the live sampler engine.
+        try session.setSoundEnabled(false, for: .computerKeyboard)
+        XCTAssertEqual(session.currentScene?.roles.first { $0.id == roleID }?.soundEnabled, true)
+
+        XCTAssertThrowsError(try session.testSceneRoleSound(roleID)) { error in
+            XCTAssertEqual(error as? ImprovSession.SessionError, .sceneRoleHasNoSoundToTest)
+        }
+    }
+
     func testLoadSceneMigratesLegacyFlatTrackFormat() throws {
         let legacyJSON = """
         {"title": "Ancienne Scene", "tracks": [
