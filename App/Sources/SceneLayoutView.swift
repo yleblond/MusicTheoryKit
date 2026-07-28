@@ -104,17 +104,30 @@ private struct UnassignedInstrumentRow: View {
     let onError: (String) -> Void
 
     @State private var showNewRoleSheet = false
+    // `attachInstrument` can load a sample-based instrument onto the target role (see
+    // `ImprovSession.applyRoleConfiguration`/`setInstrument`) — real disk I/O (and, for a
+    // sample under an iCloud-synced folder not yet downloaded locally, a real network wait),
+    // so it must not run on the main thread: same `Task { await Task.detached { ... } }`
+    // bridge already used for LLM composing (`CompositionComposerView`), not a plain
+    // synchronous call. Reported symptom before this fix: the whole app froze on iPhone while
+    // attaching an instrument to a scene, if that instrument's sample file wasn't already
+    // downloaded locally.
+    @State private var isAttaching = false
 
     var body: some View {
         HStack {
             Text(session.labelWithChannel(track))
             Spacer()
-            Menu(L10n.string(.appMenuAttacherA, session.currentLanguage)) {
-                ForEach(scene.roles) { role in
-                    Button(label(for: role)) { attach(to: role) }
+            if isAttaching {
+                ProgressView().controlSize(.small)
+            } else {
+                Menu(L10n.string(.appMenuAttacherA, session.currentLanguage)) {
+                    ForEach(scene.roles) { role in
+                        Button(label(for: role)) { attach(to: role) }
+                    }
+                    if !scene.roles.isEmpty { Divider() }
+                    Button(L10n.string(.appButtonAjouterUnRoleEllipsis, session.currentLanguage)) { showNewRoleSheet = true }
                 }
-                if !scene.roles.isEmpty { Divider() }
-                Button(L10n.string(.appButtonAjouterUnRoleEllipsis, session.currentLanguage)) { showNewRoleSheet = true }
             }
         }
         .sheet(isPresented: $showNewRoleSheet) {
@@ -133,12 +146,15 @@ private struct UnassignedInstrumentRow: View {
     }
 
     private func attach(to role: SceneRole) {
-        do {
-            try session.attachInstrument(track.id, toRole: role.id)
-        } catch {
-            onError("\(error)")
+        isAttaching = true
+        Task {
+            let outcome = await Task.detached {
+                Result { try session.attachInstrument(track.id, toRole: role.id) }
+            }.value
+            isAttaching = false
+            if case .failure(let error) = outcome { onError("\(error)") }
+            session.requestComputerKeyboardFocus()
         }
-        session.requestComputerKeyboardFocus()
     }
 }
 
@@ -155,6 +171,7 @@ private struct NewRoleFromInstrumentSheet: View {
 
     @State private var name = ""
     @State private var selectedSoundID: String?
+    @State private var isCreating = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -181,6 +198,7 @@ private struct NewRoleFromInstrumentSheet: View {
                     Text(L10n.string(.fieldSon, session.currentLanguage))
                 }
             }
+            .disabled(isCreating)
             #if os(macOS)
             .formStyle(.grouped)
             #endif
@@ -188,9 +206,14 @@ private struct NewRoleFromInstrumentSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string(.appAnnuler, session.currentLanguage)) { dismiss() }
+                        .disabled(isCreating)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.string(.appButtonCreerEtAttacher, session.currentLanguage)) { createAndAttach() }
+                    if isCreating {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button(L10n.string(.appButtonCreerEtAttacher, session.currentLanguage)) { createAndAttach() }
+                    }
                 }
             }
         }
@@ -202,20 +225,31 @@ private struct NewRoleFromInstrumentSheet: View {
     /// `setSceneRoleVolume(..., volume: 1.0)` duplicates `SceneRole.init`'s own default — kept
     /// explicit anyway, since this screen's whole point is "this role is ready to play right
     /// now," not just "this role exists at its constructor defaults."
+    ///
+    /// Runs off the main thread (same `Task { await Task.detached { ... } }` bridge as
+    /// `UnassignedInstrumentRow.attach(to:)`): `attachInstrument`/`setSceneRoleSound` can load
+    /// a sample-based instrument, real disk/network I/O that must not block the UI thread.
     private func createAndAttach() {
-        do {
-            let roleID = try session.addSceneRole(name: name.isEmpty ? L10n.string(.fieldRole, session.currentLanguage) : name)
-            try session.attachInstrument(track.id, toRole: roleID)
-            if let sound = session.favoriteSounds.first(where: { $0.id == selectedSoundID }) {
-                try session.setSceneRoleSound(roleID, soundName: sound.path, preset: sound.preset)
-            }
-            try session.setSceneRoleListening(roleID, isListening: true)
-            try session.setSceneRoleVolume(roleID, volume: 1.0)
-        } catch {
-            onError("\(error)")
+        isCreating = true
+        let selectedSound = session.favoriteSounds.first(where: { $0.id == selectedSoundID })
+        let roleName = name.isEmpty ? L10n.string(.fieldRole, session.currentLanguage) : name
+        Task {
+            let outcome = await Task.detached {
+                Result {
+                    let roleID = try session.addSceneRole(name: roleName)
+                    try session.attachInstrument(track.id, toRole: roleID)
+                    if let selectedSound {
+                        try session.setSceneRoleSound(roleID, soundName: selectedSound.path, preset: selectedSound.preset)
+                    }
+                    try session.setSceneRoleListening(roleID, isListening: true)
+                    try session.setSceneRoleVolume(roleID, volume: 1.0)
+                }
+            }.value
+            isCreating = false
+            if case .failure(let error) = outcome { onError("\(error)") }
+            session.requestComputerKeyboardFocus()
+            dismiss()
         }
-        session.requestComputerKeyboardFocus()
-        dismiss()
     }
 }
 
@@ -225,22 +259,35 @@ private struct SceneRoleRow: View {
     let sounds: [ImprovSession.FavoriteSound]
     let onError: (String) -> Void
 
+    // Both actions below can load a sample-based instrument (`setInstrument`, called from
+    // `setSceneRoleSound`/`attachInstrument`'s own `applyRoleConfiguration`) — real disk I/O,
+    // and a real network wait for a sample under an iCloud-synced folder not yet downloaded
+    // locally — so neither runs synchronously on the main thread anymore. Same
+    // `Task { await Task.detached { ... } }` bridge as `UnassignedInstrumentRow.attach(to:)`.
+    @State private var isBusy = false
+
     private func setSound(_ sound: ImprovSession.FavoriteSound?) {
-        do {
-            try session.setSceneRoleSound(role.id, soundName: sound?.path, preset: sound?.preset)
-        } catch {
-            onError("\(error)")
+        isBusy = true
+        Task {
+            let outcome = await Task.detached {
+                Result { try session.setSceneRoleSound(role.id, soundName: sound?.path, preset: sound?.preset) }
+            }.value
+            isBusy = false
+            if case .failure(let error) = outcome { onError("\(error)") }
+            session.requestComputerKeyboardFocus()
         }
-        session.requestComputerKeyboardFocus()
     }
 
     private func attach(_ trackID: TrackID) {
-        do {
-            try session.attachInstrument(trackID, toRole: role.id)
-        } catch {
-            onError("\(error)")
+        isBusy = true
+        Task {
+            let outcome = await Task.detached {
+                Result { try session.attachInstrument(trackID, toRole: role.id) }
+            }.value
+            isBusy = false
+            if case .failure(let error) = outcome { onError("\(error)") }
+            session.requestComputerKeyboardFocus()
         }
-        session.requestComputerKeyboardFocus()
     }
 
     private func detach() {
@@ -260,25 +307,31 @@ private struct SceneRoleRow: View {
                 // A real dropdown instead of plain "libre" text: every currently-unassigned
                 // instrument is reachable directly from the role's own row, not just from the
                 // "Instruments non affectes" block's own "Attacher a..." menu.
-                Menu {
-                    if role.attachedTrackID != nil {
-                        Button(L10n.string(.appButtonDetacher, session.currentLanguage), role: .destructive) { detach() }
-                    }
-                    ForEach(session.unassignedInstruments()) { track in
-                        Button(session.labelWithChannel(track)) { attach(track.id) }
-                    }
-                } label: {
-                    if let trackID = role.attachedTrackID, let track = session.tracks.first(where: { $0.id == trackID }) {
-                        Text(session.labelWithChannel(track)).foregroundStyle(.green)
-                    } else {
-                        Text(L10n.string(.appLabelLibre, session.currentLanguage)).foregroundStyle(.secondary)
+                if isBusy {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Menu {
+                        if role.attachedTrackID != nil {
+                            Button(L10n.string(.appButtonDetacher, session.currentLanguage), role: .destructive) { detach() }
+                        }
+                        ForEach(session.unassignedInstruments()) { track in
+                            Button(session.labelWithChannel(track)) { attach(track.id) }
+                        }
+                    } label: {
+                        if let trackID = role.attachedTrackID, let track = session.tracks.first(where: { $0.id == trackID }) {
+                            Text(session.labelWithChannel(track)).foregroundStyle(.green)
+                        } else {
+                            Text(L10n.string(.appLabelLibre, session.currentLanguage)).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
             HStack {
                 Text(L10n.string(.fieldSon, session.currentLanguage))
                 Spacer()
-                if sounds.isEmpty {
+                if isBusy {
+                    ProgressView().controlSize(.small)
+                } else if sounds.isEmpty {
                     Text(L10n.string(.appPlaceholderAucunSonFavoriParenthese, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
                 } else {
                     Menu(role.soundName.map { session.displayName(forSamplePath: $0, preset: role.soundPreset) } ?? L10n.string(.appButtonAucun, session.currentLanguage)) {

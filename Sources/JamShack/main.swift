@@ -1910,8 +1910,11 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         }
         try session.removeSceneRole(roleID)
     case "language":
-        guard let arg = args.first?.lowercased(), let lang = AppLanguage(rawValue: arg) else {
-            print("usage: language fr|en|de"); break
+        // Not `arg.lowercased()` + `AppLanguage(rawValue:)`: `.zhHans`'s synthesized rawValue
+        // is exactly "zhHans" (capital H) — lowercasing the input first would turn that into
+        // "zhhans", which would never match. Case-insensitive comparison instead.
+        guard let arg = args.first, let lang = AppLanguage.allCases.first(where: { $0.rawValue.caseInsensitiveCompare(arg) == .orderedSame }) else {
+            print("usage: language fr|en|de|ja|zhHans|it|es|pt|ru"); break
         }
         try session.setLanguage(lang)
     case "quit", "exit":
@@ -2018,6 +2021,12 @@ func buildMenuCategories(for lang: AppLanguage) -> [MenuCategory] {
         MenuItem(label: L10n.string(.menuLangueFr, lang)) { try executeCommand("language", ["fr"]) },
         MenuItem(label: L10n.string(.menuLangueEn, lang)) { try executeCommand("language", ["en"]) },
         MenuItem(label: L10n.string(.menuLangueDe, lang)) { try executeCommand("language", ["de"]) },
+        MenuItem(label: L10n.string(.menuLangueJa, lang)) { try executeCommand("language", ["ja"]) },
+        MenuItem(label: L10n.string(.menuLangueZhHans, lang)) { try executeCommand("language", ["zhHans"]) },
+        MenuItem(label: L10n.string(.menuLangueIt, lang)) { try executeCommand("language", ["it"]) },
+        MenuItem(label: L10n.string(.menuLangueEs, lang)) { try executeCommand("language", ["es"]) },
+        MenuItem(label: L10n.string(.menuLanguePt, lang)) { try executeCommand("language", ["pt"]) },
+        MenuItem(label: L10n.string(.menuLangueRu, lang)) { try executeCommand("language", ["ru"]) },
         MenuItem.separator,
         MenuItem.header(L10n.string(.headerReglagesLumi, lang)),
         MenuItem(label: L10n.string(.menuLumiCouleurRacine, lang)) {

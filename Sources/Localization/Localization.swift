@@ -1,9 +1,9 @@
 import Foundation
 
 /// The UI display language — independent of command names/syntax, which are never translated.
-/// French is the authored reference language; English and German are translations of it.
+/// French is the authored reference language; every other case is a translation of it.
 public enum AppLanguage: String, Codable, CaseIterable, Sendable, Hashable {
-    case fr, en, de
+    case fr, en, de, ja, zhHans, it, es, pt, ru
 }
 
 /// On-disk shape of `Settings/language.json` — a singleton value (unlike `ColorPaletteFile`'s
@@ -41,7 +41,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case menuMidiModeFusionne, menuMidiModeIndividuel
     case menuDemarrerConsoleWeb, menuArreterConsoleWeb
     case menuDemarrerClavierVirtuel, menuArreterClavierVirtuel
-    case menuLangueFr, menuLangueEn, menuLangueDe
+    case menuLangueFr, menuLangueEn, menuLangueDe, menuLangueJa, menuLangueZhHans, menuLangueIt, menuLangueEs, menuLanguePt, menuLangueRu
     case headerReglagesLumi
     case menuLumiCouleurRacine, menuLumiCouleurGamme, menuLumiLuminosite
     case menuLumiAutoRunActiver, menuLumiAutoRunDesactiver

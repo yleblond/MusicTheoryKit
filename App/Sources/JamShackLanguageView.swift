@@ -29,9 +29,9 @@ struct JamShackLanguageView: View {
                         Text(Self.label(for: language)).tag(language)
                     }
                 }
-                #if os(iOS)
-                .pickerStyle(.segmented)
-                #endif
+                // `.segmented` reads fine for 3 languages but not for 9 — a `Menu`-backed
+                // `.menu` picker scales to any count without cramming everything on-screen.
+                .pickerStyle(.menu)
             } header: {
                 Text(L10n.string(.appHeadingLangueInterface, session.currentLanguage))
             } footer: {
@@ -48,6 +48,12 @@ struct JamShackLanguageView: View {
         case .fr: return "Francais"
         case .en: return "English"
         case .de: return "Deutsch"
+        case .ja: return "日本語"
+        case .zhHans: return "简体中文"
+        case .it: return "Italiano"
+        case .es: return "Español"
+        case .pt: return "Português"
+        case .ru: return "Русский"
         }
     }
 }

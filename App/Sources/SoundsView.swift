@@ -69,6 +69,14 @@ struct SoundsView: View {
     /// turned test mode on (see `setTestMode`) — so leaving restores it to that same state
     /// instead of unconditionally turning it back off.
     @State private var computerKeyboardWasEnabledBeforeTestMode = false
+    /// `"<path>|<row.id>"` of the sound row a `testSound` call is currently loading, `nil`
+    /// otherwise — `setInstrument` (see `testSound`) does real disk I/O (and, for a sample
+    /// under an iCloud-synced folder not yet downloaded locally, a real network wait), so it
+    /// must not run on the main thread. Also doubles as a simple lock: a second tap while one
+    /// is already in flight is ignored rather than racing the same `SamplerUnit`.
+    @State private var testingSoundKey: String?
+    /// Same reasoning as `testingSoundKey`, for `applyTestSource`'s own instrument-restore step.
+    @State private var isChangingTestSource = false
 
     /// One row in the right-hand "sounds of the selected file" column — either a real preset
     /// read from a multi-preset `.sf2` (see `SoundFontPresetReader`), or the single stand-in
@@ -290,14 +298,19 @@ struct SoundsView: View {
             Spacer()
 
             if isTestModeOn, let testSourceID {
-                let isCurrent = path == currentlyTestedPath && row.preset == currentlyTestedPreset
-                Button {
-                    testSound(path: path, preset: row.preset, testSourceID: testSourceID)
-                } label: {
-                    Image(systemName: isCurrent ? "speaker.wave.2.fill" : "speaker.wave.2")
-                        .foregroundStyle(isCurrent ? .blue : .secondary)
+                if testingSoundKey == editKey {
+                    ProgressView().controlSize(.small)
+                } else {
+                    let isCurrent = path == currentlyTestedPath && row.preset == currentlyTestedPreset
+                    Button {
+                        testSound(path: path, preset: row.preset, testSourceID: testSourceID, key: editKey)
+                    } label: {
+                        Image(systemName: isCurrent ? "speaker.wave.2.fill" : "speaker.wave.2")
+                            .foregroundStyle(isCurrent ? .blue : .secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(testingSoundKey != nil)
                 }
-                .buttonStyle(.borderless)
             }
 
             Button {
@@ -334,11 +347,15 @@ struct SoundsView: View {
         aliasDraft = ""
     }
 
-    private func testSound(path: String, preset: SoundFontPresetIdentity?, testSourceID: TrackID) {
-        do {
-            try session.setInstrument(named: path, for: testSourceID, preset: preset)
-        } catch {
-            actionError = "\(error)"
+    private func testSound(path: String, preset: SoundFontPresetIdentity?, testSourceID: TrackID, key: String) {
+        guard testingSoundKey == nil else { return }
+        testingSoundKey = key
+        Task {
+            let outcome = await Task.detached {
+                Result { try session.setInstrument(named: path, for: testSourceID, preset: preset) }
+            }.value
+            testingSoundKey = nil
+            if case .failure(let error) = outcome { actionError = "\(error)" }
         }
     }
 
@@ -352,13 +369,17 @@ struct SoundsView: View {
                 set: { setTestMode($0) }
             ))
             if isTestModeOn {
-                Picker(L10n.string(.appFieldSourceTest, session.currentLanguage), selection: Binding(
-                    get: { testSourceID },
-                    set: { applyTestSource($0) }
-                )) {
-                    Text(L10n.string(.appOptionAucuneFem, session.currentLanguage)).tag(TrackID?.none)
-                    ForEach(testableSources) { track in
-                        Text(session.labelWithChannel(track)).tag(TrackID?.some(track.id))
+                if isChangingTestSource {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Picker(L10n.string(.appFieldSourceTest, session.currentLanguage), selection: Binding(
+                        get: { testSourceID },
+                        set: { applyTestSource($0) }
+                    )) {
+                        Text(L10n.string(.appOptionAucuneFem, session.currentLanguage)).tag(TrackID?.none)
+                        ForEach(testableSources) { track in
+                            Text(session.labelWithChannel(track)).tag(TrackID?.some(track.id))
+                        }
                     }
                 }
                 if let track = testTrackState {
@@ -413,51 +434,67 @@ struct SoundsView: View {
     /// starts/enables the new one. Symmetric handling of `nil` (test mode's own "Aucune" choice,
     /// and turning test mode off) is what makes leaving the sound list exactly as it was found
     /// always safe, not just on the common "toggle off" path.
+    /// Restoring the previous test source's own instrument (below) can load a sample-based
+    /// instrument via `setInstrument` — real disk I/O, so that one step runs off the main
+    /// thread (`Task.detached`, same bridge as `testSound`/`SceneLayoutView`'s fixes). Every
+    /// other step here stays exactly as before/in the same order — none of them touch a
+    /// sample file — `setSoundEnabled(testSourceOriginalSoundEnabled, for: previous)` in
+    /// particular must still run right after the restore, since it can override what the
+    /// restore itself just set.
     private func applyTestSource(_ newSource: TrackID?) {
-        if let previous = testSourceID {
-            if !testSourceWasAlreadyListening {
-                session.stopTrack(previous)
+        isChangingTestSource = true
+        Task {
+            defer { isChangingTestSource = false }
+            if let previous = testSourceID {
+                if !testSourceWasAlreadyListening {
+                    session.stopTrack(previous)
+                }
+                let originalName = testSourceOriginalInstrumentName
+                let originalPreset = testSourceOriginalInstrumentPreset
+                let originalSoundEnabled = testSourceOriginalSoundEnabled
+                await Task.detached {
+                    if let originalName {
+                        try? session.setInstrument(named: originalName, for: previous, preset: originalPreset)
+                    }
+                    try? session.setSoundEnabled(originalSoundEnabled, for: previous)
+                }.value
             }
-            if let testSourceOriginalInstrumentName {
-                try? session.setInstrument(named: testSourceOriginalInstrumentName, for: previous, preset: testSourceOriginalInstrumentPreset)
+            for id in pausedTrackIDs {
+                do {
+                    try session.startTrack(id)
+                } catch {
+                    actionError = "\(error)"
+                }
             }
-            try? session.setSoundEnabled(testSourceOriginalSoundEnabled, for: previous)
-        }
-        for id in pausedTrackIDs {
+            pausedTrackIDs = []
+            testSourceWasAlreadyListening = false
+            testSourceID = newSource
+            // The Picker used to reach `newSource` is a native pop-up control that otherwise
+            // keeps SwiftUI keyboard focus for the rest of the session — see
+            // `ImprovSession.requestComputerKeyboardFocus`'s own doc comment.
+            session.requestComputerKeyboardFocus()
+
+            guard let newSource else {
+                testSourceOriginalInstrumentName = nil
+                testSourceOriginalInstrumentPreset = nil
+                testSourceOriginalSoundEnabled = false
+                return
+            }
+            let newTrack = session.tracks.first { $0.id == newSource }
+            testSourceOriginalInstrumentName = newTrack?.instrumentName
+            testSourceOriginalInstrumentPreset = newTrack?.instrumentPreset
+            testSourceOriginalSoundEnabled = newTrack?.soundEnabled ?? false
+            testSourceWasAlreadyListening = newTrack?.isListening ?? false
+            pausedTrackIDs = Set(session.tracks.filter { $0.isListening && $0.id != newSource }.map(\.id))
+            for id in pausedTrackIDs {
+                session.stopTrack(id)
+            }
             do {
-                try session.startTrack(id)
+                try session.startTrack(newSource)
+                try session.setSoundEnabled(true, for: newSource)
             } catch {
                 actionError = "\(error)"
             }
-        }
-        pausedTrackIDs = []
-        testSourceWasAlreadyListening = false
-        testSourceID = newSource
-        // The Picker used to reach `newSource` is a native pop-up control that otherwise keeps
-        // SwiftUI keyboard focus for the rest of the session — see
-        // `ImprovSession.requestComputerKeyboardFocus`'s own doc comment.
-        session.requestComputerKeyboardFocus()
-
-        guard let newSource else {
-            testSourceOriginalInstrumentName = nil
-            testSourceOriginalInstrumentPreset = nil
-            testSourceOriginalSoundEnabled = false
-            return
-        }
-        let newTrack = session.tracks.first { $0.id == newSource }
-        testSourceOriginalInstrumentName = newTrack?.instrumentName
-        testSourceOriginalInstrumentPreset = newTrack?.instrumentPreset
-        testSourceOriginalSoundEnabled = newTrack?.soundEnabled ?? false
-        testSourceWasAlreadyListening = newTrack?.isListening ?? false
-        pausedTrackIDs = Set(session.tracks.filter { $0.isListening && $0.id != newSource }.map(\.id))
-        for id in pausedTrackIDs {
-            session.stopTrack(id)
-        }
-        do {
-            try session.startTrack(newSource)
-            try session.setSoundEnabled(true, for: newSource)
-        } catch {
-            actionError = "\(error)"
         }
     }
 }

@@ -8,6 +8,10 @@ struct PiecesPlayView: View {
     let session: ImprovSession
 
     @State private var actionError: String?
+    /// `session.loadSample` does real disk I/O (and, for a sample under an iCloud-synced
+    /// folder not yet downloaded locally, a real network wait) — must not run on the main
+    /// thread. Also the currently-loading sound's id, so only that one row shows a spinner.
+    @State private var loadingSoundID: String?
 
     var body: some View {
         Form {
@@ -54,12 +58,11 @@ struct PiecesPlayView: View {
                 Text(L10n.string(.appPlaceholderAucunSonFavori, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(session.favoriteSounds) { sound in
-                    Button(sound.displayName) {
-                        do {
-                            try session.loadSample(named: sound.path, preset: sound.preset)
-                        } catch {
-                            actionError = "\(error)"
-                        }
+                    if loadingSoundID == sound.id {
+                        HStack { Text(sound.displayName); Spacer(); ProgressView().controlSize(.small) }
+                    } else {
+                        Button(sound.displayName) { loadSample(sound) }
+                            .disabled(loadingSoundID != nil)
                     }
                 }
             }
@@ -67,6 +70,18 @@ struct PiecesPlayView: View {
             Text(L10n.string(.appHeadingSonDeLecture, session.currentLanguage))
         } footer: {
             Text(L10n.string(.appHintSonParDefaut, session.currentLanguage))
+        }
+    }
+
+    private func loadSample(_ sound: ImprovSession.FavoriteSound) {
+        guard loadingSoundID == nil else { return }
+        loadingSoundID = sound.id
+        Task {
+            let outcome = await Task.detached {
+                Result { try session.loadSample(named: sound.path, preset: sound.preset) }
+            }.value
+            loadingSoundID = nil
+            if case .failure(let error) = outcome { actionError = "\(error)" }
         }
     }
 }
