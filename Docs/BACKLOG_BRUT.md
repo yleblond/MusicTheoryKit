@@ -7,9 +7,10 @@ priorité) se fait après coup dans `Docs/BACKLOG.md`. Ne pas polir ici, juste c
 Les items 1-4 et 6-10 (première fournée) ont été implémentés le 2026-07-26 (voir
 `Docs/ARCHITECTURE.md` §JamShackUI/App et les commits correspondants) et retirés d'ici.
 
-Les items 11 (vérification persistance renommages — confirmé OK sans changement de code) et
-12/13/14 (refonte liste → détail Composition/Morceaux/Enregistrements) ont été implémentés et
-vérifiés le 2026-07-29 et retirés d'ici.
+Les items 11 (vérification persistance renommages — confirmé OK sans changement de code),
+12/13/14 (refonte liste → détail Composition/Morceaux/Enregistrements) et 15 (refonte navigation
+globale — mode studio à plat + toggle Réglages) ont été implémentés et vérifiés le 2026-07-29 et
+retirés d'ici.
 
 ## Entrées
 
@@ -23,13 +24,3 @@ vérifiés le 2026-07-29 et retirés d'ici.
    pour un client comme Claude Desktop, ou HTTP+SSE), pas juste réutiliser tel quel le protocole
    HTTP existant. **Sorti explicitement d'un premier plan d'implémentation (2026-07-26)** — trop
    gros pour être bundlé avec le reste, mérite sa propre exploration dédiée.
-
-15. **GÉNÉRAL — gros chantier de navigation : supprimer le premier niveau de menu (les tabs
-    actuels)**. L'appli serait directement en "mode studio", avec un toggle/bottom bar
-    permettant de naviguer entre les fonctions actuelles du mode Studio (Scène, Guide, Live) ET
-    les 3 autres tabs actuels (Morceaux, Enregistrements, Composition) — donc 6 items côte à
-    côte, à plat, au même niveau. Plus un bloc en bas séparé avec :
-    - un bouton "settings/studio" correspondant à l'actuel menu JamShack, qui bascule entre le
-      mode réglages et le mode studio ;
-    - un bouton pour afficher/activer/désactiver le clavier virtuel ordinateur directement
-      depuis cet endroit.

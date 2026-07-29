@@ -4,23 +4,89 @@ import JamShackUI
 import Localization
 
 struct ContentView: View {
-    private enum AppTab: Hashable {
-        // `.live` kept as the case name (renamed to "Studio" only in its displayed label,
-        // `.appTabStudio`) — no need to touch every reference to this enum value for a label
-        // change. `.scene`/`.guide` no longer exist as their own tabs: folded into `.live`/
-        // Studio (2026-07-29), see `StudioView`. `.recordings` is a NEW tab (also 2026-07-29):
-        // the three sub-tabs `.live`/Studio used to hold besides Live (recordings list/
-        // playback/IA composition) moved out here, see `RecordingsView`.
-        case jamShack, live, recordings, pieces, composition
+    /// Whether the app is showing the 6 flat "studio" tabs or the 9 flat "settings" tabs (what
+    /// used to be the standalone "JamShack" tab's own sub-tabs) — replaces the old first-level
+    /// `AppTab` TabView (2026-07-29): there's no longer a top-level "JamShack" destination to
+    /// navigate to, just a toggle at the bottom that swaps which flat tab set is showing.
+    private enum AppMode { case studio, settings }
+
+    /// The 6 studio-mode tabs — merges what used to be `StudioView`'s own 3 sub-tabs (Live,
+    /// Scene, Guide) with the 3 tabs that used to sit alongside the old "Studio" top-level tab
+    /// (Enregistrements, Composition, Morceaux): all 6 are "what you're actively performing
+    /// with right now," now flat at the same level instead of nested one level deeper.
+    private enum StudioTab: CaseIterable, Identifiable {
+        case live, scene, guide, recordings, composition, pieces
+
+        var id: Self { self }
+
+        var systemImage: String {
+            switch self {
+            case .live: return "pianokeys"
+            case .scene: return "theatermasks"
+            case .guide: return "map"
+            case .recordings: return "record.circle"
+            case .composition: return "wand.and.stars"
+            case .pieces: return "music.note.list"
+            }
+        }
+
+        func label(_ language: AppLanguage) -> String {
+            switch self {
+            case .live: return L10n.string(.appLabelEnDirect, language)
+            case .scene: return L10n.string(.tabScene, language)
+            case .guide: return L10n.string(.headingGuide, language)
+            case .recordings: return L10n.string(.appTabEnregistrements, language)
+            case .composition: return L10n.string(.catComposition, language)
+            case .pieces: return L10n.string(.catMorceaux, language)
+            }
+        }
+    }
+
+    /// The 9 settings-mode tabs — was `JamShackView`'s own internal sub-tab rail, hoisted here
+    /// unchanged (same cases, icons, labels, order) now that there's no wrapping "JamShack" tab
+    /// to hold them.
+    private enum SettingsTab: CaseIterable, Identifiable {
+        case sons, clavierOrdinateur, midi, microphone, jamSession, couleurs, llm, dossiers, langue
+
+        var id: Self { self }
+
+        var systemImage: String {
+            switch self {
+            case .sons: return "music.note.list"
+            case .clavierOrdinateur: return "keyboard"
+            case .midi: return "pianokeys"
+            case .microphone: return "mic"
+            case .jamSession: return "person.2.fill"
+            case .couleurs: return "paintpalette"
+            case .llm: return "brain"
+            case .dossiers: return "folder"
+            case .langue: return "globe"
+            }
+        }
+
+        func label(_ language: AppLanguage) -> String {
+            switch self {
+            case .sons: return L10n.string(.appTabSons, language)
+            case .clavierOrdinateur: return L10n.string(.appTabClavierOrdinateur, language)
+            case .midi: return L10n.string(.appTabMIDI, language)
+            case .microphone: return L10n.string(.appTabMicrophone, language)
+            case .jamSession: return L10n.string(.catJamSession, language)
+            case .couleurs: return L10n.string(.appTabCouleurs, language)
+            case .llm: return L10n.string(.appTabLLM, language)
+            case .dossiers: return L10n.string(.appTabDossiers, language)
+            case .langue: return L10n.string(.appTabLangue, language)
+            }
+        }
     }
 
     @State private var session = ImprovSession()
     @State private var bridge: SessionUIBridge?
     @State private var startError: String?
-    // Defaults to Studio (which itself defaults to its own Scene sub-tab) — that's where you
-    // set up which instrument sounds through which role before playing, so it's the natural
-    // first screen. Was the standalone Scene tab's own default before Scene folded into Studio.
-    @State private var selectedTab: AppTab = .live
+    @State private var mode: AppMode = .studio
+    // Same default as the old `StudioView` — that's where you set up which instrument sounds
+    // through which role before playing, so it's the natural first screen.
+    @State private var selectedStudioTab: StudioTab = .scene
+    @State private var selectedSettingsTab: SettingsTab = .sons
 
     var body: some View {
         Group {
@@ -33,60 +99,100 @@ struct ContentView: View {
                 // iPhone-width, can show as a sidebar on iPad) — chosen so this one change
                 // covers both platforms without a `#if os()` fork of the whole TabView.
                 VStack(spacing: 0) {
-                    TabView(selection: $selectedTab) {
-                        // Custom label (not `systemImage:`) so the tab shows the app's own icon
-                        // artwork, in color, instead of an SF Symbol — per explicit user request.
-                        // `AppIconTabIcon` is a plain imageset (NOT the `AppIcon` appiconset itself,
-                        // which the OS consumes for app-bundling purposes and isn't meant to be
-                        // loaded as a regular `Image` at runtime) holding the same artwork PRE-
-                        // SCALED to 24/48/72px (1x/2x/3x) — marked "original" rendering so it's
-                        // never tinted like a monochrome symbol. Deliberately NOT `.resizable()` +
-                        // `.frame(...)`: that combination rendered correctly in isolation but, once
-                        // placed as a `Label`'s icon inside `Tab(value:content:label:)` under
-                        // `.sidebarAdaptable`, the icon stretched to fill the ENTIRE sidebar height
-                        // (confirmed via a real screenshot, not guessed) — some interaction between
-                        // a resizable image and this specific container's layout on this OS version.
-                        // A plain, non-resizable, already-correctly-sized `Image` sidesteps the bug
-                        // entirely by never entering that resizing code path, the same way a plain
-                        // SF Symbol (also never explicitly resized here) renders at its own natural
-                        // size without issue.
-                        Tab(value: AppTab.jamShack) {
-                            JamShackView(session: session, bridge: bridge, isActiveTab: selectedTab == .jamShack)
-                        } label: {
-                            Label {
-                                Text(L10n.string(.catJamShack, session.currentLanguage))
-                            } icon: {
-                                Image("AppIconTabIcon")
-                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    Group {
+                        switch mode {
+                        case .studio:
+                            TabView(selection: $selectedStudioTab) {
+                                Tab(StudioTab.live.label(session.currentLanguage), systemImage: StudioTab.live.systemImage, value: StudioTab.live) {
+                                    RunScreen(session: session, bridge: bridge)
+                                        // Same LUMI-follows-the-active-screen wiring as Guide > Lecture.
+                                        .onAppear { session.notifyActiveScreen(.run) }
+                                        .onDisappear { session.notifyActiveScreen(.other) }
+                                }
+                                Tab(StudioTab.scene.label(session.currentLanguage), systemImage: StudioTab.scene.systemImage, value: StudioTab.scene) {
+                                    SceneManagementView(session: session)
+                                }
+                                Tab(StudioTab.guide.label(session.currentLanguage), systemImage: StudioTab.guide.systemImage, value: StudioTab.guide) {
+                                    GuideView(session: session, bridge: bridge)
+                                }
+                                Tab(StudioTab.recordings.label(session.currentLanguage), systemImage: StudioTab.recordings.systemImage, value: StudioTab.recordings) {
+                                    RecordingsView(session: session)
+                                }
+                                Tab(StudioTab.composition.label(session.currentLanguage), systemImage: StudioTab.composition.systemImage, value: StudioTab.composition) {
+                                    CompositionView(session: session)
+                                }
+                                Tab(StudioTab.pieces.label(session.currentLanguage), systemImage: StudioTab.pieces.systemImage, value: StudioTab.pieces) {
+                                    PiecesView(session: session)
+                                }
                             }
-                        }
-                        // "Studio" — merges what used to be two separate tabs, Live and
-                        // Enregistrement (2026-07-26), then Scene and Guide as well
-                        // (2026-07-29): all facets of "what you're actively performing with
-                        // right now" belong together. See `StudioView`.
-                        Tab(L10n.string(.appTabStudio, session.currentLanguage), systemImage: "pianokeys", value: AppTab.live) {
-                            StudioView(session: session, bridge: bridge)
-                        }
-                        // "Enregistrements" — split out of Studio (2026-07-29): the recordings
-                        // list/playback/IA-composition sub-tabs Studio used to hold alongside
-                        // Live. See `RecordingsView`.
-                        Tab(L10n.string(.appTabEnregistrements, session.currentLanguage), systemImage: "record.circle", value: AppTab.recordings) {
-                            RecordingsView(session: session)
-                        }
-                        Tab(L10n.string(.catComposition, session.currentLanguage), systemImage: "wand.and.stars", value: AppTab.composition) {
-                            CompositionView(session: session)
-                        }
-                        // "Morceaux" moved to last position, per explicit user request (2026-07-26).
-                        Tab(L10n.string(.catMorceaux, session.currentLanguage), systemImage: "music.note.list", value: AppTab.pieces) {
-                            PiecesView(session: session)
+                        case .settings:
+                            TabView(selection: $selectedSettingsTab) {
+                                Tab(SettingsTab.sons.label(session.currentLanguage), systemImage: SettingsTab.sons.systemImage, value: SettingsTab.sons) {
+                                    SoundsView(session: session, bridge: bridge, isActive: mode == .settings && selectedSettingsTab == .sons)
+                                }
+                                Tab(SettingsTab.clavierOrdinateur.label(session.currentLanguage), systemImage: SettingsTab.clavierOrdinateur.systemImage, value: SettingsTab.clavierOrdinateur) {
+                                    ComputerKeyboardSettingsView(session: session)
+                                }
+                                Tab(SettingsTab.midi.label(session.currentLanguage), systemImage: SettingsTab.midi.systemImage, value: SettingsTab.midi) {
+                                    JamShackMIDIView(session: session, bridge: bridge)
+                                }
+                                Tab(SettingsTab.microphone.label(session.currentLanguage), systemImage: SettingsTab.microphone.systemImage, value: SettingsTab.microphone) {
+                                    MicrophoneControlsView(session: session, bridge: bridge)
+                                }
+                                Tab(SettingsTab.jamSession.label(session.currentLanguage), systemImage: SettingsTab.jamSession.systemImage, value: SettingsTab.jamSession) {
+                                    JamSessionView(session: session)
+                                }
+                                Tab(SettingsTab.couleurs.label(session.currentLanguage), systemImage: SettingsTab.couleurs.systemImage, value: SettingsTab.couleurs) {
+                                    JamShackColorsView(session: session)
+                                }
+                                Tab(SettingsTab.llm.label(session.currentLanguage), systemImage: SettingsTab.llm.systemImage, value: SettingsTab.llm) {
+                                    JamShackLLMView(session: session)
+                                }
+                                Tab(SettingsTab.dossiers.label(session.currentLanguage), systemImage: SettingsTab.dossiers.systemImage, value: SettingsTab.dossiers) {
+                                    JamShackFoldersView(session: session)
+                                }
+                                Tab(SettingsTab.langue.label(session.currentLanguage), systemImage: SettingsTab.langue.systemImage, value: SettingsTab.langue) {
+                                    JamShackLanguageView(session: session)
+                                }
+                            }
                         }
                     }
                     .tabViewStyle(.sidebarAdaptable)
 
+                    // Bottom block, always visible regardless of tab/mode: the studio/settings
+                    // mode toggle, plus (studio mode only, per explicit user request) a quick
+                    // shortcut to turn the computer keyboard on/off without leaving Studio — the
+                    // full setting (same underlying `computerKeyboardInputEnabled`) still lives
+                    // in Settings > Clavier ordinateur (`ComputerKeyboardSettingsView`).
+                    Divider()
+                    HStack {
+                        Button {
+                            mode = (mode == .studio) ? .settings : .studio
+                        } label: {
+                            Label(
+                                mode == .studio
+                                    ? L10n.string(.appButtonReglages, session.currentLanguage)
+                                    : L10n.string(.appTabStudio, session.currentLanguage),
+                                systemImage: mode == .studio ? "gearshape" : "pianokeys"
+                            )
+                        }
+                        if mode == .studio {
+                            Button {
+                                session.setComputerKeyboardInputEnabled(!session.computerKeyboardInputEnabled)
+                            } label: {
+                                Label(L10n.string(.appTabClavierOrdinateur, session.currentLanguage), systemImage: "keyboard")
+                            }
+                            .foregroundStyle(session.computerKeyboardInputEnabled ? Color.accentColor : Color.primary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+
                     // Persistent, always-visible "long" keyboard — only while the computer
                     // keyboard mode is explicitly turned on (see `ComputerKeyboardSettingsView`,
-                    // under the JamShack tab). Sits OUTSIDE the TabView so it stays put across
-                    // every tab switch, a constant reminder that typing anywhere now plays notes.
+                    // under Settings). Sits OUTSIDE the TabView so it stays put across every tab
+                    // switch, a constant reminder that typing anywhere now plays notes.
                     if session.computerKeyboardInputEnabled {
                         Divider()
                         ComputerKeyboardInputBar(

@@ -19,7 +19,6 @@
 		1AB02A5A72BD4D7D84652261 /* GuideStepsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95942B8846FAA9B3ED42228B /* GuideStepsSection.swift */; };
 		1D60040DDEDC4055CB2542BA /* RecordingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E99978CED2C145262C1B3B4 /* RecordingsView.swift */; };
 		229D85BA441B10CCDA617FD6 /* RemoteNotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61EB999B2BB050D2A3FD5F3B /* RemoteNotificationDelegate.swift */; };
-		23F3B29DEE343C8962CE837B /* StudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 240AE13F56A89701316555FB /* StudioView.swift */; };
 		2636F5B565CF2E54B614292F /* PlaybackControlButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA393FDD6590DDE0D1E4FAEF /* PlaybackControlButton.swift */; };
 		2697496573116390CEDCD939 /* FileDisplayName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9144B6EB7F1029254BDA64AB /* FileDisplayName.swift */; };
 		280A9ECBDACA278B699919B9 /* SceneLayoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC498287531CCB5772C1258B /* SceneLayoutView.swift */; };
@@ -29,7 +28,6 @@
 		38F537A45F6133BAC6560CE5 /* PlainDataDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */; };
 		3D9A4A9A9A91CE71B7CD7525 /* GuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AE61DA02F48C19951B955F1 /* GuideView.swift */; };
 		3F1965A4076A70B46D629A59 /* RemoteNotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61EB999B2BB050D2A3FD5F3B /* RemoteNotificationDelegate.swift */; };
-		44042629664C9742478E68C8 /* StudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 240AE13F56A89701316555FB /* StudioView.swift */; };
 		499812C7FD4D8433B09B41AA /* FolderPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */; };
 		4B891030B381AABC680DEB7A /* JamShackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5998490361DA6721A074DBB /* JamShackApp.swift */; };
 		4BB6D21B8D92741E91EA8936 /* RecordingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E99978CED2C145262C1B3B4 /* RecordingsView.swift */; };
@@ -54,7 +52,6 @@
 		68C6FE5177D67E4E3CAC7446 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85845D37B71BB8E94BC0A6E4 /* ContentView.swift */; };
 		6DFBB4E9B841927603BEE0F7 /* JamShackColorsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C99CBF1FBD1605E7FEA1F5C3 /* JamShackColorsView.swift */; };
 		7A5A34186E7782C4BB0A0B56 /* RecordingFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43140D25200D4FC00530C882 /* RecordingFileView.swift */; };
-		7B74DB06D966ACCF5A9FA659 /* JamShackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30A09EE36BD0499ABAC54DA1 /* JamShackView.swift */; };
 		7BD222D7E9E9F200C5547F58 /* CompositionComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8B884B9A1FFA6496D1A1DE6 /* CompositionComposerView.swift */; };
 		7D96CDE3B349798C438C76EB /* DefaultFolders.swift in Sources */ = {isa = PBXBuildFile; fileRef = E65E68A369BA12BBAE7A4558 /* DefaultFolders.swift */; };
 		8044ABB2BF2C4C7E282F75F7 /* SceneManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */; };
@@ -72,7 +69,6 @@
 		97872938F2A6A8A051657998 /* JamShackFoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1393183ADD7BD2ED1C60FA8 /* JamShackFoldersView.swift */; };
 		996C6C5C6F6B690E76DAD4DD /* GuideEditionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556A46486C82BF4F493BD822 /* GuideEditionView.swift */; };
 		9BD7175879646171CA7BFB25 /* Localization in Frameworks */ = {isa = PBXBuildFile; productRef = E01C405FDA95346DCCD5782F /* Localization */; };
-		A135B25905830D87D3E6B8B0 /* JamShackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30A09EE36BD0499ABAC54DA1 /* JamShackView.swift */; };
 		A3AD3F2094069C0A4256BDC8 /* CompositionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9678EC3E37F61041F0877632 /* CompositionView.swift */; };
 		A42BBCF8F1E99FA7A334C4CF /* SceneFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D4854E83A4DBE291EDAA3CC /* SceneFileView.swift */; };
 		AE9F39EB072B95572BAAB60C /* PaletteEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D58534383002A55C5D49F9D /* PaletteEditorView.swift */; };
@@ -113,9 +109,7 @@
 		1AE61DA02F48C19951B955F1 /* GuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideView.swift; sourceTree = "<group>"; };
 		1DAE2E35B014C09B62C4CE0A /* PiecesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiecesView.swift; sourceTree = "<group>"; };
 		1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackMIDIView.swift; sourceTree = "<group>"; };
-		240AE13F56A89701316555FB /* StudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioView.swift; sourceTree = "<group>"; };
 		2D4854E83A4DBE291EDAA3CC /* SceneFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneFileView.swift; sourceTree = "<group>"; };
-		30A09EE36BD0499ABAC54DA1 /* JamShackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackView.swift; sourceTree = "<group>"; };
 		43140D25200D4FC00530C882 /* RecordingFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFileView.swift; sourceTree = "<group>"; };
 		44E28F5AF89E79FD7606B5CD /* JamSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamSessionView.swift; sourceTree = "<group>"; };
 		4765E80FA8CA331E5728B0F0 /* SoundsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundsView.swift; sourceTree = "<group>"; };
@@ -218,7 +212,6 @@
 				DE39EAC785B1BF4AA9F44EDE /* JamShackLanguageView.swift */,
 				B7DEF8B5C7B029CBF137DA9B /* JamShackLLMView.swift */,
 				1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */,
-				30A09EE36BD0499ABAC54DA1 /* JamShackView.swift */,
 				83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */,
 				8D58534383002A55C5D49F9D /* PaletteEditorView.swift */,
 				FC0DA62416ED6B405EBDF8DF /* PiecesFileView.swift */,
@@ -235,7 +228,6 @@
 				0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */,
 				8AE00B5478A71F5B75E67AE6 /* ServerControlsView.swift */,
 				4765E80FA8CA331E5728B0F0 /* SoundsView.swift */,
-				240AE13F56A89701316555FB /* StudioView.swift */,
 				B879BE0E843A4E0BF8940DEB /* TrackChannelLabel.swift */,
 			);
 			path = Sources;
@@ -386,7 +378,6 @@
 				C6A60D2024F2CAE6B169624D /* JamShackLLMView.swift in Sources */,
 				F25BEAE07D00B5537CCD3CA5 /* JamShackLanguageView.swift in Sources */,
 				E207723CD7F95E3114B11027 /* JamShackMIDIView.swift in Sources */,
-				7B74DB06D966ACCF5A9FA659 /* JamShackView.swift in Sources */,
 				4BF48752328F746D8FCF5953 /* MicrophoneControlsView.swift in Sources */,
 				303D7201D5131E7A9DF4AAD6 /* PaletteEditorView.swift in Sources */,
 				F069C2E7AFFA1D00E85D6D76 /* PiecesFileView.swift in Sources */,
@@ -403,7 +394,6 @@
 				8044ABB2BF2C4C7E282F75F7 /* SceneManagementView.swift in Sources */,
 				95F0005F0AC3755B8AC07FB3 /* ServerControlsView.swift in Sources */,
 				8E7A90E2BE9987478689DCF2 /* SoundsView.swift in Sources */,
-				44042629664C9742478E68C8 /* StudioView.swift in Sources */,
 				839F64EAAFE5F532EF58940B /* TrackChannelLabel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -437,7 +427,6 @@
 				4F9D9870DE0C14034FC845B7 /* JamShackLLMView.swift in Sources */,
 				60CEB1142DD1D191145837E6 /* JamShackLanguageView.swift in Sources */,
 				4EEAA109475539B7C1E920E4 /* JamShackMIDIView.swift in Sources */,
-				A135B25905830D87D3E6B8B0 /* JamShackView.swift in Sources */,
 				5E6F9AC439CDE09175FD0C3B /* MicrophoneControlsView.swift in Sources */,
 				AE9F39EB072B95572BAAB60C /* PaletteEditorView.swift in Sources */,
 				12B769366D7FED7F404F8EF2 /* PiecesFileView.swift in Sources */,
@@ -454,7 +443,6 @@
 				F6A508097CA52946658B6950 /* SceneManagementView.swift in Sources */,
 				BAB1C701AC9506CD9EF781D7 /* ServerControlsView.swift in Sources */,
 				34D898F93E23EC88710EAE78 /* SoundsView.swift in Sources */,
-				23F3B29DEE343C8962CE837B /* StudioView.swift in Sources */,
 				D1A542BC7D7E156E0F21685F /* TrackChannelLabel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
