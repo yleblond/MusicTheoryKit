@@ -10,8 +10,11 @@ import AppKit
 /// user-chosen location for. Pieces/scenes/guides/soundtracks/composition descriptions/prompt
 /// snippets all moved to a private SwiftData store (no folder to pick anymore, see each
 /// feature's own `migrate...FromJSONIfNeeded`) — only sounds (soundfont files, which stay
-/// files on purpose), settings (a one-time migration source), and composition IA (its `Export`
-/// subfolder still needs a real location) still have a folder concept here.
+/// files on purpose) still has a real, ongoing folder to pick here. "Reglages" and
+/// "Composition IA" used to have their own rows here too, but both are purely one-time JSON
+/// migration sources today (see `setSettingsFolder`/`setPromptsFolder`'s own doc comments) —
+/// already auto-configured at launch by `configureDefaultFolders`, never needing a manual pick
+/// for a fresh install — so their rows were removed (2026-07-29) as vestigial.
 struct JamShackFoldersView: View {
     let session: ImprovSession
 
@@ -29,12 +32,6 @@ struct JamShackFoldersView: View {
                     fileCount: session.sampleFiles.isEmpty ? nil : session.sampleFiles.count,
                     language: session.currentLanguage
                 ) { try session.listSampleFiles(in: $0) }
-                FolderPickerRow(title: L10n.string(.appLabelDossierReglages, session.currentLanguage), currentPath: session.settingsFolder, fileCount: nil, language: session.currentLanguage) {
-                    try session.setSettingsFolder($0)
-                }
-                FolderPickerRow(title: L10n.string(.appLabelDossierCompositionIA, session.currentLanguage), currentPath: session.promptsFolder, fileCount: nil, language: session.currentLanguage) {
-                    try session.setPromptsFolder($0)
-                }
             } header: {
                 Text(L10n.string(.appHeadingConfiguration, session.currentLanguage))
             } footer: {

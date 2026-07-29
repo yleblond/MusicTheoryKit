@@ -111,6 +111,20 @@ struct SceneFileView: View {
             } else {
                 ForEach(Array(session.sceneNames.enumerated()), id: \.offset) { index, name in
                     HStack {
+                        IconAssignmentButton(
+                            currentIcon: session.sceneIcon(atIndex: index),
+                            defaultIcon: "theatermasks",
+                            canUseAI: session.currentLLMConnection != nil,
+                            language: session.currentLanguage,
+                            onSuggestAI: {
+                                let icon = try session.suggestIcon(kind: "scene", name: name)
+                                try session.setSceneIcon(atIndex: index, iconSystemName: icon)
+                            },
+                            onPickManual: { icon in
+                                try? session.setSceneIcon(atIndex: index, iconSystemName: icon)
+                            },
+                            onError: { actionError = $0 }
+                        )
                         Button(name) {
                             do {
                                 try session.useScene(named: name)

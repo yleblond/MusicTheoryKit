@@ -239,7 +239,7 @@ private struct NewRoleFromInstrumentSheet: View {
                         Picker(L10n.string(.fieldSon, session.currentLanguage), selection: $selectedSoundID) {
                             Text(L10n.string(.appButtonAucun, session.currentLanguage)).tag(String?.none)
                             ForEach(session.favoriteSounds) { sound in
-                                Text(sound.displayName).tag(String?.some(sound.id))
+                                Label(sound.displayName, systemImage: sound.iconSystemName ?? "music.note").tag(String?.some(sound.id))
                             }
                         }
                     }
@@ -351,6 +351,20 @@ private struct SceneRoleRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
+                IconAssignmentButton(
+                    currentIcon: role.iconSystemName,
+                    defaultIcon: "person.fill",
+                    canUseAI: session.currentLLMConnection != nil,
+                    language: session.currentLanguage,
+                    onSuggestAI: {
+                        let icon = try session.suggestIcon(kind: "role", name: role.name)
+                        try session.setSceneRoleIcon(role.id, iconSystemName: icon)
+                    },
+                    onPickManual: { icon in
+                        try? session.setSceneRoleIcon(role.id, iconSystemName: icon)
+                    },
+                    onError: onError
+                )
                 Text(role.name).font(.headline)
                 Spacer()
                 // A real dropdown instead of plain "libre" text: every currently-unassigned
@@ -386,7 +400,11 @@ private struct SceneRoleRow: View {
                     Menu(role.soundName.map { session.displayName(forSamplePath: $0, preset: role.soundPreset) } ?? L10n.string(.appButtonAucun, session.currentLanguage)) {
                         Button(L10n.string(.appButtonAucun, session.currentLanguage)) { setSound(nil) }
                         ForEach(sounds) { sound in
-                            Button(sound.displayName) { setSound(sound) }
+                            Button {
+                                setSound(sound)
+                            } label: {
+                                Label(sound.displayName, systemImage: sound.iconSystemName ?? "music.note")
+                            }
                         }
                     }
                 }

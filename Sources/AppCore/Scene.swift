@@ -61,6 +61,10 @@ public struct SceneRole: Identifiable, Equatable, Sendable {
     /// role that never had a microphone attached (or was captured/migrated before this field
     /// existed); meaningless for any role whose attached instrument isn't the microphone.
     public var microphoneRecognitionMode: MicrophoneRecognitionMode?
+    /// An SF Symbol name (see `IconVocabulary`), suggested by the active LLM connection or
+    /// picked manually — purely decorative, `nil` for a role never assigned one (falls back to
+    /// a generic default icon wherever it's displayed).
+    public var iconSystemName: String?
 
     /// TRANSIENT — which live track currently occupies this role, if any. Deliberately never
     /// persisted (see this type's own `Codable` conformance below): it's a snapshot of the
@@ -72,7 +76,7 @@ public struct SceneRole: Identifiable, Equatable, Sendable {
         id: UUID = UUID(), name: String, soundName: String? = nil, soundPreset: SoundFontPresetIdentity? = nil,
         isListening: Bool = false,
         soundEnabled: Bool = false, volume: Float = 1.0, lastAttachedInstrument: InstrumentIdentityHint? = nil,
-        microphoneRecognitionMode: MicrophoneRecognitionMode? = nil, attachedTrackID: TrackID? = nil
+        microphoneRecognitionMode: MicrophoneRecognitionMode? = nil, iconSystemName: String? = nil, attachedTrackID: TrackID? = nil
     ) {
         self.id = id
         self.name = name
@@ -83,13 +87,14 @@ public struct SceneRole: Identifiable, Equatable, Sendable {
         self.volume = volume
         self.lastAttachedInstrument = lastAttachedInstrument
         self.microphoneRecognitionMode = microphoneRecognitionMode
+        self.iconSystemName = iconSystemName
         self.attachedTrackID = attachedTrackID
     }
 }
 
 extension SceneRole: Codable {
     private enum CodingKeys: String, CodingKey {
-        case id, name, soundName, soundPreset, isListening, soundEnabled, volume, lastAttachedInstrument, microphoneRecognitionMode
+        case id, name, soundName, soundPreset, isListening, soundEnabled, volume, lastAttachedInstrument, microphoneRecognitionMode, iconSystemName
         // `attachedTrackID` deliberately absent — see this type's own doc comment.
     }
 
@@ -104,6 +109,7 @@ extension SceneRole: Codable {
         volume = try container.decodeIfPresent(Float.self, forKey: .volume) ?? 1.0
         lastAttachedInstrument = try container.decodeIfPresent(InstrumentIdentityHint.self, forKey: .lastAttachedInstrument)
         microphoneRecognitionMode = try container.decodeIfPresent(MicrophoneRecognitionMode.self, forKey: .microphoneRecognitionMode)
+        iconSystemName = try container.decodeIfPresent(String.self, forKey: .iconSystemName)
         attachedTrackID = nil
     }
 
@@ -118,6 +124,7 @@ extension SceneRole: Codable {
         try container.encode(volume, forKey: .volume)
         try container.encodeIfPresent(lastAttachedInstrument, forKey: .lastAttachedInstrument)
         try container.encodeIfPresent(microphoneRecognitionMode, forKey: .microphoneRecognitionMode)
+        try container.encodeIfPresent(iconSystemName, forKey: .iconSystemName)
     }
 }
 
@@ -237,6 +244,10 @@ final class SceneRecord {
     var id: String = ""
     var title: String = ""
     var encodedScene: Data = Data()
+    /// An SF Symbol name (see `IconVocabulary`) — a real column, not part of `encodedScene`,
+    /// same reasoning as `title` being its own column: cheap to read for every row in a scene
+    /// list without decoding the whole blob.
+    var iconSystemName: String?
 
     init(_ scene: Scene) {
         id = UUID().uuidString

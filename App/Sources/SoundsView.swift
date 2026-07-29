@@ -307,6 +307,21 @@ struct SoundsView: View {
             }
             .buttonStyle(.borderless)
 
+            IconAssignmentButton(
+                currentIcon: session.soundIcon(forPath: path, preset: row.preset),
+                defaultIcon: "music.note",
+                canUseAI: session.currentLLMConnection != nil,
+                language: session.currentLanguage,
+                onSuggestAI: {
+                    let icon = try session.suggestIcon(kind: "instrument", name: session.soundAlias(forPath: path, preset: row.preset) ?? row.originalName)
+                    try session.setSoundIcon(path, preset: row.preset, iconSystemName: icon)
+                },
+                onPickManual: { icon in
+                    try? session.setSoundIcon(path, preset: row.preset, iconSystemName: icon)
+                },
+                onError: { actionError = $0 }
+            )
+
             VStack(alignment: .leading, spacing: 2) {
                 if editingAliasFor == editKey {
                     TextField(L10n.string(.appFieldAlias, session.currentLanguage), text: $aliasDraft, onCommit: { commitAlias(path, row.preset, editKey) })

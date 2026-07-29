@@ -22,12 +22,16 @@ public struct SoundEntry: Codable, Equatable, Sendable {
     public var alias: String?
     public var isFavorite: Bool
     public var preset: SoundFontPresetIdentity?
+    /// An SF Symbol name (see `IconVocabulary`), suggested by the active LLM connection or
+    /// picked manually — same optional, purely-decorative metadata as `alias`.
+    public var iconSystemName: String?
 
-    public init(path: String, alias: String? = nil, isFavorite: Bool = false, preset: SoundFontPresetIdentity? = nil) {
+    public init(path: String, alias: String? = nil, isFavorite: Bool = false, preset: SoundFontPresetIdentity? = nil, iconSystemName: String? = nil) {
         self.path = path
         self.alias = alias
         self.isFavorite = isFavorite
         self.preset = preset
+        self.iconSystemName = iconSystemName
     }
 }
 
@@ -49,6 +53,7 @@ final class SoundEntryRecord {
     var isFavorite: Bool = false
     var presetProgram: Int?
     var presetBank: Int?
+    var iconSystemName: String?
 
     init(_ entry: SoundEntry) {
         path = entry.path
@@ -56,6 +61,7 @@ final class SoundEntryRecord {
         isFavorite = entry.isFavorite
         presetProgram = entry.preset.map { Int($0.program) }
         presetBank = entry.preset.map { Int($0.bank) }
+        iconSystemName = entry.iconSystemName
     }
 
     var asSoundEntry: SoundEntry {
@@ -63,6 +69,6 @@ final class SoundEntryRecord {
             guard let presetProgram, let presetBank else { return nil }
             return SoundFontPresetIdentity(program: UInt16(presetProgram), bank: UInt16(presetBank))
         }()
-        return SoundEntry(path: path, alias: alias, isFavorite: isFavorite, preset: preset)
+        return SoundEntry(path: path, alias: alias, isFavorite: isFavorite, preset: preset, iconSystemName: iconSystemName)
     }
 }

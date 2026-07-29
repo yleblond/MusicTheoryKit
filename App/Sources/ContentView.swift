@@ -46,7 +46,7 @@ struct ContentView: View {
     /// unchanged (same cases, icons, labels, order) now that there's no wrapping "JamShack" tab
     /// to hold them.
     private enum SettingsTab: CaseIterable, Identifiable {
-        case sons, clavierOrdinateur, midi, microphone, jamSession, couleurs, llm, dossiers, langue
+        case sons, clavierOrdinateur, midi, microphone, jamSession, couleurs, llm, cadrages, dossiers, langue
 
         var id: Self { self }
 
@@ -59,6 +59,7 @@ struct ContentView: View {
             case .jamSession: return "person.2.fill"
             case .couleurs: return "paintpalette"
             case .llm: return "brain"
+            case .cadrages: return "text.quote"
             case .dossiers: return "folder"
             case .langue: return "globe"
             }
@@ -73,6 +74,7 @@ struct ContentView: View {
             case .jamSession: return L10n.string(.catJamSession, language)
             case .couleurs: return L10n.string(.appTabCouleurs, language)
             case .llm: return L10n.string(.appTabLLM, language)
+            case .cadrages: return L10n.string(.appTabCadrages, language)
             case .dossiers: return L10n.string(.appTabDossiers, language)
             case .langue: return L10n.string(.appTabLangue, language)
             }
@@ -147,6 +149,9 @@ struct ContentView: View {
                                 }
                                 Tab(SettingsTab.llm.label(session.currentLanguage), systemImage: SettingsTab.llm.systemImage, value: SettingsTab.llm) {
                                     JamShackLLMView(session: session)
+                                }
+                                Tab(SettingsTab.cadrages.label(session.currentLanguage), systemImage: SettingsTab.cadrages.systemImage, value: SettingsTab.cadrages) {
+                                    JamShackPromptsView(session: session)
                                 }
                                 Tab(SettingsTab.dossiers.label(session.currentLanguage), systemImage: SettingsTab.dossiers.systemImage, value: SettingsTab.dossiers) {
                                     JamShackFoldersView(session: session)
@@ -255,6 +260,13 @@ struct ContentView: View {
                 if let root = DefaultFolderBookmark.resolve() {
                     configureDefaultFolders(in: root, session: session)
                 }
+                // Both idempotent (no-op once already resolved) — called unconditionally here,
+                // not just inside `configureDefaultFolders`, so a truly first launch (no root
+                // folder ever chosen yet) still lands on a ready-to-use Scene/Guide instead of a
+                // dead-end blank screen. `sceneNames`/`guideSequenceNames` come from the shared
+                // SwiftData store, independent of any folder, so this is safe with no root set.
+                session.ensureGuideReadyForLaunch()
+                session.ensureSceneReadyForLaunch()
                 bridge = SessionUIBridge(session: session)
             } catch {
                 startError = "\(error)"

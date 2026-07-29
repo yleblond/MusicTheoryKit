@@ -34,7 +34,9 @@
 		4BF48752328F746D8FCF5953 /* MicrophoneControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */; };
 		4C043C2C57524919E87375D2 /* GuideConfigurationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26C37BCD338FB3890089C34 /* GuideConfigurationView.swift */; };
 		4EEAA109475539B7C1E920E4 /* JamShackMIDIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */; };
+		5B6C7D8E9F0A1B2C3D4E5F60 /* IconAssignmentButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A5B6C7D8E9F0A1B2C3D4E5F /* IconAssignmentButton.swift */; };
 		4F9D9870DE0C14034FC845B7 /* JamShackLLMView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7DEF8B5C7B029CBF137DA9B /* JamShackLLMView.swift */; };
+		3B4C5D6E7F8091A2B3C4D5E6 /* JamShackPromptsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A3B4C5D6E7F8091A2B3C4D5 /* JamShackPromptsView.swift */; };
 		502F86EA7E61395F1407D160 /* GameCenterCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56783C5791125C49D8104883 /* GameCenterCoordinator.swift */; };
 		516781E2797147CAD075BE74 /* JamShackFoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1393183ADD7BD2ED1C60FA8 /* JamShackFoldersView.swift */; };
 		51DECC108DA490A5C2D4A1F3 /* ColorHex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80BD5958DD843BF49738DE9 /* ColorHex.swift */; };
@@ -87,6 +89,8 @@
 		DE754A12EE4D8EA7F6026199 /* GameCenterCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56783C5791125C49D8104883 /* GameCenterCoordinator.swift */; };
 		E182D86105890618BC2F4355 /* SceneFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D4854E83A4DBE291EDAA3CC /* SceneFileView.swift */; };
 		E207723CD7F95E3114B11027 /* JamShackMIDIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */; };
+		6C7D8E9F0A1B2C3D4E5F6071 /* IconAssignmentButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A5B6C7D8E9F0A1B2C3D4E5F /* IconAssignmentButton.swift */; };
+		E4F5061728394A5B6C7D8E9F /* JamShackPromptsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A3B4C5D6E7F8091A2B3C4D5 /* JamShackPromptsView.swift */; };
 		EC8B892B4CA0DE1539FC11AE /* GuideFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0EEDCEAF1C96726ACE9B17 /* GuideFileView.swift */; };
 		EFC7F17F89F0B8DA703B4AD3 /* AppCore in Frameworks */ = {isa = PBXBuildFile; productRef = FAA934C8A384EC61D40B89BF /* AppCore */; };
 		EFCCEA61877C2BA798E018CC /* ComputerKeyboardSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFC142E149DF9A3BAF1BA0EB /* ComputerKeyboardSettingsView.swift */; };
@@ -105,10 +109,11 @@
 		04D7D71FEF77850B75E4B7B5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneManagementView.swift; sourceTree = "<group>"; };
 		11F2C88E605F1362E9CA1EEB /* MusicTheoryKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MusicTheoryKit; path = ..; sourceTree = SOURCE_ROOT; };
-		F1E2D3C4B5A697887766A5B4 /* RecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailView.swift; sourceTree = "<group>"; };
 		1AE61DA02F48C19951B955F1 /* GuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideView.swift; sourceTree = "<group>"; };
 		1DAE2E35B014C09B62C4CE0A /* PiecesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiecesView.swift; sourceTree = "<group>"; };
 		1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackMIDIView.swift; sourceTree = "<group>"; };
+		4A5B6C7D8E9F0A1B2C3D4E5F /* IconAssignmentButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconAssignmentButton.swift; sourceTree = "<group>"; };
+		2A3B4C5D6E7F8091A2B3C4D5 /* JamShackPromptsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackPromptsView.swift; sourceTree = "<group>"; };
 		2D4854E83A4DBE291EDAA3CC /* SceneFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneFileView.swift; sourceTree = "<group>"; };
 		43140D25200D4FC00530C882 /* RecordingFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFileView.swift; sourceTree = "<group>"; };
 		44E28F5AF89E79FD7606B5CD /* JamSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamSessionView.swift; sourceTree = "<group>"; };
@@ -146,6 +151,7 @@
 		D5998490361DA6721A074DBB /* JamShackApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackApp.swift; sourceTree = "<group>"; };
 		DE39EAC785B1BF4AA9F44EDE /* JamShackLanguageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackLanguageView.swift; sourceTree = "<group>"; };
 		E65E68A369BA12BBAE7A4558 /* DefaultFolders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultFolders.swift; sourceTree = "<group>"; };
+		F1E2D3C4B5A697887766A5B4 /* RecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailView.swift; sourceTree = "<group>"; };
 		FA393FDD6590DDE0D1E4FAEF /* PlaybackControlButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackControlButton.swift; sourceTree = "<group>"; };
 		FC0DA62416ED6B405EBDF8DF /* PiecesFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiecesFileView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -212,6 +218,8 @@
 				DE39EAC785B1BF4AA9F44EDE /* JamShackLanguageView.swift */,
 				B7DEF8B5C7B029CBF137DA9B /* JamShackLLMView.swift */,
 				1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */,
+				4A5B6C7D8E9F0A1B2C3D4E5F /* IconAssignmentButton.swift */,
+				2A3B4C5D6E7F8091A2B3C4D5 /* JamShackPromptsView.swift */,
 				83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */,
 				8D58534383002A55C5D49F9D /* PaletteEditorView.swift */,
 				FC0DA62416ED6B405EBDF8DF /* PiecesFileView.swift */,
@@ -378,6 +386,8 @@
 				C6A60D2024F2CAE6B169624D /* JamShackLLMView.swift in Sources */,
 				F25BEAE07D00B5537CCD3CA5 /* JamShackLanguageView.swift in Sources */,
 				E207723CD7F95E3114B11027 /* JamShackMIDIView.swift in Sources */,
+				6C7D8E9F0A1B2C3D4E5F6071 /* IconAssignmentButton.swift in Sources */,
+				E4F5061728394A5B6C7D8E9F /* JamShackPromptsView.swift in Sources */,
 				4BF48752328F746D8FCF5953 /* MicrophoneControlsView.swift in Sources */,
 				303D7201D5131E7A9DF4AAD6 /* PaletteEditorView.swift in Sources */,
 				F069C2E7AFFA1D00E85D6D76 /* PiecesFileView.swift in Sources */,
@@ -427,6 +437,8 @@
 				4F9D9870DE0C14034FC845B7 /* JamShackLLMView.swift in Sources */,
 				60CEB1142DD1D191145837E6 /* JamShackLanguageView.swift in Sources */,
 				4EEAA109475539B7C1E920E4 /* JamShackMIDIView.swift in Sources */,
+				5B6C7D8E9F0A1B2C3D4E5F60 /* IconAssignmentButton.swift in Sources */,
+				3B4C5D6E7F8091A2B3C4D5E6 /* JamShackPromptsView.swift in Sources */,
 				5E6F9AC439CDE09175FD0C3B /* MicrophoneControlsView.swift in Sources */,
 				AE9F39EB072B95572BAAB60C /* PaletteEditorView.swift in Sources */,
 				12B769366D7FED7F404F8EF2 /* PiecesFileView.swift in Sources */,
@@ -462,6 +474,7 @@
 				DEVELOPMENT_TEAM = T2L9QQQ4PL;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Generated/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Jam Shack";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -485,6 +498,7 @@
 				DEVELOPMENT_TEAM = T2L9QQQ4PL;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Generated/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Jam Shack";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -508,6 +522,7 @@
 				DEVELOPMENT_TEAM = T2L9QQQ4PL;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Generated/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Jam Shack";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -596,6 +611,7 @@
 				DEVELOPMENT_TEAM = T2L9QQQ4PL;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Generated/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Jam Shack";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

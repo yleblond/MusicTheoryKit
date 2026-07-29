@@ -403,6 +403,7 @@ public final class ImprovSession: @unchecked Sendable {
         case noCurrentCompositionFile
         case noSoundTrackCompositionInstructions
         case invalidSoundTrackInstructionsIndex
+        case invalidIconSuggestion
         case noGuideSequence
         case invalidModeReference
         case invalidGuideIndex
@@ -450,6 +451,7 @@ public final class ImprovSession: @unchecked Sendable {
             case .noCurrentCompositionFile: return "this description was never saved — try saving with an explicit name"
             case .noSoundTrackCompositionInstructions: return "no soundtrack style indications set — try 'set-soundtrack-instructions <texte>' first"
             case .invalidSoundTrackInstructionsIndex: return "no soundtrack style indications at that index"
+            case .invalidIconSuggestion: return "the LLM's icon suggestion wasn't one of the allowed icon names"
             case .noGuideSequence: return "no guide sequence — try 'guide-new <titre>' first, or load one"
             case .invalidModeReference: return "unknown tonic or scale id — the scale id must match ScaleLibrary (e.g. ionian, dorian, phrygian, lydian, mixolydian, aeolian, locrian)"
             case .invalidGuideIndex: return "no guide sequence at that index or name"
@@ -514,6 +516,7 @@ public final class ImprovSession: @unchecked Sendable {
             PromptSnippetRecord.self,
             CompositionDescriptionRecord.self,
             PieceRecord.self,
+            MIDIDeviceIconRecord.self,
         ])
         if let container = try? ModelContainer(
             for: schema,
@@ -1111,6 +1114,62 @@ public final class ImprovSession: @unchecked Sendable {
     public func resetSoundTrackCompositionInstructions() {
         activeSoundTrackCompositionInstructions = nil
         append("Indications de style (soundtrack) effacees.")
+    }
+
+    /// Deletes a saved text framing sentence — new capability, not exposed by the CLI (no
+    /// delete existed there either, only show/set/save/use/reset).
+    public func deleteTextFramingSentence(atIndex index: Int) throws {
+        guard textFramingSentenceNames.indices.contains(index) else { throw SessionError.invalidTextFramingIndex }
+        let name = textFramingSentenceNames[index]
+        guard let record = promptSnippetRecord(category: .textFraming, named: name) else { return }
+        modelContext.delete(record)
+        try modelContext.save()
+        textFramingSentenceNames = refreshPromptSnippetNames(category: .textFraming)
+        append("Phrase de cadrage (texte) supprimee: \(name).")
+    }
+
+    /// The soundtrack counterpart of `deleteTextFramingSentence(atIndex:)`.
+    public func deleteSoundTrackFramingSentence(atIndex index: Int) throws {
+        guard soundTrackFramingSentenceNames.indices.contains(index) else { throw SessionError.invalidSoundTrackFramingIndex }
+        let name = soundTrackFramingSentenceNames[index]
+        guard let record = promptSnippetRecord(category: .soundTrackFraming, named: name) else { return }
+        modelContext.delete(record)
+        try modelContext.save()
+        soundTrackFramingSentenceNames = refreshPromptSnippetNames(category: .soundTrackFraming)
+        append("Phrase de cadrage (soundtrack) supprimee: \(name).")
+    }
+
+    /// Deletes saved soundtrack style indications — mirrors `deleteTextFramingSentence(atIndex:)`.
+    public func deleteSoundTrackInstructions(atIndex index: Int) throws {
+        guard soundTrackInstructionsNames.indices.contains(index) else { throw SessionError.invalidSoundTrackInstructionsIndex }
+        let name = soundTrackInstructionsNames[index]
+        guard let record = promptSnippetRecord(category: .soundTrackInstructions, named: name) else { return }
+        modelContext.delete(record)
+        try modelContext.save()
+        soundTrackInstructionsNames = refreshPromptSnippetNames(category: .soundTrackInstructions)
+        append("Indications de style (soundtrack) supprimees: \(name).")
+    }
+
+    /// Asks the active LLM connection to pick one icon, from the fixed `IconVocabulary`, for a
+    /// scene/role/favorite instrument/MIDI keyboard named `name` — same "inject the real allowed
+    /// vocabulary into the prompt, then validate the response against it rather than trust it"
+    /// shape as `LLMPieceComposer`'s scale/chord validation, just for a single string instead of
+    /// a whole piece. `generate` is injectable for tests, same convention as `composeFromText`.
+    public func suggestIcon(
+        kind: String, name: String,
+        generate: (String, LLMConnection) throws -> String = LLMClient.generate
+    ) throws -> String {
+        guard let connection = currentLLMConnection else { throw SessionError.noLLMConnectionSelected }
+        let prompt = """
+        Tu dois choisir UNE seule icone dans cette liste exacte (reponds uniquement par le nom \
+        exact de l'icone choisie, sans aucun autre texte, sans ponctuation) :
+        \(IconVocabulary.allowedSymbolNames.joined(separator: ", "))
+
+        Choisis l'icone la plus evocatrice pour ce \(kind) nomme \"\(name)\".
+        """
+        let raw = try generate(prompt, connection).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard IconVocabulary.allowedSymbolNames.contains(raw) else { throw SessionError.invalidIconSuggestion }
+        return raw
     }
 
     /// Writes `currentTextCompositionPrompt()` (whatever would actually be sent right now) to
@@ -1874,6 +1933,14 @@ public final class ImprovSession: @unchecked Sendable {
         }
     }
 
+    /// Sets a role's icon (see `IconVocabulary`) — purely decorative, no live track to update.
+    public func setSceneRoleIcon(_ roleID: SceneRole.ID, iconSystemName: String?) throws {
+        guard var scene = currentScene else { throw SessionError.noSceneLoaded }
+        guard let index = scene.roles.firstIndex(where: { $0.id == roleID }) else { throw SessionError.unknownSceneRole }
+        scene.roles[index].iconSystemName = iconSystemName
+        currentScene = scene
+    }
+
     /// Every role in the active scene with no instrument attached yet — `[]` if there's no
     /// active scene at all.
     public func freeSceneRoles() -> [SceneRole] {
@@ -2234,6 +2301,27 @@ public final class ImprovSession: @unchecked Sendable {
         append("Scene renommee : \(oldName) -> \(name).")
     }
 
+    /// The icon assigned to a stored scene by list position, if any — see `IconVocabulary`.
+    public func sceneIcon(atIndex index: Int) -> String? {
+        guard sceneNames.indices.contains(index) else { return nil }
+        let name = sceneNames[index]
+        let descriptor = FetchDescriptor<SceneRecord>(predicate: #Predicate { $0.title == name })
+        return (try? modelContext.fetch(descriptor).first)?.iconSystemName
+    }
+
+    /// Sets a stored scene's icon by list position — mirrors `renameScene(atIndex:name:)`, a
+    /// real `SceneRecord` column rather than part of `encodedScene` (see that field's own doc
+    /// comment), so no re-encoding of the scene blob is needed here.
+    public func setSceneIcon(atIndex index: Int, iconSystemName: String?) throws {
+        guard sceneNames.indices.contains(index) else { throw SessionError.invalidSceneIndex }
+        let name = sceneNames[index]
+        let descriptor = FetchDescriptor<SceneRecord>(predicate: #Predicate { $0.title == name })
+        guard let record = try? modelContext.fetch(descriptor).first else { throw SessionError.invalidSceneIndex }
+        record.iconSystemName = iconSystemName
+        try modelContext.save()
+        append("Icone de scene mise a jour : \(name).")
+    }
+
     /// The exact stored bytes for a scene by list position, for per-row export — a stored
     /// record's `encodedScene` already IS the full JSON of that `Scene`, so this needs no
     /// temp-file round trip and never touches `currentScene`/`currentSceneRecordID` (exporting a
@@ -2258,14 +2346,34 @@ public final class ImprovSession: @unchecked Sendable {
     /// Called once at app launch (not by the CLI/web console, which keep their own no-auto-load
     /// behavior): resolves the "which scene should be showing" question so the UI never has to
     /// show a dead-end "no active scene" placeholder. With no saved scenes, starts a fresh
-    /// anonymous one so the app can land directly on the configuration screen; with one or more
-    /// saved, leaves `currentScene` nil so the app lands on the scene list first — picking one
-    /// (even the only one) is always an explicit step in the list → configuration flow.
+    /// anonymous one, with a single role already attached and ready to play (per explicit user
+    /// request — a genuinely first-time install should never land on an empty, silent scene) —
+    /// see `attachDefaultRoleForFreshScene()`. With one or more saved, leaves `currentScene` nil
+    /// so the app lands on the scene list first — picking one (even the only one) is always an
+    /// explicit step in the list → configuration flow.
     public func ensureSceneReadyForLaunch() {
         guard currentScene == nil else { return }
         if sceneNames.isEmpty {
             currentScene = Scene(title: "")
+            attachDefaultRoleForFreshScene()
         }
+    }
+
+    /// One role, attached to whichever live input makes sense with nothing configured yet: a
+    /// detected MIDI keyboard if one is visible (preferred — a real instrument beats the virtual
+    /// one when both are possible), else the computer keyboard, always available. No explicit
+    /// `soundName` — leaves the role's sound as the sampler's own default (see
+    /// `setSoundEnabled(_:for:)`'s system-instrument fallback), immediately listening at full
+    /// volume so this fresh scene is genuinely ready to play, not just present. Every step here
+    /// is best-effort (`try?`) — a failure must never prevent the anonymous scene itself from
+    /// existing.
+    private func attachDefaultRoleForFreshScene() {
+        let targetTrackID = tracks.first { if case .midiSource = $0.id { return true } else { return false } }?.id ?? .computerKeyboard
+        let roleName = tracks.first { $0.id == targetTrackID }?.label ?? "Instrument"
+        guard let roleID = try? addSceneRole(name: roleName) else { return }
+        try? attachInstrument(targetTrackID, toRole: roleID)
+        try? setSceneRoleListening(roleID, isListening: true)
+        try? setSceneRoleVolume(roleID, volume: 1.0)
     }
 
     /// Loads a scene by title from the SwiftData store — replaces the old folder-based
@@ -2659,6 +2767,44 @@ public final class ImprovSession: @unchecked Sendable {
         MIDIInputListener.sourceNames()
     }
 
+    /// Same visible MIDI sources as `availableMIDISources()`, but identity-bearing — needed to
+    /// look up/assign a per-device icon (see `midiDeviceIcon(uniqueID:displayName:)`), which
+    /// `TrackInfo`/a bare name alone can't key reliably (same reasoning `InstrumentIdentityHint
+    /// .midiPort` already documents). A plain tuple rather than re-exposing `MIDIEngine`'s own
+    /// `MIDISourceDescriptor` type, so App-target code needs no direct dependency on `MIDIEngine`
+    /// just to read a device's name/id.
+    public func availableMIDISourceDescriptors() -> [(name: String, uniqueID: Int32?)] {
+        MIDIInputListener.sourceDescriptors().map { (name: $0.displayName, uniqueID: $0.uniqueID) }
+    }
+
+    /// The icon assigned to a MIDI device, if any — matched by `uniqueID` when the device
+    /// reports one (the reliable case), else by `displayName` (see `MIDIDeviceIconRecord`'s own
+    /// doc comment for why this needs its own small registry, unlike the other 3 icon kinds).
+    public func midiDeviceIcon(uniqueID: Int32?, displayName: String) -> String? {
+        let records = (try? modelContext.fetch(FetchDescriptor<MIDIDeviceIconRecord>())) ?? []
+        if let uniqueID, let match = records.first(where: { $0.midiUniqueID == uniqueID }) {
+            return match.iconSystemName
+        }
+        return records.first(where: { $0.midiUniqueID == nil && $0.displayName == displayName })?.iconSystemName
+    }
+
+    /// Sets (upserts) a MIDI device's icon and persists.
+    public func setMIDIDeviceIcon(uniqueID: Int32?, displayName: String, iconSystemName: String) throws {
+        let records = (try? modelContext.fetch(FetchDescriptor<MIDIDeviceIconRecord>())) ?? []
+        let existing: MIDIDeviceIconRecord? = {
+            if let uniqueID { return records.first { $0.midiUniqueID == uniqueID } }
+            return records.first { $0.midiUniqueID == nil && $0.displayName == displayName }
+        }()
+        if let existing {
+            existing.iconSystemName = iconSystemName
+            existing.displayName = displayName
+        } else {
+            modelContext.insert(MIDIDeviceIconRecord(midiUniqueID: uniqueID, displayName: displayName, iconSystemName: iconSystemName))
+        }
+        try modelContext.save()
+        append("Icone de clavier MIDI mise a jour : \(displayName).")
+    }
+
     // MARK: - Tracks
 
     /// Switches between hearing MIDI as one merged stream and hearing it as one
@@ -2906,6 +3052,19 @@ public final class ImprovSession: @unchecked Sendable {
         unannounceTrackToServerIfClient(id)
     }
 
+    #if os(macOS)
+    /// A real General MIDI instrument bank macOS ships as part of `CoreAudio.component` itself —
+    /// no bundled asset, no user import needed. Used as a nicer-than-silence/sine-synth default
+    /// the moment a track's sound is enabled with no instrument explicitly chosen yet (see
+    /// `setSoundEnabled(_:for:)`). Undocumented Apple implementation detail, not a published API
+    /// path — guarded by `FileManager.fileExists` and loaded `try?`, so its absence on some
+    /// future OS version just silently falls back to `AVAudioUnitSampler`'s own built-in sine
+    /// synth, same as today. No iOS equivalent is exposed to a sandboxed app, so this stays
+    /// macOS-only (see backlog point 18 for a real cross-platform default-sound story).
+    private static let systemDefaultInstrumentURL = URL(fileURLWithPath:
+        "/System/Library/Components/CoreAudio.component/Contents/Resources/gs_instruments.dls")
+    #endif
+
     /// Turns a track's own sampler on or off — never allowed for `.microphone` (see
     /// `TrackInfo.canHaveSound`'s doc comment). Turning sound back on after it was
     /// disabled reuses whatever instrument was previously loaded on this track, if any.
@@ -2918,6 +3077,11 @@ public final class ImprovSession: @unchecked Sendable {
             } else {
                 let unit = SamplerUnit()
                 try unit.start()
+                #if os(macOS)
+                if FileManager.default.fileExists(atPath: Self.systemDefaultInstrumentURL.path) {
+                    try? unit.loadSample(at: Self.systemDefaultInstrumentURL)
+                }
+                #endif
                 samplers[id] = unit
             }
         } else {
@@ -3121,16 +3285,18 @@ public final class ImprovSession: @unchecked Sendable {
         public var path: String
         public var preset: SoundFontPresetIdentity?
         public var displayName: String
+        public var iconSystemName: String?
 
         public var id: String {
             guard let preset else { return path }
             return "\(path)#\(preset.program):\(preset.bank)"
         }
 
-        public init(path: String, preset: SoundFontPresetIdentity?, displayName: String) {
+        public init(path: String, preset: SoundFontPresetIdentity?, displayName: String, iconSystemName: String? = nil) {
             self.path = path
             self.preset = preset
             self.displayName = displayName
+            self.iconSystemName = iconSystemName
         }
     }
 
@@ -3150,7 +3316,7 @@ public final class ImprovSession: @unchecked Sendable {
             .filter { $0.isFavorite && existingPaths.contains($0.path) }
             .map { entry in
                 let displayName = entry.alias ?? "\((entry.path as NSString).lastPathComponent) — \(originalSoundName(forPath: entry.path, preset: entry.preset, cache: &presetsByPath))"
-                return FavoriteSound(path: entry.path, preset: entry.preset, displayName: displayName)
+                return FavoriteSound(path: entry.path, preset: entry.preset, displayName: displayName, iconSystemName: entry.iconSystemName)
             }
     }
 
@@ -3185,6 +3351,12 @@ public final class ImprovSession: @unchecked Sendable {
         soundEntries.first { $0.path == path && $0.preset == preset }?.isFavorite ?? false
     }
 
+    /// The icon assigned to a specific sound if one was assigned (suggested by the active LLM
+    /// connection or picked manually — see `IconVocabulary`), else `nil`.
+    public func soundIcon(forPath path: String, preset: SoundFontPresetIdentity? = nil) -> String? {
+        soundEntries.first { $0.path == path && $0.preset == preset }?.iconSystemName
+    }
+
     /// What to show in any sound picker for a given (file, preset) — its alias if one was
     /// assigned, otherwise the path itself.
     public func displayName(forSamplePath path: String, preset: SoundFontPresetIdentity? = nil) -> String {
@@ -3204,6 +3376,11 @@ public final class ImprovSession: @unchecked Sendable {
         try updateSoundEntry(path, preset: preset) { $0.isFavorite = isFavorite }
     }
 
+    /// Sets (or clears, with `nil`) a sound's icon and persists — same shape as `setSoundAlias`.
+    public func setSoundIcon(_ path: String, preset: SoundFontPresetIdentity? = nil, iconSystemName: String?) throws {
+        try updateSoundEntry(path, preset: preset) { $0.iconSystemName = iconSystemName }
+    }
+
     /// Shared mutator behind `setSoundAlias`/`setSoundFavorite`: finds or creates the entry for
     /// `(path, preset)`, applies `mutate`, drops the entry if it ends up with no alias and not
     /// a favorite (the "untouched" state), then persists either way. Fetches every
@@ -3217,16 +3394,17 @@ public final class ImprovSession: @unchecked Sendable {
         if let record = records.first(where: { $0.path == path && $0.presetProgram == presetProgram && $0.presetBank == presetBank }) {
             var entry = record.asSoundEntry
             mutate(&entry)
-            if entry.alias == nil && !entry.isFavorite {
+            if entry.alias == nil && !entry.isFavorite && entry.iconSystemName == nil {
                 modelContext.delete(record)
             } else {
                 record.alias = entry.alias
                 record.isFavorite = entry.isFavorite
+                record.iconSystemName = entry.iconSystemName
             }
         } else {
             var entry = SoundEntry(path: path, preset: preset)
             mutate(&entry)
-            if entry.alias != nil || entry.isFavorite {
+            if entry.alias != nil || entry.isFavorite || entry.iconSystemName != nil {
                 modelContext.insert(SoundEntryRecord(entry))
             }
         }

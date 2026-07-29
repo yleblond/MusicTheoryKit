@@ -221,6 +221,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appChoisirEllipsis, appChangerEllipsis, appCreer, appAnnuler, appButtonSauvegarderDansCeDossier
     case appButtonArreter, appButtonDemarrer, appNouveauGuide, appNouvelleScene, appNouvelleComposition, appButtonReglages
     case appModeApp, appModeLumi, appHeadingNotesEtAccords
+    case appTabCadrages, appHeadingCadrageTexte, appHeadingCadrageSoundtrack, appHeadingIndicationsSoundtrack
+    case appButtonSauvegarderSous
+    case appButtonSuggererParIA
     case appDefaultNouvellePalette, appDefaultGuideTitle, appDefaultMorceauFilename
     /// "%@ (canal %d)" — reused everywhere a MIDI-capable track's own label is shown, next
     /// to `ImprovSession.displayedChannel(for:)`.

@@ -73,10 +73,14 @@ struct PiecesPlayView: View {
             } else {
                 ForEach(session.favoriteSounds) { sound in
                     if loadingSoundID == sound.id {
-                        HStack { Text(sound.displayName); Spacer(); ProgressView().controlSize(.small) }
+                        HStack { Label(sound.displayName, systemImage: sound.iconSystemName ?? "music.note"); Spacer(); ProgressView().controlSize(.small) }
                     } else {
-                        Button(sound.displayName) { loadSample(sound) }
-                            .disabled(loadingSoundID != nil)
+                        Button {
+                            loadSample(sound)
+                        } label: {
+                            Label(sound.displayName, systemImage: sound.iconSystemName ?? "music.note")
+                        }
+                        .disabled(loadingSoundID != nil)
                     }
                 }
             }

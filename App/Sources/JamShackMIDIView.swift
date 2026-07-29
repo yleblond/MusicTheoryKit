@@ -41,15 +41,31 @@ struct JamShackMIDIView: View {
             }
             Section {
                 Button(L10n.string(.appButtonRafraichirListeMidi, session.currentLanguage)) { session.refreshTracks() }
-                let sources = session.availableMIDISources()
+                let sources = session.availableMIDISourceDescriptors()
                 if sources.isEmpty {
                     Text(L10n.string(.appPlaceholderAucuneSourceMidi, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
                 } else {
-                    ForEach(Array(sources.enumerated()), id: \.offset) { index, name in
-                        if let channel = session.observedChannel(forMIDISourceIndex: index) {
-                            Text(L10n.string(.appFormatCanalMidi, session.currentLanguage, name, channel + 1))
-                        } else {
-                            Text(name)
+                    ForEach(Array(sources.enumerated()), id: \.offset) { index, source in
+                        HStack {
+                            IconAssignmentButton(
+                                currentIcon: session.midiDeviceIcon(uniqueID: source.uniqueID, displayName: source.name),
+                                defaultIcon: "pianokeys",
+                                canUseAI: session.currentLLMConnection != nil,
+                                language: session.currentLanguage,
+                                onSuggestAI: {
+                                    let icon = try session.suggestIcon(kind: "clavier MIDI", name: source.name)
+                                    try session.setMIDIDeviceIcon(uniqueID: source.uniqueID, displayName: source.name, iconSystemName: icon)
+                                },
+                                onPickManual: { icon in
+                                    try? session.setMIDIDeviceIcon(uniqueID: source.uniqueID, displayName: source.name, iconSystemName: icon)
+                                },
+                                onError: { _ in }
+                            )
+                            if let channel = session.observedChannel(forMIDISourceIndex: index) {
+                                Text(L10n.string(.appFormatCanalMidi, session.currentLanguage, source.name, channel + 1))
+                            } else {
+                                Text(source.name)
+                            }
                         }
                     }
                 }
