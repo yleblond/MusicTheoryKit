@@ -3,7 +3,7 @@ import AppCore
 import LLMEngine
 import Localization
 
-/// "IA" sub-tab of the Enregistrement tab: compose a piece from the current recording via the
+/// "IA" sub-tab of the Enregistrements tab: compose a piece from the current recording via the
 /// active LLM connection (see the "JamShack" tab's own "LLM" sub-tab).
 struct RecordingIAView: View {
     let session: ImprovSession

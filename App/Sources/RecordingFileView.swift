@@ -2,12 +2,12 @@ import SwiftUI
 import AppCore
 import Localization
 
-/// "Fichier" sub-tab of the Enregistrement tab: the store-based soundtrack browser (list/
+/// "Fichier" sub-tab of the Enregistrements tab: the store-based soundtrack browser (list/
 /// load/save/delete — soundtracks live in a private SwiftData store, no folder to pick
 /// anymore).
 struct RecordingFileView: View {
     let session: ImprovSession
-    /// Called after a soundtrack is actually loaded from the folder — `RecordingView`
+    /// Called after a soundtrack is actually loaded from the folder — `RecordingsView`
     /// switches to the "Play" sub-tab, per explicit user request.
     let onLoaded: () -> Void
 

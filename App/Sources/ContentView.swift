@@ -7,17 +7,20 @@ struct ContentView: View {
     private enum AppTab: Hashable {
         // `.live` kept as the case name (renamed to "Studio" only in its displayed label,
         // `.appTabStudio`) — no need to touch every reference to this enum value for a label
-        // change. `.recording` no longer exists as its own tab: merged into `.live`/Studio
-        // (2026-07-26), see `StudioView`.
-        case jamShack, scene, live, guide, pieces, composition
+        // change. `.scene`/`.guide` no longer exist as their own tabs: folded into `.live`/
+        // Studio (2026-07-29), see `StudioView`. `.recordings` is a NEW tab (also 2026-07-29):
+        // the three sub-tabs `.live`/Studio used to hold besides Live (recordings list/
+        // playback/IA composition) moved out here, see `RecordingsView`.
+        case jamShack, live, recordings, pieces, composition
     }
 
     @State private var session = ImprovSession()
     @State private var bridge: SessionUIBridge?
     @State private var startError: String?
-    // Defaults to Scene per explicit user request — that's where you set up which
-    // instrument sounds through which role before playing, so it's the natural first screen.
-    @State private var selectedTab: AppTab = .scene
+    // Defaults to Studio (which itself defaults to its own Scene sub-tab) — that's where you
+    // set up which instrument sounds through which role before playing, so it's the natural
+    // first screen. Was the standalone Scene tab's own default before Scene folded into Studio.
+    @State private var selectedTab: AppTab = .live
 
     var body: some View {
         Group {
@@ -57,17 +60,18 @@ struct ContentView: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 5))
                             }
                         }
-                        Tab(L10n.string(.tabScene, session.currentLanguage), systemImage: "theatermasks", value: AppTab.scene) {
-                            SceneManagementView(session: session)
-                        }
                         // "Studio" — merges what used to be two separate tabs, Live and
-                        // Enregistrement (2026-07-26): recording is something you do WHILE playing
-                        // live, not a separate destination. See `StudioView`.
+                        // Enregistrement (2026-07-26), then Scene and Guide as well
+                        // (2026-07-29): all facets of "what you're actively performing with
+                        // right now" belong together. See `StudioView`.
                         Tab(L10n.string(.appTabStudio, session.currentLanguage), systemImage: "pianokeys", value: AppTab.live) {
                             StudioView(session: session, bridge: bridge)
                         }
-                        Tab(L10n.string(.headingGuide, session.currentLanguage), systemImage: "map", value: AppTab.guide) {
-                            GuideView(session: session, bridge: bridge)
+                        // "Enregistrements" — split out of Studio (2026-07-29): the recordings
+                        // list/playback/IA-composition sub-tabs Studio used to hold alongside
+                        // Live. See `RecordingsView`.
+                        Tab(L10n.string(.appTabEnregistrements, session.currentLanguage), systemImage: "record.circle", value: AppTab.recordings) {
+                            RecordingsView(session: session)
                         }
                         Tab(L10n.string(.catComposition, session.currentLanguage), systemImage: "wand.and.stars", value: AppTab.composition) {
                             CompositionView(session: session)

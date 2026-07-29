@@ -226,7 +226,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appFormatCanalMidi
 
     // MARK: - App: main TabView + JamShack sidebar + sub-tab sidebars (accessibility labels)
-    case appTabStudio, appStatusDemarrage
+    case appTabStudio, appTabEnregistrements, appStatusDemarrage
     case appTabDossiers, appTabSons, appTabMIDI, appTabMicrophone, appTabCouleurs, appTabLangue, appTabLLM
     case appTabFichierMorceau, appTabFichierSoundtrack
     case appTabFichierComposition, appTabComposerCourt

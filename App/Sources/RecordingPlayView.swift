@@ -3,11 +3,12 @@ import AppCore
 import SoundTrackModel
 import Localization
 
-/// "Enregistrement actuel" sub-tab of the Studio tab: play/stop the current recording — the
-/// sound it plays through is no longer picked manually here (removed 2026-07-26): it's derived
-/// automatically from the active scene's own attached instrument/sound (see
+/// "Enregistrement actuel" sub-tab of the Enregistrements tab: play/stop the current recording —
+/// the sound it plays through is no longer picked manually here (removed 2026-07-26): it's
+/// derived automatically from the active scene's own attached instrument/sound (see
 /// `ImprovSession.applyCurrentSceneSoundToSoundTrackPlayer`), applied once when this view
-/// appears. Recording/loading happens in the sibling "Live"/"Dossiers de soundtracks" sub-tabs.
+/// appears. Recording happens on Studio's own "Live" sub-tab (`RunScreen`); loading a
+/// previously-saved one happens in the sibling "Fichier" sub-tab.
 struct RecordingPlayView: View {
     let session: ImprovSession
 

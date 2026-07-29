@@ -3,43 +3,45 @@ import AppCore
 import JamShackUI
 import Localization
 
-/// The "Studio" tab (renamed from "Live", 2026-07-26) — merges the former standalone
-/// "Enregistrement" tab in here, since recording is something you do WHILE playing live, not a
-/// separate destination. Four sub-tabs: **Live** (`RunScreen`, now with a "Demarrer
-/// l'enregistrement" button — captures whichever tracks are currently listening, no manual
-/// track-selection step, see `RunScreen`'s own doc comment), **Dossiers de soundtracks**
-/// (`RecordingFileView`, unchanged), **Enregistrement actuel** (`RecordingPlayView` — sound
-/// choice removed, now derived from the active scene automatically), and **Composer IA**
-/// (`RecordingIAView`, unchanged).
+/// The "Studio" tab — where you set up and play, three sub-tabs: **Live** (`RunScreen`, "where
+/// you see yourself playing" — circle-of-fifths wheel, per-track live keyboards, the "Demarrer
+/// l'enregistrement" button), **Scene** (`SceneManagementView` — which instrument sounds through
+/// which role), and **Guide** (`GuideView` — mode sequences to practice/perform against).
+/// Scene and Guide used to be their own top-level tabs; folded in here (alongside Live) since
+/// all three are facets of "what you're actively performing with right now." Each keeps its own
+/// internal navigation unchanged (Scene/Guide's own list -> configuration flow) — this is purely
+/// about which container they're mounted in. What used to be Studio's other three sub-tabs
+/// (recordings list/playback/IA composition) moved out to the new top-level "Enregistrements"
+/// tab — see `RecordingsView`.
 struct StudioView: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
 
     private enum SubTab: CaseIterable, Identifiable {
-        case live, soundtrackFiles, currentRecording, ia
+        case live, scene, guide
 
         var id: Self { self }
 
         var systemImage: String {
             switch self {
             case .live: return "pianokeys"
-            case .soundtrackFiles: return "doc.text"
-            case .currentRecording: return "play.fill"
-            case .ia: return "brain"
+            case .scene: return "theatermasks"
+            case .guide: return "map"
             }
         }
 
         func accessibilityLabel(_ language: AppLanguage) -> String {
             switch self {
             case .live: return L10n.string(.appTabStudio, language)
-            case .soundtrackFiles: return L10n.string(.appTabFichierSoundtrack, language)
-            case .currentRecording: return L10n.string(.appHeadingEnregistrementActuel, language)
-            case .ia: return L10n.string(.appHeadingCompositionIA, language)
+            case .scene: return L10n.string(.tabScene, language)
+            case .guide: return L10n.string(.headingGuide, language)
             }
         }
     }
 
-    @State private var subTab: SubTab = .live
+    // Defaults to Scene, not Live — same "land on the setup screen" rationale the old
+    // standalone Scene tab used to have as the app's own default landing tab.
+    @State private var subTab: SubTab = .scene
 
     var body: some View {
         HStack(spacing: 0) {
@@ -71,12 +73,10 @@ struct StudioView: View {
                     // Same LUMI-follows-the-active-screen wiring as Guide > Lecture.
                     .onAppear { session.notifyActiveScreen(.run) }
                     .onDisappear { session.notifyActiveScreen(.other) }
-                case .soundtrackFiles:
-                    RecordingFileView(session: session, onLoaded: { subTab = .currentRecording })
-                case .currentRecording:
-                    RecordingPlayView(session: session)
-                case .ia:
-                    RecordingIAView(session: session)
+                case .scene:
+                    SceneManagementView(session: session)
+                case .guide:
+                    GuideView(session: session, bridge: bridge)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

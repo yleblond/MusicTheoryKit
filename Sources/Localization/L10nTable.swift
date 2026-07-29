@@ -403,6 +403,7 @@ enum L10nTable {
 
         // MARK: - App: main TabView + sidebar accessibility labels
         .appTabStudio: [.fr: "Studio", .en: "Studio", .de: "Studio", .ja: "スタジオ", .zhHans: "工作室", .it: "Studio", .es: "Estudio", .pt: "Estúdio", .ru: "Студия"],
+        .appTabEnregistrements: [.fr: "Enregistrements", .en: "Recordings", .de: "Aufnahmen", .ja: "録音", .zhHans: "录音", .it: "Registrazioni", .es: "Grabaciones", .pt: "Gravações", .ru: "Записи"],
         .appStatusDemarrage: [.fr: "Demarrage...", .en: "Starting...", .de: "Wird gestartet...", .ja: "起動中...", .zhHans: "正在启动…", .it: "Avvio in corso...", .es: "Iniciando...", .pt: "Iniciando...", .ru: "Запуск…"],
         .appTabDossiers: [.fr: "Dossiers", .en: "Folders", .de: "Ordner", .ja: "フォルダ", .zhHans: "文件夹", .it: "Cartelle", .es: "Carpetas", .pt: "Pastas", .ru: "Папки"],
         .appTabSons: [.fr: "Sons", .en: "Sounds", .de: "Klänge", .ja: "サウンド", .zhHans: "声音", .it: "Suoni", .es: "Sonidos", .pt: "Sons", .ru: "Звуки"],
