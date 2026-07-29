@@ -13,6 +13,9 @@ import Localization
 struct JamShackColorsView: View {
     let session: ImprovSession
 
+    private enum Mode { case app, lumi }
+
+    @State private var mode: Mode = .app
     @State private var actionError: String?
     @State private var visibleDestinations: [String]?
     @State private var lumiTestResult: String?
@@ -43,18 +46,31 @@ struct JamShackColorsView: View {
     }
 
     var body: some View {
-        Form {
-            if let actionError {
-                Section { Text(actionError).foregroundStyle(.red).font(.caption) }
+        VStack(spacing: 0) {
+            Picker("", selection: $mode) {
+                Text(L10n.string(.appModeApp, session.currentLanguage)).tag(Mode.app)
+                Text(L10n.string(.appModeLumi, session.currentLanguage)).tag(Mode.lumi)
             }
-            paletteSection
-            spectrogramSection
-            lumiSection
-            lumiTestSection
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding()
+            Form {
+                if let actionError {
+                    Section { Text(actionError).foregroundStyle(.red).font(.caption) }
+                }
+                switch mode {
+                case .app:
+                    paletteSection
+                    spectrogramSection
+                case .lumi:
+                    lumiSection
+                    lumiTestSection
+                }
+            }
+            #if os(macOS)
+            .formStyle(.grouped)
+            #endif
         }
-        #if os(macOS)
-        .formStyle(.grouped)
-        #endif
         .sheet(item: $paletteEditorTarget) { target in
             PaletteEditorView(session: session, existingIndex: target.index)
         }
@@ -96,7 +112,7 @@ struct JamShackColorsView: View {
             }
             Button(L10n.string(.appButtonNouvellePalette, session.currentLanguage)) { paletteEditorTarget = .new }
         } header: {
-            Text(L10n.string(.fieldPaletteDeCouleur, session.currentLanguage))
+            Text(L10n.string(.appHeadingNotesEtAccords, session.currentLanguage))
         }
     }
 

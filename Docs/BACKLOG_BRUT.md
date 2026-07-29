@@ -24,3 +24,20 @@ retirés d'ici.
    pour un client comme Claude Desktop, ou HTTP+SSE), pas juste réutiliser tel quel le protocole
    HTTP existant. **Sorti explicitement d'un premier plan d'implémentation (2026-07-26)** — trop
    gros pour être bundlé avec le reste, mérite sa propre exploration dédiée.
+
+16. **Le dossier "Réglages" (`JamShackFoldersView`, `session.settingsFolder`) devrait passer en
+    CloudKit** plutôt que rester un dossier fichier à choisir manuellement — avec, si possible, un
+    jeu de valeurs par défaut fourni à la première installation de l'app (pas d'écran "choisis un
+    dossier" pour un nouvel utilisateur).
+
+17. **Le dossier "Composition IA - Prompts" (`session.promptsFolder`) devrait aussi passer en
+    CloudKit**, dans le même esprit que le point 16. Idée associée : un nouvel onglet dans
+    Réglages permettant d'en créer/gérer plusieurs (différents cadrages de prompt), plutôt qu'un
+    unique dossier.
+
+18. **Gestion des soundfonts (dossier "Sons")** — une fois 16/17 traités, ce serait le dernier
+    dossier fichier restant. Suggestions de design (index CloudKit + fichiers iCloud Drive/Application
+    Support selon synchro, hash comme identité, gestion quota iCloud, imports multiples) rédigées
+    dans `KnowledgeBase/SoundfontMgt/soundfontmgt.txt`. **Nécessite sa propre session de
+    planification dédiée** (trop gros/structurant pour être traité à la volée) — pas d'exploration
+    ni d'implémentation ici.

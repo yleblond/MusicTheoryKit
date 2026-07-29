@@ -220,6 +220,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     // MARK: - App (SwiftUI native): shared buttons / alerts / defaults reused across screens
     case appChoisirEllipsis, appChangerEllipsis, appCreer, appAnnuler, appButtonSauvegarderDansCeDossier
     case appButtonArreter, appButtonDemarrer, appNouveauGuide, appNouvelleScene, appNouvelleComposition, appButtonReglages
+    case appModeApp, appModeLumi, appHeadingNotesEtAccords
     case appDefaultNouvellePalette, appDefaultGuideTitle, appDefaultMorceauFilename
     /// "%@ (canal %d)" — reused everywhere a MIDI-capable track's own label is shown, next
     /// to `ImprovSession.displayedChannel(for:)`.

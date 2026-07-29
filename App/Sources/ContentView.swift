@@ -193,7 +193,7 @@ struct ContentView: View {
                     // keyboard mode is explicitly turned on (see `ComputerKeyboardSettingsView`,
                     // under Settings). Sits OUTSIDE the TabView so it stays put across every tab
                     // switch, a constant reminder that typing anywhere now plays notes.
-                    if session.computerKeyboardInputEnabled {
+                    if mode == .studio && session.computerKeyboardInputEnabled {
                         Divider()
                         ComputerKeyboardInputBar(
                             heldPitches: session.tracks.first { $0.id == .computerKeyboard }?.heldPitches ?? [],

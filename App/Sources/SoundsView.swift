@@ -31,6 +31,9 @@ struct SoundsView: View {
     /// leaving for another tab.
     let isActive: Bool
 
+    private enum Screen { case list, detail }
+
+    @State private var screen: Screen = .list
     @State private var fileSearchText = ""
     @State private var actionError: String?
 
@@ -139,25 +142,47 @@ struct SoundsView: View {
             if let actionError {
                 Text(actionError).foregroundStyle(.red).font(.caption).padding(.horizontal).padding(.top, 8)
             }
-            // Left: pick a file. Middle: curate/test one of ITS sounds. Right: the test-mode
-            // controls (source picker, keyboard, chord/mode commentary) — same "Form / Divider
-            // / Form" split `SceneLayoutView` already uses for its instruments/roles columns,
-            // extended to a third column here.
-            HStack(alignment: .top, spacing: 0) {
+            switch screen {
+            case .list:
+                // Screen 1: pick a file — a single, compact column instead of the old
+                // always-visible 3-column layout.
                 Form { filesColumnContent }
-                Divider()
-                Form { soundsColumnContent }
-                Divider()
-                Form { testModeSection }
+                    #if os(macOS)
+                    .formStyle(.grouped)
+                    #endif
+            case .detail:
+                // Screen 2: curate/test the selected file's sounds. Left: its sounds. Right:
+                // the test-mode controls (source picker, keyboard, chord/mode commentary) —
+                // same "Form / Divider / Form" split `SceneLayoutView` already uses for its
+                // instruments/roles columns.
+                VStack(spacing: 0) {
+                    HStack {
+                        Button {
+                            screen = .list
+                        } label: {
+                            Image(systemName: "chevron.left")
+                        }
+                        .accessibilityLabel(L10n.string(.appHeadingFichiersSoundfont, session.currentLanguage))
+                        Spacer()
+                    }
+                    .padding([.horizontal, .top])
+                    HStack(alignment: .top, spacing: 0) {
+                        Form { soundsColumnContent }
+                        Divider()
+                        Form { testModeSection }
+                    }
+                    #if os(macOS)
+                    .formStyle(.grouped)
+                    #endif
+                }
             }
-            #if os(macOS)
-            .formStyle(.grouped)
-            #endif
         }
         // `initial: true` covers the very first appearance too (this screen's whole purpose is
         // browsing/testing sounds, so it starts already in test mode with the computer keyboard
         // as the source, per explicit user request) — see `isActive`'s own doc comment for why
-        // this reacts to that flag instead of `.onAppear`/`.onDisappear`.
+        // this reacts to that flag instead of `.onAppear`/`.onDisappear`. Arms regardless of
+        // which screen (list/detail) is currently showing — only the test-mode UI itself is
+        // screen-2-only, for a more compact screen 1.
         .onChange(of: isActive, initial: true) { _, active in
             setTestMode(active)
         }
@@ -208,12 +233,14 @@ struct SoundsView: View {
     }
 
     private func selectFile(_ path: String) {
-        guard selectedFilePath != path else { return }
-        selectedFilePath = path
-        soundSearchText = ""
-        editingAliasFor = nil
-        aliasDraft = ""
-        loadSoundRows(for: path)
+        if selectedFilePath != path {
+            selectedFilePath = path
+            soundSearchText = ""
+            editingAliasFor = nil
+            aliasDraft = ""
+            loadSoundRows(for: path)
+        }
+        screen = .detail
     }
 
     /// `.sf2` is the only format `SoundFontPresetReader` can enumerate presets from — a
