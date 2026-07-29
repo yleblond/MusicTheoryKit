@@ -8,14 +8,33 @@ import LLMEngine
 import SoundTrackModel
 import SoundFontModel
 import AudioEngine
+import Localization
 
-/// A fresh `ImprovSession` backed by an in-memory LLM-connections store — every test that
-/// exercises `migrateLLMConnectionsFromJSONIfNeeded`/`useLLMConnection`/etc. needs its own
+/// A fresh `ImprovSession` backed by an in-memory SwiftData store — every test that exercises
+/// any `migrate...FromJSONIfNeeded`/LLM-connection/color-palette/etc. method needs its own
 /// isolated container, not the real on-disk one `ImprovSession()` lazily creates on first use
-/// (which would leak state across tests and even across separate `swift test` runs).
-private func makeLLMTestSession() -> ImprovSession {
-    let container = try! ModelContainer(for: LLMConnectionRecord.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
-    return ImprovSession(llmModelContainer: container)
+/// (which would leak state across tests and even across separate `swift test` runs). One
+/// shared schema, mirroring `ImprovSession.modelContainer`'s own `Schema([...])` list exactly.
+func makeTestSession() -> ImprovSession {
+    let schema = Schema([
+        LLMConnectionRecord.self,
+        ColorPaletteRecord.self,
+        ChordProgressionTemplateRecord.self,
+        LanguageSettingRecord.self,
+        LumiSettingsRecord.self,
+        SpectrogramSettingsRecord.self,
+        NoteColorSettingsRecord.self,
+        MicrophoneCalibrationSettingsRecord.self,
+        SoundEntryRecord.self,
+        GuideSequenceRecord.self,
+        SceneRecord.self,
+        SoundTrackRecord.self,
+        PromptSnippetRecord.self,
+        CompositionDescriptionRecord.self,
+        PieceRecord.self,
+    ])
+    let container = try! ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
+    return ImprovSession(modelContainer: container)
 }
 
 final class ImprovSessionTests: XCTestCase {
@@ -178,48 +197,41 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertThrowsError(try session.loadPiece(fromJSONFile: "/no/such/file.json"))
     }
 
-    func testListPieceFilesFindsJSONFilesAndIgnoresOthers() throws {
+    func testMigratePiecesFindsJSONFilesAndInsertsThem() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
-        try Data().write(to: folder.appendingPathComponent("b.json"))
-        try Data().write(to: folder.appendingPathComponent("a.json"))
+        let writer = ImprovSession()
+        writer.loadDemoPiece()
+        try writer.savePiece(toJSONFile: folder.appendingPathComponent("demo.json").path)
         try Data().write(to: folder.appendingPathComponent("notes.txt"))
 
-        let session = ImprovSession()
-        try session.listPieceFiles(in: folder.path)
-        XCTAssertEqual(session.pieceFiles, ["a.json", "b.json"])
-        XCTAssertEqual(session.pieceFolder, folder.path)
+        let session = makeTestSession()
+        session.migratePiecesFromJSONIfNeeded(in: folder.path)
+        XCTAssertEqual(session.pieceNames, ["ii-V-I demo"])
     }
 
-    func testUsePieceByIndexAndNameLoadFromTheListedFolder() throws {
+    func testUsePieceByIndexAndNameLoadFromTheStore() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
-
         let writer = ImprovSession()
         writer.loadDemoPiece()
         try writer.savePiece(toJSONFile: folder.appendingPathComponent("demo.json").path)
 
-        let session = ImprovSession()
-        try session.listPieceFiles(in: folder.path)
-        try session.loadPiece(atIndex: 0)
+        let session = makeTestSession()
+        session.migratePiecesFromJSONIfNeeded(in: folder.path)
+        try session.usePiece(atIndex: 0)
         XCTAssertEqual(session.piece?.title, "ii-V-I demo")
 
-        let byName = ImprovSession()
-        try byName.listPieceFiles(in: folder.path)
-        try byName.loadPiece(named: "demo.json")
-        XCTAssertEqual(byName.piece?.title, "ii-V-I demo")
+        session.newPiece(title: "Other")
+        try session.usePiece(named: "ii-V-I demo")
+        XCTAssertEqual(session.piece?.title, "ii-V-I demo")
     }
 
-    func testLoadPieceAtInvalidIndexThrows() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-
-        let session = ImprovSession()
-        try session.listPieceFiles(in: folder.path)
-        XCTAssertThrowsError(try session.loadPiece(atIndex: 0)) { error in
+    func testUsePieceAtInvalidIndexThrows() throws {
+        let session = makeTestSession()
+        XCTAssertThrowsError(try session.usePiece(atIndex: 0)) { error in
             XCTAssertEqual(error as? ImprovSession.SessionError, .invalidPieceIndex)
         }
     }
@@ -232,44 +244,26 @@ final class ImprovSessionTests: XCTestCase {
         }
     }
 
-    func testSaveAsThenBareSaveRoundTripToTheSameFile() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-
-        let session = ImprovSession()
+    func testSaveAsThenBareSaveUpdateTheSameRecord() throws {
+        let session = makeTestSession()
         session.loadDemoPiece()
-        try session.listPieceFiles(in: folder.path) // establishes the working directory
-        try session.savePiece(as: "my-piece") // bare name, ".json" added automatically
+        try session.savePiece(as: "my-piece")
+        XCTAssertEqual(session.pieceNames, ["my-piece"])
+        XCTAssertEqual(session.piece?.title, "my-piece", "savePiece(as:) adopts the new name as the piece's own title")
 
-        let expectedPath = folder.appendingPathComponent("my-piece.json").path
-        XCTAssertEqual(session.currentPieceFilePath, expectedPath)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: expectedPath))
-
-        // A bare `savePiece()` now re-saves to that same resolved path without error.
+        // A bare `savePiece()` re-saves to that same record without error, and without
+        // creating a second one.
         try session.savePiece()
+        XCTAssertEqual(session.pieceNames, ["my-piece"])
     }
 
-    func testSaveAsWithExplicitPathIgnoresPieceFolder() throws {
-        let explicitPath = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "/nested/piece").path
-        try FileManager.default.createDirectory(
-            at: URL(fileURLWithPath: explicitPath).deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: explicitPath).deletingLastPathComponent().deletingLastPathComponent()) }
-
-        let session = ImprovSession()
+    func testSaveAsUnderAnExistingTitleOverwritesRatherThanDuplicating() throws {
+        let session = makeTestSession()
         session.loadDemoPiece()
-        try session.savePiece(as: explicitPath) // contains "/", so used as-is (no pieceFolder needed)
-        XCTAssertEqual(session.currentPieceFilePath, explicitPath + ".json")
-    }
-
-    func testSaveAsWithoutAPieceFolderListedThrowsForABareName() {
-        let session = ImprovSession()
-        session.loadDemoPiece()
-        XCTAssertThrowsError(try session.savePiece(as: "my-piece")) { error in
-            XCTAssertEqual(error as? ImprovSession.SessionError, .noPieceFolderListed)
-        }
+        try session.savePiece(as: "my-piece")
+        session.newPiece(title: "Different")
+        try session.savePiece(as: "my-piece")
+        XCTAssertEqual(session.pieceNames, ["my-piece"])
     }
 
     func testHandlingIncomingMIDIEventsDetectsChordPerTrack() throws {
@@ -478,7 +472,7 @@ final class ImprovSessionTests: XCTestCase {
     }
 
     func testMicrophoneCalibrationCapturesThePeakLevelForTheQuietPhase() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         try session.startTrack(.microphone)
         session.beginMicrophoneCalibrationCapture(phase: .quiet)
         session.simulateMicrophoneDetection([], level: 0.01, track: .microphone)
@@ -489,7 +483,7 @@ final class ImprovSessionTests: XCTestCase {
     }
 
     func testMicrophoneCalibrationCapturesThePeakLevelForTheLoudPhase() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         try session.startTrack(.microphone)
         session.beginMicrophoneCalibrationCapture(phase: .loud)
         session.simulateMicrophoneDetection([], level: 0.2, track: .microphone)
@@ -499,7 +493,7 @@ final class ImprovSessionTests: XCTestCase {
     }
 
     func testCancellingMicrophoneCalibrationCaptureLeavesSettingsUnchanged() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         try session.startTrack(.microphone)
         let before = session.microphoneCalibration
         session.beginMicrophoneCalibrationCapture(phase: .loud)
@@ -510,7 +504,7 @@ final class ImprovSessionTests: XCTestCase {
     }
 
     func testResetMicrophoneCalibrationRestoresDefaults() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         try session.startTrack(.microphone)
         session.beginMicrophoneCalibrationCapture(phase: .loud)
         session.simulateMicrophoneDetection([], level: 0.9, track: .microphone)
@@ -529,7 +523,7 @@ final class ImprovSessionTests: XCTestCase {
     // below; the "off" path is covered by the test immediately below.
 
     func testMicrophoneCalibrationLeavesPeakSpectrumMagnitudeAtZeroWhenSpectroscopeIsOff() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         try session.startTrack(.microphone)
         // Spectroscope left off (the default) — no spectrum data ever flows, so there's
         // nothing to capture a peak magnitude from.
@@ -585,7 +579,7 @@ final class ImprovSessionTests: XCTestCase {
         session.newPiece(title: "My Poem Piece")
         XCTAssertEqual(session.piece?.title, "My Poem Piece")
         XCTAssertEqual(session.piece?.sections, [])
-        XCTAssertNil(session.currentPieceFilePath)
+        XCTAssertNil(session.currentPieceRecordID)
     }
 
     func testSetSourceTextStoresItAndLogs() {
@@ -603,7 +597,7 @@ final class ImprovSessionTests: XCTestCase {
         try JSONEncoder().encode(connection).write(to: folder.appendingPathComponent("ollama.json"))
         try Data().write(to: folder.appendingPathComponent("notes.txt"))
 
-        let session = makeLLMTestSession()
+        let session = makeTestSession()
         session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         XCTAssertEqual(session.llmConnections, ["Local Ollama"])
     }
@@ -613,7 +607,7 @@ final class ImprovSessionTests: XCTestCase {
         try FileManager.default.createDirectory(at: emptyFolder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: emptyFolder) }
 
-        let session = makeLLMTestSession()
+        let session = makeTestSession()
         session.migrateLLMConnectionsFromJSONIfNeeded(in: emptyFolder.path)
         XCTAssertEqual(session.llmConnections.count, LLMConnectionTemplates.builtIn.count)
         XCTAssertTrue(session.llmConnections.contains("Ollama (local)"))
@@ -626,7 +620,7 @@ final class ImprovSessionTests: XCTestCase {
         let connection = LLMConnection(name: "Local Ollama", provider: "ollama", baseURL: "http://localhost:11434", model: "llama3")
         try JSONEncoder().encode(connection).write(to: folder.appendingPathComponent("ollama.json"))
 
-        let session = makeLLMTestSession()
+        let session = makeTestSession()
         session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         XCTAssertEqual(session.llmConnections, ["Local Ollama"])
@@ -634,7 +628,7 @@ final class ImprovSessionTests: XCTestCase {
     }
 
     func testAddAndDeleteLLMConnection() throws {
-        let session = makeLLMTestSession()
+        let session = makeTestSession()
         let connection = LLMConnection(name: "Custom", provider: "ollama", baseURL: "http://localhost:11434", model: "llama3")
         try session.addLLMConnection(connection)
         XCTAssertEqual(session.llmConnections, ["Custom"])
@@ -650,19 +644,19 @@ final class ImprovSessionTests: XCTestCase {
         let connection = LLMConnection(name: "Local Ollama", provider: "ollama", baseURL: "http://localhost:11434", model: "llama3")
         try JSONEncoder().encode(connection).write(to: folder.appendingPathComponent("ollama.json"))
 
-        let session = makeLLMTestSession()
+        let session = makeTestSession()
         session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try session.useLLMConnection(atIndex: 0)
         XCTAssertEqual(session.currentLLMConnection, connection)
 
-        let byName = makeLLMTestSession()
+        let byName = makeTestSession()
         byName.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try byName.useLLMConnection(named: "Local Ollama")
         XCTAssertEqual(byName.currentLLMConnection, connection)
     }
 
     func testComposeFromTextWithoutSourceTextThrows() throws {
-        let session = makeLLMTestSession()
+        let session = makeTestSession()
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -691,7 +685,7 @@ final class ImprovSessionTests: XCTestCase {
         try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
             .write(to: folder.appendingPathComponent("fake.json"))
 
-        let session = makeLLMTestSession()
+        let session = makeTestSession()
         session.setSourceText("a poem about the sea")
         session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try session.useLLMConnection(atIndex: 0)
@@ -708,7 +702,7 @@ final class ImprovSessionTests: XCTestCase {
         }
 
         XCTAssertEqual(session.piece?.title, "The Sea")
-        XCTAssertNil(session.currentPieceFilePath)
+        XCTAssertNil(session.currentPieceRecordID)
     }
 
     func testComposeFromTextWithATitleOverridesTheLLMsOwnTitle() throws {
@@ -718,7 +712,7 @@ final class ImprovSessionTests: XCTestCase {
         try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
             .write(to: folder.appendingPathComponent("fake.json"))
 
-        let session = makeLLMTestSession()
+        let session = makeTestSession()
         session.setSourceText("a poem about the sea")
         session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try session.useLLMConnection(atIndex: 0)
@@ -769,7 +763,7 @@ final class ImprovSessionTests: XCTestCase {
         try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
             .write(to: folder.appendingPathComponent("fake.json"))
 
-        let session = makeLLMTestSession()
+        let session = makeTestSession()
         session.setSourceText("a poem about the sea")
         session.setAdditionalCompositionInstructions("romantique, mode mineur")
         session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
@@ -793,7 +787,7 @@ final class ImprovSessionTests: XCTestCase {
         try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
             .write(to: folder.appendingPathComponent("fake.json"))
 
-        let session = makeLLMTestSession()
+        let session = makeTestSession()
         session.setSourceText("a poem")
         session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try session.useLLMConnection(atIndex: 0)
@@ -854,6 +848,88 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertEqual(reloaded.currentSoundTrack?.events.count, session.currentSoundTrack?.events.count)
     }
 
+    // MARK: - SoundTrack: store-based CRUD (see SoundTrackRecord)
+
+    func testMigrateSoundTracksFindsJSONFilesAndInsertsThem() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let soundTrack = SoundTrack(title: "Practice", durationSeconds: 1, events: [])
+        try JSONEncoder().encode(soundTrack).write(to: folder.appendingPathComponent("practice.json"))
+
+        let session = makeTestSession()
+        session.migrateSoundTracksFromJSONIfNeeded(in: folder.path)
+        XCTAssertEqual(session.soundTrackNames, ["Practice"])
+    }
+
+    func testMigrateSoundTracksIsIdempotent() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let soundTrack = SoundTrack(title: "Practice", durationSeconds: 1, events: [])
+        try JSONEncoder().encode(soundTrack).write(to: folder.appendingPathComponent("practice.json"))
+
+        let session = makeTestSession()
+        session.migrateSoundTracksFromJSONIfNeeded(in: folder.path)
+        session.migrateSoundTracksFromJSONIfNeeded(in: folder.path)
+        XCTAssertEqual(session.soundTrackNames, ["Practice"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("practice.json").path), "the original file must survive migration")
+    }
+
+    func testSaveSoundTrackAsCreatesThenOverwritesOnSameTitle() throws {
+        let session = makeTestSession()
+        try session.startRecording(title: "Draft")
+        session.pressKey(pitch: 60)
+        session.releaseKey(pitch: 60)
+        _ = try session.stopRecording()
+        try session.saveSoundTrack(as: "Final")
+        XCTAssertEqual(session.soundTrackNames, ["Final"])
+        XCTAssertEqual(session.currentSoundTrack?.title, "Final")
+        XCTAssertEqual(session.currentSoundTrack?.events.count, 2)
+
+        try session.startRecording(title: "Draft2")
+        session.pressKey(pitch: 62)
+        session.releaseKey(pitch: 62)
+        session.pressKey(pitch: 64)
+        session.releaseKey(pitch: 64)
+        _ = try session.stopRecording() // sets currentSoundTrack to the second take
+        try session.saveSoundTrack(as: "Final")
+        XCTAssertEqual(session.soundTrackNames, ["Final"], "saving under an existing title overwrites it rather than duplicating")
+        try session.useSoundTrack(named: "Final")
+        XCTAssertEqual(session.currentSoundTrack?.events.count, 4, "the overwrite captured the second take")
+    }
+
+    func testUseSoundTrackByIndexAndNameLoadFromTheStore() throws {
+        let session = makeTestSession()
+        try session.startRecording(title: "Practice")
+        session.pressKey(pitch: 60)
+        session.releaseKey(pitch: 60)
+        _ = try session.stopRecording()
+        try session.saveSoundTrack(as: "Practice")
+
+        try session.startRecording(title: "Other")
+        _ = try session.stopRecording()
+
+        try session.useSoundTrack(atIndex: 0)
+        XCTAssertEqual(session.currentSoundTrack?.title, "Practice")
+
+        try session.startRecording(title: "Other")
+        _ = try session.stopRecording()
+        try session.useSoundTrack(named: "Practice")
+        XCTAssertEqual(session.currentSoundTrack?.title, "Practice")
+    }
+
+    func testDeleteSoundTrackRemovesItFromTheStore() throws {
+        let session = makeTestSession()
+        try session.startRecording(title: "Practice")
+        _ = try session.stopRecording()
+        try session.saveSoundTrack(as: "Practice")
+        XCTAssertEqual(session.soundTrackNames, ["Practice"])
+
+        try session.deleteSoundTrack(atIndex: 0)
+        XCTAssertEqual(session.soundTrackNames, [])
+    }
+
     func testPlaySoundTrackTracksPlaybackStateThenClearsItWhenFinished() throws {
         let session = ImprovSession()
         try session.start()
@@ -885,10 +961,9 @@ final class ImprovSessionTests: XCTestCase {
         try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
             .write(to: folder.appendingPathComponent("fake.json"))
 
-        let session = makeLLMTestSession()
+        let session = makeTestSession()
         session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try session.useLLMConnection(atIndex: 0)
-        try session.listPieceFiles(in: folder.path) // establishes pieceFolder for saving candidates
 
         try session.startRecording(title: "ForCompose")
         session.pressKey(pitch: 62)
@@ -900,14 +975,14 @@ final class ImprovSessionTests: XCTestCase {
           "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
             "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
         """
-        let paths = try session.composeSoundTrackToPieces(candidateCount: 1) { prompt, connection in
+        let labels = try session.composeSoundTrackToPieces(candidateCount: 1) { prompt, connection in
             XCTAssertTrue(prompt.contains("ON"))
             XCTAssertEqual(connection.name, "Fake")
             return fakeResponse
         }
-        XCTAssertEqual(paths.count, 1)
+        XCTAssertEqual(labels.count, 1)
         XCTAssertEqual(session.piece?.title, "From Recording")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: paths[0]))
+        XCTAssertEqual(session.pieceNames, ["From Recording"])
     }
 
     func testComposeSoundTrackToPiecesWithATitleOverridesTheLLMsOwnTitle() throws {
@@ -917,10 +992,9 @@ final class ImprovSessionTests: XCTestCase {
         try JSONEncoder().encode(LLMConnection(name: "Fake", provider: "ollama", baseURL: "http://x", model: "x"))
             .write(to: folder.appendingPathComponent("fake.json"))
 
-        let session = makeLLMTestSession()
+        let session = makeTestSession()
         session.migrateLLMConnectionsFromJSONIfNeeded(in: folder.path)
         try session.useLLMConnection(atIndex: 0)
-        try session.listPieceFiles(in: folder.path)
         try session.startRecording(title: "ForCompose")
         session.pressKey(pitch: 62)
         session.releaseKey(pitch: 62)
@@ -931,10 +1005,10 @@ final class ImprovSessionTests: XCTestCase {
           "sections": [ { "name": "A", "lengthInMeasures": 1, "tonic": "D", "scaleID": "dorian",
             "chords": [ { "measure": 1, "root": "D", "templateID": "mi7" } ] } ] }
         """
-        let paths = try session.composeSoundTrackToPieces(candidateCount: 1, title: "My Own Title") { _, _ in fakeResponse }
+        let labels = try session.composeSoundTrackToPieces(candidateCount: 1, title: "My Own Title") { _, _ in fakeResponse }
 
         XCTAssertEqual(session.piece?.title, "My Own Title")
-        XCTAssertTrue(paths[0].hasSuffix("My Own Title.json"))
+        XCTAssertEqual(labels[0], "My Own Title")
     }
 
     // MARK: - Composition prompts (preview, save/load)
@@ -961,7 +1035,7 @@ final class ImprovSessionTests: XCTestCase {
     }
 
     func testSetPromptsFolderCreatesAllFiveSubfoldersAndListsFiles() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
 
@@ -972,17 +1046,14 @@ final class ImprovSessionTests: XCTestCase {
             XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(subfolder).path, isDirectory: &isDirectory))
             XCTAssertTrue(isDirectory.boolValue)
         }
-        XCTAssertEqual(session.textFramingFiles, [])
-        XCTAssertEqual(session.soundTrackFramingFiles, [])
-        XCTAssertEqual(session.soundTrackInstructionsFiles, [])
-        // compositionFolder/compositionFiles are now derived from setPromptsFolder — no
-        // separate listCompositionFiles(in:) call needed.
-        XCTAssertEqual(session.compositionFolder, root.appendingPathComponent("composition Descriptive").path)
-        XCTAssertEqual(session.compositionFiles, [])
+        XCTAssertEqual(session.textFramingSentenceNames, [])
+        XCTAssertEqual(session.soundTrackFramingSentenceNames, [])
+        XCTAssertEqual(session.soundTrackInstructionsNames, [])
+        XCTAssertEqual(session.compositionDescriptionNames, [])
     }
 
     func testExportTextCompositionPromptWritesCurrentPromptToExportSubfolder() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         try session.setPromptsFolder(root.path)
@@ -995,7 +1066,7 @@ final class ImprovSessionTests: XCTestCase {
     }
 
     func testExportSoundTrackCompositionPromptWritesCurrentPromptToExportSubfolder() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         try session.setPromptsFolder(root.path)
@@ -1010,15 +1081,12 @@ final class ImprovSessionTests: XCTestCase {
     }
 
     func testSaveAndUseSoundTrackCompositionInstructionsRoundTrips() throws {
-        let session = ImprovSession()
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try session.setPromptsFolder(root.path)
+        let session = makeTestSession()
         XCTAssertNil(session.currentSoundTrackCompositionInstructions())
 
         session.setSoundTrackCompositionInstructions("romantique, mode mineur")
         try session.saveSoundTrackCompositionInstructions(as: "my-instructions")
-        XCTAssertEqual(session.soundTrackInstructionsFiles, ["my-instructions.txt"])
+        XCTAssertEqual(session.soundTrackInstructionsNames, ["my-instructions"])
 
         session.resetSoundTrackCompositionInstructions()
         XCTAssertNil(session.currentSoundTrackCompositionInstructions())
@@ -1028,20 +1096,14 @@ final class ImprovSessionTests: XCTestCase {
     }
 
     func testSaveSoundTrackCompositionInstructionsWithoutAnySetThrows() throws {
-        let session = ImprovSession()
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try session.setPromptsFolder(root.path)
+        let session = makeTestSession()
         XCTAssertThrowsError(try session.saveSoundTrackCompositionInstructions(as: "nothing-to-save")) { error in
             XCTAssertEqual(error as? ImprovSession.SessionError, .noSoundTrackCompositionInstructions)
         }
     }
 
     func testUseSoundTrackCompositionInstructionsWithInvalidIndexThrows() throws {
-        let session = ImprovSession()
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try session.setPromptsFolder(root.path)
+        let session = makeTestSession()
         XCTAssertThrowsError(try session.useSoundTrackCompositionInstructions(atIndex: 0)) { error in
             XCTAssertEqual(error as? ImprovSession.SessionError, .invalidSoundTrackInstructionsIndex)
         }
@@ -1083,14 +1145,11 @@ final class ImprovSessionTests: XCTestCase {
     }
 
     func testSaveAndUseTextFramingSentenceRoundTrips() throws {
-        let session = ImprovSession()
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try session.setPromptsFolder(root.path)
+        let session = makeTestSession()
         session.setTextFramingSentence("A distinctive custom framing sentence.")
 
         try session.saveTextFramingSentence(as: "my-framing")
-        XCTAssertEqual(session.textFramingFiles, ["my-framing.txt"])
+        XCTAssertEqual(session.textFramingSentenceNames, ["my-framing"])
 
         session.resetTextFramingSentence()
         XCTAssertEqual(session.currentTextFramingSentence(), LLMPieceComposer.defaultTextFramingSentence)
@@ -1100,25 +1159,19 @@ final class ImprovSessionTests: XCTestCase {
     }
 
     func testSaveAndUseSoundTrackFramingSentenceRoundTrips() throws {
-        let session = ImprovSession()
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try session.setPromptsFolder(root.path)
+        let session = makeTestSession()
         session.setSoundTrackFramingSentence("A distinctive soundtrack framing sentence.")
 
         try session.saveSoundTrackFramingSentence(as: "my-soundtrack-framing")
-        XCTAssertEqual(session.soundTrackFramingFiles, ["my-soundtrack-framing.txt"])
+        XCTAssertEqual(session.soundTrackFramingSentenceNames, ["my-soundtrack-framing"])
 
         session.resetSoundTrackFramingSentence()
-        try session.useSoundTrackFramingSentence(named: "my-soundtrack-framing.txt")
+        try session.useSoundTrackFramingSentence(named: "my-soundtrack-framing")
         XCTAssertEqual(session.activeSoundTrackFramingSentence, "A distinctive soundtrack framing sentence.")
     }
 
     func testUseTextFramingSentenceWithInvalidIndexThrows() throws {
-        let session = ImprovSession()
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try session.setPromptsFolder(root.path)
+        let session = makeTestSession()
         XCTAssertThrowsError(try session.useTextFramingSentence(atIndex: 0)) { error in
             XCTAssertEqual(error as? ImprovSession.SessionError, .invalidTextFramingIndex)
         }
@@ -1127,75 +1180,54 @@ final class ImprovSessionTests: XCTestCase {
     // MARK: - Composition descriptions (save/load title+text+indications)
 
     func testSaveThenLoadCompositionDescriptionRoundTrips() throws {
-        let session = ImprovSession()
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        try session.listCompositionFiles(in: folder.path)
-
+        let session = makeTestSession()
         session.setCompositionTitle("My Ballad")
         session.setSourceText("a poem about the sea")
         session.setAdditionalCompositionInstructions("romantique, mode mineur")
         try session.saveCompositionDescription(as: "my-description")
-        XCTAssertEqual(session.compositionFiles, ["my-description.json"])
+        XCTAssertEqual(session.compositionDescriptionNames, ["my-description"])
 
-        let reloaded = ImprovSession()
-        try reloaded.listCompositionFiles(in: folder.path)
-        try reloaded.loadCompositionDescription(atIndex: 0)
-        XCTAssertEqual(reloaded.compositionTitle, "My Ballad")
-        XCTAssertEqual(reloaded.sourceText, "a poem about the sea")
-        XCTAssertEqual(reloaded.additionalCompositionInstructions, "romantique, mode mineur")
+        session.setCompositionTitle("Other")
+        session.setSourceText("something else")
+        try session.useCompositionDescription(atIndex: 0)
+        XCTAssertEqual(session.compositionTitle, "My Ballad")
+        XCTAssertEqual(session.sourceText, "a poem about the sea")
+        XCTAssertEqual(session.additionalCompositionInstructions, "romantique, mode mineur")
     }
 
     func testLoadCompositionDescriptionAtInvalidIndexThrows() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let session = ImprovSession()
-        try session.listCompositionFiles(in: folder.path)
-        XCTAssertThrowsError(try session.loadCompositionDescription(atIndex: 0)) { error in
+        let session = makeTestSession()
+        XCTAssertThrowsError(try session.useCompositionDescription(atIndex: 0)) { error in
             XCTAssertEqual(error as? ImprovSession.SessionError, .invalidCompositionIndex)
         }
     }
 
     func testSaveCompositionDescriptionWithoutSourceTextThrows() {
-        let session = ImprovSession()
-        XCTAssertThrowsError(try session.saveCompositionDescription(as: "/tmp/whatever")) { error in
+        let session = makeTestSession()
+        XCTAssertThrowsError(try session.saveCompositionDescription(as: "whatever")) { error in
             XCTAssertEqual(error as? ImprovSession.SessionError, .noSourceText)
         }
     }
 
-    func testSaveCompositionDescriptionWithoutFolderListedThrows() {
-        let session = ImprovSession()
-        session.setSourceText("a poem")
-        XCTAssertThrowsError(try session.saveCompositionDescription(as: "bare-name")) { error in
-            XCTAssertEqual(error as? ImprovSession.SessionError, .noCompositionFolderListed)
-        }
-    }
-
     func testSaveCompositionDescriptionWithoutHavingSavedOnceThrows() {
-        let session = ImprovSession()
+        let session = makeTestSession()
         session.setSourceText("a poem")
         XCTAssertThrowsError(try session.saveCompositionDescription()) { error in
             XCTAssertEqual(error as? ImprovSession.SessionError, .noCurrentCompositionFile)
         }
     }
 
-    func testSaveCompositionDescriptionReSavesToTheSameFile() throws {
-        let session = ImprovSession()
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        try session.listCompositionFiles(in: folder.path)
+    func testSaveCompositionDescriptionReSavesToTheSameRecord() throws {
+        let session = makeTestSession()
         session.setSourceText("first version")
         try session.saveCompositionDescription(as: "iterate")
 
         session.setSourceText("second version")
         try session.saveCompositionDescription()
 
-        let reloaded = ImprovSession()
-        try reloaded.loadCompositionDescription(fromJSONFile: folder.appendingPathComponent("iterate.json").path)
-        XCTAssertEqual(reloaded.sourceText, "second version")
+        try session.useCompositionDescription(named: "iterate")
+        XCTAssertEqual(session.sourceText, "second version")
+        XCTAssertEqual(session.compositionDescriptionNames, ["iterate"], "re-saving must not create a second record")
     }
 
     // Port 18391 is arbitrary, chosen only to avoid colliding with the collaborative-session
@@ -1701,33 +1733,63 @@ final class ImprovSessionTests: XCTestCase {
 
     // MARK: - Localization
 
-    func testLoadOrCreateLanguageSettingDefaultsToFrenchAndRoundTrips() throws {
-        let session = ImprovSession()
+    func testMigrateLanguageSettingDefaultsToFrenchAndPersistsChange() throws {
+        let session = makeTestSession()
         try session.start()
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let path = folder.appendingPathComponent("language.json").path
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json").path
 
-        try session.loadOrCreateLanguageSetting(fromJSONFile: path)
+        session.migrateLanguageSettingFromJSONIfNeeded(fromJSONFile: path)
         XCTAssertEqual(session.currentLanguage, .fr)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
 
-        // `setLanguage` only rewrites language.json once `settingsFolder` is set (mirrors
-        // `selectColorPalette`'s "in-memory only" default, but this one also persists on change).
-        try session.setSettingsFolder(folder.path)
         try session.setLanguage(.de)
-        let reloaded = ImprovSession()
-        try reloaded.start()
-        try reloaded.loadLanguageSetting(fromJSONFile: path)
-        XCTAssertEqual(reloaded.currentLanguage, .de)
+        XCTAssertEqual(session.currentLanguage, .de)
+
+        // Re-migrating (as `setSettingsFolder` would on a relaunch pointed at the same store)
+        // must load the persisted value back rather than re-seeding French.
+        session.migrateLanguageSettingFromJSONIfNeeded(fromJSONFile: path)
+        XCTAssertEqual(session.currentLanguage, .de)
     }
 
     func testSetLanguageUpdatesCurrentLanguageAndWebConsoleState() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         try session.start()
         try session.setLanguage(.de)
         XCTAssertEqual(session.currentLanguage, .de)
         XCTAssertEqual(session.buildWebConsoleState().language, "de")
+    }
+
+    // MARK: - LLM API keys (Keychain-backed)
+
+    /// Real Keychain, unique env var per test + cleanup via `defer` — same convention as
+    /// `APIKeyStoreTests` (`Tests/LLMEngineTests`), since there's no mock/injection point.
+    func testMigrateLLMAPIKeysFromJSONMovesKeysIntoKeychainAndDeletesThePlaintextFile() throws {
+        let envVar = "ImprovSessionTests_MigrateLLMAPIKeys_\(UUID().uuidString)"
+        defer { APIKeyStore.persist(nil, forEnvVar: envVar) }
+
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        try JSONEncoder().encode(LLMAPIKeysFile(keysByEnvVar: [envVar: "sk-test-123"])).write(to: tempFile)
+
+        let session = makeTestSession()
+        session.migrateLLMAPIKeysFromJSONIfNeeded(fromJSONFile: tempFile.path)
+
+        XCTAssertEqual(session.llmAPIKeyEnvVars, [envVar])
+        XCTAssertEqual(session.llmAPIKey(forEnvVar: envVar), "sk-test-123")
+        XCTAssertEqual(APIKeyStore.resolve(envVar), "sk-test-123")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tempFile.path), "the plaintext file must be deleted once its keys are in the Keychain")
+    }
+
+    func testSetLLMAPIKeyPersistsAndClearingRemovesIt() throws {
+        let envVar = "ImprovSessionTests_SetLLMAPIKey_\(UUID().uuidString)"
+        defer { APIKeyStore.persist(nil, forEnvVar: envVar) }
+
+        let session = makeTestSession()
+        try session.setLLMAPIKey("sk-test-456", forEnvVar: envVar)
+        XCTAssertEqual(session.llmAPIKeyEnvVars, [envVar])
+        XCTAssertEqual(session.llmAPIKey(forEnvVar: envVar), "sk-test-456")
+
+        try session.setLLMAPIKey("", forEnvVar: envVar)
+        XCTAssertFalse(session.llmAPIKeyEnvVars.contains(envVar))
+        XCTAssertNil(session.llmAPIKey(forEnvVar: envVar))
     }
 
     // MARK: - releaseAllKeys
@@ -1891,6 +1953,97 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertEqual(reloaded.currentGuide?.steps.first?.chordProgression?.count, 12)
     }
 
+    // MARK: - Guide sequences: store-based CRUD (see GuideSequenceRecord)
+
+    func testMigrateGuideSequencesFindsJSONFilesAndInsertsThem() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let sequence = GuideSequence(title: "Practice", steps: [GuideStep(mode: ModeReference(tonic: 0, scaleID: "ionian"))])
+        try JSONEncoder().encode(sequence).write(to: folder.appendingPathComponent("practice.json"))
+
+        let session = makeTestSession()
+        session.migrateGuideSequencesFromJSONIfNeeded(in: folder.path)
+        XCTAssertEqual(session.guideSequenceNames, ["Practice"])
+    }
+
+    func testMigrateGuideSequencesIsIdempotent() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let sequence = GuideSequence(title: "Practice")
+        try JSONEncoder().encode(sequence).write(to: folder.appendingPathComponent("practice.json"))
+
+        let session = makeTestSession()
+        session.migrateGuideSequencesFromJSONIfNeeded(in: folder.path)
+        session.migrateGuideSequencesFromJSONIfNeeded(in: folder.path)
+        XCTAssertEqual(session.guideSequenceNames, ["Practice"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("practice.json").path), "the original file must survive migration")
+    }
+
+    func testUseGuideSequenceByIndexAndNameLoadFromTheStore() throws {
+        let session = makeTestSession()
+        session.newGuideSequence(title: "Practice")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        try session.saveGuideSequence(as: "Practice")
+        session.newGuideSequence(title: "Other") // clears currentGuide/currentGuideRecordID first
+
+        try session.useGuideSequence(atIndex: 0)
+        XCTAssertEqual(session.currentGuide?.title, "Practice")
+        XCTAssertEqual(session.currentGuide?.steps.count, 1)
+
+        session.newGuideSequence(title: "Other")
+        try session.useGuideSequence(named: "Practice")
+        XCTAssertEqual(session.currentGuide?.title, "Practice")
+    }
+
+    func testSaveGuideSequenceAsCreatesThenOverwritesOnSameTitle() throws {
+        let session = makeTestSession()
+        session.newGuideSequence(title: "Draft")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        try session.saveGuideSequence(as: "Final")
+        XCTAssertEqual(session.guideSequenceNames, ["Final"])
+        XCTAssertEqual(session.currentGuide?.title, "Final", "saveGuideSequence(as:) adopts the new name as the guide's own title")
+
+        try session.addGuideStep(ModeReference(tonic: 7, scaleID: "mixolydian"))
+        try session.saveGuideSequence(as: "Final")
+        XCTAssertEqual(session.guideSequenceNames, ["Final"], "saving under an existing title overwrites it rather than duplicating")
+        try session.useGuideSequence(named: "Final")
+        XCTAssertEqual(session.currentGuide?.steps.count, 2, "the overwrite captured the second step")
+    }
+
+    func testSaveGuideSequenceBareReSavesToTheSameRecord() throws {
+        let session = makeTestSession()
+        session.newGuideSequence(title: "Practice")
+        try session.saveGuideSequence(as: "Practice")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        try session.saveGuideSequence()
+
+        try session.useGuideSequence(named: "Practice")
+        XCTAssertEqual(session.currentGuide?.steps.count, 1)
+        XCTAssertEqual(session.guideSequenceNames, ["Practice"], "bare save() must not create a second record")
+    }
+
+    func testSaveGuideSequenceBareWithoutHavingSavedOnceThrows() throws {
+        let session = makeTestSession()
+        session.newGuideSequence(title: "Practice")
+        XCTAssertThrowsError(try session.saveGuideSequence()) { error in
+            guard case ImprovSession.SessionError.noCurrentGuideFile = error else {
+                return XCTFail("expected noCurrentGuideFile, got \(error)")
+            }
+        }
+    }
+
+    func testDeleteGuideSequenceRemovesItFromTheStore() throws {
+        let session = makeTestSession()
+        session.newGuideSequence(title: "Practice")
+        try session.saveGuideSequence(as: "Practice")
+        XCTAssertEqual(session.guideSequenceNames, ["Practice"])
+
+        try session.deleteGuideSequence(atIndex: 0)
+        XCTAssertEqual(session.guideSequenceNames, [])
+    }
+
     /// Every guide file saved before chord progressions existed stores each step as a bare
     /// `ModeReference` (no "mode" key) — `GuideStep.init(from:)` must still load these.
     func testGuideStepDecodesOldBareModeReferenceFormat() throws {
@@ -2043,6 +2196,240 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertEqual(session.tracks.first { $0.id == .computerKeyboard }?.isListening, false)
     }
 
+    // MARK: - Scenes: store-based CRUD (see SceneRecord)
+
+    func testMigrateScenesFindsJSONFilesAndInsertsThem() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let scene = Scene(title: "Practice", roles: [SceneRole(name: "Piano")])
+        try JSONEncoder().encode(scene).write(to: folder.appendingPathComponent("practice.json"))
+
+        let session = makeTestSession()
+        session.migrateScenesFromJSONIfNeeded(in: folder.path)
+        XCTAssertEqual(session.sceneNames, ["Practice"])
+    }
+
+    func testMigrateScenesIsIdempotent() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let scene = Scene(title: "Practice")
+        try JSONEncoder().encode(scene).write(to: folder.appendingPathComponent("practice.json"))
+
+        let session = makeTestSession()
+        session.migrateScenesFromJSONIfNeeded(in: folder.path)
+        session.migrateScenesFromJSONIfNeeded(in: folder.path)
+        XCTAssertEqual(session.sceneNames, ["Practice"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("practice.json").path), "the original file must survive migration")
+    }
+
+    func testSaveSceneAsCreatesThenOverwritesOnSameTitle() throws {
+        let session = makeTestSession()
+        try session.start()
+        session.newScene(title: "Draft")
+        try session.addSceneRole(name: "Piano")
+        try session.saveScene(title: "Final", as: "Final")
+        XCTAssertEqual(session.sceneNames, ["Final"])
+        XCTAssertEqual(session.currentScene?.title, "Final")
+
+        try session.addSceneRole(name: "Basse")
+        try session.saveScene(title: "Final", as: "Final")
+        XCTAssertEqual(session.sceneNames, ["Final"], "saving under an existing title overwrites it rather than duplicating")
+        try session.useScene(named: "Final")
+        XCTAssertEqual(session.currentScene?.roles.count, 2, "the overwrite captured the second role")
+    }
+
+    func testUseSceneByIndexAndNameLoadFromTheStore() throws {
+        let session = makeTestSession()
+        try session.start()
+        session.newScene(title: "Practice")
+        try session.addSceneRole(name: "Piano")
+        try session.saveScene(title: "Practice", as: "Practice")
+        session.newScene(title: "Other")
+
+        try session.useScene(atIndex: 0)
+        XCTAssertEqual(session.currentScene?.title, "Practice")
+        XCTAssertEqual(session.currentScene?.roles.count, 1)
+
+        session.newScene(title: "Other")
+        try session.useScene(named: "Practice")
+        XCTAssertEqual(session.currentScene?.title, "Practice")
+    }
+
+    func testDeleteSceneRemovesItFromTheStore() throws {
+        let session = makeTestSession()
+        try session.start()
+        session.newScene(title: "Practice")
+        try session.saveScene(title: "Practice", as: "Practice")
+        XCTAssertEqual(session.sceneNames, ["Practice"])
+
+        try session.deleteScene(atIndex: 0)
+        XCTAssertEqual(session.sceneNames, [])
+    }
+
+    func testSaveSceneBareThrowsWithoutAnActiveOrNamedScene() {
+        let session = makeTestSession()
+        XCTAssertThrowsError(try session.saveScene())
+        session.newScene(title: "Draft")
+        XCTAssertThrowsError(try session.saveScene(), "still anonymous — never saved under a name")
+    }
+
+    func testSaveSceneBareUpdatesTheSameRecordEvenAfterATitleChange() throws {
+        let session = makeTestSession()
+        try session.start()
+        session.newScene(title: "Practice")
+        try session.saveScene(title: "Practice", as: "Practice")
+
+        try session.addSceneRole(name: "Piano")
+        try session.renameCurrentScene(to: "Practice")
+        try session.addSceneRole(name: "Basse")
+        try session.saveScene()
+
+        XCTAssertEqual(session.sceneNames, ["Practice"], "no duplicate record was created")
+        try session.useScene(named: "Practice")
+        XCTAssertEqual(session.currentScene?.roles.count, 2)
+    }
+
+    func testRenameCurrentSceneOnAnAnonymousSceneInsertsItsFirstRecord() throws {
+        let session = makeTestSession()
+        try session.start()
+        session.newScene(title: "")
+        XCTAssertNil(session.currentSceneRecordID)
+
+        try session.renameCurrentScene(to: "First Save")
+        XCTAssertEqual(session.currentScene?.title, "First Save")
+        XCTAssertNotNil(session.currentSceneRecordID)
+        XCTAssertEqual(session.sceneNames, ["First Save"])
+    }
+
+    func testRenameCurrentSceneOnAnAlreadyNamedSceneUpdatesTheSameRecordInPlace() throws {
+        let session = makeTestSession()
+        try session.start()
+        session.newScene(title: "Practice")
+        try session.saveScene(title: "Practice", as: "Practice")
+        let recordID = session.currentSceneRecordID
+
+        try session.renameCurrentScene(to: "Renamed")
+        XCTAssertEqual(session.currentSceneRecordID, recordID, "same record identity, not a fresh insert")
+        XCTAssertEqual(session.sceneNames, ["Renamed"])
+    }
+
+    func testRenameSceneAtIndexUpdatesTheListAndSyncsTheActiveSceneWhenItMatches() throws {
+        let session = makeTestSession()
+        try session.start()
+        session.newScene(title: "Practice")
+        try session.saveScene(title: "Practice", as: "Practice")
+
+        try session.renameScene(atIndex: 0, name: "Warmup")
+        XCTAssertEqual(session.sceneNames, ["Warmup"])
+        XCTAssertEqual(session.currentScene?.title, "Warmup", "renaming the active scene's own record keeps currentScene in sync")
+    }
+
+    func testRenameSceneAtIndexOnANonActiveSceneLeavesCurrentSceneUntouched() throws {
+        let session = makeTestSession()
+        try session.start()
+        session.newScene(title: "Practice")
+        try session.saveScene(title: "Practice", as: "Practice")
+        session.newScene(title: "Other")
+        try session.saveScene(title: "Other", as: "Other")
+        // currentScene is "Other"; sceneNames is sorted alphabetically, so "Practice" is index 1.
+        XCTAssertEqual(session.sceneNames, ["Other", "Practice"])
+        try session.renameScene(atIndex: 1, name: "Warmup")
+        XCTAssertEqual(session.currentScene?.title, "Other")
+        XCTAssertEqual(Set(session.sceneNames), Set(["Warmup", "Other"]))
+    }
+
+    func testExportedSceneDataReturnsTheStoredSceneAsDecodableJSON() throws {
+        let session = makeTestSession()
+        try session.start()
+        session.newScene(title: "Practice")
+        try session.addSceneRole(name: "Piano")
+        try session.saveScene(title: "Practice", as: "Practice")
+
+        let data = try session.exportedSceneData(atIndex: 0)
+        let decoded = try JSONDecoder().decode(Scene.self, from: data)
+        XCTAssertEqual(decoded.title, "Practice")
+        XCTAssertEqual(decoded.roles.count, 1)
+    }
+
+    func testCreateNewScenePersistsANamedSceneBeforeStartingAFreshAnonymousOne() throws {
+        let session = makeTestSession()
+        try session.start()
+        session.newScene(title: "Practice")
+        try session.addSceneRole(name: "Piano")
+        try session.saveScene(title: "Practice", as: "Practice")
+
+        try session.addSceneRole(name: "Basse")
+        try session.createNewScene()
+
+        XCTAssertEqual(session.currentScene?.title, "")
+        XCTAssertNil(session.currentSceneRecordID)
+        try session.useScene(named: "Practice")
+        XCTAssertEqual(session.currentScene?.roles.count, 2, "the second role was saved before switching away")
+    }
+
+    func testCreateNewSceneDiscardsAnAnonymousSceneWithoutSavingIt() throws {
+        let session = makeTestSession()
+        try session.start()
+        session.newScene(title: "")
+        try session.addSceneRole(name: "Piano")
+
+        try session.createNewScene()
+        XCTAssertEqual(session.sceneNames, [], "an anonymous scene is never persisted just by moving on")
+    }
+
+    func testEnsureSceneReadyForLaunchStartsAnonymousSceneWhenNoneAreSaved() throws {
+        let session = makeTestSession()
+        try session.start()
+        session.ensureSceneReadyForLaunch()
+        XCTAssertEqual(session.currentScene?.title, "")
+        XCTAssertNil(session.currentSceneRecordID)
+    }
+
+    func testEnsureSceneReadyForLaunchAutoLoadsTheOnlySavedScene() throws {
+        let schema = Schema([SceneRecord.self])
+        let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
+
+        let session = ImprovSession(modelContainer: container)
+        try session.start()
+        session.newScene(title: "Practice")
+        try session.saveScene(title: "Practice", as: "Practice")
+
+        // A fresh session sharing the same store — nothing active yet, one scene already saved.
+        // Mirrors real launch order (`configureDefaultFolders`): `migrateScenesFromJSONIfNeeded`
+        // refreshes `sceneNames` from the shared store before `ensureSceneReadyForLaunch` reads it.
+        let fresh = ImprovSession(modelContainer: container)
+        try fresh.start()
+        let emptyFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: emptyFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: emptyFolder) }
+        fresh.migrateScenesFromJSONIfNeeded(in: emptyFolder.path)
+        fresh.ensureSceneReadyForLaunch()
+        XCTAssertEqual(fresh.currentScene?.title, "Practice")
+    }
+
+    func testEnsureSceneReadyForLaunchLeavesNoActiveSceneWhenSeveralAreSaved() throws {
+        let schema = Schema([SceneRecord.self])
+        let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
+
+        let session = ImprovSession(modelContainer: container)
+        try session.start()
+        session.newScene(title: "Practice")
+        try session.saveScene(title: "Practice", as: "Practice")
+        session.newScene(title: "Other")
+        try session.saveScene(title: "Other", as: "Other")
+
+        let fresh = ImprovSession(modelContainer: container)
+        try fresh.start()
+        let emptyFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: emptyFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: emptyFolder) }
+        fresh.migrateScenesFromJSONIfNeeded(in: emptyFolder.path)
+        fresh.ensureSceneReadyForLaunch()
+        XCTAssertNil(fresh.currentScene, "several scenes saved — the pick-or-create screen should decide, not an auto-load")
+    }
+
     // MARK: - Color palettes
 
     func testColorPaletteFileRoundTrips() throws {
@@ -2091,58 +2478,51 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertEqual(session.activeColorPalette.colors, PitchClassPalette.hex)
     }
 
-    func testLoadOrCreateColorPalettesWritesBuiltInDefaultsOnFirstRunThenLoadsThem() throws {
+    func testMigrateColorPalettesSeedsBuiltInDefaultsOnFirstRunThenIsIdempotent() throws {
         let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: tempFile) }
-        XCTAssertFalse(FileManager.default.fileExists(atPath: tempFile.path))
 
-        let session = ImprovSession()
-        try session.loadOrCreateColorPalettes(fromJSONFile: tempFile.path)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: tempFile.path))
+        let schema = Schema([ColorPaletteRecord.self])
+        let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
+
+        let session = ImprovSession(modelContainer: container)
+        session.migrateColorPalettesFromJSONIfNeeded(fromJSONFile: tempFile.path)
         XCTAssertEqual(session.colorPalettes, ColorPalette.builtInDefaults)
         XCTAssertEqual(session.activeColorPalette.name, "Default")
 
-        // A second session pointed at the SAME (now-existing) file must not overwrite it —
-        // only ever create it once.
+        // A second session sharing the SAME store must load what's already there, not re-seed.
         try session.selectColorPalette(named: "Pastel")
-        let reloaded = ImprovSession()
-        try reloaded.loadOrCreateColorPalettes(fromJSONFile: tempFile.path)
-        XCTAssertEqual(reloaded.colorPalettes, ColorPalette.builtInDefaults, "loadOrCreateColorPalettes doesn't overwrite an existing file")
+        let reloaded = ImprovSession(modelContainer: container)
+        reloaded.migrateColorPalettesFromJSONIfNeeded(fromJSONFile: tempFile.path)
+        XCTAssertEqual(reloaded.colorPalettes, ColorPalette.builtInDefaults, "migrateColorPalettesFromJSONIfNeeded doesn't re-seed an already-populated store")
     }
 
-    func testLoadOrCreateSpectrogramSettingsWritesDefaultsThenPersistsChanges() throws {
-        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
-        defer { try? FileManager.default.removeItem(at: tempFile) }
-        XCTAssertFalse(FileManager.default.fileExists(atPath: tempFile.path))
+    func testMigrateSpectrogramSettingsSeedsDefaultsThenPersistsChanges() throws {
+        let schema = Schema([SpectrogramSettingsRecord.self])
+        let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
 
-        let session = ImprovSession()
-        try session.loadOrCreateSpectrogramSettings(fromJSONFile: tempFile.path)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: tempFile.path))
+        let session = ImprovSession(modelContainer: container)
+        session.migrateSpectrogramSettingsFromJSONIfNeeded(fromJSONFile: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json").path)
         XCTAssertEqual(session.spectrogramSettings.palette, "thermal")
         XCTAssertFalse(session.spectrogramSettings.showNoteOverlay)
 
-        // `setSpectrogramPalette`/`setSpectrogramShowNoteOverlay` only persist once a settings
-        // folder is known (see `setSettingsFolder`) — exercised end to end via that, not the
-        // bare JSON file, same convention as the Lumi/palette settings.
-        let settingsFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: settingsFolder) }
-        try session.setSettingsFolder(settingsFolder.path)
         try session.setSpectrogramPalette("blue")
         try session.setSpectrogramShowNoteOverlay(true)
         XCTAssertEqual(session.spectrogramSettings.palette, "blue")
         XCTAssertTrue(session.spectrogramSettings.showNoteOverlay)
 
-        let reloaded = ImprovSession()
-        try reloaded.setSettingsFolder(settingsFolder.path)
+        // A second session sharing the SAME store must see the persisted change.
+        let reloaded = ImprovSession(modelContainer: container)
+        reloaded.migrateSpectrogramSettingsFromJSONIfNeeded(fromJSONFile: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json").path)
         XCTAssertEqual(reloaded.spectrogramSettings.palette, "blue")
         XCTAssertTrue(reloaded.spectrogramSettings.showNoteOverlay)
     }
 
     func testSelectColorPaletteByNameAndIndexAndRejectsInvalid() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: tempFile) }
-        try session.loadOrCreateColorPalettes(fromJSONFile: tempFile.path)
+        session.migrateColorPalettesFromJSONIfNeeded(fromJSONFile: tempFile.path)
 
         try session.selectColorPalette(named: "Contraste")
         XCTAssertEqual(session.activeColorPalette.name, "Contraste")
@@ -2162,19 +2542,19 @@ final class ImprovSessionTests: XCTestCase {
         }
     }
 
-    func testLoadColorPalettesThrowsOnEmptyPalettesFile() throws {
-        let session = ImprovSession()
+    func testMigrateColorPalettesFallsBackToBuiltInsOnEmptyPalettesFile() throws {
+        let schema = Schema([ColorPaletteRecord.self])
+        let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
+        let session = ImprovSession(modelContainer: container)
         let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: tempFile) }
         try JSONEncoder().encode(ColorPaletteFile(palettes: [])).write(to: tempFile)
-        XCTAssertThrowsError(try session.loadColorPalettes(fromJSONFile: tempFile.path)) { error in
-            guard case ImprovSession.SessionError.emptyColorPaletteFile = error else {
-                return XCTFail("expected emptyColorPaletteFile, got \(error)")
-            }
-        }
-        // The previous (fallback) palette must still be there — a failed load shouldn't
-        // have cleared anything.
-        XCTAssertEqual(session.colorPalettes.count, 1)
+
+        // An empty (or otherwise unusable) `palettes.json` isn't treated as "nothing to
+        // migrate, seed built-ins" being an error — migration never throws, same as every
+        // other `migrate...FromJSONIfNeeded` in this file.
+        session.migrateColorPalettesFromJSONIfNeeded(fromJSONFile: tempFile.path)
+        XCTAssertEqual(session.colorPalettes, ColorPalette.builtInDefaults)
     }
 
     // MARK: - Sample folder: recursive subfolder scanning
@@ -2254,7 +2634,9 @@ final class ImprovSessionTests: XCTestCase {
     // MARK: - Sound aliases & favorites
 
     func testSetSoundAliasAndFavoritePersistToSoundSettingsFile() throws {
-        let session = ImprovSession()
+        let schema = Schema([SoundEntryRecord.self])
+        let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
+        let session = ImprovSession(modelContainer: container)
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -2269,14 +2651,15 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertTrue(session.isSoundFavorite("Piano.sf2"))
         XCTAssertFalse(session.isSoundFavorite("Cello.sf2"))
 
-        let reloaded = ImprovSession()
+        // A second session sharing the SAME store must see the persisted entries.
+        let reloaded = ImprovSession(modelContainer: container)
         try reloaded.setSettingsFolder(folder.path)
         XCTAssertEqual(reloaded.soundAlias(forPath: "OrchestralLib/Strings/Violin.sf2"), "Violon chaud")
         XCTAssertTrue(reloaded.isSoundFavorite("Piano.sf2"))
     }
 
     func testFavoriteSoundsFiltersSampleFilesToFavoritesOnly() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -2295,7 +2678,7 @@ final class ImprovSessionTests: XCTestCase {
     }
 
     func testFavoriteSoundsDistinguishesPresetsOfTheSameFile() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -2322,7 +2705,7 @@ final class ImprovSessionTests: XCTestCase {
     /// explicit ask, 2026-07-27: a bare file/preset id isn't enough to recognize a favorite in
     /// a picker), and just the alias once one exists.
     func testFavoriteSoundsDisplayNameFallsBackToFileAndSoundNameWithoutAlias() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -2367,7 +2750,7 @@ final class ImprovSessionTests: XCTestCase {
     }
 
     func testDisplayNameForSamplePathFallsBackToPathWithoutAlias() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         XCTAssertEqual(session.displayName(forSamplePath: "Piano.sf2"), "Piano.sf2")
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -2378,7 +2761,7 @@ final class ImprovSessionTests: XCTestCase {
     }
 
     func testSettingAliasToEmptyOrFavoriteToFalseRemovesTheEntryEntirely() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }

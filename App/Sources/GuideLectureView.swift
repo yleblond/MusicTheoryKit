@@ -66,8 +66,8 @@ struct GuideLectureView: View {
             if session.currentGuide == nil {
                 Text(L10n.string(.appPlaceholderAucunGuideActif, session.currentLanguage)).foregroundStyle(.secondary)
                 ActivateOrCreateBlock(
-                    files: session.guideFiles,
-                    onActivate: { try session.loadGuideSequence(named: $0) },
+                    files: session.guideSequenceNames,
+                    onActivate: { try session.useGuideSequence(named: $0) },
                     createButtonLabel: L10n.string(.appButtonCreerUnGuide, session.currentLanguage),
                     createAlertTitle: L10n.string(.appNouveauGuide, session.currentLanguage),
                     createFieldPlaceholder: L10n.string(.appFieldTitreGuide, session.currentLanguage),

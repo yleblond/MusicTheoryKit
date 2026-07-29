@@ -1,3 +1,5 @@
+import SwiftData
+
 /// Persisted LUMI configuration: the two colors + brightness the "run"/"guide" live
 /// displays use, and whether the Run/Guide Musical screens should automatically drive the
 /// LUMI at all (see `ImprovSession.notifyActiveScreen`) rather than needing `lumi-run`/
@@ -37,6 +39,33 @@ public struct LumiSettingsFile: Codable, Equatable {
 /// palette/text-color-contrast math, this one needs `UInt8` specifically for the SysEx
 /// encoder — not worth changing that existing, already-tested helper's signature just to
 /// share four lines.
+/// The SwiftData-backed singleton counterpart of `LumiSettingsFile` — see
+/// `ColorPaletteRecord`'s doc comment for the split rationale shared by every settings record
+/// in this migration wave.
+@Model
+final class LumiSettingsRecord {
+    var rootColorHex: String = "#FF0000"
+    var scaleColorHex: String = "#0000FF"
+    var brightnessPercentage: Int = 100
+    var autoPropagateRunMode: Bool = true
+    var autoPropagateGuideMode: Bool = true
+
+    init(_ file: LumiSettingsFile) {
+        rootColorHex = file.rootColorHex
+        scaleColorHex = file.scaleColorHex
+        brightnessPercentage = file.brightnessPercentage
+        autoPropagateRunMode = file.autoPropagateRunMode
+        autoPropagateGuideMode = file.autoPropagateGuideMode
+    }
+
+    var asLumiSettingsFile: LumiSettingsFile {
+        LumiSettingsFile(
+            rootColorHex: rootColorHex, scaleColorHex: scaleColorHex, brightnessPercentage: brightnessPercentage,
+            autoPropagateRunMode: autoPropagateRunMode, autoPropagateGuideMode: autoPropagateGuideMode
+        )
+    }
+}
+
 public enum LumiColorHex {
     public static func rgb(_ hex: String) -> (red: UInt8, green: UInt8, blue: UInt8)? {
         var digits = hex

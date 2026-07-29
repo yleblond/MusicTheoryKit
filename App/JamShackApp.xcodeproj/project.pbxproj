@@ -17,6 +17,7 @@
 		143F82B51732D9FC35633767 /* GuidePlayIndicationRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EA276BC19892B1D37813D15 /* GuidePlayIndicationRow.swift */; };
 		1481CD1EB22CC7D497D07C5A /* FolderPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */; };
 		1AB02A5A72BD4D7D84652261 /* GuideStepsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95942B8846FAA9B3ED42228B /* GuideStepsSection.swift */; };
+		229D85BA441B10CCDA617FD6 /* RemoteNotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61EB999B2BB050D2A3FD5F3B /* RemoteNotificationDelegate.swift */; };
 		23F3B29DEE343C8962CE837B /* StudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 240AE13F56A89701316555FB /* StudioView.swift */; };
 		2636F5B565CF2E54B614292F /* PlaybackControlButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA393FDD6590DDE0D1E4FAEF /* PlaybackControlButton.swift */; };
 		2697496573116390CEDCD939 /* FileDisplayName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9144B6EB7F1029254BDA64AB /* FileDisplayName.swift */; };
@@ -26,6 +27,7 @@
 		35B050C640C7B52F29632BD7 /* SceneLayoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC498287531CCB5772C1258B /* SceneLayoutView.swift */; };
 		38F537A45F6133BAC6560CE5 /* PlainDataDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */; };
 		3D9A4A9A9A91CE71B7CD7525 /* GuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AE61DA02F48C19951B955F1 /* GuideView.swift */; };
+		3F1965A4076A70B46D629A59 /* RemoteNotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61EB999B2BB050D2A3FD5F3B /* RemoteNotificationDelegate.swift */; };
 		44042629664C9742478E68C8 /* StudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 240AE13F56A89701316555FB /* StudioView.swift */; };
 		499812C7FD4D8433B09B41AA /* FolderPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */; };
 		4B891030B381AABC680DEB7A /* JamShackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5998490361DA6721A074DBB /* JamShackApp.swift */; };
@@ -123,6 +125,7 @@
 		556A46486C82BF4F493BD822 /* GuideEditionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideEditionView.swift; sourceTree = "<group>"; };
 		56783C5791125C49D8104883 /* GameCenterCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterCoordinator.swift; sourceTree = "<group>"; };
 		61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlainDataDocument.swift; sourceTree = "<group>"; };
+		61EB999B2BB050D2A3FD5F3B /* RemoteNotificationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteNotificationDelegate.swift; sourceTree = "<group>"; };
 		74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPickerRow.swift; sourceTree = "<group>"; };
 		83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrophoneControlsView.swift; sourceTree = "<group>"; };
 		85845D37B71BB8E94BC0A6E4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -226,6 +229,7 @@
 				43140D25200D4FC00530C882 /* RecordingFileView.swift */,
 				02ECC889D04105BEF9F10780 /* RecordingIAView.swift */,
 				1190B8CF15C5292002934879 /* RecordingPlayView.swift */,
+				61EB999B2BB050D2A3FD5F3B /* RemoteNotificationDelegate.swift */,
 				2D4854E83A4DBE291EDAA3CC /* SceneFileView.swift */,
 				AC498287531CCB5772C1258B /* SceneLayoutView.swift */,
 				0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */,
@@ -393,6 +397,7 @@
 				EFE1F540F63FE5F86C1CE27B /* RecordingFileView.swift in Sources */,
 				A3FC9F5864E6D9343CFCA9EA /* RecordingIAView.swift in Sources */,
 				05BD6E11AAE63F8B77C2CED7 /* RecordingPlayView.swift in Sources */,
+				3F1965A4076A70B46D629A59 /* RemoteNotificationDelegate.swift in Sources */,
 				E182D86105890618BC2F4355 /* SceneFileView.swift in Sources */,
 				280A9ECBDACA278B699919B9 /* SceneLayoutView.swift in Sources */,
 				8044ABB2BF2C4C7E282F75F7 /* SceneManagementView.swift in Sources */,
@@ -443,6 +448,7 @@
 				7A5A34186E7782C4BB0A0B56 /* RecordingFileView.swift in Sources */,
 				B24C4DD819AD8669CAF3A18D /* RecordingIAView.swift in Sources */,
 				E346B2608CCC23DBE600FD60 /* RecordingPlayView.swift in Sources */,
+				229D85BA441B10CCDA617FD6 /* RemoteNotificationDelegate.swift in Sources */,
 				A42BBCF8F1E99FA7A334C4CF /* SceneFileView.swift in Sources */,
 				35B050C640C7B52F29632BD7 /* SceneLayoutView.swift in Sources */,
 				F6A508097CA52946658B6950 /* SceneManagementView.swift in Sources */,

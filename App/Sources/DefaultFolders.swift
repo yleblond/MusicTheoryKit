@@ -52,11 +52,12 @@ func configureDefaultFolders(in root: URL, session: ImprovSession) {
         try? fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
     }
-    try? session.listPieceFiles(in: ensure("Pieces").path)
+    session.migratePiecesFromJSONIfNeeded(in: ensure("Pieces").path)
     try? session.listSampleFiles(in: ensure("SoundFonts").path)
-    try? session.listSoundTrackFiles(in: ensure("SoundTracks").path)
-    try? session.listGuideFiles(in: ensure("Sequences").path)
-    try? session.listSceneFiles(in: ensure("Scenes").path)
+    session.migrateSoundTracksFromJSONIfNeeded(in: ensure("SoundTracks").path)
+    session.migrateGuideSequencesFromJSONIfNeeded(in: ensure("Sequences").path)
+    session.migrateScenesFromJSONIfNeeded(in: ensure("Scenes").path)
+    session.ensureSceneReadyForLaunch()
     try? session.setPromptsFolder(ensure("Composition IA").path)
     // Also creates/loads `Settings/LLMConnections/` (LLM connection descriptors),
     // `Settings/palettes.json`, `chordprogressions.json`, `language.json`, `lumi.json`,

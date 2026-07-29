@@ -1,3 +1,5 @@
+import SwiftData
+
 /// Persisted role-based note colors, shared by the terminal, the read-only web console, and
 /// the virtual keyboard page — a "role" here is a fixed highlight meaning (mode root, chord
 /// root, held-but-not-in-chord...), not a specific pitch class (see `ColorPalette` for the
@@ -47,5 +49,34 @@ public struct NoteColorSettingsFile: Codable, Equatable {
         self.chordToneHex = chordToneHex
         self.heldNoChordHex = heldNoChordHex
         self.heldOutsideChordHex = heldOutsideChordHex
+    }
+}
+
+/// The SwiftData-backed singleton counterpart of `NoteColorSettingsFile` — see
+/// `ColorPaletteRecord`'s doc comment for the split rationale shared by every settings record
+/// in this migration wave.
+@Model
+final class NoteColorSettingsRecord {
+    var modeRootHex: String = "#ff9800"
+    var modeOtherHex: String = "#00bcd4"
+    var chordRootHex: String = "#e91e63"
+    var chordToneHex: String = "#fdd835"
+    var heldNoChordHex: String = "#ffffff"
+    var heldOutsideChordHex: String = "#4caf50"
+
+    init(_ file: NoteColorSettingsFile) {
+        modeRootHex = file.modeRootHex
+        modeOtherHex = file.modeOtherHex
+        chordRootHex = file.chordRootHex
+        chordToneHex = file.chordToneHex
+        heldNoChordHex = file.heldNoChordHex
+        heldOutsideChordHex = file.heldOutsideChordHex
+    }
+
+    var asNoteColorSettingsFile: NoteColorSettingsFile {
+        NoteColorSettingsFile(
+            modeRootHex: modeRootHex, modeOtherHex: modeOtherHex, chordRootHex: chordRootHex,
+            chordToneHex: chordToneHex, heldNoChordHex: heldNoChordHex, heldOutsideChordHex: heldOutsideChordHex
+        )
     }
 }

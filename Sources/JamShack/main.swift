@@ -96,14 +96,14 @@ let settingsFolder = projectRoot.appendingPathComponent("Settings")
 let userFolder = projectRoot.appendingPathComponent("User")
 let libraryFolder = projectRoot.appendingPathComponent("Library")
 try? session.setSettingsFolder(settingsFolder.path) // palettes.json, chordprogressions.json, LLMConnections/ — creates them if absent
-try? session.listPieceFiles(in: userFolder.appendingPathComponent("Pieces").path)
+session.migratePiecesFromJSONIfNeeded(in: userFolder.appendingPathComponent("Pieces").path)
 try? session.listSampleFiles(in: libraryFolder.appendingPathComponent("SoundFonts").path)
 try? FileManager.default.createDirectory(at: userFolder.appendingPathComponent("SoundTracks"), withIntermediateDirectories: true)
-try? session.listSoundTrackFiles(in: userFolder.appendingPathComponent("SoundTracks").path)
+session.migrateSoundTracksFromJSONIfNeeded(in: userFolder.appendingPathComponent("SoundTracks").path)
 try? FileManager.default.createDirectory(at: userFolder.appendingPathComponent("Sequences"), withIntermediateDirectories: true)
-try? session.listGuideFiles(in: userFolder.appendingPathComponent("Sequences").path)
+session.migrateGuideSequencesFromJSONIfNeeded(in: userFolder.appendingPathComponent("Sequences").path)
 try? FileManager.default.createDirectory(at: userFolder.appendingPathComponent("Scenes"), withIntermediateDirectories: true)
-try? session.listSceneFiles(in: userFolder.appendingPathComponent("Scenes").path)
+session.migrateScenesFromJSONIfNeeded(in: userFolder.appendingPathComponent("Scenes").path)
 try? session.setPromptsFolder(userFolder.appendingPathComponent("Composition IA").path) // creates its fixed subfolders if absent
 
 // Act on `startupOptions` (see its own doc comment above) now that the session/default folders
@@ -127,7 +127,7 @@ if let guidePath = startupOptions.guidePath {
         if FileManager.default.fileExists(atPath: guidePath) {
             try session.loadGuideSequence(fromJSONFile: guidePath)
         } else {
-            try session.loadGuideSequence(named: guidePath)
+            try session.useGuideSequence(named: guidePath)
         }
         try session.startGuide(atStepIndex: 0) // same default step as the interactive `guide-start` command with no argument
         guideLoadedFromCommandLine = true
@@ -141,7 +141,7 @@ if let scenePath = startupOptions.scenePath {
         if FileManager.default.fileExists(atPath: scenePath) {
             try session.loadScene(fromJSONFile: scenePath)
         } else {
-            try session.loadScene(named: scenePath)
+            try session.useScene(named: scenePath)
         }
         sceneLoadedFromCommandLine = true
     } catch { print("Erreur chargement scene : \(error)") }
@@ -151,15 +151,15 @@ if let scenePath = startupOptions.scenePath {
 // picking up a known instrument setup (e.g. "piano solo") shouldn't require knowing the
 // `use-scene`/menu path exists on a first launch. Purely optional: leaving the prompt blank
 // (or any answer that doesn't resolve) just moves on to the normal REPL with nothing loaded.
-if !sceneLoadedFromCommandLine, !session.sceneFiles.isEmpty {
-    print("\nScenes disponibles dans \(session.sceneFolder ?? "?"):")
-    for (index, name) in session.sceneFiles.enumerated() { print("  \(index + 1). \(name)") }
+if !sceneLoadedFromCommandLine, !session.sceneNames.isEmpty {
+    print("\nScenes disponibles :")
+    for (index, name) in session.sceneNames.enumerated() { print("  \(index + 1). \(name)") }
     if let choice = promptLine(L10n.string(.promptChargerSceneDemarrage, session.currentLanguage)), !choice.isEmpty {
         do {
             if let index = Int(choice) {
-                try session.loadScene(atIndex: index - 1)
+                try session.useScene(atIndex: index - 1)
             } else {
-                try session.loadScene(named: choice)
+                try session.useScene(named: choice)
             }
         } catch {
             print("Erreur: \(error)")
@@ -323,7 +323,8 @@ func printSoundTrackDetail() {
         return
     }
     print(TextStyle.heading(soundTrack.title))
-    print(TextStyle.field(L10n.string(.fieldFichier, lang), session.currentSoundTrackFilePath ?? TextStyle.placeholder(L10n.string(.placeholderJamaisSauvegardee, lang))))
+    let savedAs = session.currentSoundTrackRecordID != nil ? session.currentSoundTrack?.title : nil
+    print(TextStyle.field(L10n.string(.fieldFichier, lang), savedAs ?? TextStyle.placeholder(L10n.string(.placeholderJamaisSauvegardee, lang))))
     print(TextStyle.field(L10n.string(.fieldDuree, lang), String(format: "%.1fs", soundTrack.durationSeconds)))
     print(TextStyle.field(L10n.string(.fieldEvenements, lang), "\(soundTrack.events.count)"))
     print(TextStyle.field(L10n.string(.fieldPistes, lang), soundTrack.trackIDs.sorted().joined(separator: ", ")))
@@ -801,7 +802,7 @@ func promptClaimFreeSceneRoleIfNeeded(for trackID: TrackID) {
 func printStatus() {
     let lang = session.currentLanguage
     print(TextStyle.field(L10n.string(.fieldPiece, lang), session.piece.map { $0.title } ?? TextStyle.placeholder(L10n.string(.placeholderAucun, lang))))
-    print(TextStyle.field(L10n.string(.fieldFichier, lang), session.currentPieceFilePath ?? TextStyle.placeholder(L10n.string(.placeholderJamaisSauvegarde, lang))))
+    print(TextStyle.field(L10n.string(.fieldFichier, lang), session.currentPieceRecordID != nil ? (session.piece?.title ?? "") : TextStyle.placeholder(L10n.string(.placeholderJamaisSauvegarde, lang))))
     print(TextStyle.field(L10n.string(.fieldPlaying, lang), TextStyle.flag(session.isPlaying)))
     print(TextStyle.field(L10n.string(.fieldRecording, lang), TextStyle.flag(session.isRecording)))
     print(TextStyle.field(L10n.string(.fieldSoundtrack, lang), session.currentSoundTrack.map { $0.title } ?? TextStyle.placeholder(L10n.string(.placeholderAucune, lang))))
@@ -1087,7 +1088,7 @@ func renderConsoleFrame(mode: ConsoleScreenMode) {
         switch mode {
         case .config:
             line(TextStyle.field(L10n.string(.fieldPiece, lang), session.piece.map { $0.title } ?? TextStyle.placeholder(L10n.string(.placeholderAucun, lang))))
-            line(TextStyle.field(L10n.string(.fieldFichier, lang), session.currentPieceFilePath ?? TextStyle.placeholder(L10n.string(.placeholderJamaisSauvegarde, lang))))
+            line(TextStyle.field(L10n.string(.fieldFichier, lang), session.currentPieceRecordID != nil ? (session.piece?.title ?? "") : TextStyle.placeholder(L10n.string(.placeholderJamaisSauvegarde, lang))))
             line(TextStyle.field(L10n.string(.fieldPlaying, lang), TextStyle.flag(session.isPlaying)))
             line(TextStyle.field(L10n.string(.fieldRecording, lang), TextStyle.flag(session.isRecording)))
             line(TextStyle.field(L10n.string(.fieldSoundtrack, lang), session.currentSoundTrack.map { $0.title } ?? TextStyle.placeholder(L10n.string(.placeholderAucune, lang))))
@@ -1404,16 +1405,15 @@ func executeCommand(_ command: String, _ args: [String]) throws {
     case "load-demo":
         session.loadDemoPiece()
     case "pieces":
-        guard let folder = args.first else { print("usage: pieces <dossier>"); break }
-        try session.listPieceFiles(in: folder)
-        drainLog() // flush "Found N piece file(s)..." before the numbered list
-        for (index, name) in session.pieceFiles.enumerated() { print("  \(index + 1). \(name)") }
+        if let folder = args.first { session.migratePiecesFromJSONIfNeeded(in: folder) }
+        drainLog() // flush "Migrated N piece(s)..." before the numbered list
+        for (index, name) in session.pieceNames.enumerated() { print("  \(index + 1). \(name)") }
     case "use-piece":
-        guard let arg = args.first else { print("usage: use-piece <numero ou nom de fichier>"); break }
+        guard let arg = args.first else { print("usage: use-piece <numero ou nom>"); break }
         if let index = Int(arg) {
-            try session.loadPiece(atIndex: index - 1)
+            try session.usePiece(atIndex: index - 1)
         } else {
-            try session.loadPiece(named: arg)
+            try session.usePiece(named: arg)
         }
     case "load":
         guard let path = args.first else { print("usage: load <path.json>"); break }
@@ -1634,11 +1634,11 @@ func executeCommand(_ command: String, _ args: [String]) throws {
     case "show-description":
         printCompositionDescription()
     case "use-description":
-        guard let arg = args.first else { print("usage: use-description <numero ou nom de fichier>"); break }
+        guard let arg = args.first else { print("usage: use-description <numero ou nom>"); break }
         if let index = Int(arg) {
-            try session.loadCompositionDescription(atIndex: index - 1)
+            try session.useCompositionDescription(atIndex: index - 1)
         } else {
-            try session.loadCompositionDescription(named: arg)
+            try session.useCompositionDescription(named: arg)
         }
     case "save-description":
         try session.saveCompositionDescription()
@@ -1678,13 +1678,13 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         try session.setPromptsFolder(folder)
         drainLog() // flush "Dossier de composition IA: ..." before the numbered lists
         print("Descriptions:")
-        for (index, name) in session.compositionFiles.enumerated() { print("  \(index + 1). \(name)") }
+        for (index, name) in session.compositionDescriptionNames.enumerated() { print("  \(index + 1). \(name)") }
         print("Indications soundtrack:")
-        for (index, name) in session.soundTrackInstructionsFiles.enumerated() { print("  \(index + 1). \(name)") }
+        for (index, name) in session.soundTrackInstructionsNames.enumerated() { print("  \(index + 1). \(name)") }
         print("Cadrage (texte):")
-        for (index, name) in session.textFramingFiles.enumerated() { print("  \(index + 1). \(name)") }
+        for (index, name) in session.textFramingSentenceNames.enumerated() { print("  \(index + 1). \(name)") }
         print("Cadrage (soundtrack):")
-        for (index, name) in session.soundTrackFramingFiles.enumerated() { print("  \(index + 1). \(name)") }
+        for (index, name) in session.soundTrackFramingSentenceNames.enumerated() { print("  \(index + 1). \(name)") }
     case "show-text-prompt":
         print(try session.currentTextCompositionPrompt())
     case "show-soundtrack-prompt":
@@ -1780,16 +1780,15 @@ func executeCommand(_ command: String, _ args: [String]) throws {
     case "play-soundtrack":
         try session.playSoundTrack()
     case "soundtracks":
-        guard let folder = args.first else { print("usage: soundtracks <dossier>"); break }
-        try session.listSoundTrackFiles(in: folder)
-        drainLog() // flush "Found N soundtrack file(s)..." before the numbered list
-        for (index, name) in session.soundTrackFiles.enumerated() { print("  \(index + 1). \(name)") }
+        if let folder = args.first { session.migrateSoundTracksFromJSONIfNeeded(in: folder) }
+        drainLog() // flush "Migrated N soundtrack(s)..." before the numbered list
+        for (index, name) in session.soundTrackNames.enumerated() { print("  \(index + 1). \(name)") }
     case "use-soundtrack":
-        guard let arg = args.first else { print("usage: use-soundtrack <numero ou nom de fichier>"); break }
+        guard let arg = args.first else { print("usage: use-soundtrack <numero ou nom>"); break }
         if let index = Int(arg) {
-            try session.loadSoundTrack(atIndex: index - 1)
+            try session.useSoundTrack(atIndex: index - 1)
         } else {
-            try session.loadSoundTrack(named: arg)
+            try session.useSoundTrack(named: arg)
         }
     case "save-soundtrack":
         if let path = args.first {
@@ -1824,10 +1823,9 @@ func executeCommand(_ command: String, _ args: [String]) throws {
     case "guide":
         runConsoleScreen(mode: .guide)
     case "guides":
-        guard let folder = args.first else { print("usage: guides <dossier>"); break }
-        try session.listGuideFiles(in: folder)
+        if let folder = args.first { session.migrateGuideSequencesFromJSONIfNeeded(in: folder) }
         drainLog()
-        for (index, name) in session.guideFiles.enumerated() { print("  \(index + 1). \(name)") }
+        for (index, name) in session.guideSequenceNames.enumerated() { print("  \(index + 1). \(name)") }
     case "guide-new":
         guard let title = args.first else { print("usage: guide-new <titre>"); break }
         session.newGuideSequence(title: title)
@@ -1839,11 +1837,11 @@ func executeCommand(_ command: String, _ args: [String]) throws {
         let progression = args.count >= 3 ? resolvedChordProgressionTemplate(args[2]) : nil
         try session.addGuideStep(reference, chordProgression: progression)
     case "use-guide":
-        guard let arg = args.first else { print("usage: use-guide <numero ou nom de fichier>"); break }
+        guard let arg = args.first else { print("usage: use-guide <numero ou nom>"); break }
         if let index = Int(arg) {
-            try session.loadGuideSequence(atIndex: index - 1)
+            try session.useGuideSequence(atIndex: index - 1)
         } else {
-            try session.loadGuideSequence(named: arg)
+            try session.useGuideSequence(named: arg)
         }
     case "save-guide":
         if let path = args.first {
@@ -1860,16 +1858,15 @@ func executeCommand(_ command: String, _ args: [String]) throws {
     case "guide-stop":
         session.stopGuide()
     case "scenes":
-        guard let folder = args.first else { print("usage: scenes <dossier>"); break }
-        try session.listSceneFiles(in: folder)
+        if let folder = args.first { session.migrateScenesFromJSONIfNeeded(in: folder) }
         drainLog()
-        for (index, name) in session.sceneFiles.enumerated() { print("  \(index + 1). \(name)") }
+        for (index, name) in session.sceneNames.enumerated() { print("  \(index + 1). \(name)") }
     case "use-scene":
-        guard let arg = args.first else { print("usage: use-scene <numero ou nom de fichier>"); break }
+        guard let arg = args.first else { print("usage: use-scene <numero ou nom>"); break }
         if let index = Int(arg) {
-            try session.loadScene(atIndex: index - 1)
+            try session.useScene(atIndex: index - 1)
         } else {
-            try session.loadScene(named: arg)
+            try session.useScene(named: arg)
         }
     case "save-scene":
         guard let name = args.first else { print("usage: save-scene <nom>"); break }
@@ -2093,8 +2090,8 @@ func buildMenuCategories(for lang: AppLanguage) -> [MenuCategory] {
             try executeCommand("save-scene", [name])
         },
         MenuItem(label: L10n.string(.menuChargerScene, lang)) {
-            guard !session.sceneFiles.isEmpty else { print("Choisis d'abord un dossier de scenes (menu JamShack)."); return }
-            for (index, name) in session.sceneFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard !session.sceneNames.isEmpty else { print("Aucune scene enregistree pour l'instant."); return }
+            for (index, name) in session.sceneNames.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine(L10n.string(.promptChargerQuelleScene, lang)), !choice.isEmpty else { return }
             try executeCommand("use-scene", [choice])
         },
@@ -2162,8 +2159,8 @@ func buildMenuCategories(for lang: AppLanguage) -> [MenuCategory] {
         },
         MenuItem.separator,
         MenuItem(label: L10n.string(.menuChargerGuideMusical, lang)) {
-            guard !session.guideFiles.isEmpty else { print("Choisis d'abord un dossier de guides musicaux."); return }
-            for (index, name) in session.guideFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard !session.guideSequenceNames.isEmpty else { print("Aucun guide musical enregistre pour l'instant."); return }
+            for (index, name) in session.guideSequenceNames.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine(L10n.string(.promptChargerQuelleSequence, lang)), !choice.isEmpty else { return }
             try executeCommand("use-guide", [choice])
         },
@@ -2187,8 +2184,8 @@ func buildMenuCategories(for lang: AppLanguage) -> [MenuCategory] {
         MenuItem(label: L10n.string(.menuJouerEnregistrement, lang)) { try executeCommand("play-soundtrack", []) },
         MenuItem.separator,
         MenuItem(label: L10n.string(.menuChargerEnregistrement, lang)) {
-            guard !session.soundTrackFiles.isEmpty else { print("Choisis d'abord un dossier de soundtracks (menu JamShack)."); return }
-            for (index, name) in session.soundTrackFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard !session.soundTrackNames.isEmpty else { print("Aucun enregistrement sauvegarde pour l'instant."); return }
+            for (index, name) in session.soundTrackNames.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine(L10n.string(.promptChargerQuelEnregistrement, lang)), !choice.isEmpty else { return }
             try executeCommand("use-soundtrack", [choice])
         },
@@ -2213,8 +2210,8 @@ func buildMenuCategories(for lang: AppLanguage) -> [MenuCategory] {
             try executeCommand("save-soundtrack-framing", [name])
         },
         MenuItem(label: L10n.string(.menuChargerPhraseDeCadrage, lang)) {
-            guard !session.soundTrackFramingFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu JamShack)."); return }
-            for (index, name) in session.soundTrackFramingFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard !session.soundTrackFramingSentenceNames.isEmpty else { print("Aucune phrase de cadrage sauvegardee pour l'instant."); return }
+            for (index, name) in session.soundTrackFramingSentenceNames.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine(L10n.string(.promptChargerQuellePhraseDeCadrage, lang)), !choice.isEmpty else { return }
             try executeCommand("use-soundtrack-framing", [choice])
         },
@@ -2230,8 +2227,8 @@ func buildMenuCategories(for lang: AppLanguage) -> [MenuCategory] {
             try executeCommand("save-soundtrack-instructions", [name])
         },
         MenuItem(label: L10n.string(.menuChargerIndicationsStyle, lang)) {
-            guard !session.soundTrackInstructionsFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu JamShack)."); return }
-            for (index, name) in session.soundTrackInstructionsFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard !session.soundTrackInstructionsNames.isEmpty else { print("Aucune indication de style sauvegardee pour l'instant."); return }
+            for (index, name) in session.soundTrackInstructionsNames.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine(L10n.string(.promptChargerQuellesIndications, lang)), !choice.isEmpty else { return }
             try executeCommand("use-soundtrack-instructions", [choice])
         },
@@ -2273,8 +2270,8 @@ func buildMenuCategories(for lang: AppLanguage) -> [MenuCategory] {
         MenuItem.separator,
         MenuItem(label: L10n.string(.menuChargerDemo, lang)) { try executeCommand("load-demo", []) },
         MenuItem(label: L10n.string(.menuChargerMorceau, lang)) {
-            guard !session.pieceFiles.isEmpty else { print("Choisis d'abord un dossier de morceaux (menu JamShack)."); return }
-            for (index, name) in session.pieceFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard !session.pieceNames.isEmpty else { print("Aucun morceau sauvegarde pour l'instant."); return }
+            for (index, name) in session.pieceNames.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine(L10n.string(.promptChargerQuelMorceau, lang)), !choice.isEmpty else { return }
             try executeCommand("use-piece", [choice])
         },
@@ -2302,8 +2299,8 @@ func buildMenuCategories(for lang: AppLanguage) -> [MenuCategory] {
         MenuItem(label: L10n.string(.menuVoirDescription, lang)) { try executeCommand("show-description", []) },
         MenuItem.separator,
         MenuItem(label: L10n.string(.menuChargerDescription, lang)) {
-            guard !session.compositionFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu JamShack)."); return }
-            for (index, name) in session.compositionFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard !session.compositionDescriptionNames.isEmpty else { print("Aucune description sauvegardee pour l'instant."); return }
+            for (index, name) in session.compositionDescriptionNames.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine(L10n.string(.promptChargerQuelleDescription, lang)), !choice.isEmpty else { return }
             try executeCommand("use-description", [choice])
         },
@@ -2320,8 +2317,8 @@ func buildMenuCategories(for lang: AppLanguage) -> [MenuCategory] {
             try executeCommand("save-text-framing", [name])
         },
         MenuItem(label: L10n.string(.menuChargerPhraseDeCadrage, lang)) {
-            guard !session.textFramingFiles.isEmpty else { print("Choisis d'abord un dossier de composition IA (menu JamShack)."); return }
-            for (index, name) in session.textFramingFiles.enumerated() { print("  \(index + 1). \(name)") }
+            guard !session.textFramingSentenceNames.isEmpty else { print("Aucune phrase de cadrage sauvegardee pour l'instant."); return }
+            for (index, name) in session.textFramingSentenceNames.enumerated() { print("  \(index + 1). \(name)") }
             guard let choice = promptLine(L10n.string(.promptChargerQuellePhraseDeCadrage, lang)), !choice.isEmpty else { return }
             try executeCommand("use-text-framing", [choice])
         },

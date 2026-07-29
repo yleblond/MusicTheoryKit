@@ -1,6 +1,7 @@
 import Foundation
 import MusicTheoryKit
 import PieceModel
+import SwiftData
 
 /// A named, mode-independent chord progression written in roman-numeral degree notation (see
 /// `MusicTheoryKit.RomanNumeralChord` for the exact parsing rules) — e.g. `["I", "IV", "V", "I"]`.
@@ -41,4 +42,24 @@ public struct ChordProgressionTemplate: Codable, Equatable, Sendable {
 /// document per file).
 struct ChordProgressionTemplateFile: Codable {
     var progressions: [ChordProgressionTemplate]
+}
+
+/// The SwiftData-backed counterpart of `ChordProgressionTemplate` — see `ColorPaletteRecord`'s
+/// doc comment for the split rationale shared by every settings record in this migration wave.
+@Model
+final class ChordProgressionTemplateRecord {
+    var name: String = ""
+    var degrees: [String] = []
+    /// Preserves list order across a fetch — see `ColorPaletteRecord.sortOrder`'s doc comment.
+    var sortOrder: Int = 0
+
+    init(_ template: ChordProgressionTemplate, sortOrder: Int) {
+        name = template.name
+        degrees = template.degrees
+        self.sortOrder = sortOrder
+    }
+
+    var asChordProgressionTemplate: ChordProgressionTemplate {
+        ChordProgressionTemplate(name: name, degrees: degrees)
+    }
 }

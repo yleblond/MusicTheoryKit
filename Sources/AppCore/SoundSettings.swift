@@ -1,5 +1,6 @@
 import Foundation
 import SoundFontModel
+import SwiftData
 
 /// One sound's user-assigned metadata: an optional friendlier alias (decompressed sound
 /// libraries often have cryptic/technical .sf2 filenames) and whether it's a favorite. `path`
@@ -34,4 +35,34 @@ public struct SoundEntry: Codable, Equatable, Sendable {
 /// `ColorPaletteFile`/`palettes.json`.
 struct SoundSettingsFile: Codable {
     var sounds: [SoundEntry]
+}
+
+/// The SwiftData-backed counterpart of `SoundEntry` — see `ColorPaletteRecord`'s doc comment
+/// for the split rationale shared by every settings record in this migration wave.
+/// `SoundFontPresetIdentity` (program/bank) is flattened into two optional `Int` fields rather
+/// than stored as a nested Codable attribute, mirroring the "flatten to primitives" convention
+/// used for `Scene`'s `InstrumentIdentityHint` elsewhere in this migration.
+@Model
+final class SoundEntryRecord {
+    var path: String = ""
+    var alias: String?
+    var isFavorite: Bool = false
+    var presetProgram: Int?
+    var presetBank: Int?
+
+    init(_ entry: SoundEntry) {
+        path = entry.path
+        alias = entry.alias
+        isFavorite = entry.isFavorite
+        presetProgram = entry.preset.map { Int($0.program) }
+        presetBank = entry.preset.map { Int($0.bank) }
+    }
+
+    var asSoundEntry: SoundEntry {
+        let preset: SoundFontPresetIdentity? = {
+            guard let presetProgram, let presetBank else { return nil }
+            return SoundFontPresetIdentity(program: UInt16(presetProgram), bank: UInt16(presetBank))
+        }()
+        return SoundEntry(path: path, alias: alias, isFavorite: isFavorite, preset: preset)
+    }
 }

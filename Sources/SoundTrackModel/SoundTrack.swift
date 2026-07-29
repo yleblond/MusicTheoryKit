@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// One raw note on/off, as it actually happened during a recording — `timeSeconds` is
 /// elapsed time since the recording started (not a measure/beat, unlike `PieceModel`'s
@@ -45,5 +46,31 @@ public struct SoundTrack: Codable, Identifiable, Equatable, Sendable {
     /// recording has clavier + midi:1") without scanning `events` by hand each time.
     public var trackIDs: Set<String> {
         Set(events.map(\.trackID))
+    }
+}
+
+/// The SwiftData-backed counterpart of `SoundTrack` — same split as `LLMConnectionRecord`/
+/// `LLMConnection` and `GuideSequenceRecord`/`GuideSequence`: the stable value type stays
+/// exactly what the rest of the app already works with, this type only exists to give it a
+/// CloudKit-syncable row (see `ImprovSession.migrateSoundTracksFromJSONIfNeeded`).
+/// `durationSeconds` stays a flat column (in addition to being inside `encodedSoundTrack`) so
+/// a list can show it without decoding the whole event blob. Unlike `GuideSequence`/`Scene`,
+/// `SoundTrack` already has its own stable `id` — reused as-is, no synthesized UUID needed.
+@Model
+public final class SoundTrackRecord {
+    public var id: String = ""
+    public var title: String = ""
+    public var durationSeconds: Double = 0
+    public var encodedSoundTrack: Data = Data()
+
+    public init(_ soundTrack: SoundTrack) {
+        id = soundTrack.id
+        title = soundTrack.title
+        durationSeconds = soundTrack.durationSeconds
+        encodedSoundTrack = (try? JSONEncoder().encode(soundTrack)) ?? Data()
+    }
+
+    public var asSoundTrack: SoundTrack? {
+        try? JSONDecoder().decode(SoundTrack.self, from: encodedSoundTrack)
     }
 }

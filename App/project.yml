@@ -34,6 +34,13 @@ targets:
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+        # Lets CloudKit wake this app via silent push when another device changes something in
+        # the shared container, instead of only syncing on a schedule/next foreground — see
+        # `RemoteNotificationDelegate.swift` and `ImprovSession.startObservingRemoteStoreChanges`.
+        # iOS-only concept (harmless to declare on the shared multiplatform target, same
+        # tolerance as `com.apple.security.files.user-selected.read-write` below).
+        UIBackgroundModes:
+          - remote-notification
     settings:
       base:
         ENABLE_HARDENED_RUNTIME: YES
@@ -63,7 +70,8 @@ targets:
         # has no equivalent entitlement key), but harmless to declare on both since XcodeGen
         # applies the same entitlements dict to the single multiplatform target.
         com.apple.security.files.user-selected.read-write: true
-        # LLM connections sync via CloudKit (see ImprovSession.llmModelContainer) — both
+        # LLM connections and every other Settings category sync via CloudKit (see
+        # ImprovSession.modelContainer) — both
         # platform bundle IDs (`-macOS`/`-iOS`, distinct on purpose) must point at this SAME
         # explicit container identifier for data to sync between them; Xcode's Signing &
         # Capabilities UI defaults to a per-bundle-ID container unless told otherwise. Like
@@ -75,6 +83,15 @@ targets:
           - iCloud.com.jamshack.JamShackApp
         com.apple.developer.icloud-services:
           - CloudKit
+        # Push Notifications capability, needed for the silent push declared via
+        # `UIBackgroundModes: remote-notification` above. Like the iCloud container entitlement
+        # right above it, this alone makes `xcodebuild` demand a real provisioning profile — a
+        # local ad-hoc "Sign to Run Locally" build needs a `DEVELOPMENT_TEAM` set first (same
+        # standing requirement as the rest of CloudKit sync). `development` here is deliberate,
+        # not a placeholder: a real App Store/TestFlight build's own provisioning profile swaps
+        # this to `production` automatically at sign time — this file is never touched again
+        # for that.
+        aps-environment: development
         # Game Center matchmaking (JamSessionView's "Jam Game Center" modes) needs
         # `com.apple.developer.game-center: true` here PLUS the capability enabled for this
         # app's App ID at developer.apple.com. Deliberately NOT added to this file: unlike

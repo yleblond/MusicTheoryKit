@@ -3,8 +3,8 @@ import AppCore
 import Localization
 
 /// "Fichier" sub-tab of the Guide tab: create a new guide, see which one is active, and the
-/// folder-based guide browser (list/load/save-into-folder — the folder itself is picked from
-/// the "JamShack" tab's "Dossiers" sub-tab).
+/// store-based guide browser (list/load/save/delete — guide sequences live in a private
+/// SwiftData store, no folder to pick anymore).
 struct GuideFileView: View {
     let session: ImprovSession
     /// Called after a guide is actually loaded from the folder — `GuideView` switches to the
@@ -53,26 +53,40 @@ struct GuideFileView: View {
     @ViewBuilder
     private var folderSection: some View {
         Section {
-            if session.guideFiles.isEmpty {
+            if session.guideSequenceNames.isEmpty {
                 Text(L10n.string(.appPlaceholderAucunDossierGuides, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
             } else {
-                ForEach(session.guideFiles, id: \.self) { name in
-                    Button(name.strippingJSONExtension) {
-                        do {
-                            try session.loadGuideSequence(named: name)
-                            onLoaded()
-                        } catch {
-                            actionError = "\(error)"
+                ForEach(Array(session.guideSequenceNames.enumerated()), id: \.offset) { index, name in
+                    HStack {
+                        Button(name) {
+                            do {
+                                try session.useGuideSequence(named: name)
+                                onLoaded()
+                            } catch {
+                                actionError = "\(error)"
+                            }
                         }
+                        Spacer()
+                        Button {
+                            do {
+                                try session.deleteGuideSequence(atIndex: index)
+                            } catch {
+                                actionError = "\(error)"
+                            }
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.red)
                     }
                 }
-                if session.currentGuide != nil {
-                    Button(L10n.string(.appButtonSauvegarderDansCeDossier, session.currentLanguage)) {
-                        do {
-                            try session.saveGuideSequence(as: (session.currentGuide?.title ?? L10n.string(.headingGuide, session.currentLanguage)) + ".json")
-                        } catch {
-                            actionError = "\(error)"
-                        }
+            }
+            if session.currentGuide != nil {
+                Button(L10n.string(.appButtonSauvegarderDansCeDossier, session.currentLanguage)) {
+                    do {
+                        try session.saveGuideSequence(as: session.currentGuide?.title ?? L10n.string(.headingGuide, session.currentLanguage))
+                    } catch {
+                        actionError = "\(error)"
                     }
                 }
             }

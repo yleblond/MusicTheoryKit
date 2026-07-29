@@ -3,8 +3,8 @@ import AppCore
 import Localization
 
 /// "Fichier" sub-tab of the Morceaux tab: which piece is loaded, the demo piece, and the
-/// folder-based piece browser (list/load/save-into-folder). Playback lives in the "Play"
-/// sub-tab.
+/// store-based piece browser (list/load/save/delete — pieces live in a private SwiftData
+/// store, no folder to pick anymore). Playback lives in the "Play" sub-tab.
 struct PiecesFileView: View {
     let session: ImprovSession
     /// Called after a piece is actually loaded (demo or from the folder) — `PiecesView`
@@ -48,26 +48,40 @@ struct PiecesFileView: View {
     @ViewBuilder
     private var folderSection: some View {
         Section {
-            if session.pieceFiles.isEmpty {
+            if session.pieceNames.isEmpty {
                 Text(L10n.string(.appPlaceholderAucunDossierMorceaux, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
             } else {
-                ForEach(session.pieceFiles, id: \.self) { name in
-                    Button(name.strippingJSONExtension) {
-                        do {
-                            try session.loadPiece(named: name)
-                            onLoaded()
-                        } catch {
-                            actionError = "\(error)"
+                ForEach(Array(session.pieceNames.enumerated()), id: \.offset) { index, name in
+                    HStack {
+                        Button(name) {
+                            do {
+                                try session.usePiece(named: name)
+                                onLoaded()
+                            } catch {
+                                actionError = "\(error)"
+                            }
                         }
+                        Spacer()
+                        Button {
+                            do {
+                                try session.deletePiece(atIndex: index)
+                            } catch {
+                                actionError = "\(error)"
+                            }
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.red)
                     }
                 }
-                if session.piece != nil {
-                    Button(L10n.string(.appButtonSauvegarderDansCeDossier, session.currentLanguage)) {
-                        do {
-                            try session.savePiece(as: (session.piece?.title ?? L10n.string(.appDefaultMorceauFilename, session.currentLanguage)) + ".json")
-                        } catch {
-                            actionError = "\(error)"
-                        }
+            }
+            if session.piece != nil {
+                Button(L10n.string(.appButtonSauvegarderDansCeDossier, session.currentLanguage)) {
+                    do {
+                        try session.savePiece(as: session.piece?.title ?? L10n.string(.appDefaultMorceauFilename, session.currentLanguage))
+                    } catch {
+                        actionError = "\(error)"
                     }
                 }
             }

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// Persisted spectrogram display preferences (palette, note overlay) — same "singleton JSON in
 /// the settings folder" shape as `LumiSettingsFile`/`NoteColorSettingsFile`. `palette` is a raw
@@ -16,5 +17,23 @@ public struct SpectrogramSettingsFile: Codable, Equatable, Sendable {
     public init(palette: String = "thermal", showNoteOverlay: Bool = false) {
         self.palette = palette
         self.showNoteOverlay = showNoteOverlay
+    }
+}
+
+/// The SwiftData-backed singleton counterpart of `SpectrogramSettingsFile` — see
+/// `ColorPaletteRecord`'s doc comment for the split rationale shared by every settings record
+/// in this migration wave.
+@Model
+final class SpectrogramSettingsRecord {
+    var palette: String = "thermal"
+    var showNoteOverlay: Bool = false
+
+    init(_ file: SpectrogramSettingsFile) {
+        palette = file.palette
+        showNoteOverlay = file.showNoteOverlay
+    }
+
+    var asSpectrogramSettingsFile: SpectrogramSettingsFile {
+        SpectrogramSettingsFile(palette: palette, showNoteOverlay: showNoteOverlay)
     }
 }

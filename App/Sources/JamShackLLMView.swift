@@ -38,10 +38,10 @@ struct JamShackLLMView: View {
         #if os(macOS)
         .formStyle(.grouped)
         #endif
-        .onAppear { apiKeyInput = session.llmAPIKeys.keysByEnvVar[session.currentLLMConnection?.apiKeyEnvVar ?? ""] ?? "" }
+        .onAppear { apiKeyInput = session.currentLLMConnection?.apiKeyEnvVar.flatMap(session.llmAPIKey(forEnvVar:)) ?? "" }
         .onChange(of: session.currentLLMConnection?.apiKeyEnvVar) { _, envVar in
             apiKeySaveMessage = nil
-            apiKeyInput = session.llmAPIKeys.keysByEnvVar[envVar ?? ""] ?? ""
+            apiKeyInput = envVar.flatMap(session.llmAPIKey(forEnvVar:)) ?? ""
         }
     }
 

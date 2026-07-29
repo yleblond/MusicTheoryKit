@@ -11,12 +11,21 @@ import Localization
 /// instrument in (`attachInstrument` already displaces whatever was there, freeing it, so this
 /// is just exposing a capability the session already had) — and offers "Ajouter un role..." to
 /// create one on the spot instead of needing to visit the roles panel first.
+///
+/// A plain, borderless title `TextField` sits above the two columns when a scene is active —
+/// typing a name and moving focus away calls `renameCurrentScene(to:)`, which both renames an
+/// already-saved scene in place and performs the FIRST save of a brand-new anonymous scene (no
+/// separate "give it a name" dialog). `titleDraft` mirrors `scene.title` via `.onChange` rather
+/// than via a `.task(id:)`-style keyed reset, specifically so it also resets correctly when
+/// switching from one anonymous scene to another new one (both have no record id to key on).
 struct SceneLayoutView: View {
     let session: ImprovSession
 
     @State private var newRoleName = ""
     @State private var showNewRoleAlert = false
     @State private var actionError: String?
+    @State private var titleDraft = ""
+    @FocusState private var titleFieldFocused: Bool
 
     private var scene: AppCore.Scene? { session.currentScene }
 
@@ -29,8 +38,8 @@ struct SceneLayoutView: View {
                     Text(L10n.string(.appHintActiveSceneExistante, session.currentLanguage))
                 } actions: {
                     ActivateOrCreateBlock(
-                        files: session.sceneFiles,
-                        onActivate: { try session.loadScene(named: $0) },
+                        files: session.sceneNames,
+                        onActivate: { try session.useScene(named: $0) },
                         createButtonLabel: L10n.string(.appButtonCreerUneScene, session.currentLanguage),
                         createAlertTitle: L10n.string(.appNouvelleScene, session.currentLanguage),
                         createFieldPlaceholder: L10n.string(.appFieldNomScene, session.currentLanguage),
@@ -38,10 +47,30 @@ struct SceneLayoutView: View {
                         language: session.currentLanguage
                     )
                 }
-            } else {
+            } else if let scene {
                 VStack(spacing: 0) {
                     if let actionError {
                         Text(actionError).foregroundStyle(.red).font(.caption).padding(.horizontal)
+                    }
+                    TextField(
+                        L10n.string(.appPlaceholderSceneSansNom, session.currentLanguage),
+                        text: $titleDraft
+                    )
+                    .font(.title2.bold())
+                    .textFieldStyle(.plain)
+                    .focused($titleFieldFocused)
+                    .padding([.horizontal, .top])
+                    .onAppear { titleDraft = scene.title }
+                    .onChange(of: scene.title) { _, newValue in
+                        if !titleFieldFocused { titleDraft = newValue }
+                    }
+                    .onChange(of: titleFieldFocused) { wasFocused, isFocused in
+                        guard wasFocused, !isFocused, titleDraft != scene.title, !titleDraft.isEmpty else { return }
+                        do {
+                            try session.renameCurrentScene(to: titleDraft)
+                        } catch {
+                            actionError = "\(error)"
+                        }
                     }
                     HStack(alignment: .top, spacing: 0) {
                         Form { unassignedInstrumentsSection }

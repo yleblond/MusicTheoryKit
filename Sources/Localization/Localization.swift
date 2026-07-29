@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// The UI display language — independent of command names/syntax, which are never translated.
 /// French is the authored reference language; every other case is a translation of it.
@@ -13,6 +14,23 @@ public struct LanguageSettingFile: Codable {
     public var language: AppLanguage
     public init(language: AppLanguage) {
         self.language = language
+    }
+}
+
+/// The SwiftData-backed singleton counterpart of `LanguageSettingFile` — see
+/// `AppCore.ColorPaletteRecord`'s doc comment for the split rationale shared by every settings
+/// record in this migration wave. `language` is the raw `AppLanguage` string, not the enum
+/// itself, so a future language added to `AppLanguage` never requires a schema migration.
+@Model
+public final class LanguageSettingRecord {
+    public var language: String = AppLanguage.fr.rawValue
+
+    public init(_ language: AppLanguage) {
+        self.language = language.rawValue
+    }
+
+    public var asAppLanguage: AppLanguage {
+        AppLanguage(rawValue: language) ?? .fr
     }
 }
 
@@ -221,12 +239,12 @@ public enum L10nKey: String, CaseIterable, Sendable {
 
     // MARK: - App: JamShack > Dossiers (FolderPickerRow + JamShackFoldersView)
     case appFormatFichiersTrouves
-    case appHeadingContenus, appHeadingConfiguration, appHintCreeSousDossiers
+    case appHeadingConfiguration, appHintCreeSousDossiers
     case appHeadingDossiersParDefaut, appHintDossiersParDefautDetail
     case appButtonChoisirCreerDossierJamShack, appButtonChangerDossierJamShack
     case appButtonChoisir, appHintChoisisCreeDossierJamShack
-    case appLabelDossierCompositionIA, appLabelDossierGuides, appLabelDossierReglages
-    case appLabelDossierScenes, appLabelDossierSoundtracks, appLabelDossierSons
+    case appLabelDossierCompositionIA, appLabelDossierReglages
+    case appLabelDossierSons
 
     // MARK: - App: Guide tab (Fichier/Edition/Lecture sub-tabs)
     case appPlaceholderAucunGuideActif, appPlaceholderAucunGuideActifPoint
@@ -256,10 +274,11 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHeadingCompositionIADepuisEnregistrement, appHintUtiliseConnexionLLMEtDossier
 
     // MARK: - App: Scene tab (Fichier/Disposition sub-tabs)
-    case appPlaceholderAucuneSceneActivePoint, appButtonRechargerScene, appHintRechargeScene
+    case appButtonRechargerScene, appHintRechargeScene
     case appPlaceholderAucunDossierScenes, appHeadingDossierScenes
-    case appButtonExporter, appButtonImporter, appHeadingFichierUnique, appHintPartagerScene
+    case appButtonExporter, appButtonImporter
     case appLabelAucuneSceneActiveCourt, appHintActiveSceneExistante, appButtonCreerUneScene, appFieldNomScene
+    case appButtonRenommer, appAlertRenommerScene, appPlaceholderSceneSansNom
     case appAlertNouveauRole, appPlaceholderNomExPiano1, appButtonAjouter
     case appPlaceholderTousInstrumentsAffectes, appHeadingInstrumentsNonAffectes
     case appButtonAjouterUnRole, appButtonAjouterUnRoleEllipsis, appButtonCreerEtAttacher

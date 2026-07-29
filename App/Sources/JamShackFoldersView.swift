@@ -6,11 +6,12 @@ import Localization
 import AppKit
 #endif
 
-/// First sub-tab of the "JamShack" tab: pick every folder the app needs, mirroring the CLI's
-/// own `catJamShack` menu category one-for-one (morceaux/sons/soundtracks/guides/scenes/
-/// reglages/composition IA) — the single place all seven live now, instead of one-off pickers
-/// scattered per screen (which is what left the scene folder with no way to browse it after
-/// the scene screen was switched to single-file export/import).
+/// First sub-tab of the "JamShack" tab: pick every folder the app still needs a real
+/// user-chosen location for. Pieces/scenes/guides/soundtracks/composition descriptions/prompt
+/// snippets all moved to a private SwiftData store (no folder to pick anymore, see each
+/// feature's own `migrate...FromJSONIfNeeded`) — only sounds (soundfont files, which stay
+/// files on purpose), settings (a one-time migration source), and composition IA (its `Export`
+/// subfolder still needs a real location) still have a folder concept here.
 struct JamShackFoldersView: View {
     let session: ImprovSession
 
@@ -21,34 +22,6 @@ struct JamShackFoldersView: View {
     var body: some View {
         Form {
             defaultFoldersSection
-            Section {
-                FolderPickerRow(
-                    title: L10n.string(.catMorceaux, session.currentLanguage),
-                    currentPath: session.pieceFolder,
-                    fileCount: session.pieceFiles.isEmpty ? nil : session.pieceFiles.count,
-                    language: session.currentLanguage
-                ) { try session.listPieceFiles(in: $0) }
-                FolderPickerRow(
-                    title: L10n.string(.appLabelDossierSoundtracks, session.currentLanguage),
-                    currentPath: session.soundTrackFolder,
-                    fileCount: session.soundTrackFiles.isEmpty ? nil : session.soundTrackFiles.count,
-                    language: session.currentLanguage
-                ) { try session.listSoundTrackFiles(in: $0) }
-                FolderPickerRow(
-                    title: L10n.string(.appLabelDossierGuides, session.currentLanguage),
-                    currentPath: session.guideFolder,
-                    fileCount: session.guideFiles.isEmpty ? nil : session.guideFiles.count,
-                    language: session.currentLanguage
-                ) { try session.listGuideFiles(in: $0) }
-                FolderPickerRow(
-                    title: L10n.string(.appLabelDossierScenes, session.currentLanguage),
-                    currentPath: session.sceneFolder,
-                    fileCount: session.sceneFiles.isEmpty ? nil : session.sceneFiles.count,
-                    language: session.currentLanguage
-                ) { try session.listSceneFiles(in: $0) }
-            } header: {
-                Text(L10n.string(.appHeadingContenus, session.currentLanguage))
-            }
             Section {
                 FolderPickerRow(
                     title: L10n.string(.appLabelDossierSons, session.currentLanguage),

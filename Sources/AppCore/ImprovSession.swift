@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftData
+import CoreData
 import Localization
 import MusicTheoryKit
 import PieceModel
@@ -85,18 +86,22 @@ public final class ImprovSession: @unchecked Sendable {
     /// `sampleFiles` — see `SoundEntry`/`setSoundAlias`/`setSoundFavorite`/`favoriteSampleFiles`.
     /// Persisted to `sound-settings.json`, only entries the user has actually touched.
     public private(set) var soundEntries: [SoundEntry] = []
-    /// The folder last listed with `listPieceFiles`, and the `.json` piece files found in
-    /// it — mirrors `sampleFolder`/`sampleFiles`.
-    public private(set) var pieceFolder: String?
-    public private(set) var pieceFiles: [String] = []
-    /// Full path the current `piece` was last loaded from or saved to — what a bare
-    /// `savePiece()` (no name) re-saves to. `nil` until a load/save-as has happened once.
-    public private(set) var currentPieceFilePath: String?
+    /// Every piece's title currently in the SwiftData store, sorted — mirrors
+    /// `guideSequenceNames`. Refreshed after every migrate/insert/update/delete.
+    public private(set) var pieceNames: [String] = []
+    /// The `PieceRecord.id` `piece` was last loaded from/saved to — what a bare `savePiece()`
+    /// (no name) re-saves to. `nil` until a load/save-as has happened once. Replaces the old
+    /// file-path-based `currentPieceFilePath` now that pieces live in SwiftData, not files.
+    public private(set) var currentPieceRecordID: String?
     /// The currently authored/loaded mode sequence for the Guide screen (see `startGuide`/
     /// `advanceGuideStep`) — independent of `piece`: a guide step is only "which mode",
     /// never a timed composition.
     public private(set) var currentGuide: GuideSequence?
-    public private(set) var currentGuideFilePath: String?
+    /// The `GuideSequenceRecord.id` `currentGuide` was last loaded from/saved to — `nil` for a
+    /// brand-new guide never saved to the store yet. Replaces the old file-path-based
+    /// `currentGuideFilePath` now that guide sequences live in SwiftData, not files (see
+    /// `useGuideSequence`/`saveGuideSequence`).
+    public private(set) var currentGuideRecordID: String?
     /// `nil` means the guide is loaded (or absent) but not started — see `startGuide`/`stopGuide`.
     public private(set) var currentGuideStepIndex: Int?
     /// Which chord of the current step's `chordProgression` is "proposed" right now — `nil`
@@ -106,35 +111,33 @@ public final class ImprovSession: @unchecked Sendable {
     /// left/right moves chords within one) rather than one flat "position in the whole
     /// guide" — a step with no chords still needs to be a normal stop for up/down navigation.
     public private(set) var currentGuideChordIndex: Int?
-    /// The folder last listed with `listGuideFiles`, and the `.json` guide-sequence files
-    /// found in it — mirrors `pieceFolder`/`pieceFiles`.
-    public private(set) var guideFolder: String?
-    public private(set) var guideFiles: [String] = []
-    /// The folder last listed with `listSceneFiles`, and the `.json` scene files found in
-    /// it — mirrors `pieceFolder`/`pieceFiles`.
-    public private(set) var sceneFolder: String?
-    public private(set) var sceneFiles: [String] = []
     /// The active scene — an ongoing document (declared roles + which live instrument each
     /// one is attached to, see `Sources/AppCore/Scene.swift`'s own doc comments), mirroring
-    /// `currentGuide`/`currentGuideFilePath`'s shape rather than the one-shot "snapshot
+    /// `currentGuide`/`currentGuideRecordID`'s shape rather than the one-shot "snapshot
     /// tracks, write once" model this used to be.
     public private(set) var currentScene: Scene?
+    /// Set only by the raw `loadScene(fromJSONFile:)`/`saveScene(title:toJSONFile:)` pair —
+    /// used by `SceneFileView`'s single-file export/import feature (and its own "Recharger"
+    /// reload button), completely independent of `currentSceneRecordID` below.
     public private(set) var currentSceneFilePath: String?
-    /// Every palette loaded from `palettes.json` (see `loadColorPalettes`) — always at least
-    /// one entry (`MusicTheoryKit.PitchClassPalette.hex` as "Default" until a real file loads).
+    /// The `SceneRecord.id` `currentScene` was last saved to via `saveScene(title:as:)`/
+    /// loaded from via `useScene` — `nil` for a brand-new scene never saved to the store yet.
+    public private(set) var currentSceneRecordID: String?
+    /// Every palette loaded from the SwiftData store (see
+    /// `migrateColorPalettesFromJSONIfNeeded`) — always at least one entry
+    /// (`MusicTheoryKit.PitchClassPalette.hex` as "Default" until migration/seeding runs).
     public private(set) var colorPalettes: [ColorPalette] = [ColorPalette.builtInDefaults[0]]
-    /// Which of `colorPalettes` is active — per-instance only, never written back to
-    /// `palettes.json` (that file lists what's *available*, not what's currently selected);
-    /// resets to the first palette every time a fresh file loads.
+    /// Which of `colorPalettes` is active — per-instance only, never persisted (the store
+    /// lists what's *available*, not what's currently selected); resets to the first palette
+    /// every time migration runs.
     public private(set) var activeColorPaletteIndex: Int = 0
     public var activeColorPalette: ColorPalette { colorPalettes[activeColorPaletteIndex] }
-    /// The folder last listed with `listCompositionFiles`, and the `.json` composition
-    /// descriptions found in it — mirrors `pieceFolder`/`pieceFiles`, but for a
-    /// `CompositionDescription` (title/text/indications) rather than a composed `Piece`.
-    public private(set) var compositionFolder: String?
-    public private(set) var compositionFiles: [String] = []
-    /// Mirrors `currentPieceFilePath` for the current composition description.
-    public private(set) var currentCompositionFilePath: String?
+    /// Every composition description's addressable name currently in the SwiftData store,
+    /// sorted — mirrors `guideSequenceNames`. Refreshed after every migrate/insert/update/delete.
+    public private(set) var compositionDescriptionNames: [String] = []
+    /// The `CompositionDescriptionRecord.id` the current description was last loaded from/saved
+    /// to — replaces the old file-path-based `currentCompositionFilePath`.
+    public private(set) var currentCompositionRecordID: String?
     /// A pasted text (e.g. a poem) to compose a piece from — see `composeFromText()`.
     public private(set) var sourceText: String?
     /// Free-form style guidance (e.g. "romantique, mode mineur") layered on top of
@@ -145,7 +148,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// `compose`/`composeFromText(title:)`; independent of whatever title a *previous*
     /// composition ended up with.
     public private(set) var compositionTitle: String?
-    /// Names of every `LLMConnectionRecord` currently stored in `llmModelContainer` — refreshed
+    /// Names of every `LLMConnectionRecord` currently stored in `modelContainer` — refreshed
     /// by `refreshLLMConnections()` after every mutation. No longer folder-backed: LLM
     /// connections live in a private SwiftData store (`Application Support`, not the user's
     /// chosen Reglages folder), migrated once from any pre-existing `LLMConnections/*.json`
@@ -171,9 +174,10 @@ public final class ImprovSession: @unchecked Sendable {
     /// default."
     public private(set) var activeTextFramingSentence: String?
     public private(set) var activeSoundTrackFramingSentence: String?
-    /// Saved framing-sentence files, listed by `setPromptsFolder` — one fixed subfolder each.
-    public private(set) var textFramingFiles: [String] = []
-    public private(set) var soundTrackFramingFiles: [String] = []
+    /// Saved framing-sentence names, in the SwiftData store (see `PromptSnippetRecord`) —
+    /// refreshed after every migrate/insert/delete.
+    public private(set) var textFramingSentenceNames: [String] = []
+    public private(set) var soundTrackFramingSentenceNames: [String] = []
     /// Style indications for composing from a `SoundTrack` — the soundtrack counterpart of
     /// `additionalCompositionInstructions` (text composition bundles its indications into a
     /// saved `CompositionDescription` instead; a `SoundTrack` has no such bundle to attach
@@ -181,7 +185,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// sentence). `nil` means "none" — unlike the framing sentence, there's no default text
     /// to fall back to.
     public private(set) var activeSoundTrackCompositionInstructions: String?
-    public private(set) var soundTrackInstructionsFiles: [String] = []
+    public private(set) var soundTrackInstructionsNames: [String] = []
     /// Whether a `SoundTrack` recording is currently underway — see `startRecording`/
     /// `stopRecording`. Deliberately independent of `isPlaying` (that's the *other*,
     /// measure-based playback mode — see `SoundTrack`'s doc comment for why the two don't mix).
@@ -189,13 +193,11 @@ public final class ImprovSession: @unchecked Sendable {
     /// The most recently recorded or loaded `SoundTrack` — the temporal-recording
     /// counterpart to `piece`. `nil` until a recording finishes or a file is loaded once.
     public private(set) var currentSoundTrack: SoundTrack?
-    /// Full path `currentSoundTrack` was last loaded from or saved to — mirrors
-    /// `currentPieceFilePath`.
-    public private(set) var currentSoundTrackFilePath: String?
-    /// The folder last listed with `listSoundTrackFiles`, and the `.json` soundtrack files
-    /// found in it — mirrors `pieceFolder`/`pieceFiles`.
-    public private(set) var soundTrackFolder: String?
-    public private(set) var soundTrackFiles: [String] = []
+    /// The `SoundTrackRecord.id` `currentSoundTrack` was last loaded from/saved to — `nil` for
+    /// a brand-new recording never saved to the store yet. Replaces the old
+    /// file-path-based `currentSoundTrackFilePath` now that soundtracks live in SwiftData, not
+    /// files (see `useSoundTrack`/`saveSoundTrack`).
+    public private(set) var currentSoundTrackRecordID: String?
     /// Whether `playSoundTrack()` is currently playing back `currentSoundTrack` — the
     /// temporal-mode counterpart to `isPlaying` (`Piece` playback). The two are independent
     /// and could in principle run at once, though nothing stops them from clashing audibly
@@ -374,7 +376,6 @@ public final class ImprovSession: @unchecked Sendable {
         case noPieceLoaded
         case noSampleFolderListed
         case invalidSampleIndex
-        case noPieceFolderListed
         case invalidPieceIndex
         case noCurrentPieceFile
         case invalidLLMConnectionIndex
@@ -390,7 +391,6 @@ public final class ImprovSession: @unchecked Sendable {
         case alreadyRecording
         case notRecording
         case noSoundTrackRecorded
-        case noSoundTrackFolderListed
         case invalidSoundTrackIndex
         case noCurrentSoundTrackFile
         case invalidPieceSectionIndex
@@ -399,27 +399,22 @@ public final class ImprovSession: @unchecked Sendable {
         case webConsoleAlreadyActive
         case invalidTextFramingIndex
         case invalidSoundTrackFramingIndex
-        case noCompositionFolderListed
         case invalidCompositionIndex
         case noCurrentCompositionFile
         case noSoundTrackCompositionInstructions
         case invalidSoundTrackInstructionsIndex
         case noGuideSequence
         case invalidModeReference
-        case noGuideFolderListed
         case invalidGuideIndex
         case invalidGuideStepIndex
         case invalidChordIndex
         case noCurrentGuideFile
-        case noSceneFolderListed
         case invalidSceneIndex
         case noSceneLoaded
         case unknownSceneRole
         case virtualKeyboardAlreadyActive
         case invalidColorPaletteIndex
         case invalidColorPaletteFile
-        case emptyColorPaletteFile
-        case emptyChordProgressionTemplateFile
         case lumiDestinationNotFound
         case invalidLumiColorHex
         case invalidLumiBrightness
@@ -428,9 +423,8 @@ public final class ImprovSession: @unchecked Sendable {
             case .noPieceLoaded: return "no piece loaded — try 'load-demo' or 'load <path>'"
             case .noSampleFolderListed: return "no sample folder listed yet — try 'samples <folder>' first"
             case .invalidSampleIndex: return "no sample at that index"
-            case .noPieceFolderListed: return "no piece folder listed yet — try 'pieces <folder>' first"
-            case .invalidPieceIndex: return "no piece at that index"
-            case .noCurrentPieceFile: return "this piece was never loaded from or saved to a file — try 'save-as <name>'"
+            case .invalidPieceIndex: return "no piece at that index or name"
+            case .noCurrentPieceFile: return "this piece was never saved — try 'save-as <name>'"
             case .invalidLLMConnectionIndex: return "no LLM connection at that index"
             case .noSourceText: return "no source text set — try 'paste-text' first"
             case .noLLMConnectionSelected: return "no LLM connection selected — try 'use-llm <n|name>' first"
@@ -444,36 +438,30 @@ public final class ImprovSession: @unchecked Sendable {
             case .alreadyRecording: return "already recording — try 'stopRecording' first"
             case .notRecording: return "not currently recording"
             case .noSoundTrackRecorded: return "no soundtrack recorded or loaded yet — try 'startRecording' or load one"
-            case .noSoundTrackFolderListed: return "no soundtrack folder listed yet — try 'listSoundTrackFiles' first"
-            case .invalidSoundTrackIndex: return "no soundtrack at that index"
-            case .noCurrentSoundTrackFile: return "this soundtrack was never loaded from or saved to a file — try saving with an explicit name"
+            case .invalidSoundTrackIndex: return "no soundtrack at that index or name"
+            case .noCurrentSoundTrackFile: return "this soundtrack was never saved — try saving with an explicit name"
             case .invalidPieceSectionIndex: return "no section at that index — try 'show-piece' first"
             case .invalidPieceTrackIndex: return "no track at that index in that section — try 'show-piece' first"
             case .noPromptsFolderListed: return "no composition-IA folder listed yet — try 'prompts <folder>' first"
             case .webConsoleAlreadyActive: return "web console already running — stop it first"
             case .invalidTextFramingIndex: return "no text framing sentence at that index"
             case .invalidSoundTrackFramingIndex: return "no soundtrack framing sentence at that index"
-            case .noCompositionFolderListed: return "no composition-description folder listed yet — try 'prompts <folder>' first"
-            case .invalidCompositionIndex: return "no composition description at that index"
-            case .noCurrentCompositionFile: return "this description was never loaded from or saved to a file — try saving with an explicit name"
+            case .invalidCompositionIndex: return "no composition description at that index or name"
+            case .noCurrentCompositionFile: return "this description was never saved — try saving with an explicit name"
             case .noSoundTrackCompositionInstructions: return "no soundtrack style indications set — try 'set-soundtrack-instructions <texte>' first"
             case .invalidSoundTrackInstructionsIndex: return "no soundtrack style indications at that index"
             case .noGuideSequence: return "no guide sequence — try 'guide-new <titre>' first, or load one"
             case .invalidModeReference: return "unknown tonic or scale id — the scale id must match ScaleLibrary (e.g. ionian, dorian, phrygian, lydian, mixolydian, aeolian, locrian)"
-            case .noGuideFolderListed: return "no guide sequence folder listed yet — try 'guides <folder>' first"
-            case .invalidGuideIndex: return "no guide sequence at that index"
+            case .invalidGuideIndex: return "no guide sequence at that index or name"
             case .invalidGuideStepIndex: return "no step at that index in the guide sequence"
             case .invalidChordIndex: return "no chord at that index in the step's progression"
-            case .noCurrentGuideFile: return "this guide sequence was never loaded from or saved to a file — try 'save-guide-as <name>'"
-            case .noSceneFolderListed: return "no scene folder listed yet — try 'scenes <folder>' first"
-            case .invalidSceneIndex: return "no scene at that index"
+            case .noCurrentGuideFile: return "this guide sequence was never saved — try 'save-guide-as <name>'"
+            case .invalidSceneIndex: return "no scene at that index or name"
             case .noSceneLoaded: return "no active scene — try 'scene-new <titre>' first, or load one"
             case .unknownSceneRole: return "no role with that id in the active scene"
             case .virtualKeyboardAlreadyActive: return "virtual keyboard already running — stop it first"
             case .invalidColorPaletteIndex: return "no color palette at that index"
             case .invalidColorPaletteFile: return "a palette needs exactly 12 colors (one per pitch class)"
-            case .emptyColorPaletteFile: return "that file has no palettes in it"
-            case .emptyChordProgressionTemplateFile: return "that file has no chord progression templates in it"
             case .lumiDestinationNotFound: return "couldn't auto-detect a single LUMI MIDI destination — pass destinationIndex explicitly (see MIDIOutputPort.destinationDescriptors())"
             case .invalidLumiColorHex: return "color must be a 6-digit hex string, e.g. #FF0000"
             case .invalidLumiBrightness: return "brightness must be 0...100"
@@ -481,21 +469,26 @@ public final class ImprovSession: @unchecked Sendable {
         }
     }
 
-    /// Set only via `init(llmModelContainer:)` (tests inject an in-memory container here) —
-    /// `nil` means "create the real on-disk one lazily, on first actual use."
-    @ObservationIgnored private let llmModelContainerOverride: ModelContainer?
-    /// The private, app-container SwiftData store backing `LLMConnectionRecord` — deliberately
-    /// NOT inside the user-chosen Reglages folder (see `migrateLLMConnectionsFromJSONIfNeeded`):
-    /// this data has no reason to depend on an external folder/security-scoped bookmark anymore.
+    /// Set only via `init(modelContainer:)` (tests inject an in-memory container here) — `nil`
+    /// means "create the real on-disk one lazily, on first actual use."
+    @ObservationIgnored private let modelContainerOverride: ModelContainer?
+    /// The private, app-container SwiftData store backing every `@Model` record in this class
+    /// (LLM connections, color palettes, chord progression templates, language, LUMI/
+    /// spectrogram/note-color/microphone-calibration settings, sound entries) — deliberately
+    /// NOT inside the user-chosen Reglages folder (see e.g.
+    /// `migrateLLMConnectionsFromJSONIfNeeded`): none of this data has any reason to depend on
+    /// an external folder/security-scoped bookmark. One shared container/schema for every
+    /// category, not one per category — same rationale as sharing a single CloudKit container
+    /// (`iCloud.com.jamshack.JamShackApp`) rather than registering a new one per feature.
     /// Lazy, not created in `init()`: hundreds of `ImprovSession()` instances across this
-    /// project's own test suite never touch an LLM connection at all, and shouldn't each pay
-    /// for (or risk sharing) a real on-disk SwiftData container just for existing.
+    /// project's own test suite never touch any of this, and shouldn't each pay for (or risk
+    /// sharing) a real on-disk SwiftData container just for existing.
     ///
     /// Three tiers, each a graceful fallback from the one before — never a crash, never a hard
     /// requirement on iCloud:
     /// 1. CloudKit-backed private database (`iCloud.com.jamshack.JamShackApp`, see the iCloud
     ///    entitlements in `App/project.yml`) — syncs across every device signed into the same
-    ///    iCloud account. `LLMConnectionRecord`'s fields already satisfy CloudKit's schema
+    ///    iCloud account. Every record type's fields already satisfy CloudKit's schema
     ///    constraints (every property has a default or is optional, no unique constraints, no
     ///    relationships), so no model changes were needed to support this.
     /// 2. Local-only on-disk store — exactly today's behavior, reached when there's no iCloud
@@ -503,33 +496,61 @@ public final class ImprovSession: @unchecked Sendable {
     ///    ad-hoc "Sign to Run Locally" build with no Development Team configured).
     /// 3. In-memory — should never actually happen in practice (nothing external for it to
     ///    fail on).
-    @ObservationIgnored private lazy var llmModelContainer: ModelContainer = {
-        if let llmModelContainerOverride { return llmModelContainerOverride }
-        let schema = Schema([LLMConnectionRecord.self])
+    @ObservationIgnored private lazy var modelContainer: ModelContainer = {
+        if let modelContainerOverride { return modelContainerOverride }
+        let schema = Schema([
+            LLMConnectionRecord.self,
+            ColorPaletteRecord.self,
+            ChordProgressionTemplateRecord.self,
+            LanguageSettingRecord.self,
+            LumiSettingsRecord.self,
+            SpectrogramSettingsRecord.self,
+            NoteColorSettingsRecord.self,
+            MicrophoneCalibrationSettingsRecord.self,
+            SoundEntryRecord.self,
+            GuideSequenceRecord.self,
+            SceneRecord.self,
+            SoundTrackRecord.self,
+            PromptSnippetRecord.self,
+            CompositionDescriptionRecord.self,
+            PieceRecord.self,
+        ])
         if let container = try? ModelContainer(
             for: schema,
             configurations: ModelConfiguration(schema: schema, cloudKitDatabase: .private("iCloud.com.jamshack.JamShackApp"))
         ) {
             return container
         }
-        append("Warning: iCloud sync unavailable for LLM connections (no iCloud account, or this build isn't signed with the CloudKit capability) — falling back to local-only storage.")
+        append("Warning: iCloud sync unavailable (no iCloud account, or this build isn't signed with the CloudKit capability) — falling back to local-only storage.")
         if let container = try? ModelContainer(for: schema) { return container }
         // Last-resort fallback — an in-memory container has nothing external to fail on, so
         // this should never actually happen in practice.
-        append("Warning: could not open the on-disk LLM connections store — using an in-memory one for this session (connections won't persist).")
+        append("Warning: could not open the on-disk settings store — using an in-memory one for this session (nothing will persist).")
         return try! ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
     }()
-    /// A single context owned by this session, not `llmModelContainer.mainContext` — that
-    /// property is `@MainActor`-isolated, which would force every LLM-connection method below
-    /// to become `async`, rippling into the CLI/tests/SwiftUI call sites for no real benefit
-    /// (this class already treats itself as effectively single-threaded for its own state, per
-    /// its own `@unchecked Sendable` rationale above).
-    @ObservationIgnored private lazy var llmModelContext = ModelContext(llmModelContainer)
+    /// A single context owned by this session, not `modelContainer.mainContext` — that
+    /// property is `@MainActor`-isolated, which would force every method below to become
+    /// `async`, rippling into the CLI/tests/SwiftUI call sites for no real benefit (this class
+    /// already treats itself as effectively single-threaded for its own state, per its own
+    /// `@unchecked Sendable` rationale above).
+    @ObservationIgnored private lazy var modelContext = ModelContext(modelContainer)
 
-    public init(llmModelContainer: ModelContainer? = nil) {
+    /// Registered once, in `start()` — not `init()`, so the hundreds of test-only
+    /// `ImprovSession()` instances that never call `start()` never pay for it. Holds the
+    /// token so `deinit` can unregister it; without that, every `makeTestSession()` across a
+    /// whole `swift test` run would leak one more permanent `NotificationCenter` observer.
+    @ObservationIgnored private var remoteChangeObserverToken: NSObjectProtocol?
+
+    public init(modelContainer: ModelContainer? = nil) {
         localClientID = UUID().uuidString
-        llmModelContainerOverride = llmModelContainer
+        modelContainerOverride = modelContainer
         refreshTracks()
+    }
+
+    deinit {
+        if let remoteChangeObserverToken {
+            NotificationCenter.default.removeObserver(remoteChangeObserverToken)
+        }
     }
 
     public func start() throws {
@@ -537,6 +558,46 @@ public final class ImprovSession: @unchecked Sendable {
         try soundTrackPlayer.start()
         try guideAuditionPlayer.start()
         append("Audio engine started.")
+        startObservingRemoteStoreChanges()
+    }
+
+    /// CloudKit imports remote changes into `modelContainer`'s underlying store in the
+    /// background regardless of this observer — but nothing previously refreshed this
+    /// session's own cached name lists (`sceneNames`, `pieceNames`, etc.) when that happened,
+    /// so a device already running wouldn't see a scene/piece/etc. created on another device
+    /// until restarted. `.NSPersistentStoreRemoteChange` fires for ANY change to the
+    /// underlying store — local writes too, not just CloudKit imports — so this is a cheap
+    /// "re-fetch everything" rather than trying to interpret what changed. Deliberately does
+    /// NOT touch whatever document is currently open/being edited (`currentScene`,
+    /// `currentPiece`, etc.) — only the list-level name arrays — so a remote change can never
+    /// clobber in-progress local edits.
+    private func startObservingRemoteStoreChanges() {
+        guard remoteChangeObserverToken == nil else { return }
+        remoteChangeObserverToken = NotificationCenter.default.addObserver(
+            forName: .NSPersistentStoreRemoteChange, object: nil, queue: nil
+        ) { [weak self] _ in
+            // `queue: nil` delivers this synchronously on whatever thread posted the
+            // notification (a CloudKit-sync background thread, not necessarily this session's
+            // own thread) — hop to the main thread before touching `modelContext` (SwiftData
+            // contexts are thread-confined to wherever they were created, here the main
+            // thread/actor via `ContentView`'s `.task`) or any `@Observable` property.
+            DispatchQueue.main.async { self?.refreshAllStoreBackedNameLists() }
+        }
+    }
+
+    private func refreshAllStoreBackedNameLists() {
+        refreshLLMConnections()
+        refreshColorPalettes()
+        refreshChordProgressionTemplates()
+        refreshSceneNames()
+        refreshGuideSequenceNames()
+        refreshSoundTrackNames()
+        refreshPieceNames()
+        refreshCompositionDescriptionNames()
+        refreshSoundEntries()
+        textFramingSentenceNames = refreshPromptSnippetNames(category: .textFraming)
+        soundTrackFramingSentenceNames = refreshPromptSnippetNames(category: .soundTrackFraming)
+        soundTrackInstructionsNames = refreshPromptSnippetNames(category: .soundTrackInstructions)
     }
 
     public func loadDemoPiece() {
@@ -548,7 +609,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// or via `composeFromText()`, rather than loading an existing file.
     public func newPiece(title: String, tempoBPM: Double = 100, key: ModeReference = ModeReference(tonic: 0, scaleID: "ionian")) {
         piece = Piece(title: title, tempoBPM: tempoBPM, key: key)
-        currentPieceFilePath = nil
+        currentPieceRecordID = nil
         append("New piece created: \(title)")
     }
 
@@ -576,44 +637,17 @@ public final class ImprovSession: @unchecked Sendable {
 
     private static let supportedCompositionExtensions: Set<String> = ["json"]
 
-    /// Scans `folderPath` for `.json` composition-description files — mirrors `listPieceFiles`.
-    public func listCompositionFiles(in folderPath: String) throws {
-        let folderURL = URL(fileURLWithPath: folderPath)
-        let contents = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
-        compositionFolder = folderPath
-        compositionFiles = contents
-            .filter { Self.supportedCompositionExtensions.contains($0.pathExtension.lowercased()) }
-            .map(\.lastPathComponent)
-            .sorted()
-        append(compositionFiles.isEmpty
-            ? "No .json composition description files found in \(folderPath)."
-            : "Found \(compositionFiles.count) composition description file(s) in \(folderPath).")
-    }
-
-    /// Loads a saved description and applies it via the same setters the "Decrire le
-    /// morceau..." wizard itself uses (`setCompositionTitle`/`setSourceText`/
-    /// `setAdditionalCompositionInstructions`) — so it logs and behaves identically to typing
-    /// it in by hand.
+    /// Raw file I/O, unchanged in behavior — kept for reuse by the migration below and any
+    /// future explicit-path caller. NOT the primary persistence path anymore (see
+    /// `useCompositionDescription`/`saveCompositionDescription(as:)`).
     public func loadCompositionDescription(fromJSONFile path: String) throws {
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let decoded = try JSONDecoder().decode(CompositionDescription.self, from: data)
         setCompositionTitle(decoded.title)
         setSourceText(decoded.sourceText)
         setAdditionalCompositionInstructions(decoded.additionalInstructions)
-        currentCompositionFilePath = path
+        currentCompositionRecordID = nil
         append("Loaded composition description from \(path).")
-    }
-
-    /// Loads a description by name from the last-listed folder (see `listCompositionFiles`).
-    public func loadCompositionDescription(named name: String) throws {
-        guard let compositionFolder else { throw SessionError.noCompositionFolderListed }
-        try loadCompositionDescription(fromJSONFile: URL(fileURLWithPath: compositionFolder).appendingPathComponent(name).path)
-    }
-
-    /// Convenience over `loadCompositionDescription(named:)` using the 0-based position in `compositionFiles`.
-    public func loadCompositionDescription(atIndex index: Int) throws {
-        guard compositionFiles.indices.contains(index) else { throw SessionError.invalidCompositionIndex }
-        try loadCompositionDescription(named: compositionFiles[index])
     }
 
     public func saveCompositionDescription(toJSONFile path: String) throws {
@@ -623,49 +657,115 @@ public final class ImprovSession: @unchecked Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(description)
         try data.write(to: URL(fileURLWithPath: path))
-        currentCompositionFilePath = path
-        // Keep `compositionFiles` in sync so a fresh save is immediately visible without
-        // re-listing the folder — mirrors `saveTextCompositionPrompt(as:)`'s convention
-        // rather than `savePiece(as:)`'s (which leaves its own file list untouched), since a
-        // description is small and named specifically to be picked again right away. Only
-        // when the file actually landed in the currently-listed folder — `toJSONFile`/`as:`
-        // also accept an arbitrary explicit path outside it.
-        let savedURL = URL(fileURLWithPath: path)
-        if savedURL.deletingLastPathComponent().path == compositionFolder {
-            let fileName = savedURL.lastPathComponent
-            if !compositionFiles.contains(fileName) { compositionFiles = (compositionFiles + [fileName]).sorted() }
-        }
         append("Saved composition description to \(path).")
     }
 
-    /// Re-saves the current description to wherever it was last loaded from or saved to.
-    /// Fails if that's never happened yet — use `saveCompositionDescription(as:)` for a first save.
-    public func saveCompositionDescription() throws {
-        guard let currentCompositionFilePath else { throw SessionError.noCurrentCompositionFile }
-        try saveCompositionDescription(toJSONFile: currentCompositionFilePath)
+    private func refreshCompositionDescriptionNames() {
+        compositionDescriptionNames = ((try? modelContext.fetch(FetchDescriptor<CompositionDescriptionRecord>())) ?? []).map(\.name).sorted()
     }
 
-    /// Saves under a new name/path — "Save As". Mirrors `savePiece(as:)`: `nameOrPath`
-    /// containing a "/" is used as-is, a bare name is resolved against `compositionFolder`.
-    /// Adds a ".json" extension if missing either way.
-    public func saveCompositionDescription(as nameOrPath: String) throws {
-        let resolvedPath: String
-        if nameOrPath.contains("/") {
-            resolvedPath = nameOrPath
-        } else {
-            guard let compositionFolder else { throw SessionError.noCompositionFolderListed }
-            resolvedPath = URL(fileURLWithPath: compositionFolder).appendingPathComponent(nameOrPath).path
+    /// One-time bridge from a folder of `.json` composition-description files to the SwiftData
+    /// store — mirrors `migrateGuideSequencesFromJSONIfNeeded`: a no-op if the store already
+    /// has descriptions, otherwise migrates every `.json` found in `folderPath` (never deleting
+    /// the originals), addressed by filename (minus extension) since `CompositionDescription`'s
+    /// own `title` field is optional and independent of the file's name. No "seed built-ins".
+    public func migrateCompositionDescriptionsFromJSONIfNeeded(in folderPath: String) {
+        refreshCompositionDescriptionNames()
+        guard compositionDescriptionNames.isEmpty else { return }
+
+        let folderURL = URL(fileURLWithPath: folderPath)
+        let jsonFiles = (try? FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil))?
+            .filter { Self.supportedCompositionExtensions.contains($0.pathExtension.lowercased()) } ?? []
+        var migrated = 0
+        for fileURL in jsonFiles {
+            guard let data = try? Data(contentsOf: fileURL),
+                  let description = try? JSONDecoder().decode(CompositionDescription.self, from: data) else { continue }
+            let name = fileURL.deletingPathExtension().lastPathComponent
+            modelContext.insert(CompositionDescriptionRecord(name: name, description: description))
+            migrated += 1
         }
-        try saveCompositionDescription(toJSONFile: resolvedPath.hasSuffix(".json") ? resolvedPath : resolvedPath + ".json")
+        if migrated > 0 {
+            try? modelContext.save()
+            append("Migrated \(migrated) composition description(s) from \(folderPath) (originals left in place).")
+        }
+        refreshCompositionDescriptionNames()
+    }
+
+    /// Loads a saved description by name and applies it via the same setters the "Decrire le
+    /// morceau..." wizard itself uses (`setCompositionTitle`/`setSourceText`/
+    /// `setAdditionalCompositionInstructions`) — replaces the old folder-based
+    /// `loadCompositionDescription(named:)`.
+    public func useCompositionDescription(named name: String) throws {
+        let descriptor = FetchDescriptor<CompositionDescriptionRecord>(predicate: #Predicate { $0.name == name })
+        guard let record = try? modelContext.fetch(descriptor).first, let description = record.asCompositionDescription else {
+            throw SessionError.invalidCompositionIndex
+        }
+        setCompositionTitle(description.title)
+        setSourceText(description.sourceText)
+        setAdditionalCompositionInstructions(description.additionalInstructions)
+        currentCompositionRecordID = record.id
+        append("Loaded composition description: \(name)")
+    }
+
+    /// Convenience over `useCompositionDescription(named:)` using the 0-based position in `compositionDescriptionNames`.
+    public func useCompositionDescription(atIndex index: Int) throws {
+        guard compositionDescriptionNames.indices.contains(index) else { throw SessionError.invalidCompositionIndex }
+        try useCompositionDescription(named: compositionDescriptionNames[index])
+    }
+
+    /// Re-saves the current description to whichever record it was last loaded from/saved to.
+    /// Fails if that's never happened yet — use `saveCompositionDescription(as:)` for a first save.
+    public func saveCompositionDescription() throws {
+        guard let sourceText else { throw SessionError.noSourceText }
+        guard let currentCompositionRecordID else { throw SessionError.noCurrentCompositionFile }
+        let descriptor = FetchDescriptor<CompositionDescriptionRecord>(predicate: #Predicate { $0.id == currentCompositionRecordID })
+        guard let record = try? modelContext.fetch(descriptor).first else { throw SessionError.noCurrentCompositionFile }
+        let description = CompositionDescription(title: compositionTitle, sourceText: sourceText, additionalInstructions: additionalCompositionInstructions)
+        record.encodedDescription = (try? JSONEncoder().encode(description)) ?? record.encodedDescription
+        try modelContext.save()
+        append("Saved composition description: \(record.name)")
+    }
+
+    /// Saves under a given name — "Save As". If a record with that exact name already exists,
+    /// overwrites it (same "saving under an existing name silently overwrites it" behavior the
+    /// old folder-based version had); otherwise inserts a new record.
+    public func saveCompositionDescription(as name: String) throws {
+        guard let sourceText else { throw SessionError.noSourceText }
+        let description = CompositionDescription(title: compositionTitle, sourceText: sourceText, additionalInstructions: additionalCompositionInstructions)
+        let descriptor = FetchDescriptor<CompositionDescriptionRecord>(predicate: #Predicate { $0.name == name })
+        if let existing = try? modelContext.fetch(descriptor).first {
+            existing.encodedDescription = (try? JSONEncoder().encode(description)) ?? existing.encodedDescription
+            currentCompositionRecordID = existing.id
+        } else {
+            let record = CompositionDescriptionRecord(name: name, description: description)
+            modelContext.insert(record)
+            currentCompositionRecordID = record.id
+        }
+        try modelContext.save()
+        refreshCompositionDescriptionNames()
+        append("Saved composition description as: \(name)")
+    }
+
+    /// Deletes a stored composition description — new capability (no delete existed in the
+    /// old folder-based UI; removing a file meant using the Finder directly).
+    public func deleteCompositionDescription(atIndex index: Int) throws {
+        guard compositionDescriptionNames.indices.contains(index) else { throw SessionError.invalidCompositionIndex }
+        let name = compositionDescriptionNames[index]
+        let descriptor = FetchDescriptor<CompositionDescriptionRecord>(predicate: #Predicate { $0.name == name })
+        guard let record = try? modelContext.fetch(descriptor).first else { return }
+        modelContext.delete(record)
+        try modelContext.save()
+        refreshCompositionDescriptionNames()
+        append("Deleted composition description: \(name)")
     }
 
     private static let supportedLLMConnectionExtensions: Set<String> = ["json"]
 
-    /// Re-reads `llmConnections` (names, sorted) from `llmModelContainer` — called after every
+    /// Re-reads `llmConnections` (names, sorted) from `modelContainer` — called after every
     /// insert/delete so the in-memory list callers already iterate (CLI menus, the SwiftUI
     /// list, `WebConsoleMenuLists.llmConnections`) never drifts from what's actually stored.
     private func refreshLLMConnections() {
-        let records = (try? llmModelContext.fetch(FetchDescriptor<LLMConnectionRecord>())) ?? []
+        let records = (try? modelContext.fetch(FetchDescriptor<LLMConnectionRecord>())) ?? []
         llmConnections = records.map(\.name).sorted()
     }
 
@@ -687,7 +787,7 @@ public final class ImprovSession: @unchecked Sendable {
 
         if jsonFiles.isEmpty {
             for template in LLMConnectionTemplates.builtIn {
-                llmModelContext.insert(LLMConnectionRecord(template))
+                modelContext.insert(LLMConnectionRecord(template))
             }
             append("Seeded \(LLMConnectionTemplates.builtIn.count) built-in LLM connection(s).")
         } else {
@@ -695,18 +795,18 @@ public final class ImprovSession: @unchecked Sendable {
             for fileURL in jsonFiles {
                 guard let data = try? Data(contentsOf: fileURL),
                       let connection = try? JSONDecoder().decode(LLMConnection.self, from: data) else { continue }
-                llmModelContext.insert(LLMConnectionRecord(connection))
+                modelContext.insert(LLMConnectionRecord(connection))
                 migrated += 1
             }
             append("Migrated \(migrated) LLM connection(s) from \(folderPath) (originals left in place).")
         }
-        try? llmModelContext.save()
+        try? modelContext.save()
         refreshLLMConnections()
     }
 
     public func useLLMConnection(named name: String) throws {
         let descriptor = FetchDescriptor<LLMConnectionRecord>(predicate: #Predicate { $0.name == name })
-        guard let record = try? llmModelContext.fetch(descriptor).first else {
+        guard let record = try? modelContext.fetch(descriptor).first else {
             throw SessionError.invalidLLMConnectionIndex
         }
         let connection = record.asLLMConnection
@@ -724,8 +824,8 @@ public final class ImprovSession: @unchecked Sendable {
     /// un fichier JSON" actions (`JamShackLLMView`) alike, both of which just produce an
     /// `LLMConnection` value one way or another.
     public func addLLMConnection(_ connection: LLMConnection) throws {
-        llmModelContext.insert(LLMConnectionRecord(connection))
-        try llmModelContext.save()
+        modelContext.insert(LLMConnectionRecord(connection))
+        try modelContext.save()
         refreshLLMConnections()
         append("Added LLM connection: \(connection.name)")
     }
@@ -739,9 +839,9 @@ public final class ImprovSession: @unchecked Sendable {
         guard llmConnections.indices.contains(index) else { throw SessionError.invalidLLMConnectionIndex }
         let name = llmConnections[index]
         let descriptor = FetchDescriptor<LLMConnectionRecord>(predicate: #Predicate { $0.name == name })
-        guard let record = try? llmModelContext.fetch(descriptor).first else { return }
-        llmModelContext.delete(record)
-        try llmModelContext.save()
+        guard let record = try? modelContext.fetch(descriptor).first else { return }
+        modelContext.delete(record)
+        try modelContext.save()
         refreshLLMConnections()
         append("Deleted LLM connection: \(name)")
     }
@@ -801,13 +901,63 @@ public final class ImprovSession: @unchecked Sendable {
             : "Phrase de cadrage (soundtrack) mise a jour.")
     }
 
+    /// Fetches the `PromptSnippetRecord` for `(category, name)`, if any — shared by every
+    /// `useX`/`saveX(as:)` pair below.
+    private func promptSnippetRecord(category: PromptSnippetCategory, named name: String) -> PromptSnippetRecord? {
+        let rawCategory = category.rawValue
+        let descriptor = FetchDescriptor<PromptSnippetRecord>(predicate: #Predicate { $0.category == rawCategory && $0.name == name })
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    private func refreshPromptSnippetNames(category: PromptSnippetCategory) -> [String] {
+        let rawCategory = category.rawValue
+        let descriptor = FetchDescriptor<PromptSnippetRecord>(predicate: #Predicate { $0.category == rawCategory })
+        return ((try? modelContext.fetch(descriptor)) ?? []).map(\.name).sorted()
+    }
+
+    /// Inserts a new snippet, or overwrites the existing one for `(category, name)` — same
+    /// "saving under an existing name silently overwrites it" behavior the old
+    /// folder-based `.txt` files had.
+    private func savePromptSnippet(category: PromptSnippetCategory, name: String, text: String) {
+        if let existing = promptSnippetRecord(category: category, named: name) {
+            existing.text = text
+        } else {
+            modelContext.insert(PromptSnippetRecord(category: category, name: name, text: text))
+        }
+        try? modelContext.save()
+    }
+
+    /// One-time bridge from a folder of `.txt` snippet files to the SwiftData store — mirrors
+    /// `migrateGuideSequencesFromJSONIfNeeded`: a no-op if the store already has snippets for
+    /// `category`, otherwise migrates every `.txt` found in `folderURL` (never deleting the
+    /// originals), addressed by filename minus extension. Returns the resulting name list.
+    private func migratePromptSnippetsFromJSONIfNeeded(category: PromptSnippetCategory, in folderURL: URL) -> [String] {
+        var names = refreshPromptSnippetNames(category: category)
+        guard names.isEmpty else { return names }
+
+        let txtFiles = (try? FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil))?
+            .filter { $0.pathExtension.lowercased() == "txt" } ?? []
+        var migrated = 0
+        for fileURL in txtFiles {
+            guard let text = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
+            let name = fileURL.deletingPathExtension().lastPathComponent
+            modelContext.insert(PromptSnippetRecord(category: category, name: name, text: text))
+            migrated += 1
+        }
+        if migrated > 0 {
+            try? modelContext.save()
+            names = refreshPromptSnippetNames(category: category)
+        }
+        return names
+    }
+
     /// Points at the root folder for the whole "Composition IA" toolkit, creating its fixed
-    /// subfolders if they don't exist yet and listing whatever's already in each:
-    /// `Cadrage Composition Descriptive`/`Cadrage Composition Soundtrack` (framing sentences),
-    /// `composition Descriptive` (saved descriptions — title+text+indications, see
-    /// `listCompositionFiles`/`CompositionDescription`), `Indications Soundtracks` (saved
-    /// soundtrack style indications), `Export` (exported full prompts, never reloaded from
-    /// here — see `exportTextCompositionPrompt(as:)`).
+    /// subfolders if they don't exist yet (they stay as one-time migration sources/manual-drop
+    /// spots — framing sentences, saved descriptions, and style indications all live in the
+    /// SwiftData store now, see `migratePromptSnippetsFromJSONIfNeeded`/
+    /// `migrateCompositionDescriptionsFromJSONIfNeeded`), except `Export` (exported full
+    /// prompts, never reloaded from here — see `exportTextCompositionPrompt(as:)` — stays
+    /// plain files, nothing to migrate).
     public func setPromptsFolder(_ folderPath: String) throws {
         let root = URL(fileURLWithPath: folderPath)
         let textFramingURL = root.appendingPathComponent(Self.promptsTextFramingSubfolder)
@@ -821,14 +971,11 @@ public final class ImprovSession: @unchecked Sendable {
         try FileManager.default.createDirectory(at: soundTrackInstructionsURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: exportURL, withIntermediateDirectories: true)
         promptsFolder = folderPath
-        textFramingFiles = try FileManager.default.contentsOfDirectory(at: textFramingURL, includingPropertiesForKeys: nil)
-            .map(\.lastPathComponent).sorted()
-        soundTrackFramingFiles = try FileManager.default.contentsOfDirectory(at: soundTrackFramingURL, includingPropertiesForKeys: nil)
-            .map(\.lastPathComponent).sorted()
-        soundTrackInstructionsFiles = try FileManager.default.contentsOfDirectory(at: soundTrackInstructionsURL, includingPropertiesForKeys: nil)
-            .map(\.lastPathComponent).sorted()
-        try listCompositionFiles(in: compositionURL.path) // also sets compositionFolder/compositionFiles
-        append("Dossier de composition IA: \(folderPath) (\(textFramingFiles.count) cadrage texte, \(soundTrackFramingFiles.count) cadrage soundtrack, \(compositionFiles.count) descriptions, \(soundTrackInstructionsFiles.count) indications soundtrack).")
+        textFramingSentenceNames = migratePromptSnippetsFromJSONIfNeeded(category: .textFraming, in: textFramingURL)
+        soundTrackFramingSentenceNames = migratePromptSnippetsFromJSONIfNeeded(category: .soundTrackFraming, in: soundTrackFramingURL)
+        soundTrackInstructionsNames = migratePromptSnippetsFromJSONIfNeeded(category: .soundTrackInstructions, in: soundTrackInstructionsURL)
+        migrateCompositionDescriptionsFromJSONIfNeeded(in: compositionURL.path)
+        append("Dossier de composition IA: \(folderPath) (\(textFramingSentenceNames.count) cadrage texte, \(soundTrackFramingSentenceNames.count) cadrage soundtrack, \(compositionDescriptionNames.count) descriptions, \(soundTrackInstructionsNames.count) indications soundtrack).")
     }
 
     // MARK: - Settings folder (palettes, chord progression templates, LLM connections)
@@ -838,77 +985,72 @@ public final class ImprovSession: @unchecked Sendable {
     /// shape: `LLMConnections/` (now only ever read once, by `migrateLLMConnectionsFromJSONIfNeeded`
     /// — LLM connections themselves live in a private SwiftData store, not this folder; the
     /// folder still exists purely as a one-time migration source/manual-drop spot for anyone
-    /// used to the old workflow), `palettes.json` (`loadOrCreateColorPalettes`),
-    /// `chordprogressions.json` (`loadOrCreateChordProgressionTemplates`). Unlike
-    /// `pieceFolder`/`sampleFolder`/etc. (each independently redirectable), these always move
-    /// together as one unit.
+    /// used to the old workflow), `palettes.json` (`migrateColorPalettesFromJSONIfNeeded`),
+    /// `chordprogressions.json` (`migrateChordProgressionTemplatesFromJSONIfNeeded`), and every
+    /// other `migrate...FromJSONIfNeeded` call below — every one of these categories now lives
+    /// in the same shared SwiftData store as LLM connections (see `modelContainer`), with the
+    /// JSON files in this folder kept only as one-time migration sources/manual-drop spots.
+    /// Unlike `pieceFolder`/`sampleFolder`/etc. (each independently redirectable), these always
+    /// move together as one unit.
     public func setSettingsFolder(_ folderPath: String) throws {
         try FileManager.default.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
         let llmFolder = (folderPath as NSString).appendingPathComponent("LLMConnections")
         try FileManager.default.createDirectory(atPath: llmFolder, withIntermediateDirectories: true)
         migrateLLMConnectionsFromJSONIfNeeded(in: llmFolder)
-        try loadOrCreateColorPalettes(fromJSONFile: (folderPath as NSString).appendingPathComponent("palettes.json"))
-        try loadOrCreateChordProgressionTemplates(fromJSONFile: (folderPath as NSString).appendingPathComponent("chordprogressions.json"))
-        try loadOrCreateLanguageSetting(fromJSONFile: (folderPath as NSString).appendingPathComponent("language.json"))
-        try loadOrCreateLumiSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("lumi.json"))
-        try loadOrCreateSpectrogramSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("spectrogram.json"))
-        try loadOrCreateNoteColorSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("note-colors.json"))
-        try loadOrCreateLLMAPIKeys(fromJSONFile: (folderPath as NSString).appendingPathComponent("llm-api-keys.json"))
-        try loadOrCreateMicrophoneCalibration(fromJSONFile: (folderPath as NSString).appendingPathComponent("microphone-calibration.json"))
-        try loadOrCreateSoundSettings(fromJSONFile: (folderPath as NSString).appendingPathComponent("sound-settings.json"))
+        migrateColorPalettesFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("palettes.json"))
+        migrateChordProgressionTemplatesFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("chordprogressions.json"))
+        migrateLanguageSettingFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("language.json"))
+        migrateLumiSettingsFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("lumi.json"))
+        migrateSpectrogramSettingsFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("spectrogram.json"))
+        migrateNoteColorSettingsFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("note-colors.json"))
+        migrateLLMAPIKeysFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("llm-api-keys.json"))
+        migrateMicrophoneCalibrationFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("microphone-calibration.json"))
+        migrateSoundSettingsFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("sound-settings.json"))
         settingsFolder = folderPath
         append("Dossier de reglages: \(folderPath).")
     }
 
     /// Saves `currentTextFramingSentence()` (the active override, or the default if none) as
-    /// a new file under the `Cadrage Composition Descriptive` subfolder.
+    /// a new snippet in the SwiftData store.
     public func saveTextFramingSentence(as name: String) throws {
-        guard let promptsFolder else { throw SessionError.noPromptsFolderListed }
-        let fileName = name.hasSuffix(".txt") ? name : name + ".txt"
-        let url = URL(fileURLWithPath: promptsFolder).appendingPathComponent(Self.promptsTextFramingSubfolder).appendingPathComponent(fileName)
-        try currentTextFramingSentence().write(to: url, atomically: true, encoding: .utf8)
-        if !textFramingFiles.contains(fileName) { textFramingFiles = (textFramingFiles + [fileName]).sorted() }
-        append("Phrase de cadrage (texte) sauvegardee: \(url.path).")
+        savePromptSnippet(category: .textFraming, name: name, text: currentTextFramingSentence())
+        textFramingSentenceNames = refreshPromptSnippetNames(category: .textFraming)
+        append("Phrase de cadrage (texte) sauvegardee: \(name).")
     }
 
     /// The soundtrack counterpart of `saveTextFramingSentence(as:)`.
     public func saveSoundTrackFramingSentence(as name: String) throws {
-        guard let promptsFolder else { throw SessionError.noPromptsFolderListed }
-        let fileName = name.hasSuffix(".txt") ? name : name + ".txt"
-        let url = URL(fileURLWithPath: promptsFolder).appendingPathComponent(Self.promptsSoundTrackFramingSubfolder).appendingPathComponent(fileName)
-        try currentSoundTrackFramingSentence().write(to: url, atomically: true, encoding: .utf8)
-        if !soundTrackFramingFiles.contains(fileName) { soundTrackFramingFiles = (soundTrackFramingFiles + [fileName]).sorted() }
-        append("Phrase de cadrage (soundtrack) sauvegardee: \(url.path).")
+        savePromptSnippet(category: .soundTrackFraming, name: name, text: currentSoundTrackFramingSentence())
+        soundTrackFramingSentenceNames = refreshPromptSnippetNames(category: .soundTrackFraming)
+        append("Phrase de cadrage (soundtrack) sauvegardee: \(name).")
     }
 
     /// Loads a previously saved framing sentence and makes it `activeTextFramingSentence` —
     /// used by `currentTextCompositionPrompt()` in place of the built-in default until
     /// `resetTextFramingSentence()` is called.
     public func useTextFramingSentence(named name: String) throws {
-        guard let promptsFolder else { throw SessionError.noPromptsFolderListed }
-        let url = URL(fileURLWithPath: promptsFolder).appendingPathComponent(Self.promptsTextFramingSubfolder).appendingPathComponent(name)
-        activeTextFramingSentence = try String(contentsOf: url, encoding: .utf8)
-        append("Phrase de cadrage (texte) chargee depuis \(url.path).")
+        guard let record = promptSnippetRecord(category: .textFraming, named: name) else { throw SessionError.invalidTextFramingIndex }
+        activeTextFramingSentence = record.text
+        append("Phrase de cadrage (texte) chargee: \(name).")
     }
 
-    /// Convenience over `useTextFramingSentence(named:)` using the 0-based position in `textFramingFiles`.
+    /// Convenience over `useTextFramingSentence(named:)` using the 0-based position in `textFramingSentenceNames`.
     public func useTextFramingSentence(atIndex index: Int) throws {
-        guard textFramingFiles.indices.contains(index) else { throw SessionError.invalidTextFramingIndex }
-        try useTextFramingSentence(named: textFramingFiles[index])
+        guard textFramingSentenceNames.indices.contains(index) else { throw SessionError.invalidTextFramingIndex }
+        try useTextFramingSentence(named: textFramingSentenceNames[index])
     }
 
     /// The soundtrack counterpart of `useTextFramingSentence(named:)`.
     public func useSoundTrackFramingSentence(named name: String) throws {
-        guard let promptsFolder else { throw SessionError.noPromptsFolderListed }
-        let url = URL(fileURLWithPath: promptsFolder).appendingPathComponent(Self.promptsSoundTrackFramingSubfolder).appendingPathComponent(name)
-        activeSoundTrackFramingSentence = try String(contentsOf: url, encoding: .utf8)
-        append("Phrase de cadrage (soundtrack) chargee depuis \(url.path).")
+        guard let record = promptSnippetRecord(category: .soundTrackFraming, named: name) else { throw SessionError.invalidSoundTrackFramingIndex }
+        activeSoundTrackFramingSentence = record.text
+        append("Phrase de cadrage (soundtrack) chargee: \(name).")
     }
 
-    /// Convenience over `useSoundTrackFramingSentence(named:)` using the 0-based position in `soundTrackFramingFiles`.
+    /// Convenience over `useSoundTrackFramingSentence(named:)` using the 0-based position in `soundTrackFramingSentenceNames`.
     public func useSoundTrackFramingSentence(atIndex index: Int) throws {
-        guard soundTrackFramingFiles.indices.contains(index) else { throw SessionError.invalidSoundTrackFramingIndex }
-        try useSoundTrackFramingSentence(named: soundTrackFramingFiles[index])
+        guard soundTrackFramingSentenceNames.indices.contains(index) else { throw SessionError.invalidSoundTrackFramingIndex }
+        try useSoundTrackFramingSentence(named: soundTrackFramingSentenceNames[index])
     }
 
     /// Clears `activeTextFramingSentence` — `currentTextCompositionPrompt()` goes back to
@@ -940,31 +1082,29 @@ public final class ImprovSession: @unchecked Sendable {
             : "Indications de style (soundtrack): \(activeSoundTrackCompositionInstructions!)")
     }
 
-    /// Saves the active soundtrack style indications as a new file under `Indications
-    /// Soundtracks`. Throws if there's nothing set — unlike the framing sentence, there's no
-    /// default text to fall back to and save instead.
+    /// Saves the active soundtrack style indications as a new snippet in the SwiftData store.
+    /// Throws if there's nothing set — unlike the framing sentence, there's no default text to
+    /// fall back to and save instead.
     public func saveSoundTrackCompositionInstructions(as name: String) throws {
-        guard let promptsFolder else { throw SessionError.noPromptsFolderListed }
         guard let instructions = activeSoundTrackCompositionInstructions else { throw SessionError.noSoundTrackCompositionInstructions }
-        let fileName = name.hasSuffix(".txt") ? name : name + ".txt"
-        let url = URL(fileURLWithPath: promptsFolder).appendingPathComponent(Self.promptsSoundTrackInstructionsSubfolder).appendingPathComponent(fileName)
-        try instructions.write(to: url, atomically: true, encoding: .utf8)
-        if !soundTrackInstructionsFiles.contains(fileName) { soundTrackInstructionsFiles = (soundTrackInstructionsFiles + [fileName]).sorted() }
-        append("Indications de style (soundtrack) sauvegardees: \(url.path).")
+        savePromptSnippet(category: .soundTrackInstructions, name: name, text: instructions)
+        soundTrackInstructionsNames = refreshPromptSnippetNames(category: .soundTrackInstructions)
+        append("Indications de style (soundtrack) sauvegardees: \(name).")
     }
 
     /// Loads previously saved soundtrack style indications and makes them active.
     public func useSoundTrackCompositionInstructions(named name: String) throws {
-        guard let promptsFolder else { throw SessionError.noPromptsFolderListed }
-        let url = URL(fileURLWithPath: promptsFolder).appendingPathComponent(Self.promptsSoundTrackInstructionsSubfolder).appendingPathComponent(name)
-        activeSoundTrackCompositionInstructions = try String(contentsOf: url, encoding: .utf8)
-        append("Indications de style (soundtrack) chargees depuis \(url.path).")
+        guard let record = promptSnippetRecord(category: .soundTrackInstructions, named: name) else {
+            throw SessionError.invalidSoundTrackInstructionsIndex
+        }
+        activeSoundTrackCompositionInstructions = record.text
+        append("Indications de style (soundtrack) chargees: \(name).")
     }
 
-    /// Convenience over `useSoundTrackCompositionInstructions(named:)` using the 0-based position in `soundTrackInstructionsFiles`.
+    /// Convenience over `useSoundTrackCompositionInstructions(named:)` using the 0-based position in `soundTrackInstructionsNames`.
     public func useSoundTrackCompositionInstructions(atIndex index: Int) throws {
-        guard soundTrackInstructionsFiles.indices.contains(index) else { throw SessionError.invalidSoundTrackInstructionsIndex }
-        try useSoundTrackCompositionInstructions(named: soundTrackInstructionsFiles[index])
+        guard soundTrackInstructionsNames.indices.contains(index) else { throw SessionError.invalidSoundTrackInstructionsIndex }
+        try useSoundTrackCompositionInstructions(named: soundTrackInstructionsNames[index])
     }
 
     /// Clears the active soundtrack style indications — back to "none".
@@ -1019,15 +1159,18 @@ public final class ImprovSession: @unchecked Sendable {
         if let title { composedPiece.title = title }
 
         piece = composedPiece
-        currentPieceFilePath = nil
+        currentPieceRecordID = nil
         append("Composed '\(composedPiece.title)' from text (\(composedPiece.sections.count) section(s)).")
     }
 
+    /// Raw file I/O, unchanged in behavior — kept for the CLI's explicit-path `load
+    /// <path>`/`save <path>` verbs and as the migration itself reuses. NOT the primary
+    /// persistence path anymore (see `usePiece`/`savePiece(as:)` below).
     public func loadPiece(fromJSONFile path: String) throws {
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let decoded = try JSONDecoder().decode(Piece.self, from: data)
         piece = decoded
-        currentPieceFilePath = path
+        currentPieceRecordID = nil
         append("Loaded piece from \(path): \(decoded.title)")
     }
 
@@ -1037,59 +1180,110 @@ public final class ImprovSession: @unchecked Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(piece)
         try data.write(to: URL(fileURLWithPath: path))
-        currentPieceFilePath = path
         append("Saved piece to \(path).")
     }
 
     private static let supportedPieceExtensions: Set<String> = ["json"]
 
-    /// Scans `folderPath` for `.json` piece files and remembers both the folder and the
-    /// match list (in `pieceFiles`) so they can be picked by index afterwards — mirrors
-    /// `listSampleFiles`.
-    public func listPieceFiles(in folderPath: String) throws {
+    private func refreshPieceNames() {
+        pieceNames = ((try? modelContext.fetch(FetchDescriptor<PieceRecord>())) ?? []).map(\.title).sorted()
+    }
+
+    /// One-time bridge from a folder of `.json` piece files to the SwiftData store — mirrors
+    /// `migrateGuideSequencesFromJSONIfNeeded`: a no-op if the store already has pieces,
+    /// otherwise migrates every `.json` found in `folderPath` (never deleting the originals).
+    /// No "seed built-ins" — pieces have none (see `loadDemoPiece()` for the one built-in demo,
+    /// which was never file-backed to begin with).
+    public func migratePiecesFromJSONIfNeeded(in folderPath: String) {
+        refreshPieceNames()
+        guard pieceNames.isEmpty else { return }
+
         let folderURL = URL(fileURLWithPath: folderPath)
-        let contents = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
-        pieceFolder = folderPath
-        pieceFiles = contents
-            .filter { Self.supportedPieceExtensions.contains($0.pathExtension.lowercased()) }
-            .map(\.lastPathComponent)
-            .sorted()
-        append(pieceFiles.isEmpty
-            ? "No .json piece files found in \(folderPath)."
-            : "Found \(pieceFiles.count) piece file(s) in \(folderPath).")
-    }
-
-    /// Loads a piece by name from the last-listed folder (see `listPieceFiles`).
-    public func loadPiece(named name: String) throws {
-        guard let pieceFolder else { throw SessionError.noPieceFolderListed }
-        try loadPiece(fromJSONFile: URL(fileURLWithPath: pieceFolder).appendingPathComponent(name).path)
-    }
-
-    /// Convenience over `loadPiece(named:)` using the 0-based position in `pieceFiles`.
-    public func loadPiece(atIndex index: Int) throws {
-        guard pieceFiles.indices.contains(index) else { throw SessionError.invalidPieceIndex }
-        try loadPiece(named: pieceFiles[index])
-    }
-
-    /// Re-saves the current piece to wherever it was last loaded from or saved to. Fails
-    /// if that's never happened yet — use `savePiece(as:)` for a first save.
-    public func savePiece() throws {
-        guard let currentPieceFilePath else { throw SessionError.noCurrentPieceFile }
-        try savePiece(toJSONFile: currentPieceFilePath)
-    }
-
-    /// Saves under a new name/path — "Save As". `nameOrPath` containing a "/" is used
-    /// as-is (an explicit path); a bare name is resolved against `pieceFolder` (set via
-    /// `listPieceFiles`). Adds a ".json" extension if missing either way.
-    public func savePiece(as nameOrPath: String) throws {
-        let resolvedPath: String
-        if nameOrPath.contains("/") {
-            resolvedPath = nameOrPath
-        } else {
-            guard let pieceFolder else { throw SessionError.noPieceFolderListed }
-            resolvedPath = URL(fileURLWithPath: pieceFolder).appendingPathComponent(nameOrPath).path
+        let jsonFiles = (try? FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil))?
+            .filter { Self.supportedPieceExtensions.contains($0.pathExtension.lowercased()) } ?? []
+        var migrated = 0
+        for fileURL in jsonFiles {
+            guard let data = try? Data(contentsOf: fileURL),
+                  let decodedPiece = try? JSONDecoder().decode(Piece.self, from: data) else { continue }
+            modelContext.insert(PieceRecord(decodedPiece))
+            migrated += 1
         }
-        try savePiece(toJSONFile: resolvedPath.hasSuffix(".json") ? resolvedPath : resolvedPath + ".json")
+        if migrated > 0 {
+            try? modelContext.save()
+            append("Migrated \(migrated) piece(s) from \(folderPath) (originals left in place).")
+        }
+        refreshPieceNames()
+    }
+
+    /// Loads a piece by title from the SwiftData store — replaces the old folder-based
+    /// `loadPiece(named:)`. First match wins if two records share a title (same tolerance
+    /// `useLLMConnection(named:)`/`useGuideSequence(named:)` already accept).
+    public func usePiece(named name: String) throws {
+        let descriptor = FetchDescriptor<PieceRecord>(predicate: #Predicate { $0.title == name })
+        guard let record = try? modelContext.fetch(descriptor).first, let decodedPiece = record.asPiece else {
+            throw SessionError.invalidPieceIndex
+        }
+        piece = decodedPiece
+        currentPieceRecordID = record.id
+        append("Loaded piece: \(decodedPiece.title)")
+    }
+
+    /// Convenience over `usePiece(named:)` using the 0-based position in `pieceNames`.
+    public func usePiece(atIndex index: Int) throws {
+        guard pieceNames.indices.contains(index) else { throw SessionError.invalidPieceIndex }
+        try usePiece(named: pieceNames[index])
+    }
+
+    /// Re-saves the current piece to whichever record it was last loaded from/saved to
+    /// (`currentPieceRecordID`) — updates that exact record even if `piece.title` has since
+    /// changed (unlike `savePiece(as:)`, which addresses by title). Fails if that's never
+    /// happened yet — use `savePiece(as:)` for a first save.
+    public func savePiece() throws {
+        guard let piece else { throw SessionError.noPieceLoaded }
+        guard let currentPieceRecordID else { throw SessionError.noCurrentPieceFile }
+        let descriptor = FetchDescriptor<PieceRecord>(predicate: #Predicate { $0.id == currentPieceRecordID })
+        guard let record = try? modelContext.fetch(descriptor).first else { throw SessionError.noCurrentPieceFile }
+        record.title = piece.title
+        record.encodedPiece = (try? JSONEncoder().encode(piece)) ?? record.encodedPiece
+        try modelContext.save()
+        refreshPieceNames()
+        append("Saved piece: \(piece.title)")
+    }
+
+    /// Saves under a given title — "Save As". If a record with that exact title already
+    /// exists, overwrites it (same "saving under an existing name silently overwrites it"
+    /// behavior the old folder-based version had); otherwise inserts a new record. Adopts
+    /// `name` as `piece`'s own title — there's no separate "filename" anymore.
+    public func savePiece(as name: String) throws {
+        guard var piece else { throw SessionError.noPieceLoaded }
+        piece.title = name
+        self.piece = piece
+        let descriptor = FetchDescriptor<PieceRecord>(predicate: #Predicate { $0.title == name })
+        if let existing = try? modelContext.fetch(descriptor).first {
+            existing.encodedPiece = (try? JSONEncoder().encode(piece)) ?? existing.encodedPiece
+            currentPieceRecordID = existing.id
+        } else {
+            let record = PieceRecord(piece)
+            modelContext.insert(record)
+            currentPieceRecordID = record.id
+        }
+        try modelContext.save()
+        refreshPieceNames()
+        append("Saved piece as: \(name)")
+    }
+
+    /// Deletes a stored piece — new capability (the old folder-based UI had no delete button;
+    /// removing a file meant using the Finder directly, which stops being possible once the
+    /// data lives in a private SwiftData store).
+    public func deletePiece(atIndex index: Int) throws {
+        guard pieceNames.indices.contains(index) else { throw SessionError.invalidPieceIndex }
+        let name = pieceNames[index]
+        let descriptor = FetchDescriptor<PieceRecord>(predicate: #Predicate { $0.title == name })
+        guard let record = try? modelContext.fetch(descriptor).first else { return }
+        modelContext.delete(record)
+        try modelContext.save()
+        refreshPieceNames()
+        append("Deleted piece: \(name)")
     }
 
     // MARK: - Guide sequences (mode sequences for the Guide screen)
@@ -1097,7 +1291,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// Starts a blank guide sequence (no steps yet) — mirrors `newPiece`.
     public func newGuideSequence(title: String) {
         currentGuide = GuideSequence(title: title)
-        currentGuideFilePath = nil
+        currentGuideRecordID = nil
         currentGuideStepIndex = nil
         append("New guide sequence created: \(title)")
     }
@@ -1264,11 +1458,15 @@ public final class ImprovSession: @unchecked Sendable {
         append("Updated chord \(chordIndex + 1) of step \(stepIndex + 1) in guide sequence '\(currentGuide.title)'.")
     }
 
+    /// Raw file I/O, unchanged in behavior — kept for the CLI's explicit-path `save-guide
+    /// <path>`/`load <path>`-style verbs and as the decoder migration reuses. NOT the primary
+    /// persistence path anymore (see `useGuideSequence`/`saveGuideSequence(as:)` below) — no
+    /// folder/`currentGuideRecordID` bookkeeping happens here.
     public func loadGuideSequence(fromJSONFile path: String) throws {
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let decoded = try JSONDecoder().decode(GuideSequence.self, from: data)
         currentGuide = decoded
-        currentGuideFilePath = path
+        currentGuideRecordID = nil
         currentGuideStepIndex = nil
         append("Loaded guide sequence from \(path): \(decoded.title)")
     }
@@ -1279,54 +1477,114 @@ public final class ImprovSession: @unchecked Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(currentGuide)
         try data.write(to: URL(fileURLWithPath: path))
-        currentGuideFilePath = path
         append("Saved guide sequence to \(path).")
     }
 
     private static let supportedGuideExtensions: Set<String> = ["json"]
 
-    /// Scans `folderPath` for `.json` guide sequence files — mirrors `listPieceFiles`.
-    public func listGuideFiles(in folderPath: String) throws {
+    /// Every guide sequence's title currently in the SwiftData store, sorted — mirrors
+    /// `llmConnections`. Refreshed after every migrate/insert/update/delete.
+    public private(set) var guideSequenceNames: [String] = []
+
+    private func refreshGuideSequenceNames() {
+        guideSequenceNames = ((try? modelContext.fetch(FetchDescriptor<GuideSequenceRecord>())) ?? []).map(\.title).sorted()
+    }
+
+    /// One-time bridge from a folder of `.json` guide sequence files to the SwiftData store —
+    /// mirrors `migrateLLMConnectionsFromJSONIfNeeded`: a no-op if the store already has guide
+    /// sequences, otherwise migrates every `.json` found in `folderPath` (never deleting the
+    /// originals). No "seed built-ins" — guide sequences have none.
+    public func migrateGuideSequencesFromJSONIfNeeded(in folderPath: String) {
+        refreshGuideSequenceNames()
+        guard guideSequenceNames.isEmpty else { return }
+
         let folderURL = URL(fileURLWithPath: folderPath)
-        let contents = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
-        guideFolder = folderPath
-        guideFiles = contents
-            .filter { Self.supportedGuideExtensions.contains($0.pathExtension.lowercased()) }
-            .map(\.lastPathComponent)
-            .sorted()
-        append(guideFiles.isEmpty
-            ? "No .json guide sequence files found in \(folderPath)."
-            : "Found \(guideFiles.count) guide sequence file(s) in \(folderPath).")
-    }
-
-    /// Loads a guide sequence by name from the last-listed folder (see `listGuideFiles`).
-    public func loadGuideSequence(named name: String) throws {
-        guard let guideFolder else { throw SessionError.noGuideFolderListed }
-        try loadGuideSequence(fromJSONFile: URL(fileURLWithPath: guideFolder).appendingPathComponent(name).path)
-    }
-
-    /// Convenience over `loadGuideSequence(named:)` using the 0-based position in `guideFiles`.
-    public func loadGuideSequence(atIndex index: Int) throws {
-        guard guideFiles.indices.contains(index) else { throw SessionError.invalidGuideIndex }
-        try loadGuideSequence(named: guideFiles[index])
-    }
-
-    /// Re-saves the current guide sequence to wherever it was last loaded from or saved to.
-    public func saveGuideSequence() throws {
-        guard let currentGuideFilePath else { throw SessionError.noCurrentGuideFile }
-        try saveGuideSequence(toJSONFile: currentGuideFilePath)
-    }
-
-    /// Saves under a new name/path — "Save As". Mirrors `savePiece(as:)`.
-    public func saveGuideSequence(as nameOrPath: String) throws {
-        let resolvedPath: String
-        if nameOrPath.contains("/") {
-            resolvedPath = nameOrPath
-        } else {
-            guard let guideFolder else { throw SessionError.noGuideFolderListed }
-            resolvedPath = URL(fileURLWithPath: guideFolder).appendingPathComponent(nameOrPath).path
+        let jsonFiles = (try? FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil))?
+            .filter { Self.supportedGuideExtensions.contains($0.pathExtension.lowercased()) } ?? []
+        var migrated = 0
+        for fileURL in jsonFiles {
+            guard let data = try? Data(contentsOf: fileURL),
+                  let sequence = try? JSONDecoder().decode(GuideSequence.self, from: data) else { continue }
+            modelContext.insert(GuideSequenceRecord(sequence))
+            migrated += 1
         }
-        try saveGuideSequence(toJSONFile: resolvedPath.hasSuffix(".json") ? resolvedPath : resolvedPath + ".json")
+        if migrated > 0 {
+            try? modelContext.save()
+            append("Migrated \(migrated) guide sequence(s) from \(folderPath) (originals left in place).")
+        }
+        refreshGuideSequenceNames()
+    }
+
+    /// Loads a guide sequence by title from the SwiftData store — replaces the old
+    /// folder-based `loadGuideSequence(named:)`. First match wins if two records share a
+    /// title (same tolerance `useLLMConnection(named:)` already accepts).
+    public func useGuideSequence(named name: String) throws {
+        let descriptor = FetchDescriptor<GuideSequenceRecord>(predicate: #Predicate { $0.title == name })
+        guard let record = try? modelContext.fetch(descriptor).first, let sequence = record.asGuideSequence else {
+            throw SessionError.invalidGuideIndex
+        }
+        currentGuide = sequence
+        currentGuideRecordID = record.id
+        currentGuideStepIndex = nil
+        append("Loaded guide sequence: \(sequence.title)")
+    }
+
+    /// Convenience over `useGuideSequence(named:)` using the 0-based position in `guideSequenceNames`.
+    public func useGuideSequence(atIndex index: Int) throws {
+        guard guideSequenceNames.indices.contains(index) else { throw SessionError.invalidGuideIndex }
+        try useGuideSequence(named: guideSequenceNames[index])
+    }
+
+    /// Re-saves the current guide sequence to whichever record it was last loaded from/saved
+    /// to (`currentGuideRecordID`) — updates that exact record even if `currentGuide.title`
+    /// has since changed (unlike `saveGuideSequence(as:)`, which addresses by title).
+    public func saveGuideSequence() throws {
+        guard let currentGuide else { throw SessionError.noGuideSequence }
+        guard let currentGuideRecordID else { throw SessionError.noCurrentGuideFile }
+        let descriptor = FetchDescriptor<GuideSequenceRecord>(predicate: #Predicate { $0.id == currentGuideRecordID })
+        guard let record = try? modelContext.fetch(descriptor).first else { throw SessionError.noCurrentGuideFile }
+        record.title = currentGuide.title
+        record.encodedSequence = (try? JSONEncoder().encode(currentGuide)) ?? record.encodedSequence
+        try modelContext.save()
+        refreshGuideSequenceNames()
+        append("Saved guide sequence: \(currentGuide.title)")
+    }
+
+    /// Saves under a given title — "Save As". If a record with that exact title already
+    /// exists, overwrites it (same "saving under an existing name silently overwrites it"
+    /// behavior the old folder-based version had); otherwise inserts a new record. Adopts
+    /// `name` as `currentGuide`'s own title — there's no separate "filename" anymore, the
+    /// stored title IS the display name.
+    public func saveGuideSequence(as name: String) throws {
+        guard var currentGuide else { throw SessionError.noGuideSequence }
+        currentGuide.title = name
+        self.currentGuide = currentGuide
+        let descriptor = FetchDescriptor<GuideSequenceRecord>(predicate: #Predicate { $0.title == name })
+        if let existing = try? modelContext.fetch(descriptor).first {
+            existing.encodedSequence = (try? JSONEncoder().encode(currentGuide)) ?? existing.encodedSequence
+            currentGuideRecordID = existing.id
+        } else {
+            let record = GuideSequenceRecord(currentGuide)
+            modelContext.insert(record)
+            currentGuideRecordID = record.id
+        }
+        try modelContext.save()
+        refreshGuideSequenceNames()
+        append("Saved guide sequence as: \(name)")
+    }
+
+    /// Deletes a stored guide sequence — new capability (the old folder-based UI had no
+    /// delete button; removing a file meant using the Finder directly, which stops being
+    /// possible once the data lives in a private SwiftData store).
+    public func deleteGuideSequence(atIndex index: Int) throws {
+        guard guideSequenceNames.indices.contains(index) else { throw SessionError.invalidGuideIndex }
+        let name = guideSequenceNames[index]
+        let descriptor = FetchDescriptor<GuideSequenceRecord>(predicate: #Predicate { $0.title == name })
+        guard let record = try? modelContext.fetch(descriptor).first else { return }
+        modelContext.delete(record)
+        try modelContext.save()
+        refreshGuideSequenceNames()
+        append("Deleted guide sequence: \(name)")
     }
 
     /// Positions the guide at `index` (default the first step) — the Guide screen then
@@ -1457,6 +1715,7 @@ public final class ImprovSession: @unchecked Sendable {
     public func newScene(title: String) {
         currentScene = Scene(title: title)
         currentSceneFilePath = nil
+        currentSceneRecordID = nil
         append("Nouvelle scene : \(title)")
     }
 
@@ -1786,34 +2045,195 @@ public final class ImprovSession: @unchecked Sendable {
         append("Scene sauvegardee : \(path).")
     }
 
-    /// Saves under `nameOrPath` — `title` becomes both the scene's stored title and (unless
-    /// `nameOrPath` is itself a full path) the file name, mirroring `savePiece(as:)`'s
-    /// bare-name-resolves-against-the-listed-folder convention.
-    public func saveScene(title: String, as nameOrPath: String) throws {
-        let resolvedPath: String
-        if nameOrPath.contains("/") {
-            resolvedPath = nameOrPath
-        } else {
-            guard let sceneFolder else { throw SessionError.noSceneFolderListed }
-            resolvedPath = URL(fileURLWithPath: sceneFolder).appendingPathComponent(nameOrPath).path
-        }
-        try saveScene(title: title, toJSONFile: resolvedPath.hasSuffix(".json") ? resolvedPath : resolvedPath + ".json")
-    }
-
     private static let supportedSceneExtensions: Set<String> = ["json"]
 
-    /// Scans `folderPath` for `.json` scene files — mirrors `listPieceFiles`.
-    public func listSceneFiles(in folderPath: String) throws {
+    /// Every scene's title currently in the SwiftData store, sorted — mirrors
+    /// `guideSequenceNames`. Refreshed after every migrate/insert/update/delete.
+    public private(set) var sceneNames: [String] = []
+
+    private func refreshSceneNames() {
+        sceneNames = ((try? modelContext.fetch(FetchDescriptor<SceneRecord>())) ?? []).map(\.title).sorted()
+    }
+
+    /// One-time bridge from a folder of `.json` scene files to the SwiftData store — mirrors
+    /// `migrateGuideSequencesFromJSONIfNeeded`: a no-op if the store already has scenes,
+    /// otherwise migrates every `.json` found in `folderPath` (never deleting the originals,
+    /// and reusing `Scene`'s own `Codable` conformance — so its `LegacyCodingKeys`/
+    /// `SceneTrack` fallback still applies unchanged to an old-format file). No "seed
+    /// built-ins" — scenes have none.
+    public func migrateScenesFromJSONIfNeeded(in folderPath: String) {
+        refreshSceneNames()
+        guard sceneNames.isEmpty else { return }
+
         let folderURL = URL(fileURLWithPath: folderPath)
-        let contents = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
-        sceneFolder = folderPath
-        sceneFiles = contents
-            .filter { Self.supportedSceneExtensions.contains($0.pathExtension.lowercased()) }
-            .map(\.lastPathComponent)
-            .sorted()
-        append(sceneFiles.isEmpty
-            ? "No .json scene files found in \(folderPath)."
-            : "Found \(sceneFiles.count) scene file(s) in \(folderPath).")
+        let jsonFiles = (try? FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil))?
+            .filter { Self.supportedSceneExtensions.contains($0.pathExtension.lowercased()) } ?? []
+        var migrated = 0
+        for fileURL in jsonFiles {
+            guard let data = try? Data(contentsOf: fileURL),
+                  let scene = try? JSONDecoder().decode(Scene.self, from: data) else { continue }
+            modelContext.insert(SceneRecord(scene))
+            migrated += 1
+        }
+        if migrated > 0 {
+            try? modelContext.save()
+            append("Migrated \(migrated) scene(s) from \(folderPath) (originals left in place).")
+        }
+        refreshSceneNames()
+    }
+
+    /// Saves under a title — "Save As". Writes through a temporary file via
+    /// `saveScene(title:toJSONFile:)` (the same technique `SceneFileView`'s own "Exporter"
+    /// button already uses) so the exact same synthesize-from-live-tracks fallback and
+    /// identity-hint refresh happens whether saving to the store or exporting to a real file —
+    /// then wraps the result into the SwiftData store instead of leaving it on disk. If a
+    /// record with this exact title already exists, overwrites it (same "saving under an
+    /// existing name silently overwrites it" behavior the old folder-based version had).
+    public func saveScene(title: String, as name: String) throws {
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        try saveScene(title: name, toJSONFile: tempFile.path)
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        let data = try Data(contentsOf: tempFile)
+        let scene = try JSONDecoder().decode(Scene.self, from: data)
+        currentScene = scene
+
+        let descriptor = FetchDescriptor<SceneRecord>(predicate: #Predicate { $0.title == name })
+        if let existing = try? modelContext.fetch(descriptor).first {
+            existing.encodedScene = data
+            currentSceneRecordID = existing.id
+        } else {
+            let record = SceneRecord(scene)
+            modelContext.insert(record)
+            currentSceneRecordID = record.id
+        }
+        try modelContext.save()
+        refreshSceneNames()
+        append("Scene sauvegardee : \(name).")
+    }
+
+    /// Re-saves the current scene to whichever record it was last loaded from/saved to
+    /// (`currentSceneRecordID`) — updates that exact record even if `currentScene.title` has
+    /// since changed (unlike `saveScene(title:as:)`, which addresses by title). Mirrors
+    /// `saveGuideSequence()`.
+    public func saveScene() throws {
+        guard let currentScene else { throw SessionError.noSceneLoaded }
+        guard let currentSceneRecordID else { throw SessionError.noSceneLoaded }
+        let descriptor = FetchDescriptor<SceneRecord>(predicate: #Predicate { $0.id == currentSceneRecordID })
+        guard let record = try? modelContext.fetch(descriptor).first else { throw SessionError.noSceneLoaded }
+        record.title = currentScene.title
+        record.encodedScene = (try? JSONEncoder().encode(currentScene)) ?? record.encodedScene
+        try modelContext.save()
+        refreshSceneNames()
+        append("Scene sauvegardee : \(currentScene.title).")
+    }
+
+    /// Gives the active scene a name — the mechanism behind "type a name in the edit screen to
+    /// save an anonymous scene": if it was never saved (`currentSceneRecordID == nil`), this IS
+    /// the first save (inserts a new record, same as `saveScene(title:as:)`'s insert branch); if
+    /// it's already backed by a record, renames that exact record in place (keeps its identity,
+    /// unlike `saveScene(title:as:)` which matches an existing record by title text).
+    public func renameCurrentScene(to newTitle: String) throws {
+        guard var scene = currentScene else { throw SessionError.noSceneLoaded }
+        scene.title = newTitle
+        currentScene = scene
+        if let currentSceneRecordID {
+            let descriptor = FetchDescriptor<SceneRecord>(predicate: #Predicate { $0.id == currentSceneRecordID })
+            guard let record = try? modelContext.fetch(descriptor).first else { throw SessionError.noSceneLoaded }
+            record.title = newTitle
+            record.encodedScene = (try? JSONEncoder().encode(scene)) ?? record.encodedScene
+        } else {
+            let record = SceneRecord(scene)
+            modelContext.insert(record)
+            self.currentSceneRecordID = record.id
+        }
+        try modelContext.save()
+        refreshSceneNames()
+        append("Scene renommee : \(newTitle).")
+    }
+
+    /// Renames a stored scene by list position — not necessarily the active one. Mirrors
+    /// `renameColorPalette(atIndex:name:)`. Keeps `currentScene`/`currentSceneRecordID` in sync
+    /// if the renamed record happens to be the active one.
+    public func renameScene(atIndex index: Int, name: String) throws {
+        guard sceneNames.indices.contains(index) else { throw SessionError.invalidSceneIndex }
+        let oldName = sceneNames[index]
+        let descriptor = FetchDescriptor<SceneRecord>(predicate: #Predicate { $0.title == oldName })
+        guard let record = try? modelContext.fetch(descriptor).first else { throw SessionError.invalidSceneIndex }
+        record.title = name
+        try modelContext.save()
+        if record.id == currentSceneRecordID { currentScene?.title = name }
+        refreshSceneNames()
+        append("Scene renommee : \(oldName) -> \(name).")
+    }
+
+    /// The exact stored bytes for a scene by list position, for per-row export — a stored
+    /// record's `encodedScene` already IS the full JSON of that `Scene`, so this needs no
+    /// temp-file round trip and never touches `currentScene`/`currentSceneRecordID` (exporting a
+    /// scene that isn't the active one must not disturb what's currently being edited).
+    public func exportedSceneData(atIndex index: Int) throws -> Data {
+        guard sceneNames.indices.contains(index) else { throw SessionError.invalidSceneIndex }
+        let name = sceneNames[index]
+        let descriptor = FetchDescriptor<SceneRecord>(predicate: #Predicate { $0.title == name })
+        guard let record = try? modelContext.fetch(descriptor).first else { throw SessionError.invalidSceneIndex }
+        return record.encodedScene
+    }
+
+    /// Backs the "Nouvelle scene" button: persists the current scene first if it's already
+    /// named/saved (so switching away never silently loses edits), then starts a fresh unnamed
+    /// one. If the current scene is anonymous (never named), nothing is persisted — an
+    /// anonymous scene is discarded when you move on, same rule as it not being saved on quit.
+    public func createNewScene() throws {
+        if currentSceneRecordID != nil { try saveScene() }
+        newScene(title: "")
+    }
+
+    /// Called once at app launch (not by the CLI/web console, which keep their own no-auto-load
+    /// behavior): resolves the "which scene should be showing" question so the UI never has to
+    /// show a dead-end "no active scene" placeholder. With no saved scenes, starts a fresh
+    /// anonymous one; with exactly one, loads it (no real choice to present); with several,
+    /// leaves `currentScene` nil so the existing pick-or-create screen is what's shown first.
+    public func ensureSceneReadyForLaunch() {
+        guard currentScene == nil else { return }
+        if sceneNames.isEmpty {
+            currentScene = Scene(title: "")
+        } else if sceneNames.count == 1 {
+            try? useScene(atIndex: 0)
+        }
+    }
+
+    /// Loads a scene by title from the SwiftData store — replaces the old folder-based
+    /// `loadScene(named:)`. Round-trips through a temp file via `loadScene(fromJSONFile:)`
+    /// (same reuse technique as `saveScene(title:as:)`) so the reattachment-matching logic
+    /// stays in exactly one place. First match wins if two records share a title (same
+    /// tolerance `useLLMConnection(named:)`/`useGuideSequence(named:)` already accept).
+    public func useScene(named name: String) throws {
+        let descriptor = FetchDescriptor<SceneRecord>(predicate: #Predicate { $0.title == name })
+        guard let record = try? modelContext.fetch(descriptor).first else { throw SessionError.invalidSceneIndex }
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        try record.encodedScene.write(to: tempFile)
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+        try loadScene(fromJSONFile: tempFile.path)
+        currentSceneRecordID = record.id
+    }
+
+    /// Convenience over `useScene(named:)` using the 0-based position in `sceneNames`.
+    public func useScene(atIndex index: Int) throws {
+        guard sceneNames.indices.contains(index) else { throw SessionError.invalidSceneIndex }
+        try useScene(named: sceneNames[index])
+    }
+
+    /// Deletes a stored scene — new capability (the old folder-based UI had no delete
+    /// button; removing a file meant using the Finder directly, which stops being possible
+    /// once the data lives in a private SwiftData store).
+    public func deleteScene(atIndex index: Int) throws {
+        guard sceneNames.indices.contains(index) else { throw SessionError.invalidSceneIndex }
+        let name = sceneNames[index]
+        let descriptor = FetchDescriptor<SceneRecord>(predicate: #Predicate { $0.title == name })
+        guard let record = try? modelContext.fetch(descriptor).first else { return }
+        modelContext.delete(record)
+        try modelContext.save()
+        refreshSceneNames()
+        append("Deleted scene: \(name)")
     }
 
     /// Loads a saved scene, best-effort: each role's `lastAttachedInstrument` hint is matched
@@ -1863,46 +2283,48 @@ public final class ImprovSession: @unchecked Sendable {
         append(message)
     }
 
-    /// Loads a scene by name from the last-listed folder (see `listSceneFiles`).
-    public func loadScene(named name: String) throws {
-        guard let sceneFolder else { throw SessionError.noSceneFolderListed }
-        try loadScene(fromJSONFile: URL(fileURLWithPath: sceneFolder).appendingPathComponent(name).path)
-    }
-
-    /// Convenience over `loadScene(named:)` using the 0-based position in `sceneFiles`.
-    public func loadScene(atIndex index: Int) throws {
-        guard sceneFiles.indices.contains(index) else { throw SessionError.invalidSceneIndex }
-        try loadScene(named: sceneFiles[index])
-    }
 
     // MARK: - Color palettes (per-instance, shared by the web console and virtual keyboard)
 
-    /// Replaces `colorPalettes` wholesale from `palettes.json` — unlike `Scene`/`GuideSequence`
-    /// (one document per file, loaded/edited/saved back), this file is a flat *list* meant to
-    /// be hand-edited outside the app to add/tweak palettes; the app only ever reads it and
-    /// picks one. Resets `activeColorPaletteIndex` to 0 (the first palette in the file) —
-    /// which palette was active is never persisted, by design (see `activeColorPaletteIndex`'s
-    /// doc comment).
-    public func loadColorPalettes(fromJSONFile path: String) throws {
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        let file = try JSONDecoder().decode(ColorPaletteFile.self, from: data)
-        guard !file.palettes.isEmpty else { throw SessionError.emptyColorPaletteFile }
-        colorPalettes = file.palettes
+    /// One-time bridge from `palettes.json` to the SwiftData store — mirrors
+    /// `migrateLLMConnectionsFromJSONIfNeeded`: a no-op if the store already has palettes
+    /// (idempotent, safe to call on every launch), otherwise migrates the file's contents
+    /// (never deleting it — same "don't remove what you didn't create" caution) or seeds
+    /// `ColorPalette.builtInDefaults` if there's nothing to migrate. Resets
+    /// `activeColorPaletteIndex` to 0 — which palette was active is never persisted, by design
+    /// (see `activeColorPaletteIndex`'s doc comment).
+    public func migrateColorPalettesFromJSONIfNeeded(fromJSONFile path: String) {
+        refreshColorPalettes()
+        guard colorPalettes.isEmpty else { return }
+
+        let toSeed: [ColorPalette]
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+           let file = try? JSONDecoder().decode(ColorPaletteFile.self, from: data), !file.palettes.isEmpty {
+            toSeed = file.palettes
+            append("Migrated \(file.palettes.count) color palette(s) from \(path) (original left in place).")
+        } else {
+            toSeed = ColorPalette.builtInDefaults
+            append("Seeded \(toSeed.count) built-in color palette(s).")
+        }
+        for (index, palette) in toSeed.enumerated() {
+            modelContext.insert(ColorPaletteRecord(palette, sortOrder: index))
+        }
+        try? modelContext.save()
+        refreshColorPalettes()
         activeColorPaletteIndex = 0
     }
 
-    /// Writes `ColorPalette.builtInDefaults` to `path` first if nothing is there yet (mirrors
-    /// `setPromptsFolder`'s "creates its fixed subfolders if absent" convenience), then loads
-    /// it either way — the one call `JamShack/main.swift` needs at startup, without it having
-    /// to know `palettes.json`'s on-disk shape itself.
-    public func loadOrCreateColorPalettes(fromJSONFile path: String) throws {
-        if !FileManager.default.fileExists(atPath: path) {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(ColorPaletteFile(palettes: ColorPalette.builtInDefaults))
-            try data.write(to: URL(fileURLWithPath: path))
-        }
-        try loadColorPalettes(fromJSONFile: path)
+    /// Re-reads `colorPalettes` (in stored order, see `ColorPaletteRecord.sortOrder`) from
+    /// `modelContext` — called after every migrate/insert/update so the in-memory list every
+    /// caller already iterates never drifts from what's actually stored. Mirrors
+    /// `refreshLLMConnections()`. Deliberately does NOT touch `activeColorPaletteIndex` (unlike
+    /// the initial migration) — an in-place edit (`updateColorPalette`/`renameColorPalette`)
+    /// never changes how many palettes there are or their order, so the active selection stays
+    /// valid across a refresh.
+    private func refreshColorPalettes() {
+        let descriptor = FetchDescriptor<ColorPaletteRecord>(sortBy: [SortDescriptor(\.sortOrder)])
+        let records = (try? modelContext.fetch(descriptor)) ?? []
+        colorPalettes = records.map(\.asColorPalette)
     }
 
     public func selectColorPalette(named name: String) throws {
@@ -1919,18 +2341,6 @@ public final class ImprovSession: @unchecked Sendable {
         append("Using color palette: \(activeColorPalette.name)")
     }
 
-    /// Persists `colorPalettes` back to `palettes.json` — the write counterpart to
-    /// `loadColorPalettes`, needed now that palettes can be edited/created from the UI and not
-    /// just hand-edited on disk. A no-op (not an error) if no settings folder is set yet, same
-    /// convention as `saveMicrophoneCalibration`/`saveLumiSettings`.
-    private func saveColorPalettes() throws {
-        guard let settingsFolder else { return }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(ColorPaletteFile(palettes: colorPalettes))
-        try data.write(to: URL(fileURLWithPath: (settingsFolder as NSString).appendingPathComponent("palettes.json")))
-    }
-
     /// Replaces one palette's colors in place (keeping its name and position) and persists —
     /// `colors`/`textColors` must both be exactly 12 entries (one per pitch class, same as
     /// every existing palette) or this throws rather than silently storing a malformed
@@ -1940,8 +2350,12 @@ public final class ImprovSession: @unchecked Sendable {
         guard colors.count == 12 else { throw SessionError.invalidColorPaletteFile }
         let resolvedTextColors = textColors ?? ColorPalette.legibleTextColors(for: colors)
         guard resolvedTextColors.count == 12 else { throw SessionError.invalidColorPaletteFile }
-        colorPalettes[index] = ColorPalette(name: colorPalettes[index].name, colors: colors, textColors: resolvedTextColors)
-        try saveColorPalettes()
+        let records = (try? modelContext.fetch(FetchDescriptor<ColorPaletteRecord>(sortBy: [SortDescriptor(\.sortOrder)]))) ?? []
+        guard records.indices.contains(index) else { throw SessionError.invalidColorPaletteIndex }
+        records[index].colors = colors
+        records[index].textColors = resolvedTextColors
+        try modelContext.save()
+        refreshColorPalettes()
     }
 
     /// Renames a palette in place and persists — kept separate from `updateColorPalette`
@@ -1949,8 +2363,11 @@ public final class ImprovSession: @unchecked Sendable {
     /// resend all 12 colors.
     public func renameColorPalette(atIndex index: Int, name: String) throws {
         guard colorPalettes.indices.contains(index) else { throw SessionError.invalidColorPaletteIndex }
-        colorPalettes[index].name = name
-        try saveColorPalettes()
+        let records = (try? modelContext.fetch(FetchDescriptor<ColorPaletteRecord>(sortBy: [SortDescriptor(\.sortOrder)]))) ?? []
+        guard records.indices.contains(index) else { throw SessionError.invalidColorPaletteIndex }
+        records[index].name = name
+        try modelContext.save()
+        refreshColorPalettes()
     }
 
     /// Appends a brand-new palette (starting from `ColorPalette.builtInDefaults[0]`'s colors
@@ -1960,75 +2377,88 @@ public final class ImprovSession: @unchecked Sendable {
     public func addColorPalette(name: String, colors: [String]? = nil) throws {
         let resolvedColors = colors ?? ColorPalette.builtInDefaults[0].colors
         let newPalette = ColorPalette(name: name, colors: resolvedColors, textColors: ColorPalette.legibleTextColors(for: resolvedColors))
-        colorPalettes.append(newPalette)
-        try saveColorPalettes()
+        modelContext.insert(ColorPaletteRecord(newPalette, sortOrder: colorPalettes.count))
+        try modelContext.save()
+        refreshColorPalettes()
         try selectColorPalette(atIndex: colorPalettes.count - 1)
     }
 
     // MARK: - UI language (shared by terminal, web console, virtual keyboard)
 
-    /// Which of the 3 supported languages the static UI text is shown in — unlike
-    /// `activeColorPaletteIndex`, this IS persisted (see `loadOrCreateLanguageSetting`/
-    /// `setLanguage`) since a language choice should survive a relaunch rather than silently
-    /// reset to French every time.
+    /// Which of the supported languages the static UI text is shown in — unlike
+    /// `activeColorPaletteIndex`, this IS persisted (see
+    /// `migrateLanguageSettingFromJSONIfNeeded`/`setLanguage`) since a language choice should
+    /// survive a relaunch rather than silently reset to French every time.
     public private(set) var currentLanguage: AppLanguage = .fr
 
-    /// Mirrors `loadColorPalettes(fromJSONFile:)`'s shape, but for the singleton
-    /// `language.json` (one value, not a list).
-    public func loadLanguageSetting(fromJSONFile path: String) throws {
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        currentLanguage = try JSONDecoder().decode(LanguageSettingFile.self, from: data).language
-    }
-
-    /// Mirrors `loadOrCreateColorPalettes(fromJSONFile:)`: writes a default (French) file first
-    /// if nothing is there yet, then loads it either way.
-    public func loadOrCreateLanguageSetting(fromJSONFile path: String) throws {
-        if !FileManager.default.fileExists(atPath: path) {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(LanguageSettingFile(language: .fr))
-            try data.write(to: URL(fileURLWithPath: path))
+    /// One-time bridge from `language.json` to the SwiftData store — mirrors
+    /// `migrateColorPalettesFromJSONIfNeeded(fromJSONFile:)`, but for a singleton value: a
+    /// no-op (beyond loading the existing value) if a `LanguageSettingRecord` already exists,
+    /// otherwise migrates the file's language (left in place) or seeds French.
+    public func migrateLanguageSettingFromJSONIfNeeded(fromJSONFile path: String) {
+        if let existing = try? modelContext.fetch(FetchDescriptor<LanguageSettingRecord>()).first {
+            currentLanguage = existing.asAppLanguage
+            return
         }
-        try loadLanguageSetting(fromJSONFile: path)
+        let language: AppLanguage
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+           let file = try? JSONDecoder().decode(LanguageSettingFile.self, from: data) {
+            language = file.language
+            append("Migrated language setting from \(path) (original left in place).")
+        } else {
+            language = .fr
+        }
+        modelContext.insert(LanguageSettingRecord(language))
+        try? modelContext.save()
+        currentLanguage = language
     }
 
-    /// The one place `currentLanguage` actually changes at runtime — mirrors
-    /// `selectColorPalette(atIndex:)`, but also rewrites `language.json` immediately (unlike
-    /// palette selection), since this setting must survive a relaunch.
+    /// The one place `currentLanguage` actually changes at runtime — persists immediately
+    /// (unlike palette selection) since this setting must survive a relaunch. Unlike the old
+    /// JSON-backed version, this no longer depends on a settings folder having been chosen —
+    /// same rationale as `LLMConnectionRecord` not living inside that folder either.
     public func setLanguage(_ language: AppLanguage) throws {
         currentLanguage = language
-        if let settingsFolder {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(LanguageSettingFile(language: language))
-            try data.write(to: URL(fileURLWithPath: (settingsFolder as NSString).appendingPathComponent("language.json")))
+        if let existing = try? modelContext.fetch(FetchDescriptor<LanguageSettingRecord>()).first {
+            existing.language = language.rawValue
+        } else {
+            modelContext.insert(LanguageSettingRecord(language))
         }
+        try modelContext.save()
     }
 
     // MARK: - Chord progression templates (roman-numeral libraries, see `RomanNumeralChord`)
 
-    /// Every template loaded from `chordprogressions.json` — same "flat list, hand-edited
-    /// outside the app" convention as `colorPalettes`/`palettes.json`, not a one-document-
-    /// per-file model like `Scene`/`GuideSequence`.
+    /// Every template loaded from the SwiftData store — same "flat list, hand-edited outside
+    /// the app" convention as `colorPalettes`, not a one-document-per-file model like
+    /// `Scene`/`GuideSequence`.
     public private(set) var chordProgressionTemplates: [ChordProgressionTemplate] = [ChordProgressionTemplate.builtInDefaults[0]]
 
-    /// Mirrors `loadColorPalettes(fromJSONFile:)`.
-    public func loadChordProgressionTemplates(fromJSONFile path: String) throws {
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        let file = try JSONDecoder().decode(ChordProgressionTemplateFile.self, from: data)
-        guard !file.progressions.isEmpty else { throw SessionError.emptyChordProgressionTemplateFile }
-        chordProgressionTemplates = file.progressions
+    /// Mirrors `migrateColorPalettesFromJSONIfNeeded(fromJSONFile:)`.
+    public func migrateChordProgressionTemplatesFromJSONIfNeeded(fromJSONFile path: String) {
+        refreshChordProgressionTemplates()
+        guard chordProgressionTemplates.isEmpty else { return }
+
+        let toSeed: [ChordProgressionTemplate]
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+           let file = try? JSONDecoder().decode(ChordProgressionTemplateFile.self, from: data), !file.progressions.isEmpty {
+            toSeed = file.progressions
+            append("Migrated \(file.progressions.count) chord progression template(s) from \(path) (original left in place).")
+        } else {
+            toSeed = ChordProgressionTemplate.builtInDefaults
+            append("Seeded \(toSeed.count) built-in chord progression template(s).")
+        }
+        for (index, template) in toSeed.enumerated() {
+            modelContext.insert(ChordProgressionTemplateRecord(template, sortOrder: index))
+        }
+        try? modelContext.save()
+        refreshChordProgressionTemplates()
     }
 
-    /// Mirrors `loadOrCreateColorPalettes(fromJSONFile:)`.
-    public func loadOrCreateChordProgressionTemplates(fromJSONFile path: String) throws {
-        if !FileManager.default.fileExists(atPath: path) {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(ChordProgressionTemplateFile(progressions: ChordProgressionTemplate.builtInDefaults))
-            try data.write(to: URL(fileURLWithPath: path))
-        }
-        try loadChordProgressionTemplates(fromJSONFile: path)
+    private func refreshChordProgressionTemplates() {
+        let descriptor = FetchDescriptor<ChordProgressionTemplateRecord>(sortBy: [SortDescriptor(\.sortOrder)])
+        let records = (try? modelContext.fetch(descriptor)) ?? []
+        chordProgressionTemplates = records.map(\.asChordProgressionTemplate)
     }
 
     /// Resolves every degree token in `template` against `mode` (see
@@ -2709,48 +3139,55 @@ public final class ImprovSession: @unchecked Sendable {
 
     /// Shared mutator behind `setSoundAlias`/`setSoundFavorite`: finds or creates the entry for
     /// `(path, preset)`, applies `mutate`, drops the entry if it ends up with no alias and not
-    /// a favorite (the "untouched" state), then persists either way.
+    /// a favorite (the "untouched" state), then persists either way. Fetches every
+    /// `SoundEntryRecord` and filters in memory rather than a `#Predicate` on the flattened
+    /// `presetProgram`/`presetBank` fields — only ever a handful of curated sounds, and this
+    /// sidesteps any doubt about optional-`Int` equality inside a SwiftData predicate.
     private func updateSoundEntry(_ path: String, preset: SoundFontPresetIdentity?, mutate: (inout SoundEntry) -> Void) throws {
-        if let index = soundEntries.firstIndex(where: { $0.path == path && $0.preset == preset }) {
-            mutate(&soundEntries[index])
-            if soundEntries[index].alias == nil && !soundEntries[index].isFavorite {
-                soundEntries.remove(at: index)
+        let records = (try? modelContext.fetch(FetchDescriptor<SoundEntryRecord>())) ?? []
+        let presetProgram = preset.map { Int($0.program) }
+        let presetBank = preset.map { Int($0.bank) }
+        if let record = records.first(where: { $0.path == path && $0.presetProgram == presetProgram && $0.presetBank == presetBank }) {
+            var entry = record.asSoundEntry
+            mutate(&entry)
+            if entry.alias == nil && !entry.isFavorite {
+                modelContext.delete(record)
+            } else {
+                record.alias = entry.alias
+                record.isFavorite = entry.isFavorite
             }
         } else {
             var entry = SoundEntry(path: path, preset: preset)
             mutate(&entry)
             if entry.alias != nil || entry.isFavorite {
-                soundEntries.append(entry)
+                modelContext.insert(SoundEntryRecord(entry))
             }
         }
-        try saveSoundSettings()
+        try modelContext.save()
+        refreshSoundEntries()
     }
 
-    /// Persists `soundEntries` back to `sound-settings.json` — no-op if no settings folder is
-    /// set yet, same convention as `saveColorPalettes`/`saveMicrophoneCalibration`.
-    private func saveSoundSettings() throws {
-        guard let settingsFolder else { return }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(SoundSettingsFile(sounds: soundEntries))
-        try data.write(to: URL(fileURLWithPath: (settingsFolder as NSString).appendingPathComponent("sound-settings.json")))
+    /// Re-reads `soundEntries` from `modelContext` — called after every migrate/mutate so the
+    /// in-memory list every caller already iterates never drifts from what's actually stored.
+    private func refreshSoundEntries() {
+        soundEntries = ((try? modelContext.fetch(FetchDescriptor<SoundEntryRecord>())) ?? []).map(\.asSoundEntry)
     }
 
-    public func loadSoundSettings(fromJSONFile path: String) throws {
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        soundEntries = try JSONDecoder().decode(SoundSettingsFile.self, from: data).sounds
-    }
-
-    /// Writes an empty `sound-settings.json` first if nothing is there yet, then loads it
-    /// either way — mirrors `loadOrCreateColorPalettes`.
-    public func loadOrCreateSoundSettings(fromJSONFile path: String) throws {
-        if !FileManager.default.fileExists(atPath: path) {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(SoundSettingsFile(sounds: []))
-            try data.write(to: URL(fileURLWithPath: path))
+    /// One-time bridge from `sound-settings.json` to the SwiftData store — mirrors
+    /// `migrateColorPalettesFromJSONIfNeeded(fromJSONFile:)`, but with no "seed built-ins"
+    /// branch: an empty store is this category's own correct fresh-install default (only
+    /// curated sounds ever get an entry at all — see `SoundEntry`'s own doc comment).
+    public func migrateSoundSettingsFromJSONIfNeeded(fromJSONFile path: String) {
+        refreshSoundEntries()
+        guard soundEntries.isEmpty else { return }
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let file = try? JSONDecoder().decode(SoundSettingsFile.self, from: data), !file.sounds.isEmpty else { return }
+        for entry in file.sounds {
+            modelContext.insert(SoundEntryRecord(entry))
         }
-        try loadSoundSettings(fromJSONFile: path)
+        try? modelContext.save()
+        refreshSoundEntries()
+        append("Migrated \(file.sounds.count) sound setting(s) from \(path) (original left in place).")
     }
 
     /// Simulates a key press/release without real MIDI hardware — useful for testing and
@@ -2966,29 +3403,38 @@ public final class ImprovSession: @unchecked Sendable {
     /// See `MicrophoneCalibrationSettingsFile`'s own doc comment for what this is used for.
     public private(set) var microphoneCalibration = MicrophoneCalibrationSettingsFile()
 
-    public func loadMicrophoneCalibration(fromJSONFile path: String) throws {
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        microphoneCalibration = try JSONDecoder().decode(MicrophoneCalibrationSettingsFile.self, from: data)
-    }
-
-    /// Mirrors `loadOrCreateLumiSettings(fromJSONFile:)`: writes the defaults first if
-    /// nothing is there yet, then loads it either way.
-    public func loadOrCreateMicrophoneCalibration(fromJSONFile path: String) throws {
-        if !FileManager.default.fileExists(atPath: path) {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(MicrophoneCalibrationSettingsFile())
-            try data.write(to: URL(fileURLWithPath: path))
+    /// One-time bridge from `microphone-calibration.json` to the SwiftData store — mirrors
+    /// `migrateLanguageSettingFromJSONIfNeeded(fromJSONFile:)`: a no-op (beyond loading the
+    /// existing value) if a `MicrophoneCalibrationSettingsRecord` already exists, otherwise
+    /// migrates the file's values (left in place) or seeds the defaults.
+    public func migrateMicrophoneCalibrationFromJSONIfNeeded(fromJSONFile path: String) {
+        if let existing = try? modelContext.fetch(FetchDescriptor<MicrophoneCalibrationSettingsRecord>()).first {
+            microphoneCalibration = existing.asMicrophoneCalibrationSettingsFile
+            return
         }
-        try loadMicrophoneCalibration(fromJSONFile: path)
+        let file: MicrophoneCalibrationSettingsFile
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+           let decoded = try? JSONDecoder().decode(MicrophoneCalibrationSettingsFile.self, from: data) {
+            file = decoded
+            append("Migrated microphone calibration from \(path) (original left in place).")
+        } else {
+            file = MicrophoneCalibrationSettingsFile()
+        }
+        modelContext.insert(MicrophoneCalibrationSettingsRecord(file))
+        try? modelContext.save()
+        microphoneCalibration = file
     }
 
     private func saveMicrophoneCalibration() throws {
-        guard let settingsFolder else { return }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(microphoneCalibration)
-        try data.write(to: URL(fileURLWithPath: (settingsFolder as NSString).appendingPathComponent("microphone-calibration.json")))
+        if let existing = try? modelContext.fetch(FetchDescriptor<MicrophoneCalibrationSettingsRecord>()).first {
+            existing.quietRMS = microphoneCalibration.quietRMS
+            existing.loudRMS = microphoneCalibration.loudRMS
+            existing.quietPeakMagnitude = microphoneCalibration.quietPeakMagnitude
+            existing.loudPeakMagnitude = microphoneCalibration.loudPeakMagnitude
+        } else {
+            modelContext.insert(MicrophoneCalibrationSettingsRecord(microphoneCalibration))
+        }
+        try modelContext.save()
     }
 
     /// Starts a capture window for one calibration phase: for as long as this is active
@@ -3419,10 +3865,10 @@ public final class ImprovSession: @unchecked Sendable {
             return WebConsoleMenuTrack(id: idText, label: track.label)
         }
         let lists = WebConsoleMenuLists(
-            tracks: localTracks, pieceFiles: pieceFiles, sampleFiles: sampleFiles,
-            soundTrackFiles: soundTrackFiles, guideFiles: guideFiles, sceneFiles: sceneFiles,
-            compositionFiles: compositionFiles, textFramingFiles: textFramingFiles,
-            soundTrackFramingFiles: soundTrackFramingFiles, soundTrackInstructionsFiles: soundTrackInstructionsFiles,
+            tracks: localTracks, pieceFiles: pieceNames, sampleFiles: sampleFiles,
+            soundTrackFiles: soundTrackNames, guideFiles: guideSequenceNames, sceneFiles: sceneNames,
+            compositionFiles: compositionDescriptionNames, textFramingFiles: textFramingSentenceNames,
+            soundTrackFramingFiles: soundTrackFramingSentenceNames, soundTrackInstructionsFiles: soundTrackInstructionsNames,
             llmConnections: llmConnections, colorPalettes: colorPalettes.map(\.name),
             chordProgressionTemplates: chordProgressionTemplates.map(\.name),
             scales: ScaleLibrary.all.map { WebConsoleMenuScale(id: $0.id, name: $0.popularName) },
@@ -3480,11 +3926,11 @@ public final class ImprovSession: @unchecked Sendable {
         func ok(_ message: String) -> MenuActionResult { MenuActionResult(ok: true, message: message) }
         switch action {
         // --- JamShack ---
-        case "folder-pieces": try listPieceFiles(in: value); return ok("\(pieceFiles.count) morceau(x) trouve(s).")
+        case "folder-pieces": migratePiecesFromJSONIfNeeded(in: value); return ok("\(pieceNames.count) morceau(x) trouve(s).")
         case "folder-samples": try listSampleFiles(in: value); return ok("\(sampleFiles.count) son(s) trouve(s).")
-        case "folder-soundtracks": try listSoundTrackFiles(in: value); return ok("\(soundTrackFiles.count) enregistrement(s) trouve(s).")
-        case "folder-guides": try listGuideFiles(in: value); return ok("\(guideFiles.count) guide(s) trouve(s).")
-        case "folder-scenes": try listSceneFiles(in: value); return ok("\(sceneFiles.count) scene(s) trouvee(s).")
+        case "folder-soundtracks": migrateSoundTracksFromJSONIfNeeded(in: value); return ok("\(soundTrackNames.count) enregistrement(s) trouve(s).")
+        case "folder-guides": migrateGuideSequencesFromJSONIfNeeded(in: value); return ok("\(guideSequenceNames.count) guide(s) trouve(s).")
+        case "folder-scenes": migrateScenesFromJSONIfNeeded(in: value); return ok("\(sceneNames.count) scene(s) trouvee(s).")
         case "folder-settings": try setSettingsFolder(value); return ok("Dossier de reglages defini.")
         case "folder-prompts": try setPromptsFolder(value); return ok("Dossier de composition IA defini.")
         case "use-llm": try useLLMConnection(named: value); return ok("Connexion LLM active : \(value)")
@@ -3527,7 +3973,7 @@ public final class ImprovSession: @unchecked Sendable {
             guard let mode = MicrophoneRecognitionMode(wireValueText: value) else { throw MenuActionError.invalidValue }
             try setMicrophoneRecognitionMode(mode, for: id); return ok("Mode de reconnaissance : \(value)")
         case "scene-save": try saveScene(title: value, as: value); return ok("Scene sauvegardee : \(value)")
-        case "scene-load": try loadScene(named: value); return ok("Scene chargee : \(value)")
+        case "scene-load": try useScene(named: value); return ok("Scene chargee : \(value)")
         case "scene-new": newScene(title: value); return ok("Nouvelle scene : \(value)")
         case "scene-role-add":
             let roleID = try addSceneRole(name: value)
@@ -3560,7 +4006,7 @@ public final class ImprovSession: @unchecked Sendable {
                 chordProgressionTemplates.first { $0.name.lowercased() == progressionName.lowercased() }
             try addGuideStep(ModeReference(tonic: tonic, scaleID: scaleID), chordProgression: progression)
             return ok("Etape ajoutee au guide.")
-        case "guide-load": try loadGuideSequence(named: value); return ok("Guide charge : \(value)")
+        case "guide-load": try useGuideSequence(named: value); return ok("Guide charge : \(value)")
         case "guide-save": try saveGuideSequence(); return ok("Guide sauvegarde.")
         case "guide-save-as": try saveGuideSequence(as: value); return ok("Guide sauvegarde : \(value)")
         case "guide-start": try startGuide(atStepIndex: 0); return ok("Guide demarre.")
@@ -3574,7 +4020,7 @@ public final class ImprovSession: @unchecked Sendable {
             let soundTrack = try stopRecording()
             return ok("Enregistrement termine : \(soundTrack.events.count) evenement(s).")
         case "soundtrack-play": try playSoundTrack(); return ok("Lecture de l'enregistrement demarree.")
-        case "soundtrack-load": try loadSoundTrack(named: value); return ok("Enregistrement charge : \(value)")
+        case "soundtrack-load": try useSoundTrack(named: value); return ok("Enregistrement charge : \(value)")
         case "soundtrack-save": try saveSoundTrack(); return ok("Enregistrement sauvegarde.")
         case "soundtrack-save-as": try saveSoundTrack(as: value); return ok("Enregistrement sauvegarde : \(value)")
         case "soundtrack-compose":
@@ -3603,7 +4049,7 @@ public final class ImprovSession: @unchecked Sendable {
             try setPieceChordInstrument(sectionIndex: section - 1, instrumentName: value.isEmpty ? nil : value)
             return ok("Instrument d'accords modifie.")
         case "piece-load-demo": loadDemoPiece(); return ok("Morceau demo charge.")
-        case "piece-load": try loadPiece(named: value); return ok("Morceau charge : \(value)")
+        case "piece-load": try usePiece(named: value); return ok("Morceau charge : \(value)")
         case "piece-save": try savePiece(); return ok("Morceau sauvegarde.")
         case "piece-save-as": try savePiece(as: value); return ok("Morceau sauvegarde : \(value)")
 
@@ -3614,7 +4060,7 @@ public final class ImprovSession: @unchecked Sendable {
             setAdditionalCompositionInstructions(query["instructions"]?.isEmpty == false ? query["instructions"] : nil)
             return ok("Description mise a jour.")
         case "composition-compose": try composeFromText(title: nil); return ok("Composition lancee.")
-        case "composition-load": try loadCompositionDescription(named: value); return ok("Description chargee : \(value)")
+        case "composition-load": try useCompositionDescription(named: value); return ok("Description chargee : \(value)")
         case "composition-save-as": try saveCompositionDescription(as: value); return ok("Description sauvegardee : \(value)")
         case "composition-save": try saveCompositionDescription(); return ok("Description sauvegardee.")
         case "text-framing-set": setTextFramingSentence(value); return ok("Phrase de cadrage modifiee.")
@@ -3878,7 +4324,7 @@ public final class ImprovSession: @unchecked Sendable {
             )
         }
         return GuideDetailResponse(
-            loaded: true, title: currentGuide.title, filePath: currentGuideFilePath,
+            loaded: true, title: currentGuide.title, filePath: currentGuideRecordID,
             currentStepIndex: currentGuideStepIndex, steps: steps
         )
     }
@@ -3907,7 +4353,7 @@ public final class ImprovSession: @unchecked Sendable {
         }
         return SoundTrackDetailResponse(
             loaded: true, id: currentSoundTrack.id, title: currentSoundTrack.title,
-            filePath: currentSoundTrackFilePath, durationSeconds: currentSoundTrack.durationSeconds,
+            filePath: currentSoundTrackRecordID, durationSeconds: currentSoundTrack.durationSeconds,
             trackIDs: currentSoundTrack.trackIDs.sorted(), events: currentSoundTrack.events
         )
     }
@@ -3955,66 +4401,71 @@ public final class ImprovSession: @unchecked Sendable {
     /// there's no editing UI yet.
     public private(set) var noteColorSettings = NoteColorSettingsFile()
 
-    public func loadNoteColorSettings(fromJSONFile path: String) throws {
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        noteColorSettings = try JSONDecoder().decode(NoteColorSettingsFile.self, from: data)
-    }
-
-    /// Mirrors `loadOrCreateLumiSettings(fromJSONFile:)`: writes the defaults first if
-    /// nothing is there yet, then loads it either way.
-    public func loadOrCreateNoteColorSettings(fromJSONFile path: String) throws {
-        if !FileManager.default.fileExists(atPath: path) {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(NoteColorSettingsFile())
-            try data.write(to: URL(fileURLWithPath: path))
+    /// One-time bridge from `note-colors.json` to the SwiftData store — mirrors
+    /// `migrateMicrophoneCalibrationFromJSONIfNeeded(fromJSONFile:)`.
+    public func migrateNoteColorSettingsFromJSONIfNeeded(fromJSONFile path: String) {
+        if let existing = try? modelContext.fetch(FetchDescriptor<NoteColorSettingsRecord>()).first {
+            noteColorSettings = existing.asNoteColorSettingsFile
+            return
         }
-        try loadNoteColorSettings(fromJSONFile: path)
-    }
-
-    // MARK: - LLM API keys (persisted, plaintext — see LLMAPIKeysFile's doc comment)
-
-    public private(set) var llmAPIKeys = LLMAPIKeysFile()
-
-    public func loadLLMAPIKeys(fromJSONFile path: String) throws {
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        llmAPIKeys = try JSONDecoder().decode(LLMAPIKeysFile.self, from: data)
-        for (envVar, key) in llmAPIKeys.keysByEnvVar { APIKeyStore.set(key, forEnvVar: envVar) }
-    }
-
-    /// Mirrors `loadOrCreateLumiSettings(fromJSONFile:)`: writes the defaults first if
-    /// nothing is there yet, then loads it either way — including pushing every stored key
-    /// into `APIKeyStore` so a relaunch doesn't need the key retyped before composing.
-    public func loadOrCreateLLMAPIKeys(fromJSONFile path: String) throws {
-        if !FileManager.default.fileExists(atPath: path) {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(LLMAPIKeysFile())
-            try data.write(to: URL(fileURLWithPath: path))
+        let file: NoteColorSettingsFile
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+           let decoded = try? JSONDecoder().decode(NoteColorSettingsFile.self, from: data) {
+            file = decoded
+            append("Migrated note color settings from \(path) (original left in place).")
+        } else {
+            file = NoteColorSettingsFile()
         }
-        try loadLLMAPIKeys(fromJSONFile: path)
+        modelContext.insert(NoteColorSettingsRecord(file))
+        try? modelContext.save()
+        noteColorSettings = file
     }
 
-    private func saveLLMAPIKeys() throws {
-        guard let settingsFolder else { return }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(llmAPIKeys)
-        try data.write(to: URL(fileURLWithPath: (settingsFolder as NSString).appendingPathComponent("llm-api-keys.json")))
+    // MARK: - LLM API keys (Keychain-backed — see `APIKeyStore`'s own doc comment)
+
+    /// Every env-var slot that currently has a Keychain-persisted key — used by the SwiftUI
+    /// "JamShack > LLM" tab to know which slot is already set, without needing the actual
+    /// secret for that (see `llmAPIKey(forEnvVar:)` for the one place that reads it back).
+    public private(set) var llmAPIKeyEnvVars: [String] = []
+
+    private func refreshLLMAPIKeyEnvVars() {
+        llmAPIKeyEnvVars = APIKeyStore.persistedEnvVars().sorted()
+    }
+
+    /// The persisted key for `envVar`, if any — used only to prefill the SwiftUI field with
+    /// the actual value (mirrors the old `llmAPIKeys.keysByEnvVar[envVar]` lookup).
+    public func llmAPIKey(forEnvVar envVar: String) -> String? {
+        APIKeyStore.persistedKey(forEnvVar: envVar)
+    }
+
+    /// One-time bridge from the old plaintext `llm-api-keys.json` to the Keychain — mirrors
+    /// every other `migrate...FromJSONIfNeeded` in this file (idempotent: a no-op if the
+    /// Keychain already has persisted keys), with one deliberate difference: it DELETES the
+    /// plaintext file once its keys are copied over, rather than leaving it in place as a
+    /// migration safety net. Leaving a decommissioned plaintext secret on disk after
+    /// "migrating" it would defeat the point — see `Docs/BACKLOG.md`'s "App SwiftUI
+    /// (2026-07-25)" entry, which already recorded Keychain as the intended destination.
+    public func migrateLLMAPIKeysFromJSONIfNeeded(fromJSONFile path: String) {
+        refreshLLMAPIKeyEnvVars()
+        guard llmAPIKeyEnvVars.isEmpty else { return }
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let file = try? JSONDecoder().decode(LLMAPIKeysFile.self, from: data), !file.keysByEnvVar.isEmpty else { return }
+        for (envVar, key) in file.keysByEnvVar {
+            APIKeyStore.persist(key, forEnvVar: envVar)
+        }
+        try? FileManager.default.removeItem(atPath: path)
+        append("Migrated \(file.keysByEnvVar.count) LLM API key(s) from \(path) into the Keychain (plaintext file removed).")
+        refreshLLMAPIKeyEnvVars()
     }
 
     /// Stores (or clears, if `key` is empty) the API key for a given env-var slot (e.g.
-    /// "ANTHROPIC_API_KEY", the value of some connection's `apiKeyEnvVar`) — both pushed into
-    /// `APIKeyStore` (what `LLMProvider`s actually read at call time) and persisted to disk,
-    /// so it survives a relaunch without needing a real shell environment variable set.
+    /// "ANTHROPIC_API_KEY", the value of some connection's `apiKeyEnvVar`) in the Keychain —
+    /// `APIKeyStore.persist` both updates the in-memory override `LLMProvider`s actually read
+    /// at call time and writes/deletes the Keychain item, so the key survives a relaunch
+    /// without needing a real shell environment variable set.
     public func setLLMAPIKey(_ key: String, forEnvVar envVar: String) throws {
-        if key.isEmpty {
-            llmAPIKeys.keysByEnvVar.removeValue(forKey: envVar)
-        } else {
-            llmAPIKeys.keysByEnvVar[envVar] = key
-        }
-        APIKeyStore.set(key.isEmpty ? nil : key, forEnvVar: envVar)
-        try saveLLMAPIKeys()
+        APIKeyStore.persist(key.isEmpty ? nil : key, forEnvVar: envVar)
+        refreshLLMAPIKeyEnvVars()
         append(key.isEmpty ? "Clef API effacee pour \(envVar)." : "Clef API mise a jour pour \(envVar).")
     }
 
@@ -4023,29 +4474,37 @@ public final class ImprovSession: @unchecked Sendable {
     /// See `LumiSettingsFile`'s own doc comment for defaults/persistence shape.
     public private(set) var lumiSettings = LumiSettingsFile()
 
-    public func loadLumiSettings(fromJSONFile path: String) throws {
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        lumiSettings = try JSONDecoder().decode(LumiSettingsFile.self, from: data)
-    }
-
-    /// Mirrors `loadOrCreateLanguageSetting(fromJSONFile:)`: writes the defaults first if
-    /// nothing is there yet, then loads it either way.
-    public func loadOrCreateLumiSettings(fromJSONFile path: String) throws {
-        if !FileManager.default.fileExists(atPath: path) {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(LumiSettingsFile())
-            try data.write(to: URL(fileURLWithPath: path))
+    /// One-time bridge from `lumi.json` to the SwiftData store — mirrors
+    /// `migrateMicrophoneCalibrationFromJSONIfNeeded(fromJSONFile:)`.
+    public func migrateLumiSettingsFromJSONIfNeeded(fromJSONFile path: String) {
+        if let existing = try? modelContext.fetch(FetchDescriptor<LumiSettingsRecord>()).first {
+            lumiSettings = existing.asLumiSettingsFile
+            return
         }
-        try loadLumiSettings(fromJSONFile: path)
+        let file: LumiSettingsFile
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+           let decoded = try? JSONDecoder().decode(LumiSettingsFile.self, from: data) {
+            file = decoded
+            append("Migrated LUMI settings from \(path) (original left in place).")
+        } else {
+            file = LumiSettingsFile()
+        }
+        modelContext.insert(LumiSettingsRecord(file))
+        try? modelContext.save()
+        lumiSettings = file
     }
 
     private func saveLumiSettings() throws {
-        guard let settingsFolder else { return }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(lumiSettings)
-        try data.write(to: URL(fileURLWithPath: (settingsFolder as NSString).appendingPathComponent("lumi.json")))
+        if let existing = try? modelContext.fetch(FetchDescriptor<LumiSettingsRecord>()).first {
+            existing.rootColorHex = lumiSettings.rootColorHex
+            existing.scaleColorHex = lumiSettings.scaleColorHex
+            existing.brightnessPercentage = lumiSettings.brightnessPercentage
+            existing.autoPropagateRunMode = lumiSettings.autoPropagateRunMode
+            existing.autoPropagateGuideMode = lumiSettings.autoPropagateGuideMode
+        } else {
+            modelContext.insert(LumiSettingsRecord(lumiSettings))
+        }
+        try modelContext.save()
     }
 
     public func setLumiRootColor(hex: String) throws {
@@ -4086,29 +4545,34 @@ public final class ImprovSession: @unchecked Sendable {
     /// See `SpectrogramSettingsFile`'s own doc comment for defaults/persistence shape.
     public private(set) var spectrogramSettings = SpectrogramSettingsFile()
 
-    public func loadSpectrogramSettings(fromJSONFile path: String) throws {
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        spectrogramSettings = try JSONDecoder().decode(SpectrogramSettingsFile.self, from: data)
-    }
-
-    /// Mirrors `loadOrCreateLumiSettings(fromJSONFile:)`: writes the defaults first if nothing
-    /// is there yet, then loads it either way.
-    public func loadOrCreateSpectrogramSettings(fromJSONFile path: String) throws {
-        if !FileManager.default.fileExists(atPath: path) {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(SpectrogramSettingsFile())
-            try data.write(to: URL(fileURLWithPath: path))
+    /// One-time bridge from `spectrogram.json` to the SwiftData store — mirrors
+    /// `migrateMicrophoneCalibrationFromJSONIfNeeded(fromJSONFile:)`.
+    public func migrateSpectrogramSettingsFromJSONIfNeeded(fromJSONFile path: String) {
+        if let existing = try? modelContext.fetch(FetchDescriptor<SpectrogramSettingsRecord>()).first {
+            spectrogramSettings = existing.asSpectrogramSettingsFile
+            return
         }
-        try loadSpectrogramSettings(fromJSONFile: path)
+        let file: SpectrogramSettingsFile
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+           let decoded = try? JSONDecoder().decode(SpectrogramSettingsFile.self, from: data) {
+            file = decoded
+            append("Migrated spectrogram settings from \(path) (original left in place).")
+        } else {
+            file = SpectrogramSettingsFile()
+        }
+        modelContext.insert(SpectrogramSettingsRecord(file))
+        try? modelContext.save()
+        spectrogramSettings = file
     }
 
     private func saveSpectrogramSettings() throws {
-        guard let settingsFolder else { return }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(spectrogramSettings)
-        try data.write(to: URL(fileURLWithPath: (settingsFolder as NSString).appendingPathComponent("spectrogram.json")))
+        if let existing = try? modelContext.fetch(FetchDescriptor<SpectrogramSettingsRecord>()).first {
+            existing.palette = spectrogramSettings.palette
+            existing.showNoteOverlay = spectrogramSettings.showNoteOverlay
+        } else {
+            modelContext.insert(SpectrogramSettingsRecord(spectrogramSettings))
+        }
+        try modelContext.save()
     }
 
     public func setSpectrogramPalette(_ palette: String) throws {
@@ -5053,45 +5517,22 @@ public final class ImprovSession: @unchecked Sendable {
             return result
         }
         currentSoundTrack = soundTrack
-        currentSoundTrackFilePath = nil
+        currentSoundTrackRecordID = nil
         append("Enregistrement arrete : \(soundTrack.events.count) evenement(s), \(String(format: "%.1f", soundTrack.durationSeconds))s.")
         return soundTrack
     }
 
     private static let supportedSoundTrackExtensions: Set<String> = ["json"]
 
-    /// Scans `folderPath` for `.json` soundtrack files — mirrors `listPieceFiles`.
-    public func listSoundTrackFiles(in folderPath: String) throws {
-        let folderURL = URL(fileURLWithPath: folderPath)
-        let contents = try FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil)
-        soundTrackFolder = folderPath
-        soundTrackFiles = contents
-            .filter { Self.supportedSoundTrackExtensions.contains($0.pathExtension.lowercased()) }
-            .map(\.lastPathComponent)
-            .sorted()
-        append(soundTrackFiles.isEmpty
-            ? "No .json soundtrack files found in \(folderPath)."
-            : "Found \(soundTrackFiles.count) soundtrack file(s) in \(folderPath).")
-    }
-
+    /// Raw file I/O, unchanged in behavior — kept for the CLI's explicit-path
+    /// `save-soundtrack <path>` verb and as the migration itself reuses. NOT the primary
+    /// persistence path anymore (see `useSoundTrack`/`saveSoundTrack(as:)` below).
     public func loadSoundTrack(fromJSONFile path: String) throws {
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let decoded = try JSONDecoder().decode(SoundTrack.self, from: data)
         currentSoundTrack = decoded
-        currentSoundTrackFilePath = path
+        currentSoundTrackRecordID = nil
         append("Loaded soundtrack from \(path): \(decoded.title)")
-    }
-
-    /// Loads a soundtrack by name from the last-listed folder (see `listSoundTrackFiles`).
-    public func loadSoundTrack(named name: String) throws {
-        guard let soundTrackFolder else { throw SessionError.noSoundTrackFolderListed }
-        try loadSoundTrack(fromJSONFile: URL(fileURLWithPath: soundTrackFolder).appendingPathComponent(name).path)
-    }
-
-    /// Convenience over `loadSoundTrack(named:)` using the 0-based position in `soundTrackFiles`.
-    public func loadSoundTrack(atIndex index: Int) throws {
-        guard soundTrackFiles.indices.contains(index) else { throw SessionError.invalidSoundTrackIndex }
-        try loadSoundTrack(named: soundTrackFiles[index])
     }
 
     public func saveSoundTrack(toJSONFile path: String) throws {
@@ -5100,27 +5541,113 @@ public final class ImprovSession: @unchecked Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(currentSoundTrack)
         try data.write(to: URL(fileURLWithPath: path))
-        currentSoundTrackFilePath = path
         append("Saved soundtrack to \(path).")
     }
 
-    /// Re-saves `currentSoundTrack` to wherever it was last loaded from or saved to. Fails
-    /// if that's never happened yet — use `saveSoundTrack(as:)` for a first save.
-    public func saveSoundTrack() throws {
-        guard let currentSoundTrackFilePath else { throw SessionError.noCurrentSoundTrackFile }
-        try saveSoundTrack(toJSONFile: currentSoundTrackFilePath)
+    /// Every soundtrack's title currently in the SwiftData store, sorted — mirrors
+    /// `guideSequenceNames`. Refreshed after every migrate/insert/update/delete.
+    public private(set) var soundTrackNames: [String] = []
+
+    private func refreshSoundTrackNames() {
+        soundTrackNames = ((try? modelContext.fetch(FetchDescriptor<SoundTrackRecord>())) ?? []).map(\.title).sorted()
     }
 
-    /// Saves under a new name/path — mirrors `savePiece(as:)`.
-    public func saveSoundTrack(as nameOrPath: String) throws {
-        let resolvedPath: String
-        if nameOrPath.contains("/") {
-            resolvedPath = nameOrPath
-        } else {
-            guard let soundTrackFolder else { throw SessionError.noSoundTrackFolderListed }
-            resolvedPath = URL(fileURLWithPath: soundTrackFolder).appendingPathComponent(nameOrPath).path
+    /// One-time bridge from a folder of `.json` soundtrack files to the SwiftData store —
+    /// mirrors `migrateGuideSequencesFromJSONIfNeeded`: a no-op if the store already has
+    /// soundtracks, otherwise migrates every `.json` found in `folderPath` (never deleting the
+    /// originals). No "seed built-ins" — soundtracks have none.
+    public func migrateSoundTracksFromJSONIfNeeded(in folderPath: String) {
+        refreshSoundTrackNames()
+        guard soundTrackNames.isEmpty else { return }
+
+        let folderURL = URL(fileURLWithPath: folderPath)
+        let jsonFiles = (try? FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil))?
+            .filter { Self.supportedSoundTrackExtensions.contains($0.pathExtension.lowercased()) } ?? []
+        var migrated = 0
+        for fileURL in jsonFiles {
+            guard let data = try? Data(contentsOf: fileURL),
+                  let soundTrack = try? JSONDecoder().decode(SoundTrack.self, from: data) else { continue }
+            modelContext.insert(SoundTrackRecord(soundTrack))
+            migrated += 1
         }
-        try saveSoundTrack(toJSONFile: resolvedPath.hasSuffix(".json") ? resolvedPath : resolvedPath + ".json")
+        if migrated > 0 {
+            try? modelContext.save()
+            append("Migrated \(migrated) soundtrack(s) from \(folderPath) (originals left in place).")
+        }
+        refreshSoundTrackNames()
+    }
+
+    /// Loads a soundtrack by title from the SwiftData store — replaces the old folder-based
+    /// `loadSoundTrack(named:)`. First match wins if two records share a title (same
+    /// tolerance `useLLMConnection(named:)`/`useGuideSequence(named:)` already accept).
+    public func useSoundTrack(named name: String) throws {
+        let descriptor = FetchDescriptor<SoundTrackRecord>(predicate: #Predicate { $0.title == name })
+        guard let record = try? modelContext.fetch(descriptor).first, let soundTrack = record.asSoundTrack else {
+            throw SessionError.invalidSoundTrackIndex
+        }
+        currentSoundTrack = soundTrack
+        currentSoundTrackRecordID = record.id
+        append("Loaded soundtrack: \(soundTrack.title)")
+    }
+
+    /// Convenience over `useSoundTrack(named:)` using the 0-based position in `soundTrackNames`.
+    public func useSoundTrack(atIndex index: Int) throws {
+        guard soundTrackNames.indices.contains(index) else { throw SessionError.invalidSoundTrackIndex }
+        try useSoundTrack(named: soundTrackNames[index])
+    }
+
+    /// Re-saves `currentSoundTrack` to whichever record it was last loaded from/saved to
+    /// (`currentSoundTrackRecordID`) — updates that exact record even if the title has since
+    /// changed (unlike `saveSoundTrack(as:)`, which addresses by title). Fails if that's
+    /// never happened yet — use `saveSoundTrack(as:)` for a first save.
+    public func saveSoundTrack() throws {
+        guard let currentSoundTrack else { throw SessionError.noSoundTrackRecorded }
+        guard let currentSoundTrackRecordID else { throw SessionError.noCurrentSoundTrackFile }
+        let descriptor = FetchDescriptor<SoundTrackRecord>(predicate: #Predicate { $0.id == currentSoundTrackRecordID })
+        guard let record = try? modelContext.fetch(descriptor).first else { throw SessionError.noCurrentSoundTrackFile }
+        record.title = currentSoundTrack.title
+        record.durationSeconds = currentSoundTrack.durationSeconds
+        record.encodedSoundTrack = (try? JSONEncoder().encode(currentSoundTrack)) ?? record.encodedSoundTrack
+        try modelContext.save()
+        refreshSoundTrackNames()
+        append("Saved soundtrack: \(currentSoundTrack.title)")
+    }
+
+    /// Saves under a given title — "Save As". If a record with that exact title already
+    /// exists, overwrites it (same "saving under an existing name silently overwrites it"
+    /// behavior the old folder-based version had); otherwise inserts a new record. Adopts
+    /// `name` as `currentSoundTrack`'s own title — there's no separate "filename" anymore.
+    public func saveSoundTrack(as name: String) throws {
+        guard var currentSoundTrack else { throw SessionError.noSoundTrackRecorded }
+        currentSoundTrack.title = name
+        self.currentSoundTrack = currentSoundTrack
+        let descriptor = FetchDescriptor<SoundTrackRecord>(predicate: #Predicate { $0.title == name })
+        if let existing = try? modelContext.fetch(descriptor).first {
+            existing.durationSeconds = currentSoundTrack.durationSeconds
+            existing.encodedSoundTrack = (try? JSONEncoder().encode(currentSoundTrack)) ?? existing.encodedSoundTrack
+            currentSoundTrackRecordID = existing.id
+        } else {
+            let record = SoundTrackRecord(currentSoundTrack)
+            modelContext.insert(record)
+            currentSoundTrackRecordID = record.id
+        }
+        try modelContext.save()
+        refreshSoundTrackNames()
+        append("Saved soundtrack as: \(name)")
+    }
+
+    /// Deletes a stored soundtrack — new capability (the old folder-based UI had no delete
+    /// button; removing a file meant using the Finder directly, which stops being possible
+    /// once the data lives in a private SwiftData store).
+    public func deleteSoundTrack(atIndex index: Int) throws {
+        guard soundTrackNames.indices.contains(index) else { throw SessionError.invalidSoundTrackIndex }
+        let name = soundTrackNames[index]
+        let descriptor = FetchDescriptor<SoundTrackRecord>(predicate: #Predicate { $0.title == name })
+        guard let record = try? modelContext.fetch(descriptor).first else { return }
+        modelContext.delete(record)
+        try modelContext.save()
+        refreshSoundTrackNames()
+        append("Deleted soundtrack: \(name)")
     }
 
     /// Plays back `currentSoundTrack` in real time — the temporal-mode counterpart to
@@ -5170,26 +5697,28 @@ public final class ImprovSession: @unchecked Sendable {
 
     /// Asks the AI module to reverse-engineer a measure-based `Piece` structure out of
     /// `currentSoundTrack`'s purely temporal recording — tempo, key, chord progression — and
-    /// saves each candidate that survives validation as its own new piece file in
-    /// `pieceFolder` (reusing `LLMPieceComposer.parseAndValidate`, exactly the same
-    /// validation `composeFromText()` already relies on: an invalid response is dropped
-    /// with a warning, never trusted outright). Returns every path actually written — at
-    /// least one, or throws if none survived. The last successful candidate becomes the
-    /// current `piece` (ready for `show-piece`/`play`), same as `composeFromText()` does;
-    /// every candidate, including earlier ones, stays on disk to inspect via `pieces`/`use-piece`.
-    /// `title`, when given, overrides the LLM's own chosen title (and therefore the saved
-    /// file's base name too) — every candidate gets the same title, distinguished only by
-    /// the usual `-candidat-N` suffix, same as an unnamed run.
+    /// inserts each candidate that survives validation as its own new `PieceRecord` (reusing
+    /// `LLMPieceComposer.parseAndValidate`, exactly the same validation `composeFromText()`
+    /// already relies on: an invalid response is dropped with a warning, never trusted
+    /// outright). Returns a display label per candidate actually saved — at least one, or
+    /// throws if none survived. The last successful candidate becomes the current `piece`
+    /// (ready for `show-piece`/`play`), same as `composeFromText()` does; every candidate,
+    /// including earlier ones, stays in the store to inspect via `pieces`/`use-piece`.
+    /// `title`, when given, overrides the LLM's own chosen title — every candidate gets the
+    /// same title (multiple records CAN share a title, same tolerance `usePiece(named:)`
+    /// already accepts — pick by index, via `use-piece <n>`, to disambiguate reliably), the
+    /// returned label adds a "(candidat N)" suffix so a multi-candidate run's own log/display
+    /// distinguishes them without that suffix polluting the piece's own stored title.
     @discardableResult
     public func composeSoundTrackToPieces(
         candidateCount: Int = 1, title: String? = nil, generate: (String, LLMConnection) throws -> String = LLMClient.generatePieceJSON
     ) throws -> [String] {
         guard let connection = currentLLMConnection else { throw SessionError.noLLMConnectionSelected }
-        guard let pieceFolder else { throw SessionError.noPieceFolderListed }
         let prompt = try currentSoundTrackCompositionPrompt()
 
         let count = max(1, candidateCount)
-        var savedPaths: [String] = []
+        var savedLabels: [String] = []
+        var lastRecord: PieceRecord?
         for index in 1...count {
             append("Generation du candidat \(index)/\(count) a partir de la soundtrack...")
             let responseText = try generate(prompt, connection)
@@ -5200,29 +5729,22 @@ public final class ImprovSession: @unchecked Sendable {
                 continue
             }
             if let title { candidatePiece.title = title }
-            let suffix = count > 1 ? "-candidat-\(index)" : ""
-            let path = URL(fileURLWithPath: pieceFolder).appendingPathComponent("\(candidatePiece.title)\(suffix).json").path
-            try writePieceToDisk(candidatePiece, at: path)
-            savedPaths.append(path)
-            append("Candidat \(index) sauvegarde: \(path)")
-            if index == count {
-                piece = candidatePiece
-                currentPieceFilePath = path
-            }
+            let record = PieceRecord(candidatePiece)
+            modelContext.insert(record)
+            lastRecord = record
+            let suffix = count > 1 ? " (candidat \(index))" : ""
+            let label = "\(candidatePiece.title)\(suffix)"
+            savedLabels.append(label)
+            append("Candidat \(index) sauvegarde: \(label)")
         }
-        guard !savedPaths.isEmpty else { throw SessionError.llmComposeFailed(["no candidate survived validation"]) }
-        return savedPaths
-    }
-
-    /// Encodes and writes an arbitrary `Piece` value directly — unlike `savePiece(toJSONFile:)`,
-    /// doesn't read/require `self.piece`, since `composeSoundTrackToPieces` needs to write
-    /// several candidate pieces to disk without each one having to first become "the"
-    /// current piece.
-    private func writePieceToDisk(_ piece: Piece, at path: String) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(piece)
-        try data.write(to: URL(fileURLWithPath: path))
+        guard !savedLabels.isEmpty else { throw SessionError.llmComposeFailed(["no candidate survived validation"]) }
+        try? modelContext.save()
+        refreshPieceNames()
+        if let lastRecord {
+            piece = lastRecord.asPiece
+            currentPieceRecordID = lastRecord.id
+        }
+        return savedLabels
     }
 
     private func append(_ message: String) {

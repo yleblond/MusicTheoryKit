@@ -1,4 +1,5 @@
 import AudioEngine
+import SwiftData
 
 /// Persisted two-point microphone level calibration: the raw RMS level (see
 /// `FFTPitchAnalyzer.rms(of:)`) observed while playing a deliberately quiet note/sound and a
@@ -71,5 +72,29 @@ public struct MicrophoneCalibrationSettingsFile: Codable, Equatable {
     public func normalized(_ level: Float) -> Float? {
         guard loudRMS > quietRMS else { return nil }
         return min(1, max(0, (level - quietRMS) / (loudRMS - quietRMS)))
+    }
+}
+
+/// The SwiftData-backed singleton counterpart of `MicrophoneCalibrationSettingsFile` — see
+/// `ColorPaletteRecord`'s doc comment for the split rationale shared by every settings record
+/// in this migration wave.
+@Model
+final class MicrophoneCalibrationSettingsRecord {
+    var quietRMS: Float = FFTPitchAnalyzer.minimumRMSForDetection
+    var loudRMS: Float = 0.3
+    var quietPeakMagnitude: Float = 0
+    var loudPeakMagnitude: Float = 0
+
+    init(_ file: MicrophoneCalibrationSettingsFile) {
+        quietRMS = file.quietRMS
+        loudRMS = file.loudRMS
+        quietPeakMagnitude = file.quietPeakMagnitude
+        loudPeakMagnitude = file.loudPeakMagnitude
+    }
+
+    var asMicrophoneCalibrationSettingsFile: MicrophoneCalibrationSettingsFile {
+        MicrophoneCalibrationSettingsFile(
+            quietRMS: quietRMS, loudRMS: loudRMS, quietPeakMagnitude: quietPeakMagnitude, loudPeakMagnitude: loudPeakMagnitude
+        )
     }
 }

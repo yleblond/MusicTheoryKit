@@ -1,5 +1,6 @@
 import Foundation
 import SoundFontModel
+import SwiftData
 
 /// A best-effort hint of which physical/virtual instrument last occupied a `SceneRole`, used
 /// only to decide whether to automatically reattach it on `loadScene` (see
@@ -219,5 +220,31 @@ extension Scene: Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(title, forKey: .title)
         try container.encode(roles, forKey: .roles)
+    }
+}
+
+/// The SwiftData-backed counterpart of `Scene` — same split as `LLMConnectionRecord`/
+/// `LLMConnection` and `GuideSequenceRecord`/`GuideSequence`: the stable value type stays
+/// exactly what the rest of the app already works with (its own legacy-decode fallback —
+/// `Scene.init(from:)`'s `LegacyCodingKeys`/`SceneTrack` handling — included), this type only
+/// exists to give it a CloudKit-syncable row (see `ImprovSession.migrateScenesFromJSONIfNeeded`).
+/// Encoding the whole `Scene` as one blob also sidesteps having to flatten `SceneRole`'s
+/// `InstrumentIdentityHint` (an enum with associated values) into separate columns.
+/// `Scene` has no `id` of its own (only `title`) — `id` here is a fresh `UUID` string
+/// generated once at record-creation time, invisible to `Scene` itself.
+@Model
+final class SceneRecord {
+    var id: String = ""
+    var title: String = ""
+    var encodedScene: Data = Data()
+
+    init(_ scene: Scene) {
+        id = UUID().uuidString
+        title = scene.title
+        encodedScene = (try? JSONEncoder().encode(scene)) ?? Data()
+    }
+
+    var asScene: Scene? {
+        try? JSONDecoder().decode(Scene.self, from: encodedScene)
     }
 }

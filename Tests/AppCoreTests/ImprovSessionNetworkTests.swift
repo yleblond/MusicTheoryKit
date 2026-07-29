@@ -298,11 +298,11 @@ final class ImprovSessionNetworkTests: XCTestCase {
     // The active palette's colors must appear in BOTH the web console's and the virtual
     // keyboard's `/state`, and switching palettes must be reflected on the very next poll.
     func testActiveColorPaletteIsReflectedInWebConsoleAndVirtualKeyboardState() throws {
-        let session = ImprovSession()
+        let session = makeTestSession()
         try session.start()
         let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: tempFile) }
-        try session.loadOrCreateColorPalettes(fromJSONFile: tempFile.path)
+        session.migrateColorPalettesFromJSONIfNeeded(fromJSONFile: tempFile.path)
 
         try session.startWebConsole(port: 18400)
         try session.startVirtualKeyboard(port: 18401)

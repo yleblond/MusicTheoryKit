@@ -1,4 +1,6 @@
+import Foundation
 import MusicTheoryKit
+import SwiftData
 
 /// A user-authored ordered list of mode "steps" to navigate live (see
 /// `ImprovSession.startGuide`/`advanceGuideStep`) — deliberately NOT a `Piece`: a guide step
@@ -60,5 +62,29 @@ public struct GuideStep: Codable, Equatable, Sendable {
         try container.encode(mode, forKey: .mode)
         try container.encodeIfPresent(chordProgressionName, forKey: .chordProgressionName)
         try container.encodeIfPresent(chordProgression, forKey: .chordProgression)
+    }
+}
+
+/// The SwiftData-backed counterpart of `GuideSequence` — same split as `LLMConnectionRecord`/
+/// `LLMConnection`: the stable value type stays exactly what the rest of the app already works
+/// with (its own legacy-decode fallbacks on `GuideStep` included), this type only exists to
+/// give it a CloudKit-syncable row (see `ImprovSession.migrateGuideSequencesFromJSONIfNeeded`).
+/// `GuideSequence` has no `id` of its own (only `title`) — `id` here is a fresh `UUID` string
+/// generated once at record-creation time, invisible to `GuideSequence` itself, the same way
+/// `LLMConnectionRecord.id` exists purely at the storage layer.
+@Model
+public final class GuideSequenceRecord {
+    public var id: String = ""
+    public var title: String = ""
+    public var encodedSequence: Data = Data()
+
+    public init(_ sequence: GuideSequence) {
+        id = UUID().uuidString
+        title = sequence.title
+        encodedSequence = (try? JSONEncoder().encode(sequence)) ?? Data()
+    }
+
+    public var asGuideSequence: GuideSequence? {
+        try? JSONDecoder().decode(GuideSequence.self, from: encodedSequence)
     }
 }

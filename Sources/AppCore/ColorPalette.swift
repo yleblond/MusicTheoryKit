@@ -1,5 +1,6 @@
 import Foundation
 import MusicTheoryKit
+import SwiftData
 
 /// One named set of 12 colors, one per chromatic pitch class (index 0 = C ... 11 = B), plus a
 /// matching text color per note for legibility (a light background needs dark text and vice
@@ -101,4 +102,30 @@ public struct ColorPalette: Codable, Equatable, Sendable {
 /// individually-named files.
 struct ColorPaletteFile: Codable {
     var palettes: [ColorPalette]
+}
+
+/// The SwiftData-backed counterpart of `ColorPalette` — same split as `LLMConnectionRecord`/
+/// `LLMConnection`: the stable value type stays exactly what the rest of the app already works
+/// with, this type only exists to give it a CloudKit-syncable row (see
+/// `ImprovSession.migrateColorPalettesFromJSONIfNeeded`).
+@Model
+final class ColorPaletteRecord {
+    var name: String = ""
+    var colors: [String] = []
+    var textColors: [String] = []
+    /// Preserves list order across a fetch — `colorPalettes` is index-addressed everywhere
+    /// (`activeColorPaletteIndex`, `selectColorPalette(atIndex:)`, `updateColorPalette(atIndex:)`),
+    /// and a plain SwiftData fetch has no guaranteed order of its own.
+    var sortOrder: Int = 0
+
+    init(_ palette: ColorPalette, sortOrder: Int) {
+        name = palette.name
+        colors = palette.colors
+        textColors = palette.textColors
+        self.sortOrder = sortOrder
+    }
+
+    var asColorPalette: ColorPalette {
+        ColorPalette(name: name, colors: colors, textColors: textColors)
+    }
 }
