@@ -396,6 +396,7 @@ enum L10nTable {
         .appButtonDemarrer: [.fr: "Demarrer", .en: "Start", .de: "Starten", .ja: "開始", .zhHans: "开始", .it: "Avvia", .es: "Iniciar", .pt: "Iniciar", .ru: "Запустить"],
         .appNouveauGuide: [.fr: "Nouveau guide", .en: "New guide", .de: "Neuer Guide", .ja: "新しい Guide", .zhHans: "新建 Guide", .it: "Nuovo Guide", .es: "Nuevo Guide", .pt: "Novo Guide", .ru: "Новый Guide"],
         .appNouvelleScene: [.fr: "Nouvelle scene", .en: "New scene", .de: "Neue Szene", .ja: "新しいシーン", .zhHans: "新建场景", .it: "Nuova scena", .es: "Nueva escena", .pt: "Nova cena", .ru: "Новая сцена"],
+        .appNouvelleComposition: [.fr: "Nouvelle composition", .en: "New composition", .de: "Neue Komposition", .ja: "新しい作曲", .zhHans: "新建作曲", .it: "Nuova composizione", .es: "Nueva composicion", .pt: "Nova composicao", .ru: "Новая композиция"],
         .appDefaultNouvellePalette: [.fr: "Nouvelle palette", .en: "New palette", .de: "Neue Palette", .ja: "新しいパレット", .zhHans: "新建调色板", .it: "Nuova palette", .es: "Nueva paleta", .pt: "Nova paleta", .ru: "Новая палитра"],
         .appDefaultGuideTitle: [.fr: "Demo", .en: "Demo", .de: "Demo", .ja: "デモ", .zhHans: "演示", .it: "Demo", .es: "Demo", .pt: "Demo", .ru: "Демо"],
         .appFormatCanalMidi: [.fr: "%@ (canal %d)", .en: "%@ (channel %d)", .de: "%@ (Kanal %d)", .ja: "%@（チャンネル %d）", .zhHans: "%@（通道 %d）", .it: "%@ (canale %d)", .es: "%@ (canal %d)", .pt: "%@ (canal %d)", .ru: "%@ (канал %d)"],

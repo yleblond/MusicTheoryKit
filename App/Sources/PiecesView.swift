@@ -2,65 +2,28 @@ import SwiftUI
 import AppCore
 import Localization
 
-/// The "Morceaux" tab — split into two sub-tabs: **Fichier** (loaded piece info, demo, folder
-/// browser — loading a piece here switches to **Play** — see `PiecesFileView`) and **Play**
-/// (play/stop the loaded piece, choose its sound — see `PiecesPlayView`).
+/// The "Morceaux" tab — a sequential list → play flow, mirroring `SceneManagementView`, but
+/// ALWAYS opening on the list (unlike Scene/Composition, an empty piece store does not jump
+/// straight to a "creation" screen — Morceaux has no such notion): **Fichier**
+/// (`PiecesFileView`, loaded piece info, demo, store browser — loading a piece here switches to
+/// **Play**) leads into **Play** (`PiecesPlayView`, play/stop the loaded piece, choose its sound).
 struct PiecesView: View {
     let session: ImprovSession
 
-    private enum SubTab: CaseIterable, Identifiable {
-        case file, play
+    private enum Screen { case list, play }
 
-        var id: Self { self }
-
-        var systemImage: String {
-            switch self {
-            case .file: return "doc.text"
-            case .play: return "play.fill"
-            }
-        }
-
-        func accessibilityLabel(_ language: AppLanguage) -> String {
-            switch self {
-            case .file: return L10n.string(.appTabFichierMorceau, language)
-            case .play: return L10n.string(.appHeadingJouer, language)
-            }
-        }
-    }
-
-    @State private var subTab: SubTab = .file
+    @State private var screen: Screen = .list
 
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 4) {
-                ForEach(SubTab.allCases) { tab in
-                    Button {
-                        subTab = tab
-                    } label: {
-                        Image(systemName: tab.systemImage)
-                            .font(.title2)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                subTab == tab ? Color.accentColor.opacity(0.2) : Color.clear,
-                                in: RoundedRectangle(cornerRadius: 8)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(tab.accessibilityLabel(session.currentLanguage))
-                }
-                Spacer()
+        Group {
+            switch screen {
+            case .list:
+                PiecesFileView(session: session, onLoaded: { screen = .play })
+            case .play:
+                PiecesPlayView(session: session, onBackToList: { screen = .list })
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 6)
-            Divider()
-            Group {
-                switch subTab {
-                case .file: PiecesFileView(session: session, onLoaded: { subTab = .play })
-                case .play: PiecesPlayView(session: session)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

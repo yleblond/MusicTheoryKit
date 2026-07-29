@@ -2,65 +2,34 @@ import SwiftUI
 import AppCore
 import Localization
 
-/// The "Composition" tab — split into two sub-tabs: **Fichier** (composition-description
-/// folder — see `CompositionFileView`) and **Composer** (title/style/description + the
-/// compose action — see `CompositionComposerView`).
+/// The "Composition" tab — a sequential list → composer flow, mirroring
+/// `SceneManagementView`: **Fichier** (`CompositionFileView`, the store-based description list —
+/// activating or creating a description is the only way to reach the next screen) leads into
+/// **Composer** (`CompositionComposerView`, the title/style/description fields plus the compose
+/// action). With no saved descriptions, this view opens straight on Composer (nothing to list
+/// yet); otherwise it opens on the list.
 struct CompositionView: View {
     let session: ImprovSession
 
-    private enum SubTab: CaseIterable, Identifiable {
-        case file, composer
+    private enum Screen { case list, composer }
 
-        var id: Self { self }
+    @State private var screen: Screen
 
-        var systemImage: String {
-            switch self {
-            case .file: return "doc.text"
-            case .composer: return "wand.and.stars"
-            }
-        }
-
-        func accessibilityLabel(_ language: AppLanguage) -> String {
-            switch self {
-            case .file: return L10n.string(.appTabFichierComposition, language)
-            case .composer: return L10n.string(.appTabComposerCourt, language)
-            }
-        }
+    init(session: ImprovSession) {
+        self.session = session
+        _screen = State(initialValue: session.compositionDescriptionNames.isEmpty ? .composer : .list)
     }
 
-    @State private var subTab: SubTab = .file
-
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 4) {
-                ForEach(SubTab.allCases) { tab in
-                    Button {
-                        subTab = tab
-                    } label: {
-                        Image(systemName: tab.systemImage)
-                            .font(.title2)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                subTab == tab ? Color.accentColor.opacity(0.2) : Color.clear,
-                                in: RoundedRectangle(cornerRadius: 8)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(tab.accessibilityLabel(session.currentLanguage))
-                }
-                Spacer()
+        Group {
+            switch screen {
+            case .list:
+                CompositionFileView(session: session, onLoaded: { screen = .composer })
+            case .composer:
+                CompositionComposerView(session: session, onBackToList: { screen = .list })
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 6)
-            Divider()
-            Group {
-                switch subTab {
-                case .file: CompositionFileView(session: session)
-                case .composer: CompositionComposerView(session: session)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

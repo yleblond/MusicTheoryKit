@@ -2,10 +2,12 @@ import SwiftUI
 import AppCore
 import Localization
 
-/// "Play" sub-tab of the Morceaux tab: play/stop the currently-loaded piece, and pick which
-/// sound it plays through — loading/choosing the piece itself happens in the "Fichier" sub-tab.
+/// Screen 2 of the Morceaux tab: play/stop the currently-loaded piece, and pick which sound it
+/// plays through — loading/choosing the piece itself happens in screen 1, `PiecesFileView`.
+/// `onBackToList` returns to screen 1.
 struct PiecesPlayView: View {
     let session: ImprovSession
+    let onBackToList: () -> Void
 
     @State private var actionError: String?
     /// `session.loadSample` does real disk I/O (and, for a sample under an iCloud-synced
@@ -14,16 +16,28 @@ struct PiecesPlayView: View {
     @State private var loadingSoundID: String?
 
     var body: some View {
-        Form {
-            if let actionError {
-                Section { Text(actionError).foregroundStyle(.red).font(.caption) }
+        VStack(spacing: 0) {
+            HStack {
+                Button {
+                    onBackToList()
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .accessibilityLabel(L10n.string(.appHeadingDossierMorceaux, session.currentLanguage))
+                Spacer()
             }
-            playSection
-            soundSection
+            .padding([.horizontal, .top])
+            Form {
+                if let actionError {
+                    Section { Text(actionError).foregroundStyle(.red).font(.caption) }
+                }
+                playSection
+                soundSection
+            }
+            #if os(macOS)
+            .formStyle(.grouped)
+            #endif
         }
-        #if os(macOS)
-        .formStyle(.grouped)
-        #endif
     }
 
     @ViewBuilder
@@ -87,5 +101,5 @@ struct PiecesPlayView: View {
 }
 
 #Preview {
-    PiecesPlayView(session: ImprovSession())
+    PiecesPlayView(session: ImprovSession(), onBackToList: {})
 }

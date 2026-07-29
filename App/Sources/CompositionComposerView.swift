@@ -2,13 +2,14 @@ import SwiftUI
 import AppCore
 import Localization
 
-/// "Composer" sub-tab of the Composition tab: describe a piece in free text (title, style
-/// indications) and compose it via the active LLM connection (see the "JamShack" tab's own
-/// "LLM" sub-tab). Loading/saving a description to a folder lives in the sibling "Fichier"
-/// sub-tab — this view reads `session`'s current title/sourceText/instructions on appear, so
-/// a load from that sibling tab shows up here as soon as this tab is switched to.
+/// Screen 2 of the Composition tab: describe a piece in free text (title, style indications),
+/// save that description to the store, and compose it via the active LLM connection (see the
+/// "JamShack" tab's own "LLM" sub-tab). Only ever reached once a description is current — fresh
+/// (via screen 1's "Nouvelle composition") or activated from the list — this view reads
+/// `session`'s current title/sourceText/instructions on appear. `onBackToList` returns to screen 1.
 struct CompositionComposerView: View {
     let session: ImprovSession
+    let onBackToList: () -> Void
 
     @State private var title = ""
     @State private var sourceText = ""
@@ -18,16 +19,35 @@ struct CompositionComposerView: View {
     @State private var composeResultMessage: String?
 
     var body: some View {
-        Form {
-            if let actionError {
-                Section { Text(actionError).foregroundStyle(.red).font(.caption) }
+        VStack(spacing: 0) {
+            HStack {
+                Button {
+                    onBackToList()
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .accessibilityLabel(L10n.string(.appHeadingDossierCompositionIA, session.currentLanguage))
+                Button(L10n.string(.appButtonSauvegarderDescriptionDossier, session.currentLanguage)) {
+                    do {
+                        try session.saveCompositionDescription(as: session.compositionTitle ?? L10n.string(.fieldDescription, session.currentLanguage))
+                    } catch {
+                        actionError = "\(error)"
+                    }
+                }
+                Spacer()
             }
-            descriptionSection
-            composeSection
+            .padding([.horizontal, .top])
+            Form {
+                if let actionError {
+                    Section { Text(actionError).foregroundStyle(.red).font(.caption) }
+                }
+                descriptionSection
+                composeSection
+            }
+            #if os(macOS)
+            .formStyle(.grouped)
+            #endif
         }
-        #if os(macOS)
-        .formStyle(.grouped)
-        #endif
         .onAppear {
             title = session.compositionTitle ?? ""
             sourceText = session.sourceText ?? ""
@@ -91,5 +111,5 @@ struct CompositionComposerView: View {
 }
 
 #Preview {
-    CompositionComposerView(session: ImprovSession())
+    CompositionComposerView(session: ImprovSession(), onBackToList: {})
 }
