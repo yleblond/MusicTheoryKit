@@ -166,7 +166,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
 
     // MARK: - Web console: extra field labels not needed by the terminal (structured form
     // fields — the terminal collects the same information via inline prompts instead)
-    case fieldInstrument, fieldSection, fieldPiste, fieldEcoute, optionActiver, optionArreter
+    case fieldInstrument, fieldSection, fieldPiste, fieldEcoute, optionArreter
     case optionMonoHeuristique, optionMonoHPS, optionPolyLatched, optionPolySliding
     case fieldTonique, fieldGamme, fieldProgression, fieldNombreCandidats, fieldPort, fieldHote
 
@@ -228,8 +228,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
     // MARK: - App: main TabView + JamShack sidebar + sub-tab sidebars (accessibility labels)
     case appTabStudio, appStatusDemarrage
     case appTabDossiers, appTabSons, appTabMIDI, appTabMicrophone, appTabCouleurs, appTabLangue, appTabLLM
-    case appTabFichierMorceau, appTabFichierSoundtrack, appTabFichierGuide, appTabEditionGuide, appTabLectureGuide
-    case appTabFichierScene, appTabDispositionScene, appTabFichierComposition, appTabComposerCourt
+    case appTabFichierMorceau, appTabFichierSoundtrack
+    case appTabFichierComposition, appTabComposerCourt
 
     // MARK: - App: Composition tab (Fichier + Composer sub-tabs)
     case appPlaceholderTitreMorceau, appPlaceholderIndicationsStyleOpt, appHeadingDescriptionMorceau
@@ -246,14 +246,12 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appLabelDossierCompositionIA, appLabelDossierReglages
     case appLabelDossierSons
 
-    // MARK: - App: Guide tab (Fichier/Edition/Lecture sub-tabs)
-    case appPlaceholderAucunGuideActif, appPlaceholderAucunGuideActifPoint
+    // MARK: - App: Guide tab (list -> configuration flow)
     case appPlaceholderAucunDossierGuides, appHeadingDossierGuides
     case appFieldProgressionAccordsGuide, appOptionAucuneFem
     case appButtonAjouterModeAuGuide, appHeadingAjouterUnMode
     case appHeadingClavierDuMode, appHeadingClavierAccord
     case appButtonDemarrerLeGuide, appButtonArreterLeGuide, appButtonPrecedent, appButtonSuivant, appLabelEnDirect
-    case appButtonCreerUnGuide, appFieldTitreGuide
     case appHeadingEtapes
     case appFormatSuiteAccordsPrefix, appLabelSuiteAccordsSansNom
 
@@ -277,8 +275,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appButtonRechargerScene, appHintRechargeScene
     case appPlaceholderAucunDossierScenes, appHeadingDossierScenes
     case appButtonExporter, appButtonImporter
-    case appLabelAucuneSceneActiveCourt, appHintActiveSceneExistante, appButtonCreerUneScene, appFieldNomScene
-    case appButtonRenommer, appAlertRenommerScene, appPlaceholderSceneSansNom
+    case appButtonRenommer, appAlertRenommerScene, appAlertRenommerGuide, appPlaceholderSansNom
+    case appModeEdition, appModeLecture
     case appAlertNouveauRole, appPlaceholderNomExPiano1, appButtonAjouter
     case appPlaceholderTousInstrumentsAffectes, appHeadingInstrumentsNonAffectes
     case appButtonAjouterUnRole, appButtonAjouterUnRoleEllipsis, appButtonCreerEtAttacher

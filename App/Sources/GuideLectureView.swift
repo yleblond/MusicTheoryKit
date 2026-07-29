@@ -3,7 +3,8 @@ import AppCore
 import JamShackUI
 import Localization
 
-/// "Lecture" sub-tab of the Guide tab — split horizontally per explicit user request: the
+/// Lecture mode of the Guide tab's screen 2 (`GuideConfigurationView`) — split horizontally per
+/// explicit user request: the
 /// circle-of-fifths wheel on the left (originally 1/3 of the screen, widened 30% per a follow-
 /// up request — see `wheelColumnWidth` below — reflecting the guide's active mode:
 /// `bridge.state.wheel` already prioritizes the active guide step over any other source, see
@@ -21,7 +22,7 @@ import Localization
 struct GuideLectureView: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
-    /// Switches the parent `GuideView` back to its "Edition" sub-tab once the guide is
+    /// Switches the parent `GuideConfigurationView` back to Edition mode once the guide is
     /// stopped — called explicitly from the stop button's own action (NOT from `onDisappear`,
     /// which also fires on a plain manual tab switch and would fight that navigation instead
     /// of following it).
@@ -57,30 +58,19 @@ struct GuideLectureView: View {
         .onKeyPress(.rightArrow) { session.advanceGuideChord(by: 1); return .handled }
     }
 
+    /// Guide loaded but not started — screen 2 guarantees a guide is active, so the only state
+    /// to show here is "ready to start" (not a "no active guide" fallback).
     @ViewBuilder
     private var inactivePlaceholder: some View {
         VStack(spacing: 12) {
             if let actionError {
                 Text(actionError).foregroundStyle(.red).font(.caption)
             }
-            if session.currentGuide == nil {
-                Text(L10n.string(.appPlaceholderAucunGuideActif, session.currentLanguage)).foregroundStyle(.secondary)
-                ActivateOrCreateBlock(
-                    files: session.guideSequenceNames,
-                    onActivate: { try session.useGuideSequence(named: $0) },
-                    createButtonLabel: L10n.string(.appButtonCreerUnGuide, session.currentLanguage),
-                    createAlertTitle: L10n.string(.appNouveauGuide, session.currentLanguage),
-                    createFieldPlaceholder: L10n.string(.appFieldTitreGuide, session.currentLanguage),
-                    onCreate: { session.newGuideSequence(title: $0) },
-                    language: session.currentLanguage
-                )
-            } else {
-                Button(L10n.string(.appButtonDemarrerLeGuide, session.currentLanguage)) {
-                    do {
-                        try session.startGuide()
-                    } catch {
-                        actionError = "\(error)"
-                    }
+            Button(L10n.string(.appButtonDemarrerLeGuide, session.currentLanguage)) {
+                do {
+                    try session.startGuide()
+                } catch {
+                    actionError = "\(error)"
                 }
             }
         }

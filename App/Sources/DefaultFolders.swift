@@ -56,6 +56,7 @@ func configureDefaultFolders(in root: URL, session: ImprovSession) {
     try? session.listSampleFiles(in: ensure("SoundFonts").path)
     session.migrateSoundTracksFromJSONIfNeeded(in: ensure("SoundTracks").path)
     session.migrateGuideSequencesFromJSONIfNeeded(in: ensure("Sequences").path)
+    session.ensureGuideReadyForLaunch()
     session.migrateScenesFromJSONIfNeeded(in: ensure("Scenes").path)
     session.ensureSceneReadyForLaunch()
     try? session.setPromptsFolder(ensure("Composition IA").path)

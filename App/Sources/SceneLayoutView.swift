@@ -12,14 +12,19 @@ import Localization
 /// is just exposing a capability the session already had) — and offers "Ajouter un role..." to
 /// create one on the spot instead of needing to visit the roles panel first.
 ///
-/// A plain, borderless title `TextField` sits above the two columns when a scene is active —
-/// typing a name and moving focus away calls `renameCurrentScene(to:)`, which both renames an
-/// already-saved scene in place and performs the FIRST save of a brand-new anonymous scene (no
-/// separate "give it a name" dialog). `titleDraft` mirrors `scene.title` via `.onChange` rather
-/// than via a `.task(id:)`-style keyed reset, specifically so it also resets correctly when
-/// switching from one anonymous scene to another new one (both have no record id to key on).
+/// A plain, borderless title `TextField` sits above the two columns — typing a name and moving
+/// focus away calls `renameCurrentScene(to:)`, which both renames an already-saved scene in
+/// place and performs the FIRST save of a brand-new anonymous scene (no separate "give it a
+/// name" dialog). `titleDraft` mirrors `scene.title` via `.onChange` rather than via a
+/// `.task(id:)`-style keyed reset, specifically so it also resets correctly when switching from
+/// one anonymous scene to another new one (both have no record id to key on).
+///
+/// Screen 2 of the Scene tab — only ever reached once a scene is already active (by launch, or
+/// by a successful activate/create on `SceneFileView`, screen 1), so `session.currentScene` is
+/// guaranteed non-nil here; no "no active scene" fallback UI. `onBackToList` returns to screen 1.
 struct SceneLayoutView: View {
     let session: ImprovSession
+    let onBackToList: () -> Void
 
     @State private var newRoleName = ""
     @State private var showNewRoleAlert = false
@@ -31,29 +36,44 @@ struct SceneLayoutView: View {
 
     var body: some View {
         Group {
-            if scene == nil {
-                ContentUnavailableView {
-                    Label(L10n.string(.appLabelAucuneSceneActiveCourt, session.currentLanguage), systemImage: "theatermasks")
-                } description: {
-                    Text(L10n.string(.appHintActiveSceneExistante, session.currentLanguage))
-                } actions: {
-                    ActivateOrCreateBlock(
-                        files: session.sceneNames,
-                        onActivate: { try session.useScene(named: $0) },
-                        createButtonLabel: L10n.string(.appButtonCreerUneScene, session.currentLanguage),
-                        createAlertTitle: L10n.string(.appNouvelleScene, session.currentLanguage),
-                        createFieldPlaceholder: L10n.string(.appFieldNomScene, session.currentLanguage),
-                        onCreate: { session.newScene(title: $0) },
-                        language: session.currentLanguage
-                    )
-                }
-            } else if let scene {
+            if let scene {
                 VStack(spacing: 0) {
+                    HStack {
+                        Button {
+                            onBackToList()
+                        } label: {
+                            Image(systemName: "chevron.left")
+                        }
+                        .accessibilityLabel(L10n.string(.appHeadingDossierScenes, session.currentLanguage))
+                        if session.currentSceneRecordID != nil {
+                            Button(L10n.string(.appButtonSauvegarderDansCeDossier, session.currentLanguage)) {
+                                do {
+                                    try session.saveScene()
+                                } catch {
+                                    actionError = "\(error)"
+                                }
+                            }
+                        }
+                        // `currentSceneFilePath` also gets set by the list's per-row "Exporter"
+                        // button — `fileExists` keeps this from offering a reload of a path that
+                        // no longer exists on disk.
+                        if let path = session.currentSceneFilePath, FileManager.default.fileExists(atPath: path) {
+                            Button(L10n.string(.appButtonRechargerScene, session.currentLanguage)) {
+                                do {
+                                    try session.loadScene(fromJSONFile: path)
+                                } catch {
+                                    actionError = "\(error)"
+                                }
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding([.horizontal, .top])
                     if let actionError {
                         Text(actionError).foregroundStyle(.red).font(.caption).padding(.horizontal)
                     }
                     TextField(
-                        L10n.string(.appPlaceholderSceneSansNom, session.currentLanguage),
+                        L10n.string(.appPlaceholderSansNom, session.currentLanguage),
                         text: $titleDraft
                     )
                     .font(.title2.bold())
@@ -410,5 +430,5 @@ private struct SceneRoleRow: View {
 }
 
 #Preview {
-    SceneLayoutView(session: ImprovSession())
+    SceneLayoutView(session: ImprovSession(), onBackToList: {})
 }

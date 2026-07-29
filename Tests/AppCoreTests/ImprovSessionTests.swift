@@ -2044,6 +2044,114 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertEqual(session.guideSequenceNames, [])
     }
 
+    func testRenameCurrentGuideOnAnAnonymousGuideInsertsItsFirstRecord() throws {
+        let session = makeTestSession()
+        session.newGuideSequence(title: "")
+        XCTAssertNil(session.currentGuideRecordID)
+
+        try session.renameCurrentGuide(to: "First Save")
+        XCTAssertEqual(session.currentGuide?.title, "First Save")
+        XCTAssertNotNil(session.currentGuideRecordID)
+        XCTAssertEqual(session.guideSequenceNames, ["First Save"])
+    }
+
+    func testRenameCurrentGuideOnAnAlreadyNamedGuideUpdatesTheSameRecordInPlace() throws {
+        let session = makeTestSession()
+        session.newGuideSequence(title: "Practice")
+        try session.saveGuideSequence(as: "Practice")
+        let recordID = session.currentGuideRecordID
+
+        try session.renameCurrentGuide(to: "Renamed")
+        XCTAssertEqual(session.currentGuideRecordID, recordID, "same record identity, not a fresh insert")
+        XCTAssertEqual(session.guideSequenceNames, ["Renamed"])
+    }
+
+    func testRenameGuideSequenceAtIndexUpdatesTheListAndSyncsTheActiveGuideWhenItMatches() throws {
+        let session = makeTestSession()
+        session.newGuideSequence(title: "Practice")
+        try session.saveGuideSequence(as: "Practice")
+
+        try session.renameGuideSequence(atIndex: 0, name: "Warmup")
+        XCTAssertEqual(session.guideSequenceNames, ["Warmup"])
+        XCTAssertEqual(session.currentGuide?.title, "Warmup", "renaming the active guide's own record keeps currentGuide in sync")
+    }
+
+    func testRenameGuideSequenceAtIndexOnANonActiveGuideLeavesCurrentGuideUntouched() throws {
+        let session = makeTestSession()
+        session.newGuideSequence(title: "Practice")
+        try session.saveGuideSequence(as: "Practice")
+        session.newGuideSequence(title: "Other")
+        try session.saveGuideSequence(as: "Other")
+        // currentGuide is "Other"; guideSequenceNames is sorted alphabetically, so "Practice" is index 1.
+        XCTAssertEqual(session.guideSequenceNames, ["Other", "Practice"])
+        try session.renameGuideSequence(atIndex: 1, name: "Warmup")
+        XCTAssertEqual(session.currentGuide?.title, "Other")
+        XCTAssertEqual(Set(session.guideSequenceNames), Set(["Warmup", "Other"]))
+    }
+
+    func testExportedGuideDataReturnsTheStoredGuideAsDecodableJSON() throws {
+        let session = makeTestSession()
+        session.newGuideSequence(title: "Practice")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        try session.saveGuideSequence(as: "Practice")
+
+        let data = try session.exportedGuideData(atIndex: 0)
+        let decoded = try JSONDecoder().decode(GuideSequence.self, from: data)
+        XCTAssertEqual(decoded.title, "Practice")
+        XCTAssertEqual(decoded.steps.count, 1)
+    }
+
+    func testCreateNewGuideSequencePersistsANamedGuideBeforeStartingAFreshAnonymousOne() throws {
+        let session = makeTestSession()
+        session.newGuideSequence(title: "Practice")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+        try session.saveGuideSequence(as: "Practice")
+
+        try session.addGuideStep(ModeReference(tonic: 7, scaleID: "mixolydian"))
+        try session.createNewGuideSequence()
+
+        XCTAssertEqual(session.currentGuide?.title, "")
+        XCTAssertNil(session.currentGuideRecordID)
+        try session.useGuideSequence(named: "Practice")
+        XCTAssertEqual(session.currentGuide?.steps.count, 2, "the second step was saved before switching away")
+    }
+
+    func testCreateNewGuideSequenceDiscardsAnAnonymousGuideWithoutSavingIt() throws {
+        let session = makeTestSession()
+        session.newGuideSequence(title: "")
+        try session.addGuideStep(ModeReference(tonic: 0, scaleID: "ionian"))
+
+        try session.createNewGuideSequence()
+        XCTAssertEqual(session.guideSequenceNames, [], "an anonymous guide is never persisted just by moving on")
+    }
+
+    func testEnsureGuideReadyForLaunchStartsAnonymousGuideWhenNoneAreSaved() {
+        let session = makeTestSession()
+        session.ensureGuideReadyForLaunch()
+        XCTAssertEqual(session.currentGuide?.title, "")
+        XCTAssertNil(session.currentGuideRecordID)
+    }
+
+    func testEnsureGuideReadyForLaunchLeavesNoActiveGuideWhenOneIsSaved() throws {
+        let schema = Schema([GuideSequenceRecord.self])
+        let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
+
+        let session = ImprovSession(modelContainer: container)
+        session.newGuideSequence(title: "Practice")
+        try session.saveGuideSequence(as: "Practice")
+
+        // A fresh session sharing the same store — nothing active yet, one guide already saved.
+        // Mirrors real launch order: `migrateGuideSequencesFromJSONIfNeeded` refreshes
+        // `guideSequenceNames` from the shared store before `ensureGuideReadyForLaunch` reads it.
+        let fresh = ImprovSession(modelContainer: container)
+        let emptyFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: emptyFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: emptyFolder) }
+        fresh.migrateGuideSequencesFromJSONIfNeeded(in: emptyFolder.path)
+        fresh.ensureGuideReadyForLaunch()
+        XCTAssertNil(fresh.currentGuide, "even a single saved guide requires an explicit pick — the list screen should show")
+    }
+
     /// Every guide file saved before chord progressions existed stores each step as a bare
     /// `ModeReference` (no "mode" key) — `GuideStep.init(from:)` must still load these.
     func testGuideStepDecodesOldBareModeReferenceFormat() throws {
@@ -2387,7 +2495,7 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertNil(session.currentSceneRecordID)
     }
 
-    func testEnsureSceneReadyForLaunchAutoLoadsTheOnlySavedScene() throws {
+    func testEnsureSceneReadyForLaunchLeavesNoActiveSceneWhenOneIsSaved() throws {
         let schema = Schema([SceneRecord.self])
         let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
 
@@ -2406,7 +2514,7 @@ final class ImprovSessionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: emptyFolder) }
         fresh.migrateScenesFromJSONIfNeeded(in: emptyFolder.path)
         fresh.ensureSceneReadyForLaunch()
-        XCTAssertEqual(fresh.currentScene?.title, "Practice")
+        XCTAssertNil(fresh.currentScene, "even a single saved scene requires an explicit pick — the list screen should show")
     }
 
     func testEnsureSceneReadyForLaunchLeavesNoActiveSceneWhenSeveralAreSaved() throws {

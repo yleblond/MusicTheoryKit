@@ -3,10 +3,12 @@ import AppCore
 import UniformTypeIdentifiers
 import Localization
 
-/// "Fichier" sub-tab of the Scene tab: the active scene's header (name, manual save, reload from
-/// a raw file path), the store-based scene list (activate/rename/export/delete any saved scene —
-/// scenes live in a private SwiftData store, no folder to pick anymore), and a single discreet
-/// import affordance next to the list's own header.
+/// Screen 1 of the Scene tab: the store-based scene list (activate/rename/export/delete any
+/// saved scene — scenes live in a private SwiftData store, no folder to pick anymore), a
+/// discreet import affordance next to the list's own header, and a "Nouvelle scene" button —
+/// activating or creating a scene here is the only way to reach screen 2, `SceneLayoutView`
+/// (see `onLoaded`). Everything about the *currently active* scene (name, manual save, reload
+/// from a raw file path) lives on that second screen instead, not here.
 ///
 /// Single-file export/import goes through SwiftUI's `.fileExporter`/`.fileImporter` on BOTH
 /// platforms — NOT a typed path on macOS, even though that matches the CLI's own convention
@@ -17,9 +19,8 @@ import Localization
 /// typed.
 struct SceneFileView: View {
     let session: ImprovSession
-    /// Called after a scene is actually made current — activated from the list or imported from
-    /// a single file — `SceneManagementView` switches to the "Disposition" sub-tab, per explicit
-    /// user request.
+    /// Called after a scene is actually made current — activated from the list, created fresh,
+    /// or imported from a single file — `SceneManagementView` switches to screen 2.
     let onLoaded: () -> Void
 
     @State private var actionError: String?
@@ -33,11 +34,9 @@ struct SceneFileView: View {
     @State private var pendingExportFilename = ""
     @State private var showSceneImporter = false
 
-    private var scene: AppCore.Scene? { session.currentScene }
-
     var body: some View {
         Form {
-            sceneHeaderSection
+            newSceneSection
             sceneListSection
         }
         #if os(macOS)
@@ -84,43 +83,21 @@ struct SceneFileView: View {
     }
 
     @ViewBuilder
-    private var sceneHeaderSection: some View {
+    private var newSceneSection: some View {
         Section {
             if let actionError {
                 Text(actionError).foregroundStyle(.red).font(.caption)
             }
-            if let scene {
-                Text(scene.title.isEmpty ? L10n.string(.appPlaceholderSceneSansNom, session.currentLanguage) : scene.title)
-                    .font(.headline)
-            }
-            if session.currentSceneRecordID != nil {
-                Button(L10n.string(.appButtonSauvegarderDansCeDossier, session.currentLanguage)) {
-                    do {
-                        try session.saveScene()
-                    } catch {
-                        actionError = "\(error)"
-                    }
-                }
-            }
-            // `currentSceneFilePath` also gets set by the per-row "Exporter" button below, which
-            // writes to (then deletes) a temp file — `fileExists` keeps this button from
-            // offering a reload of a path that no longer exists on disk.
-            if let path = session.currentSceneFilePath, FileManager.default.fileExists(atPath: path) {
-                Button(L10n.string(.appButtonRechargerScene, session.currentLanguage)) {
-                    do {
-                        try session.loadScene(fromJSONFile: path)
-                        onLoaded()
-                    } catch {
-                        actionError = "\(error)"
-                    }
+            Button(L10n.string(.appNouvelleScene, session.currentLanguage)) {
+                do {
+                    try session.createNewScene()
+                    onLoaded()
+                } catch {
+                    actionError = "\(error)"
                 }
             }
         } header: {
             Text(L10n.string(.tabScene, session.currentLanguage))
-        } footer: {
-            if let path = session.currentSceneFilePath, FileManager.default.fileExists(atPath: path) {
-                Text(L10n.string(.appHintRechargeScene, session.currentLanguage))
-            }
         }
     }
 

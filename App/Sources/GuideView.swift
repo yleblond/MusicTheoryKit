@@ -3,71 +3,39 @@ import AppCore
 import JamShackUI
 import Localization
 
-/// The "Guide" tab — split into three sub-tabs (same vertical icon-sidebar pattern as
-/// "Scene"/"JamShack"): **Fichier** (create/load/save a guide sequence — see `GuideFileView`),
-/// **Edition** (add a mode step, see the step list — see `GuideEditionView`), and **Lecture**
-/// (start/stop, step/chord navigation incl. arrow keys, the live keyboard — see
-/// `GuideLectureView`).
+/// The "Guide" tab — a sequential list → configuration flow, not a permanently-visible sidebar:
+/// **Fichier** (`GuideFileView`, the store-based guide list — activating or creating a guide is
+/// the only way to reach the next screen) leads into **Configuration** (`GuideConfigurationView`,
+/// the active guide's name plus an Edition/Lecture mode toggle). Landing screen at launch is
+/// decided by `ImprovSession.ensureGuideReadyForLaunch()` (called once in `DefaultFolders.swift`):
+/// with no saved guides, it starts a fresh anonymous one and this view opens straight on
+/// Configuration; with any saved, `currentGuide` is left nil and this view opens on the list
+/// instead — picking one (even the only one) is always an explicit step. Mirrors
+/// `SceneManagementView`.
 struct GuideView: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
 
-    private enum SubTab: CaseIterable, Identifiable {
-        case file, edition, lecture
+    private enum Screen { case list, configuration }
 
-        var id: Self { self }
+    @State private var screen: Screen
 
-        var systemImage: String {
-            switch self {
-            case .file: return "doc.text"
-            case .edition: return "pencil"
-            case .lecture: return "play.fill"
-            }
-        }
-
-        func accessibilityLabel(_ language: AppLanguage) -> String {
-            switch self {
-            case .file: return L10n.string(.appTabFichierGuide, language)
-            case .edition: return L10n.string(.appTabEditionGuide, language)
-            case .lecture: return L10n.string(.appTabLectureGuide, language)
-            }
-        }
+    init(session: ImprovSession, bridge: SessionUIBridge) {
+        self.session = session
+        self.bridge = bridge
+        _screen = State(initialValue: session.guideSequenceNames.isEmpty ? .configuration : .list)
     }
 
-    @State private var subTab: SubTab = .file
-
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 4) {
-                ForEach(SubTab.allCases) { tab in
-                    Button {
-                        subTab = tab
-                    } label: {
-                        Image(systemName: tab.systemImage)
-                            .font(.title2)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                subTab == tab ? Color.accentColor.opacity(0.2) : Color.clear,
-                                in: RoundedRectangle(cornerRadius: 8)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(tab.accessibilityLabel(session.currentLanguage))
-                }
-                Spacer()
+        Group {
+            switch screen {
+            case .list:
+                GuideFileView(session: session, onLoaded: { screen = .configuration })
+            case .configuration:
+                GuideConfigurationView(session: session, bridge: bridge, onBackToList: { screen = .list })
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 6)
-            Divider()
-            Group {
-                switch subTab {
-                case .file: GuideFileView(session: session, onLoaded: { subTab = .lecture })
-                case .edition: GuideEditionView(session: session, bridge: bridge, onRequestLecture: { subTab = .lecture })
-                case .lecture: GuideLectureView(session: session, bridge: bridge, onGuideStopped: { subTab = .edition })
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

@@ -32,6 +32,7 @@
 		499812C7FD4D8433B09B41AA /* FolderPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */; };
 		4B891030B381AABC680DEB7A /* JamShackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5998490361DA6721A074DBB /* JamShackApp.swift */; };
 		4BF48752328F746D8FCF5953 /* MicrophoneControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */; };
+		4C043C2C57524919E87375D2 /* GuideConfigurationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26C37BCD338FB3890089C34 /* GuideConfigurationView.swift */; };
 		4EEAA109475539B7C1E920E4 /* JamShackMIDIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */; };
 		4F9D9870DE0C14034FC845B7 /* JamShackLLMView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7DEF8B5C7B029CBF137DA9B /* JamShackLLMView.swift */; };
 		502F86EA7E61395F1407D160 /* GameCenterCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56783C5791125C49D8104883 /* GameCenterCoordinator.swift */; };
@@ -73,9 +74,8 @@
 		A3AD3F2094069C0A4256BDC8 /* CompositionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9678EC3E37F61041F0877632 /* CompositionView.swift */; };
 		A3FC9F5864E6D9343CFCA9EA /* RecordingIAView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02ECC889D04105BEF9F10780 /* RecordingIAView.swift */; };
 		A42BBCF8F1E99FA7A334C4CF /* SceneFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D4854E83A4DBE291EDAA3CC /* SceneFileView.swift */; };
-		A7DBA59AEE8158BF9838DB12 /* ActivateOrCreateBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B81A6E9D2F8FCE1DE61E278 /* ActivateOrCreateBlock.swift */; };
-		ACB57F706E896FA643DF1DE0 /* ActivateOrCreateBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B81A6E9D2F8FCE1DE61E278 /* ActivateOrCreateBlock.swift */; };
 		AE9F39EB072B95572BAAB60C /* PaletteEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D58534383002A55C5D49F9D /* PaletteEditorView.swift */; };
+		AECB34D8EA6C8AD0329034AC /* GuideConfigurationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26C37BCD338FB3890089C34 /* GuideConfigurationView.swift */; };
 		B24C4DD819AD8669CAF3A18D /* RecordingIAView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02ECC889D04105BEF9F10780 /* RecordingIAView.swift */; };
 		B3BEFD433A0B1B32F423302A /* PiecesPlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7171E005C138F689954FCE0 /* PiecesPlayView.swift */; };
 		B58D6F16866C835C999DFA92 /* JamShackUI in Frameworks */ = {isa = PBXBuildFile; productRef = 87F816FA700F02A4EAC0B7EC /* JamShackUI */; };
@@ -109,7 +109,6 @@
 		02ECC889D04105BEF9F10780 /* RecordingIAView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIAView.swift; sourceTree = "<group>"; };
 		04D7D71FEF77850B75E4B7B5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneManagementView.swift; sourceTree = "<group>"; };
-		0B81A6E9D2F8FCE1DE61E278 /* ActivateOrCreateBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivateOrCreateBlock.swift; sourceTree = "<group>"; };
 		1190B8CF15C5292002934879 /* RecordingPlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingPlayView.swift; sourceTree = "<group>"; };
 		11F2C88E605F1362E9CA1EEB /* MusicTheoryKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MusicTheoryKit; path = ..; sourceTree = SOURCE_ROOT; };
 		1AE61DA02F48C19951B955F1 /* GuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideView.swift; sourceTree = "<group>"; };
@@ -149,6 +148,7 @@
 		C99CBF1FBD1605E7FEA1F5C3 /* JamShackColorsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackColorsView.swift; sourceTree = "<group>"; };
 		CC0EEDCEAF1C96726ACE9B17 /* GuideFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideFileView.swift; sourceTree = "<group>"; };
 		CFC142E149DF9A3BAF1BA0EB /* ComputerKeyboardSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerKeyboardSettingsView.swift; sourceTree = "<group>"; };
+		D26C37BCD338FB3890089C34 /* GuideConfigurationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideConfigurationView.swift; sourceTree = "<group>"; };
 		D5998490361DA6721A074DBB /* JamShackApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackApp.swift; sourceTree = "<group>"; };
 		DE39EAC785B1BF4AA9F44EDE /* JamShackLanguageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackLanguageView.swift; sourceTree = "<group>"; };
 		E65E68A369BA12BBAE7A4558 /* DefaultFolders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultFolders.swift; sourceTree = "<group>"; };
@@ -192,7 +192,6 @@
 		95AD2A689F9027466D496CA0 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				0B81A6E9D2F8FCE1DE61E278 /* ActivateOrCreateBlock.swift */,
 				04D7D71FEF77850B75E4B7B5 /* Assets.xcassets */,
 				A80BD5958DD843BF49738DE9 /* ColorHex.swift */,
 				C8B884B9A1FFA6496D1A1DE6 /* CompositionComposerView.swift */,
@@ -204,6 +203,7 @@
 				9144B6EB7F1029254BDA64AB /* FileDisplayName.swift */,
 				74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */,
 				56783C5791125C49D8104883 /* GameCenterCoordinator.swift */,
+				D26C37BCD338FB3890089C34 /* GuideConfigurationView.swift */,
 				B6E2F51CDF00A0B57FE9AEAB /* GuideDescriptionView.swift */,
 				556A46486C82BF4F493BD822 /* GuideEditionView.swift */,
 				CC0EEDCEAF1C96726ACE9B17 /* GuideFileView.swift */,
@@ -361,7 +361,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A7DBA59AEE8158BF9838DB12 /* ActivateOrCreateBlock.swift in Sources */,
 				51DECC108DA490A5C2D4A1F3 /* ColorHex.swift in Sources */,
 				7BD222D7E9E9F200C5547F58 /* CompositionComposerView.swift in Sources */,
 				577625AA73822F8E4B000BF0 /* CompositionFileView.swift in Sources */,
@@ -372,6 +371,7 @@
 				13DBE3AB0C3614B6F8D37BE1 /* FileDisplayName.swift in Sources */,
 				1481CD1EB22CC7D497D07C5A /* FolderPickerRow.swift in Sources */,
 				DE754A12EE4D8EA7F6026199 /* GameCenterCoordinator.swift in Sources */,
+				AECB34D8EA6C8AD0329034AC /* GuideConfigurationView.swift in Sources */,
 				591A99B18A4B87B7EC3CD7A2 /* GuideDescriptionView.swift in Sources */,
 				996C6C5C6F6B690E76DAD4DD /* GuideEditionView.swift in Sources */,
 				EC8B892B4CA0DE1539FC11AE /* GuideFileView.swift in Sources */,
@@ -412,7 +412,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				ACB57F706E896FA643DF1DE0 /* ActivateOrCreateBlock.swift in Sources */,
 				FFE1363E4282F31709E33482 /* ColorHex.swift in Sources */,
 				F033530298630608FBC8D452 /* CompositionComposerView.swift in Sources */,
 				87ADB9547777D950541A8943 /* CompositionFileView.swift in Sources */,
@@ -423,6 +422,7 @@
 				2697496573116390CEDCD939 /* FileDisplayName.swift in Sources */,
 				499812C7FD4D8433B09B41AA /* FolderPickerRow.swift in Sources */,
 				502F86EA7E61395F1407D160 /* GameCenterCoordinator.swift in Sources */,
+				4C043C2C57524919E87375D2 /* GuideConfigurationView.swift in Sources */,
 				81A9DF4DEF87ABCF374B5812 /* GuideDescriptionView.swift in Sources */,
 				C716A5DC69D121C276897938 /* GuideEditionView.swift in Sources */,
 				F297229E6AB3F58B8CC2C566 /* GuideFileView.swift in Sources */,

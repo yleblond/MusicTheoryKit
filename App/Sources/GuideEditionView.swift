@@ -6,15 +6,15 @@ import JamShackUI
 import Localization
 import SoundFontModel
 
-/// "Edition" sub-tab of the Guide tab: add a mode step to the active guide, and see the
-/// current step list — structural editing, as opposed to the "Lecture" sub-tab's playback
-/// controls.
+/// Edition mode of the Guide tab's screen 2 (`GuideConfigurationView`): add a mode step to the
+/// active guide, and see the current step list — structural editing, as opposed to Lecture
+/// mode's playback controls. Only ever shown with a guide already active (screen 2 guarantees
+/// it), so no "no active guide" fallback UI here.
 struct GuideEditionView: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
-    /// Switches the parent `GuideView` to its "Lecture" sub-tab — same ad hoc callback pattern
-    /// already used by `GuideFileView`'s own `onLoaded`, not a shared binding (the sub-tab enum
-    /// stays private to `GuideView`).
+    /// Switches the parent `GuideConfigurationView` to its Lecture mode — same ad hoc callback
+    /// pattern already used by `GuideFileView`'s own `onLoaded`.
     let onRequestLecture: () -> Void
 
     @State private var selectedTonic = 0
@@ -31,27 +31,12 @@ struct GuideEditionView: View {
             if let actionError {
                 Section { Text(actionError).foregroundStyle(.red).font(.caption) }
             }
-            if session.currentGuide != nil {
-                addStepSection
-                GuideStepsSection(session: session, bridge: bridge)
-                Section {
-                    Button(L10n.string(.appButtonVoirLeGuide, session.currentLanguage), action: onRequestLecture)
-                }
-                listenSection
-            } else {
-                Section {
-                    Text(L10n.string(.appPlaceholderAucunGuideActif, session.currentLanguage)).foregroundStyle(.secondary)
-                    ActivateOrCreateBlock(
-                        files: session.guideSequenceNames,
-                        onActivate: { try session.useGuideSequence(named: $0) },
-                        createButtonLabel: L10n.string(.appButtonCreerUnGuide, session.currentLanguage),
-                        createAlertTitle: L10n.string(.appNouveauGuide, session.currentLanguage),
-                        createFieldPlaceholder: L10n.string(.appFieldTitreGuide, session.currentLanguage),
-                        onCreate: { session.newGuideSequence(title: $0) },
-                        language: session.currentLanguage
-                    )
-                }
+            addStepSection
+            GuideStepsSection(session: session, bridge: bridge)
+            Section {
+                Button(L10n.string(.appButtonVoirLeGuide, session.currentLanguage), action: onRequestLecture)
             }
+            listenSection
         }
         #if os(macOS)
         .formStyle(.grouped)

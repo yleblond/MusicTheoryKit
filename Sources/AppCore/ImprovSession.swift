@@ -1587,6 +1587,74 @@ public final class ImprovSession: @unchecked Sendable {
         append("Deleted guide sequence: \(name)")
     }
 
+    /// Gives the active guide a name — mirrors `renameCurrentScene(to:)`: if it was never saved
+    /// (`currentGuideRecordID == nil`), this IS the first save (inserts a new record); if it's
+    /// already backed by a record, renames that exact record in place (keeps its identity,
+    /// unlike `saveGuideSequence(as:)` which matches an existing record by title text).
+    public func renameCurrentGuide(to newTitle: String) throws {
+        guard var guide = currentGuide else { throw SessionError.noGuideSequence }
+        guide.title = newTitle
+        currentGuide = guide
+        if let currentGuideRecordID {
+            let descriptor = FetchDescriptor<GuideSequenceRecord>(predicate: #Predicate { $0.id == currentGuideRecordID })
+            guard let record = try? modelContext.fetch(descriptor).first else { throw SessionError.noCurrentGuideFile }
+            record.title = newTitle
+            record.encodedSequence = (try? JSONEncoder().encode(guide)) ?? record.encodedSequence
+        } else {
+            let record = GuideSequenceRecord(guide)
+            modelContext.insert(record)
+            self.currentGuideRecordID = record.id
+        }
+        try modelContext.save()
+        refreshGuideSequenceNames()
+        append("Renamed guide sequence: \(newTitle).")
+    }
+
+    /// Renames a stored guide sequence by list position — not necessarily the active one.
+    /// Mirrors `renameScene(atIndex:name:)`. Keeps `currentGuide`/`currentGuideRecordID` in sync
+    /// if the renamed record happens to be the active one.
+    public func renameGuideSequence(atIndex index: Int, name: String) throws {
+        guard guideSequenceNames.indices.contains(index) else { throw SessionError.invalidGuideIndex }
+        let oldName = guideSequenceNames[index]
+        let descriptor = FetchDescriptor<GuideSequenceRecord>(predicate: #Predicate { $0.title == oldName })
+        guard let record = try? modelContext.fetch(descriptor).first else { throw SessionError.invalidGuideIndex }
+        record.title = name
+        try modelContext.save()
+        if record.id == currentGuideRecordID { currentGuide?.title = name }
+        refreshGuideSequenceNames()
+        append("Renamed guide sequence: \(oldName) -> \(name).")
+    }
+
+    /// The exact stored bytes for a guide sequence by list position, for per-row export —
+    /// mirrors `exportedSceneData(atIndex:)`: a stored record's `encodedSequence` already IS
+    /// the full JSON, so this never touches `currentGuide`/`currentGuideRecordID`.
+    public func exportedGuideData(atIndex index: Int) throws -> Data {
+        guard guideSequenceNames.indices.contains(index) else { throw SessionError.invalidGuideIndex }
+        let name = guideSequenceNames[index]
+        let descriptor = FetchDescriptor<GuideSequenceRecord>(predicate: #Predicate { $0.title == name })
+        guard let record = try? modelContext.fetch(descriptor).first else { throw SessionError.invalidGuideIndex }
+        return record.encodedSequence
+    }
+
+    /// Backs a "Nouveau guide" button — mirrors `createNewScene()`: persists the current guide
+    /// first if it's already named/saved, then starts a fresh unnamed one. If the current guide
+    /// is anonymous (never named), nothing is persisted — same "discarded when you move on" rule.
+    public func createNewGuideSequence() throws {
+        if currentGuideRecordID != nil { try saveGuideSequence() }
+        newGuideSequence(title: "")
+    }
+
+    /// Called once at app launch (not by the CLI/web console) — mirrors
+    /// `ensureSceneReadyForLaunch()`: with no saved guide sequences, starts a fresh anonymous one
+    /// so the app can land directly on the guide screen; with one or more saved, leaves
+    /// `currentGuide` nil so the app lands on the guide list first.
+    public func ensureGuideReadyForLaunch() {
+        guard currentGuide == nil else { return }
+        if guideSequenceNames.isEmpty {
+            currentGuide = GuideSequence(title: "")
+        }
+    }
+
     /// Positions the guide at `index` (default the first step) — the Guide screen then
     /// shows that step's mode until `advanceGuideStep`/`stopGuide` changes it.
     public func startGuide(atStepIndex index: Int = 0) throws {
@@ -2190,14 +2258,13 @@ public final class ImprovSession: @unchecked Sendable {
     /// Called once at app launch (not by the CLI/web console, which keep their own no-auto-load
     /// behavior): resolves the "which scene should be showing" question so the UI never has to
     /// show a dead-end "no active scene" placeholder. With no saved scenes, starts a fresh
-    /// anonymous one; with exactly one, loads it (no real choice to present); with several,
-    /// leaves `currentScene` nil so the existing pick-or-create screen is what's shown first.
+    /// anonymous one so the app can land directly on the configuration screen; with one or more
+    /// saved, leaves `currentScene` nil so the app lands on the scene list first — picking one
+    /// (even the only one) is always an explicit step in the list → configuration flow.
     public func ensureSceneReadyForLaunch() {
         guard currentScene == nil else { return }
         if sceneNames.isEmpty {
             currentScene = Scene(title: "")
-        } else if sceneNames.count == 1 {
-            try? useScene(atIndex: 0)
         }
     }
 
