@@ -29,6 +29,19 @@ Vérifié en conditions réelles sur Simulateur iOS fraîchement installé (le p
 la scène/rôle par défaut) ; vérification complète des icônes limitée par l'écran verrouillé en
 cours de session, à confirmer visuellement. Retirés d'ici.
 
+L'item 18 (gestion des soundfonts) a été implémenté et fermé le 2026-07-30 : index CloudKit par
+hash de contenu (fini le path-based fragile), stockage hybride iCloud Drive/local avec politique
+adaptative par profil d'appareil (Économe/Standard/Généreux), imports multiples (fileImporter,
+drag & drop, "Ouvrir dans…"), catalogue de banques offertes embarqué dans l'app (pas de serveur —
+choix explicite de l'utilisateur), téléchargement direct depuis la source avec progression réelle
+et bouton d'abandon, vérification d'intégrité (sha256) avec repli propre, écran Crédits pour les
+licences l'exigeant, et un onglet "Stockage" dédié (profil, seuils par pas de 500 Mo, nettoyage
+complet). Dette connue et assumée, pas un oubli : le catalogue ne compte qu'une seule entrée
+vérifiée (MuseScore General) — FluidR3 GM était injoignable à la curation, et tout le fonds
+FreePats n'est distribué qu'en archives `.7z`/`.tar.xz` qu'aucune API Apple ne sait décompresser
+(nécessiterait un extracteur dédié, hors périmètre). Étoffer le catalogue au fil du temps (curation
+manuelle par entrée) reste ouvert, mais n'est plus un blocage structurant. Retiré d'ici.
+
 ## Entrées
 
 5. **Incorporer le serveur MCP (actuellement `mcp-server/`, Python externe) directement dans
@@ -41,13 +54,6 @@ cours de session, à confirmer visuellement. Retirés d'ici.
    pour un client comme Claude Desktop, ou HTTP+SSE), pas juste réutiliser tel quel le protocole
    HTTP existant. **Sorti explicitement d'un premier plan d'implémentation (2026-07-26)** — trop
    gros pour être bundlé avec le reste, mérite sa propre exploration dédiée.
-
-18. **Gestion des soundfonts (dossier "Sons")** — une fois 16/17 traités, ce serait le dernier
-    dossier fichier restant. Suggestions de design (index CloudKit + fichiers iCloud Drive/Application
-    Support selon synchro, hash comme identité, gestion quota iCloud, imports multiples) rédigées
-    dans `KnowledgeBase/SoundfontMgt/soundfontmgt.txt`. **Nécessite sa propre session de
-    planification dédiée** (trop gros/structurant pour être traité à la volée) — pas d'exploration
-    ni d'implémentation ici.
 
 21. **Gestion de plusieurs microphones en entrée**, en plus du micro de base actuellement géré.
 
