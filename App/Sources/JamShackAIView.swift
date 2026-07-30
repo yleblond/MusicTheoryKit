@@ -3,6 +3,9 @@ import UniformTypeIdentifiers
 import AppCore
 import LLMEngine
 import Localization
+#if os(macOS)
+import AppKit
+#endif
 
 /// "I.A." sub-tab of Settings (renamed from "LLM", merged with the former "Cadrages" tab
 /// 2026-07-30): picks the active LLM connection (used by the Composition/Enregistrement tabs'
@@ -40,6 +43,17 @@ struct JamShackAIView: View {
     }
     @State private var saveTarget: SaveTarget?
     @State private var saveNameDraft = ""
+
+    #if os(macOS)
+    /// Local mirror of `session.mcpServerEnabled` — a plain `UserDefaults`-backed computed
+    /// property, not `@Observable`-tracked, so a `Toggle` needs `@State` of its own to react to
+    /// changes (same pattern `SoundStorageView`'s `storageProfile` already uses for
+    /// `DeviceStorageProfile.current`).
+    @State private var mcpServerEnabled = false
+    /// Briefly flips the copy button's icon to a checkmark after a successful copy — purely
+    /// visual feedback, reverted automatically, never read back for any logic.
+    @State private var mcpConfigJustCopied = false
+    #endif
 
     var body: some View {
         Form {
@@ -110,6 +124,9 @@ struct JamShackAIView: View {
                 onError: { actionError = $0 },
                 language: session.currentLanguage
             )
+            #if os(macOS)
+            mcpServerSection
+            #endif
         }
         #if os(macOS)
         .formStyle(.grouped)
@@ -119,6 +136,9 @@ struct JamShackAIView: View {
             textFramingDraft = session.currentTextFramingSentence()
             soundTrackFramingDraft = session.currentSoundTrackFramingSentence()
             soundTrackInstructionsDraft = session.currentSoundTrackCompositionInstructions() ?? ""
+            #if os(macOS)
+            mcpServerEnabled = session.mcpServerEnabled
+            #endif
         }
         .onChange(of: session.currentLLMConnection?.apiKeyEnvVar) { _, envVar in
             apiKeySaveMessage = nil
@@ -146,6 +166,73 @@ struct JamShackAIView: View {
             Button(L10n.string(.appAnnuler, session.currentLanguage), role: .cancel) { saveTarget = nil }
         }
     }
+
+    #if os(macOS)
+    @ViewBuilder
+    private var mcpServerSection: some View {
+        Section {
+            Toggle(L10n.string(.appToggleServeurMCP, session.currentLanguage), isOn: $mcpServerEnabled)
+                .onChange(of: mcpServerEnabled) { _, newValue in
+                    do {
+                        try session.setMCPServerEnabled(newValue)
+                    } catch {
+                        actionError = "\(error)"
+                        // Reflect what actually happened (e.g. the port was already taken by
+                        // something else) rather than leaving the toggle showing a state the
+                        // server isn't really in.
+                        mcpServerEnabled = session.mcpServerEnabled
+                    }
+                }
+            claudeConfigCodeBlock
+        } footer: {
+            Text(L10n.string(.appFormatHintServeurMCP, session.currentLanguage, Int(MCPServer.defaultPort)))
+        }
+    }
+
+    /// The exact JSON snippet the hint text above refers to ("add the configuration below") —
+    /// kept out of the localized string itself (unlike the old, single-paragraph version of
+    /// that hint) so it can be shown as its own selectable/copyable code block instead of
+    /// buried in translated prose; only the `<project folder>` placeholder inside it still
+    /// needs translating, everything else (JSON keys, the literal command) is language-neutral.
+    private var claudeConfigSnippet: String {
+        let placeholder = L10n.string(.appPlaceholderDossierDuProjet, session.currentLanguage)
+        return """
+        {
+          "mcpServers": {
+            "jamshack": {
+              "command": "\(placeholder)/.build/release/JamShackMCPBridge"
+            }
+          }
+        }
+        """
+    }
+
+    @ViewBuilder
+    private var claudeConfigCodeBlock: some View {
+        HStack(alignment: .top) {
+            Text(claudeConfigSnippet)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(claudeConfigSnippet, forType: .string)
+                mcpConfigJustCopied = true
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    mcpConfigJustCopied = false
+                }
+            } label: {
+                Image(systemName: mcpConfigJustCopied ? "checkmark" : "doc.on.doc")
+            }
+            .buttonStyle(.borderless)
+            .help(L10n.string(.appButtonCopier, session.currentLanguage))
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+    }
+    #endif
 
     @ViewBuilder
     private var connectionsSection: some View {

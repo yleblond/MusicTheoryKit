@@ -660,7 +660,7 @@ Comme `buildWebConsoleState()`, chaque route sépare un `build*Detail() -> *Resp
 seules, la même catégorie que `GET /state` lui-même, qui n'est pas non plus une action de
 menu — cet onglet reste "actions seulement" par conception.
 
-Voir aussi `## mcp-server/` : quatre nouveaux tools (`get_piece_detail`,
+Voir aussi `## Serveur MCP embarqué` : quatre tools (`get_piece_detail`,
 `get_composition_description`, `get_guide_sequence_detail`, `get_soundtrack_detail`) exposent
 ces routes côté MCP, en simples lectures sans paramètre, même forme que `get_menu_lists`.
 
@@ -1766,75 +1766,81 @@ session doit réutiliser l'une de ces deux queues, ou en créer une nouvelle —
 directement depuis `.global()`. Voir la mémoire `feedback-improv-app-concurrency` pour le
 détail des trois incidents.
 
-## `mcp-server/` — serveur MCP (Python, hors du package Swift, expérimental)
+## Serveur MCP embarqué (`Sources/AppCore/MCPServer.swift` + `JamShackMCPBridge`)
 
-Un dossier séparé, hors de `Sources/` et de `Package.swift` — pas une cible SwiftPM, un
-programme Python indépendant (venv + `mcp`+`httpx`, voir `mcp-server/README.md`) qui expose les
-mêmes actions que l'onglet "Commandes" de la console web comme des *tools* MCP, pour qu'un
-assistant compatible MCP (Claude Desktop, Claude Code, etc.) puisse piloter l'appli directement
-depuis un prompt.
+**Remplace, depuis le 2026-07-30, l'ancien `mcp-server/` Python** (venv + `mcp`+`httpx`,
+décrit dans les entretiens du 2026-07-12) — le même besoin (exposer les actions de l'onglet
+"Commandes" comme des *tools* MCP pour un assistant comme Claude Desktop) est désormais couvert
+directement dans l'app Swift, macOS uniquement, sans process externe à installer/lancer à la
+main. Le dossier `mcp-server/` (Python) reste sur disque pour l'instant, à titre historique —
+son retrait est une décision distincte, pas encore prise.
 
-- **Un simple relais HTTP, pas une réimplémentation** : chaque tool MCP se contente de faire
-  un `GET /menu-action?action=...&...` ou `GET /menu-lists` contre une console web JamShack
-  déjà démarrée (`web-console <port>` côté terminal) — exactement les mêmes routes que
-  l'onglet "Commandes" d'un navigateur utilise (voir plus haut, section WebConsole). Aucune
-  logique de l'appli ne vit dans ce dossier ; `ImprovSession` reste l'unique source de vérité.
-- **`ACTIONS`** (`mcp-server/server.py`) : une copie recopiée à la main de `MENU_ACTIONS`
-  (`Sources/WebConsole/StaticAssets.swift`) — même convention que les autres duplications
-  volontaires déjà établies dans ce projet (`SanityChecks` qui reproduit `Tests/*` à la main,
-  faute de `swift test` disponible) : à resynchroniser manuellement si le menu change.
-  `_make_tool_function` construit, pour chaque action, une VRAIE fonction Python (via `exec`,
-  pas un simple `**kwargs`) avec un paramètre nommé par champ — nécessaire pour que
-  l'introspection de signature de `FastMCP` en déduise un schéma JSON correct par action,
-  plutôt qu'un unique tool générique "exécute cette commande" que le modèle devrait deviner à
-  la volée.
-- **`get_menu_lists`** : un tool à part, miroir de `GET /menu-lists` — un assistant est censé
-  l'appeler avant toute action dont un paramètre vient d'une liste déroulante (nom de morceau,
-  id de piste, etc.), puisque ces listes peuvent changer depuis en dehors de ce serveur MCP
-  aussi (le terminal, un onglet de navigateur, un autre participant de la jam session).
-- **Traduction tonique → classe de hauteur** : `guide_add_mode`'s `tonic` est le seul champ que
-  ce serveur traduit lui-même avant l'envoi — il accepte un nom de note ("D", "F#"...) et le
-  convertit dans l'index attendu par `/menu-action`, exactement ce que fait déjà le `<select>`
-  de la page web côté client.
-- **Expérimental, v1** : toutes les actions sont exposées sans mécanisme de permission plus
-  fin — demandé explicitement ainsi par l'utilisateur (2026-07-12) ; un filtrage plus
-  sélectif (lecture seule vs. mutante, liste d'autorisation) est une étape volontairement
-  différée, pas un oubli.
-- **`get_piece_detail`/`get_composition_description`/`get_guide_sequence_detail`/
-  `get_soundtrack_detail`** : quatre tools de lecture seule, sans paramètre, miroirs des
-  routes du même nom décrites dans la section "Lecture de structure" plus haut — ajoutés
-  après qu'un assistant s'est retrouvé bloqué en pleine composition IA, incapable de savoir
-  combien de sections comptait la pièce ou quelles étaient ses lignes mélodiques.
-- **Traduction tonique → classe de hauteur** : `guide_add_mode`'s `tonic` est le seul champ que
-  ce serveur traduit lui-même avant l'envoi — il accepte un nom de note ("D", "F#"...) et le
-  convertit dans l'index attendu par `/menu-action`, exactement ce que fait déjà le `<select>`
-  de la page web côté client.
-- **Délai HTTP différent pour les deux actions qui appellent un LLM** (`LONG_RUNNING_ACTIONS`
-  dans `server.py`) : `composition-compose`/`soundtrack-compose` (`ImprovSession.
-  composeFromText`/`composeSoundTrackToPieces`) peuvent légitimement prendre bien plus de
-  quelques secondes — le terminal n'a aucun délai pour ça (un simple appel `URLSession`
-  bloquant), d'où "ça marche en mode terminal". Un `timeout` `httpx` fixe de 10s s'appliquait
-  pourtant à TOUTE action y compris celles-ci, coupant la connexion vers JamShack bien avant
-  que le modèle ait fini de répondre — cause réelle confirmée d'un signalement "ça time out
-  via MCP, pas au terminal" (2026-07-12). Corrigé en donnant un délai bien plus long
-  (`LONG_RUNNING_ACTION_TIMEOUT`, 180s) uniquement à ces deux actions, en gardant le délai
-  court partout ailleurs (ces autres actions sont de l'E/S locale/changement d'état en
-  mémoire — un délai court y fait échouer vite une connexion réellement bloquée, plutôt que
-  d'attendre 3 minutes pour rien).
-- **Vérifié en conditions réelles** (pas seulement par lecture de schéma) : contre une vraie
-  session JamShack déjà lancée par l'utilisateur (console web sur le port 8080) —
-  `get_menu_lists()` (lecture seule), puis `midi_mode_merged` (idempotent : passer en mode
-  fusionné alors qu'il l'est déjà est un no-op documenté dans
-  `ImprovSession.setMIDIFusionMode`, donc sans risque contre une session réelle en cours
-  d'utilisation), puis `guide_add_mode(tonic: "D", scale: "dorian")` pour confirmer la
-  traduction "D" → `tonic=2` dans la requête HTTP réelle (vue dans les logs `httpx`) et un
-  message d'erreur propre ("aucune séquence de guide") plutôt qu'un crash puisqu'aucun guide
-  n'était démarré — jamais de test contre le port réel avec une action destructrice/mutante
-  non-idempotente (save/load/jam-session), par prudence. Les quatre routes de lecture de
-  structure ont ensuite été vérifiées de la même façon, en lecture seule, contre la vraie
-  session en cours de l'utilisateur (`/composition-detail` a correctement renvoyé sa
-  description réellement en attente, `/guide-detail`/`/soundtrack-detail` `loaded: false`
-  proprement quand rien n'était chargé).
+- **`MCPServer.swift`, macOS uniquement** : embarque un vrai serveur Model Context Protocol
+  dans le process de l'app elle-même. iOS est hors périmètre de façon structurelle, pas
+  temporairement : l'app Claude sur iOS ne supporte que des connecteurs MCP "remote", dont les
+  appels HTTP réels partent du cloud d'Anthropic, jamais joignables à une adresse
+  loopback/LAN du même appareil comme peut l'être Claude Desktop.
+- **Transport réutilisé, pas réinventé** : `WebConsole.HTTPServer`/`HTTPConnection` (le même
+  serveur HTTP/1.1 `Network.framework` fait main que la console web) sert de transport brut,
+  chaque requête étant relayée vers le SDK Swift MCP officiel
+  (`modelcontextprotocol/swift-sdk`, produit `MCP`) via son `StatelessHTTPServerTransport`
+  (Streamable HTTP, requête/réponse seulement — ce serveur n'envoie jamais de notification
+  non sollicitée au client, donc pas besoin de SSE ni de session id). `HTTPConnection` a dû
+  apprendre à lire un corps de requête (`Content-Length`) pour la première fois — la console
+  web elle-même ne servait jusqu'ici que des routes `GET` sans payload.
+- **Loopback uniquement** (`127.0.0.1`), contrairement à la console web (qui écoute sur toutes
+  les interfaces) : les tools MCP permettent un contrôle bien plus puissant de l'app
+  (composer/sauvegarder/supprimer) que l'interface web, sans aucune authentification — aucune
+  raison légitime qu'un autre appareil du LAN y accède.
+- **Dispatch direct, en process** : chaque appel de tool va droit vers
+  `ImprovSession.handleMenuAction`/`handleMenuListsRequest`/`buildPieceDetail`/etc. — les mêmes
+  points d'entrée que la console web elle-même appelle pour ses routes `/menu-action`/
+  `/menu-lists`/detail, réutilisant leur encodage JSON tel quel plutôt que de réimplémenter la
+  moindre logique. `mcpCallLock` sérialise uniquement les appels de CE serveur entre eux (même
+  garantie qu'une seule file `HTTPServer` pour son propre trafic) — il ne synchronise pas avec
+  la console web ou le clavier virtuel, qui restent deux autres portes d'entrée indépendantes
+  préexistantes vers `ImprovSession`.
+- **`MCPToolDefinitions.swift`** : portage Swift à la main de `MENU_ACTIONS`
+  (`Sources/WebConsole/StaticAssets.swift`) — même discipline "dupliquer à la main, tenir
+  synchronisé manuellement" que `SanityChecks`/`Tests/*`. **84 actions** au total (compté en
+  lisant directement `StaticAssets.swift` — une estimation antérieure à 36 était fausse).
+  Complétées par 4 tools de lecture seule sans paramètre (`get_menu_lists`,
+  `get_piece_detail`, `get_composition_description`, `get_guide_sequence_detail`,
+  `get_soundtrack_detail`) — mêmes routes que la section "Lecture de structure" plus haut,
+  ajoutées à l'origine pour l'ancien serveur Python, portées ici à l'identique.
+- **`JamShackMCPBridge`** (nouvelle cible exécutable SwiftPM, `Sources/JamShackMCPBridge/`) :
+  **Claude Desktop n'accepte, dans `claude_desktop_config.json`, qu'une entrée `"command"`
+  lancée en sous-processus — jamais une simple URL** (`{"url": "http://127.0.0.1:8765/mcp"}`
+  est rejeté d'emblée comme "not a valid MCP server configuration", confirmé empiriquement,
+  avant même toute requête HTTP ou préflight CORS). Le pont est volontairement bête : il lit
+  une ligne JSON-RPC newline-delimited sur `stdin`, la POST telle quelle contre
+  `http://127.0.0.1:8765/mcp` (le serveur MCP embarqué de l'app déjà lancée), et réécrit le
+  corps de la réponse HTTP comme une ligne sur `stdout` — jamais de compréhension du message
+  MCP lui-même, à part en extraire `id` pour fabriquer une erreur JSON-RPC bien formée si
+  l'appel HTTP échoue (app pas lancée, ou bascule MCP désactivée). Toute la vraie logique
+  (liste de tools, dispatch) reste dans le process GUI `JamShackApp` déjà en cours d'exécution.
+- **Activation** : off par défaut, bascule explicite dans le panneau "I.A." (`JamShackAIView`,
+  `mcpServerSection`), persistée via `UserDefaults` (par machine, jamais synchronisée
+  CloudKit — même logique que `DeviceStorageProfile`). `ImprovSession.
+  startMCPServerIfEnabled()` la redémarre automatiquement à chaque lancement de l'app si
+  l'utilisateur l'avait activée lors d'une session précédente.
+- **Configuration Claude Desktop** : compiler le pont une fois
+  (`swift build -c release --product JamShackMCPBridge`), puis ajouter dans
+  `claude_desktop_config.json` :
+  `{ "mcpServers": { "jamshack": { "command": "<dossier du projet>/.build/release/JamShackMCPBridge" } } }`
+  — le panneau "I.A." affiche ce même extrait avec le port réel en clair (texte localisé
+  `appFormatHintServeurMCP`).
+- **Tests** : `Tests/AppCoreTests/MCPServerTests.swift` (liste de tools, dispatch réel vers
+  `ImprovSession` avec changement d'état vérifié, `get_menu_lists`, en-têtes CORS sur
+  `OPTIONS`) et `Tests/AppCoreTests/MCPBridgeTests.swift` (le pont relaie vraiment vers un
+  serveur MCP réel ; réponse JSON-RPC d'erreur bien formée quand le serveur est injoignable),
+  plus des tests dédiés dans `Tests/WebConsoleTests/HTTPWireFormatTests.swift` pour le nouveau
+  parsing d'en-têtes/`Content-Length`/en-têtes additionnels de réponse. Vérifié aussi via un
+  vrai `xcodebuild` du scheme `JamShackApp_macOS` (l'UI du panneau "I.A." vit dans le projet
+  Xcode, hors SwiftPM).
+- **Pas encore vérifié** : une connexion bout-en-bout avec une vraie installation de Claude
+  Desktop (le pont a été validé par test contre un vrai serveur HTTP, mais jamais encore lancé
+  par Claude Desktop lui-même en conditions réelles).
 
 ## JamShack — l'interface en ligne de commande
 
@@ -2285,8 +2291,8 @@ pour ne jamais la laisser tourner sans être vue.
 Chaque widget de `JamShackUI` est un port `Canvas`/`Path` pur (pas de
 `UIViewRepresentable`/`NSViewRepresentable`) d'un rendu déjà existant côté console web
 (`Sources/WebConsole/StaticAssets.swift`), maintenu manuellement en synchronisation entre les
-deux couches de présentation — la même convention que la table `ACTIONS` de
-`mcp-server/server.py`, recopiée à la main depuis Swift.
+deux couches de présentation — la même convention que `MCPToolDefinitions.swift`, recopiée à
+la main depuis ce même `StaticAssets.swift`.
 
 - **`PitchKeyboardView`** — clavier vectoriel sur une plage MIDI absolue, coloré via
   `pitchDisplayState(...)` (`Sources/AppCore/PitchDisplayState.swift`), la même logique de

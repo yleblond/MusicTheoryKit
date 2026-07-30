@@ -30,9 +30,26 @@ public final class HTTPServer: @unchecked Sendable {
         self.onRequest = onRequest
     }
 
-    public func start(port: UInt16) throws {
+    /// `host`, when provided, restricts the listener to that one local address (e.g.
+    /// `"127.0.0.1"` for loopback-only — used by the embedded MCP server, see `MCPServer.swift`,
+    /// since its tools allow far more powerful control of the app than WebConsole's own browser
+    /// UI, with no authentication at all) via `NWParameters.requiredLocalEndpoint`. `nil` (the
+    /// default) preserves the original behavior: bind all interfaces, as WebConsole itself
+    /// still does (its own LAN-reachability is intentional — see its own doc comment).
+    public func start(port: UInt16, host: String? = nil) throws {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { throw HTTPServerError.invalidPort }
-        let newListener = try NWListener(using: .tcp, on: nwPort)
+        let newListener: NWListener
+        if let host {
+            // `requiredLocalEndpoint` already fully specifies host AND port — passing `on:`
+            // as well (i.e. `NWListener(using:on:)`) makes the two port specifications
+            // conflict, which `NWListener` rejects outright (confirmed: threw POSIX EINVAL
+            // "Invalid argument" at `.start(queue:)` when both were set).
+            let parameters: NWParameters = .tcp
+            parameters.requiredLocalEndpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: nwPort)
+            newListener = try NWListener(using: parameters)
+        } else {
+            newListener = try NWListener(using: .tcp, on: nwPort)
+        }
         newListener.newConnectionHandler = { [weak self] connection in
             guard let self else { return }
             let httpConnection = HTTPConnection(connection: connection, handler: self.onRequest)

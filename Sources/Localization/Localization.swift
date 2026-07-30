@@ -317,6 +317,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appPlaceholderAucuneEntreeCatalogue
     case appButtonAbandonner, appFormatTelechargementPourcent, appLabelInstallationEnCours
 
+    // MARK: - App: JamShack > I.A. > Serveur MCP
+    case appToggleServeurMCP, appFormatHintServeurMCP, appPlaceholderDossierDuProjet, appButtonCopier
+
     // MARK: - App: JamShack > Clavier ordinateur
     case appTabClavierOrdinateur, appLabelClavierOrdinateurActif
 

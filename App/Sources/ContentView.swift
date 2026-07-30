@@ -254,6 +254,12 @@ struct ContentView: View {
                 // always safe to call unconditionally on every launch.
                 session.ensureGuideReadyForLaunch()
                 session.ensureSceneReadyForLaunch()
+                #if os(macOS)
+                // Off unless the user already turned it on in a previous session — see
+                // `startMCPServerIfEnabled`'s own doc comment. macOS only (see `MCPServer.swift`
+                // for why iOS is structurally out of scope).
+                session.startMCPServerIfEnabled()
+                #endif
                 bridge = SessionUIBridge(session: session)
             } catch {
                 startError = "\(error)"

@@ -22,6 +22,9 @@ let package = Package(
         .library(name: "Localization", targets: ["Localization"]),
         .library(name: "JamShackUI", targets: ["JamShackUI"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.11.0"),
+    ],
     targets: [
         .target(name: "MusicTheoryKit"),
         // FR/EN/DE UI text (`AppLanguage`, `L10nKey`, `L10n.string`) — zero dependencies, like
@@ -65,13 +68,35 @@ let package = Package(
         .testTarget(name: "WebConsoleTests", dependencies: ["WebConsole"]),
         // Presentation-agnostic app state/behavior: a CLI drives it today, a future
         // SwiftUI front-end can bind to the same `ImprovSession` instance later.
-        .target(name: "AppCore", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel", "SoundFontModel", "AudioEngine", "MIDIEngine", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole", "Localization"]),
+        .target(name: "AppCore", dependencies: [
+            "MusicTheoryKit", "PieceModel", "SoundTrackModel", "SoundFontModel", "AudioEngine",
+            "MIDIEngine", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole", "Localization",
+            // The embedded MCP server (macOS only, see `MCPServer.swift`) — the `MCP` product
+            // itself pulls in only `swift-system`/`swift-log`/`eventsource`, never SwiftNIO
+            // (that's only a dependency of the SDK's own example conformance-test executables,
+            // which this target never references) — consistent with this codebase's existing
+            // "no heavyweight third-party HTTP stack" preference (see `WebConsole`'s own doc
+            // comment).
+            .product(name: "MCP", package: "swift-sdk"),
+        ]),
         .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit", "LLMEngine", "NetEngine", "SoundTrackModel", "SoundFontModel", "AudioEngine"]),
         .executableTarget(name: "JamShack", dependencies: ["AppCore", "Localization"]),
         // Standalone hardware-validation CLI for the ROLI LUMI Keys' reverse-engineered LED
         // SysEx protocol (see MIDIEngine's LumiSysex/MIDIOutputPort) — kept separate from
         // JamShack so poking at real hardware never risks ImprovSession's state/concurrency.
         .executableTarget(name: "LumiSpike", dependencies: ["MIDIEngine"]),
+        // A tiny stdio<->HTTP bridge for Claude Desktop, which (confirmed empirically — see
+        // `MCPServer.swift`'s own doc comment) only accepts a `"command"` (stdio-spawned)
+        // entry in `claude_desktop_config.json`, never a bare `"url"` one, even though MCP's
+        // own Streamable HTTP transport is otherwise a perfectly valid, spec-compliant choice.
+        // Deliberately protocol-agnostic (no dependency on the `MCP` SDK, or even on
+        // `AppCore`): MCP's Streamable HTTP wire format already carries the exact same
+        // JSON-RPC 2.0 messages stdio does, just framed differently (one HTTP POST body vs.
+        // one newline-delimited line) — this only needs to translate between the two framings,
+        // never parse or understand a single MCP message itself. All the real logic (tool
+        // list, dispatch into `ImprovSession`) stays in the already-running `JamShackApp` GUI
+        // process's own embedded `MCPServer`; this is just a dumb pipe Claude Desktop can spawn.
+        .executableTarget(name: "JamShackMCPBridge"),
         // Shared SwiftUI component library (iOS + macOS, visionOS later) consumed by the
         // JamShackApp Xcode project (App/JamShackApp.xcodeproj) — kept as a plain SPM target,
         // not inside the app project itself, so it stays independently buildable/previewable

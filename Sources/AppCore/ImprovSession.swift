@@ -332,6 +332,10 @@ public final class ImprovSession: @unchecked Sendable {
     /// `nil` when inactive — the port the interactive browser keyboard (see
     /// `startVirtualKeyboard`) is currently listening on.
     public private(set) var virtualKeyboardPort: Int?
+    #if os(macOS)
+    /// `nil` when inactive — see `startMCPServerIfEnabled`/`setMCPServerEnabled`.
+    private var mcpServer: MCPServer?
+    #endif
     /// `nil` when LUMI "live display" mode (see `startLumiLiveDisplay`) is off. Written and
     /// read only inside `liveInputQueue` — it's consulted from `syncLumiLiveModeIfActive()`,
     /// which runs on whatever thread delivered the live MIDI/microphone event that just
@@ -4284,6 +4288,63 @@ public final class ImprovSession: @unchecked Sendable {
         append("Console web arretee.")
     }
 
+    #if os(macOS)
+    private static let mcpServerEnabledKey = "JamShackMCPServerEnabled"
+
+    /// Whether the embedded MCP server should be running — off by default, explicit opt-in via
+    /// the "I.A." settings panel (`JamShackAIView.swift`). `UserDefaults`-backed, per-device,
+    /// never synced via CloudKit — same convention as `DeviceStorageProfile`: whether to expose
+    /// this device's control surface to a local MCP client (Claude Desktop) is a per-machine
+    /// decision, not a preference that should follow the user to another device. Reading this
+    /// does NOT tell you whether the server is actually running right now (see `mcpServer`) —
+    /// only whether the user wants it to be; `startMCPServerIfEnabled()`/`setMCPServerEnabled`
+    /// are what actually start/stop it.
+    public var mcpServerEnabled: Bool {
+        UserDefaults.standard.bool(forKey: Self.mcpServerEnabledKey)
+    }
+
+    /// Persists the user's choice and immediately starts/stops the server to match — this is
+    /// the method the "I.A." panel's toggle calls, so any failure to start (e.g. the port
+    /// already bound by something else) throws back to that UI immediately rather than being
+    /// silently swallowed.
+    public func setMCPServerEnabled(_ enabled: Bool) throws {
+        UserDefaults.standard.set(enabled, forKey: Self.mcpServerEnabledKey)
+        if enabled {
+            try startMCPServerNow()
+        } else {
+            stopMCPServer()
+        }
+    }
+
+    private func startMCPServerNow() throws {
+        guard mcpServer == nil else { return }
+        let server = MCPServer(session: self)
+        try server.start(port: MCPServer.defaultPort)
+        mcpServer = server
+        append("Serveur MCP demarre sur http://127.0.0.1:\(MCPServer.defaultPort)")
+    }
+
+    /// Called once at launch (see `ContentView.swift`'s `.task`) — starts the server
+    /// automatically if the user had already enabled it in a previous session, so they don't
+    /// have to re-toggle it every time just to keep using Claude Desktop. Deliberately
+    /// non-throwing (unlike `setMCPServerEnabled`): mirrors `ensureGuideReadyForLaunch`/
+    /// `ensureSceneReadyForLaunch`'s own "always safe to call, never a launch-blocking failure"
+    /// contract — a genuine failure here (e.g. the port already bound by something else) is
+    /// surfaced next time the user opens the I.A. panel and notices the toggle looks enabled
+    /// but Claude Desktop still can't connect; acceptable for a first version, revisit if this
+    /// proves confusing in practice.
+    public func startMCPServerIfEnabled() {
+        guard mcpServerEnabled else { return }
+        try? startMCPServerNow()
+    }
+
+    public func stopMCPServer() {
+        mcpServer?.stop()
+        mcpServer = nil
+        append("Serveur MCP arrete.")
+    }
+    #endif
+
     private func handleWebConsoleRequest(_ request: HTTPRequest) -> HTTPResponse {
         let (path, query) = Self.splitQuery(request.path)
         switch path {
@@ -4476,7 +4537,10 @@ public final class ImprovSession: @unchecked Sendable {
         var language: String
     }
 
-    private func handleMenuListsRequest() -> HTTPResponse {
+    /// `internal` (not `private`), specifically so `MCPServer.swift` (same module, different
+    /// file) can reuse this exact JSON shape for its own `get_menu_lists` MCP tool — no new
+    /// business logic, just a second front door.
+    func handleMenuListsRequest() -> HTTPResponse {
         // Local tracks only (`wireIDText != nil`) — `.remote` tracks aren't something this
         // machine can start/stop/reassign, same restriction `executeCommand`'s own `track`
         // command has (its `parseTrackID` never produces a `.remote` id either).
@@ -4534,7 +4598,10 @@ public final class ImprovSession: @unchecked Sendable {
     /// other way (its `endpoint` is an opaque `NWEndpoint`, not `Codable`).
     private var lastDiscoveredServers: [DiscoveredServer] = []
 
-    private func handleMenuAction(_ query: [String: String]) -> HTTPResponse {
+    /// `internal` (not `private`) for the same reason as `handleMenuListsRequest` above —
+    /// `MCPServer.swift` reuses this exact `{ok, message, items?}` JSON shape for every
+    /// menu-action MCP tool call.
+    func handleMenuAction(_ query: [String: String]) -> HTTPResponse {
         let action = query["action"] ?? ""
         let value = query["value"] ?? ""
         let result: MenuActionResult

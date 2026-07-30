@@ -42,18 +42,25 @@ FreePats n'est distribué qu'en archives `.7z`/`.tar.xz` qu'aucune API Apple ne 
 (nécessiterait un extracteur dédié, hors périmètre). Étoffer le catalogue au fil du temps (curation
 manuelle par entrée) reste ouvert, mais n'est plus un blocage structurant. Retiré d'ici.
 
-## Entrées
+L'item 5 (serveur MCP embarqué) a été implémenté et vérifié le 2026-07-30 : `MCPServer.swift`
+embarque un vrai serveur MCP (SDK `modelcontextprotocol/swift-sdk`) macOS uniquement, en
+réutilisant le transport HTTP fait main de `WebConsole` (`HTTPConnection` a appris à lire un
+corps de requête `Content-Length` pour l'occasion) plutôt que de réinventer un transport. Comme
+Claude Desktop n'accepte qu'une entrée `"command"` (jamais une simple URL) dans sa
+configuration, une seconde cible exécutable dédiée (`JamShackMCPBridge`) traduit le framing
+stdio newline-delimited de Claude Desktop vers des requêtes HTTP contre ce serveur — toute la
+logique reste dans le process de l'app, le pont est délibérément bête. Bascule dans le panneau
+"I.A." (`JamShackAIView`, pas `JamShackLLMView` comme envisagé initialement — placée avec les
+autres réglages IA plutôt qu'avec la connexion LLM). 84 actions de menu portées à la main
+(`MCPToolDefinitions.swift`, portage de `MENU_ACTIONS`) plus les 4 tools de lecture déjà
+existants côté ancien serveur Python. Vérifié : `swift test` (488/488) et `xcodebuild` du
+scheme `JamShackApp_macOS` passent tous les deux, tests dédiés `MCPServerTests`/
+`MCPBridgeTests`/`HTTPWireFormatTests` (nouveaux cas). **Pas encore vérifié** : connexion
+bout-en-bout avec une vraie installation de Claude Desktop. Le dossier `mcp-server/` (Python,
+superseded) reste sur disque pour l'instant — son retrait est une décision distincte, pas
+encore prise. Retiré d'ici.
 
-5. **Incorporer le serveur MCP (actuellement `mcp-server/`, Python externe) directement dans
-   l'app Swift**, plutôt que de le garder comme process Python séparé à lancer/configurer à la
-   main. Ajouter son démarrage dans le même sous-onglet que "Connexion LLM"
-   (`JamShackLLMView`) — ce sous-onglet contiendrait alors deux sections : Connexion LLM et
-   Serveur MCP. Point à éclaircir à la consolidation : le serveur MCP actuel est un simple
-   proxy HTTP vers les routes `/menu-action`/`/menu-lists` déjà exposées par `WebConsole` (voir
-   `mcp-server/README.md`) — un portage Swift devra définir son propre transport MCP (stdio
-   pour un client comme Claude Desktop, ou HTTP+SSE), pas juste réutiliser tel quel le protocole
-   HTTP existant. **Sorti explicitement d'un premier plan d'implémentation (2026-07-26)** — trop
-   gros pour être bundlé avec le reste, mérite sa propre exploration dédiée.
+## Entrées
 
 21. **Gestion de plusieurs microphones en entrée**, en plus du micro de base actuellement géré.
 

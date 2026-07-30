@@ -2,11 +2,12 @@ import Foundation
 import Network
 
 /// Reads one HTTP/1.1 request off a fresh `NWConnection`, hands it to `handler`, writes back
-/// the response, then closes — no keep-alive, no request body (this server only ever serves
-/// GET routes with no payload), and no header parsing beyond the request line (the one thing
-/// every route actually needs is the path). Mirrors `NetEngine/FramedConnection.swift`'s
+/// the response, then closes — no keep-alive. Mirrors `NetEngine/FramedConnection.swift`'s
 /// shape (accumulate into a buffer, drain once a full unit is available) but looks for the
-/// blank line that ends HTTP headers (`\r\n\r\n`) instead of a length-prefixed frame.
+/// blank line that ends HTTP headers (`\r\n\r\n`) instead of a length-prefixed frame; once the
+/// headers are in, a `Content-Length` body (needed for the embedded MCP server's POST
+/// requests — see `MCPServer.swift` — WebConsole's own GET routes never send one) is waited
+/// for the same way, by re-checking the buffer's size on every subsequent `receiveNext` call.
 // `@unchecked Sendable`: `receiveBuffer`/`closed` are only ever touched from the queue this
 // connection was started on, same reasoning as `FramedConnection`.
 final class HTTPConnection: @unchecked Sendable {
@@ -55,21 +56,29 @@ final class HTTPConnection: @unchecked Sendable {
         }
     }
 
-    /// Once the blank line ending the headers has arrived, the request line is all this
-    /// server needs — parses it, calls `handler`, writes the response, and tears down the
-    /// connection (no keep-alive). Returns `true` once a response has been sent (so
-    /// `receiveNext` knows not to keep reading), `false` while still waiting for more bytes.
+    /// Once the blank line ending the headers has arrived, parses the request line + headers,
+    /// then — if `Content-Length` says a body is coming — waits for that many more bytes to
+    /// actually accumulate before calling `handler` (returns `false` meaning "keep receiving,
+    /// not done yet"; a plain GET with no body is complete the instant the header terminator
+    /// itself arrives, same as before this method grew POST support). Returns `true` once a
+    /// response has actually been sent, so `receiveNext` knows to stop reading.
     private func handleRequestIfComplete() -> Bool {
         guard let headerEnd = receiveBuffer.range(of: HTTPWireFormat.headerTerminator) else { return false }
         let headerData = receiveBuffer.subdata(in: receiveBuffer.startIndex..<headerEnd.lowerBound)
         let headerText = String(data: headerData, encoding: .utf8) ?? ""
-        let response: HTTPResponse
-        if let request = HTTPWireFormat.parseRequestLine(headerText) {
-            response = handler(request)
-        } else {
-            response = .text("Bad Request", contentType: "text/plain", status: 400)
+        guard let parsed = HTTPWireFormat.parseHeaders(headerText) else {
+            send(.text("Bad Request", contentType: "text/plain", status: 400))
+            return true
         }
-        send(response)
+        let bodyStart = headerEnd.upperBound
+        guard receiveBuffer.distance(from: bodyStart, to: receiveBuffer.endIndex) >= parsed.contentLength else {
+            return false // body not fully arrived yet — keep receiving
+        }
+        let body: Data? = parsed.contentLength > 0
+            ? receiveBuffer.subdata(in: bodyStart..<receiveBuffer.index(bodyStart, offsetBy: parsed.contentLength))
+            : nil
+        let request = HTTPRequest(method: parsed.method, path: parsed.path, headers: parsed.headers, body: body)
+        send(handler(request))
         return true
     }
 

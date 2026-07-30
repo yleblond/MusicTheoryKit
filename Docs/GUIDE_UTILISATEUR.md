@@ -993,37 +993,43 @@ les 2 secondes en tâche de fond, sans jamais effacer un champ texte en cours de
 
 ## 17. Serveur MCP — piloter l'application depuis un assistant IA (Claude, etc.)
 
-Un petit serveur séparé (dossier `mcp-server/`, en Python, hors du programme Swift lui-même)
-qui expose les mêmes actions que l'onglet Commandes (§16) comme des *tools* MCP (Model Context
-Protocol) — de quoi demander à un assistant compatible (Claude Desktop, Claude Code...) de
-piloter directement l'application depuis une conversation : charger un morceau, démarrer une
-piste, composer à partir d'une description, gérer une scène et ses rôles, etc.
+L'application (macOS uniquement) peut embarquer directement un serveur Model Context Protocol
+(MCP) qui expose les mêmes actions que l'onglet Commandes (§16) comme des *tools* — de quoi
+demander à un assistant compatible (Claude Desktop, Claude Code...) de piloter directement
+l'application depuis une conversation : charger un morceau, démarrer une piste, composer à
+partir d'une description, gérer une scène et ses rôles, etc. Contrairement à l'ancienne version
+expérimentale (un serveur Python séparé à installer/lancer à la main, remplacée le 2026-07-30),
+il n'y a plus rien à installer ni de console web à démarrer à part : le serveur tourne dans le
+process de l'app elle-même.
 
-**Mise en place** (voir `mcp-server/README.md` pour le détail) :
+**Activation** : Réglages > **I.A.**, bascule "Activer le serveur MCP" (désactivée par défaut).
+Une fois activée, elle le reste au prochain lancement de l'app, sans avoir à re-basculer à
+chaque fois.
+
+**Claude Desktop n'accepte, dans sa configuration, qu'un serveur lancé en ligne de commande**
+(jamais une simple URL) — il faut donc d'abord compiler une fois le petit pont fourni à cet
+effet, depuis le dossier du projet :
 
 ```sh
-cd mcp-server
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+swift build -c release --product JamShackMCPBridge
 ```
 
-Puis, dans la configuration MCP du client (Claude Desktop, par exemple) :
+Puis ajouter dans `claude_desktop_config.json` :
 
 ```json
 {
   "mcpServers": {
     "jamshack": {
-      "command": "/chemin/absolu/vers/mcp-server/.venv/bin/python3",
-      "args": ["/chemin/absolu/vers/mcp-server/server.py"],
-      "env": { "JAMSHACK_BASE_URL": "http://localhost:8080" }
+      "command": "<dossier du projet>/.build/release/JamShackMCPBridge"
     }
   }
 }
 ```
 
-**La console web doit déjà tourner** (`web-console 8080` ou menu **JamShack > Demarrer la
-console web...**) — le serveur MCP n'est qu'un relais vers elle, il ne fait tourner aucune
-logique musicale lui-même.
+L'app doit être lancée (avec la bascule "Activer le serveur MCP" allumée) pour que Claude
+Desktop puisse s'y connecter — le pont ne fait que relayer vers le serveur MCP local de l'app
+déjà en cours d'exécution, sur `http://127.0.0.1:8765/mcp` (le panneau I.A. affiche ce même
+extrait de configuration avec le port réel).
 
 **Ce qui est exposé** : un *tool* par action (mêmes catégories que §16), plus des *tools* de
 lecture pour donner à l'assistant une vraie vue sur le contenu — la structure complète d'un
@@ -1031,8 +1037,11 @@ morceau (nombre de sections, lignes mélodiques, accords par section), la descri
 attente de composition (avec le prompt exact qui serait envoyé), la structure complète d'un
 guide musical chargé, et le détail d'un enregistrement.
 
-**Expérimental** : toutes les actions sont exposées sans réglage fin des permissions pour
-l'instant (tout ou rien) — un mécanisme plus sélectif est une étape volontairement différée.
+**Toujours expérimental** : toutes les actions sont exposées sans réglage fin des permissions
+pour l'instant (tout ou rien) — un mécanisme plus sélectif est une étape volontairement
+différée. Serveur accessible uniquement en local (`127.0.0.1`), sans authentification —
+n'importe quel programme tournant sur le même Mac peut s'y connecter tant que la bascule est
+activée.
 
 ## 18. Langue de l'interface — français / anglais / allemand
 

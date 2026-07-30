@@ -30,4 +30,39 @@ final class HTTPWireFormatTests: XCTestCase {
         let response = HTTPResponse.notFound()
         XCTAssertEqual(response.status, 404)
     }
+
+    func testParseHeadersExtractsMethodPathAndHeaderFields() {
+        let parsed = HTTPWireFormat.parseHeaders("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:8765\r\nContent-Type: application/json\r\nContent-Length: 42\r\n")
+        XCTAssertEqual(parsed?.method, "POST")
+        XCTAssertEqual(parsed?.path, "/mcp")
+        XCTAssertEqual(parsed?.headers["Content-Type"], "application/json")
+        XCTAssertEqual(parsed?.contentLength, 42)
+    }
+
+    func testParseHeadersDefaultsContentLengthToZeroWhenAbsent() {
+        let parsed = HTTPWireFormat.parseHeaders("GET /state HTTP/1.1\r\nHost: localhost\r\n")
+        XCTAssertEqual(parsed?.contentLength, 0)
+    }
+
+    func testParseHeadersContentLengthLookupIsCaseInsensitive() {
+        let parsed = HTTPWireFormat.parseHeaders("POST /mcp HTTP/1.1\r\ncontent-length: 7\r\n")
+        XCTAssertEqual(parsed?.contentLength, 7)
+    }
+
+    func testParseHeadersRejectsMalformedRequestLine() {
+        XCTAssertNil(HTTPWireFormat.parseHeaders("GET"))
+        XCTAssertNil(HTTPWireFormat.parseHeaders(""))
+    }
+
+    func testResponseHeadIncludesExtraHeaders() {
+        let response = HTTPResponse(status: 200, contentType: "application/json", body: Data(), extraHeaders: ["Access-Control-Allow-Origin": "*"])
+        let head = HTTPWireFormat.responseHead(for: response)
+        XCTAssertTrue(head.contains("Access-Control-Allow-Origin: *\r\n"))
+    }
+
+    func testHTTPRequestHeaderLookupIsCaseInsensitive() {
+        let request = HTTPRequest(method: "POST", path: "/mcp", headers: ["Content-Type": "application/json"])
+        XCTAssertEqual(request.header("content-type"), "application/json")
+        XCTAssertNil(request.header("accept"))
+    }
 }
