@@ -2505,7 +2505,7 @@ final class ImprovSessionTests: XCTestCase {
         try session.saveScene(title: "Practice", as: "Practice")
 
         // A fresh session sharing the same store — nothing active yet, one scene already saved.
-        // Mirrors real launch order (`configureDefaultFolders`): `migrateScenesFromJSONIfNeeded`
+        // Mirrors real launch order (`ContentView.swift`'s `.task`): `migrateScenesFromJSONIfNeeded`
         // refreshes `sceneNames` from the shared store before `ensureSceneReadyForLaunch` reads it.
         let fresh = ImprovSession(modelContainer: container)
         try fresh.start()

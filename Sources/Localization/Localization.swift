@@ -221,7 +221,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appChoisirEllipsis, appChangerEllipsis, appCreer, appAnnuler, appButtonSauvegarderDansCeDossier
     case appButtonArreter, appButtonDemarrer, appNouveauGuide, appNouvelleScene, appNouvelleComposition, appButtonReglages
     case appModeApp, appModeLumi, appHeadingNotesEtAccords
-    case appTabCadrages, appHeadingCadrageTexte, appHeadingCadrageSoundtrack, appHeadingIndicationsSoundtrack
+    case appHeadingCadrageTexte, appHeadingCadrageSoundtrack, appHeadingIndicationsSoundtrack
     case appButtonSauvegarderSous
     case appButtonSuggererParIA
     case appDefaultNouvellePalette, appDefaultGuideTitle, appDefaultMorceauFilename
@@ -231,7 +231,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
 
     // MARK: - App: main TabView + JamShack sidebar + sub-tab sidebars (accessibility labels)
     case appTabStudio, appTabEnregistrements, appStatusDemarrage
-    case appTabDossiers, appTabSons, appTabMIDI, appTabMicrophone, appTabCouleurs, appTabLangue, appTabLLM
+    case appTabSons, appTabMIDI, appTabMicrophone, appTabCouleurs, appTabLangue, appTabLLM
     case appTabFichierMorceau, appTabFichierSoundtrack
     case appTabFichierComposition, appTabComposerCourt
 
@@ -241,13 +241,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHeadingCompositionIA, appHintUtiliseConnexionLLMSeule
     case appPlaceholderAucunDossierCompositionIA, appButtonSauvegarderDescriptionDossier, appHeadingDossierCompositionIA
 
-    // MARK: - App: JamShack > Dossiers (FolderPickerRow + JamShackFoldersView)
-    case appFormatFichiersTrouves
-    case appHeadingConfiguration, appHintCreeSousDossiers
-    case appHeadingDossiersParDefaut, appHintDossiersParDefautDetail
-    case appButtonChoisirCreerDossierJamShack, appButtonChangerDossierJamShack
-    case appButtonChoisir, appHintChoisisCreeDossierJamShack
-    case appLabelDossierCompositionIA, appLabelDossierReglages
+    // MARK: - App: JamShack > Sons (still-used leftover from the removed "Dossiers" tab)
     case appLabelDossierSons
 
     // MARK: - App: Guide tab (list -> configuration flow)
@@ -324,8 +318,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appButtonAbandonner, appFormatTelechargementPourcent, appLabelInstallationEnCours
 
     // MARK: - App: JamShack > Clavier ordinateur
-    case appTabClavierOrdinateur, appToggleClavierOrdinateurActif, appHintClavierOrdinateurActif
-    case appLabelClavierOrdinateurActif
+    case appTabClavierOrdinateur, appLabelClavierOrdinateurActif
 
     // MARK: - App: JamShack > MIDI
     case appOptionFusionne, appOptionIndividuel, appHintModeMidiDetail

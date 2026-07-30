@@ -42,25 +42,26 @@ struct ContentView: View {
         }
     }
 
-    /// The 9 settings-mode tabs — was `JamShackView`'s own internal sub-tab rail, hoisted here
-    /// unchanged (same cases, icons, labels, order) now that there's no wrapping "JamShack" tab
-    /// to hold them.
+    /// The settings-mode tabs — was `JamShackView`'s own internal sub-tab rail, hoisted here
+    /// (now that there's no wrapping "JamShack" tab to hold them), pared down since (Dossiers,
+    /// Cadrages merged into I.A., and Clavier ordinateur all removed as redundant/vestigial —
+    /// see each removal's own commit/doc history). No dedicated "Clavier ordinateur" tab: its
+    /// entire content was a single on/off toggle for `computerKeyboardInputEnabled`, already
+    /// exposed via the quick-toggle button in the bottom bar below (Studio mode only) — keeping
+    /// both was pure duplication with zero extra capability in the tab.
     private enum SettingsTab: CaseIterable, Identifiable {
-        case sons, clavierOrdinateur, midi, microphone, jamSession, couleurs, llm, cadrages, dossiers, langue
+        case sons, midi, microphone, jamSession, couleurs, llm, langue
 
         var id: Self { self }
 
         var systemImage: String {
             switch self {
             case .sons: return "music.note.list"
-            case .clavierOrdinateur: return "keyboard"
             case .midi: return "pianokeys"
             case .microphone: return "mic"
             case .jamSession: return "person.2.fill"
             case .couleurs: return "paintpalette"
             case .llm: return "brain"
-            case .cadrages: return "text.quote"
-            case .dossiers: return "folder"
             case .langue: return "globe"
             }
         }
@@ -68,14 +69,11 @@ struct ContentView: View {
         func label(_ language: AppLanguage) -> String {
             switch self {
             case .sons: return L10n.string(.appTabSons, language)
-            case .clavierOrdinateur: return L10n.string(.appTabClavierOrdinateur, language)
             case .midi: return L10n.string(.appTabMIDI, language)
             case .microphone: return L10n.string(.appTabMicrophone, language)
             case .jamSession: return L10n.string(.catJamSession, language)
             case .couleurs: return L10n.string(.appTabCouleurs, language)
             case .llm: return L10n.string(.appTabLLM, language)
-            case .cadrages: return L10n.string(.appTabCadrages, language)
-            case .dossiers: return L10n.string(.appTabDossiers, language)
             case .langue: return L10n.string(.appTabLangue, language)
             }
         }
@@ -132,9 +130,6 @@ struct ContentView: View {
                                 Tab(SettingsTab.sons.label(session.currentLanguage), systemImage: SettingsTab.sons.systemImage, value: SettingsTab.sons) {
                                     SoundsView(session: session, bridge: bridge, isActive: mode == .settings && selectedSettingsTab == .sons)
                                 }
-                                Tab(SettingsTab.clavierOrdinateur.label(session.currentLanguage), systemImage: SettingsTab.clavierOrdinateur.systemImage, value: SettingsTab.clavierOrdinateur) {
-                                    ComputerKeyboardSettingsView(session: session)
-                                }
                                 Tab(SettingsTab.midi.label(session.currentLanguage), systemImage: SettingsTab.midi.systemImage, value: SettingsTab.midi) {
                                     JamShackMIDIView(session: session, bridge: bridge)
                                 }
@@ -148,13 +143,7 @@ struct ContentView: View {
                                     JamShackColorsView(session: session)
                                 }
                                 Tab(SettingsTab.llm.label(session.currentLanguage), systemImage: SettingsTab.llm.systemImage, value: SettingsTab.llm) {
-                                    JamShackLLMView(session: session)
-                                }
-                                Tab(SettingsTab.cadrages.label(session.currentLanguage), systemImage: SettingsTab.cadrages.systemImage, value: SettingsTab.cadrages) {
-                                    JamShackPromptsView(session: session)
-                                }
-                                Tab(SettingsTab.dossiers.label(session.currentLanguage), systemImage: SettingsTab.dossiers.systemImage, value: SettingsTab.dossiers) {
-                                    JamShackFoldersView(session: session)
+                                    JamShackAIView(session: session)
                                 }
                                 Tab(SettingsTab.langue.label(session.currentLanguage), systemImage: SettingsTab.langue.systemImage, value: SettingsTab.langue) {
                                     JamShackLanguageView(session: session)
@@ -254,17 +243,15 @@ struct ContentView: View {
                 // their own always-ready sampler, entirely independent of this per-track
                 // enable step.
                 try? session.setSoundEnabled(true, for: .computerKeyboard)
-                // If a default root folder (iCloud Drive/JamShack by default) was already
-                // chosen on a previous launch, restore it with no user interaction needed —
-                // see DefaultFolderBookmark's doc comment.
-                if let root = DefaultFolderBookmark.resolve() {
-                    configureDefaultFolders(in: root, session: session)
-                }
-                // Both idempotent (no-op once already resolved) — called unconditionally here,
-                // not just inside `configureDefaultFolders`, so a truly first launch (no root
-                // folder ever chosen yet) still lands on a ready-to-use Scene/Guide instead of a
-                // dead-end blank screen. `sceneNames`/`guideSequenceNames` come from the shared
-                // SwiftData store, independent of any folder, so this is safe with no root set.
+                // Soundfonts resolve to the app's own iCloud Drive container/`Application
+                // Support` automatically (see `SoundFontLocations`) — no user-picked folder,
+                // and no longer gated behind the old "Dossiers" root-folder bookmark (removed
+                // 2026-07-30, along with the one-time JSON migrations it used to also trigger:
+                // every device that needed that migration has already had it run).
+                session.startSoundFontLibrary()
+                // Idempotent (no-op once already resolved) — `sceneNames`/`guideSequenceNames`
+                // come from the shared SwiftData store, independent of any folder, so this is
+                // always safe to call unconditionally on every launch.
                 session.ensureGuideReadyForLaunch()
                 session.ensureSceneReadyForLaunch()
                 bridge = SessionUIBridge(session: session)

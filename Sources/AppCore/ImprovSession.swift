@@ -1032,8 +1032,8 @@ public final class ImprovSession: @unchecked Sendable {
         migrateSoundSettingsFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("sound-settings.json"))
         // Must run after the JSON migration right above (which inserts path-keyed entries with
         // no hash yet) AND after `startSoundFontLibrary` has had a chance to populate
-        // `soundFonts` (see `configureDefaultFolders`'s call order) — resolves each pending
-        // entry's file name to a stable hash.
+        // `soundFonts` (see `ContentView.swift`'s launch sequence for the real call order) —
+        // resolves each pending entry's file name to a stable hash.
         migrateSoundEntriesToHashKeyedIfNeeded()
         settingsFolder = folderPath
         append("Dossier de reglages: \(folderPath).")
@@ -3792,8 +3792,8 @@ public final class ImprovSession: @unchecked Sendable {
     /// `migrateSoundSettingsFromJSONIfNeeded`) — resolves each to a stable hash by matching its
     /// path's file name against the now-populated `soundFonts` index. Must run after
     /// `startSoundFontLibrary`/`migrateSoundFontsFromFolderScanIfNeeded` (see
-    /// `configureDefaultFolders`'s call order), so the hashes it needs to match against actually
-    /// exist. An entry that can't be matched (its file was already renamed/removed before this
+    /// `ContentView.swift`'s launch sequence for the real call order), so the hashes it needs to
+    /// match against actually exist. An entry that can't be matched (its file was already renamed/removed before this
     /// update ever ran) is dropped rather than left permanently stuck — it was already
     /// effectively unreachable under the old path-based scheme too.
     public func migrateSoundEntriesToHashKeyedIfNeeded() {

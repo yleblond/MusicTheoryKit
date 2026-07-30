@@ -19,10 +19,8 @@ public enum DeviceStorageProfile: String, Codable, CaseIterable, Sendable {
     private static let userDefaultsKey = "JamShackSoundFontStorageProfile"
 
     /// Per-device, deliberately in plain `UserDefaults` rather than the shared CloudKit store —
-    /// same "not everything should sync" precedent as `DefaultFolderBookmark`
-    /// (`App/Sources/DefaultFolders.swift`): the whole point is that a Mac with 2 TB free and
-    /// an iPhone with 30 GB free can legitimately want different answers for the exact same
-    /// synced soundfont library.
+    /// the whole point is that a Mac with 2 TB free and an iPhone with 30 GB free can
+    /// legitimately want different answers for the exact same synced soundfont library.
     public static var current: DeviceStorageProfile {
         get {
             if let raw = UserDefaults.standard.string(forKey: userDefaultsKey), let value = DeviceStorageProfile(rawValue: raw) {

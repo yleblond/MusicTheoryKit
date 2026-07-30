@@ -401,7 +401,6 @@ enum L10nTable {
         .appModeApp: [.fr: "App", .en: "App", .de: "App", .ja: "アプリ", .zhHans: "应用", .it: "App", .es: "App", .pt: "App", .ru: "Прил."],
         .appModeLumi: [.fr: "Lumi", .en: "Lumi", .de: "Lumi", .ja: "Lumi", .zhHans: "Lumi", .it: "Lumi", .es: "Lumi", .pt: "Lumi", .ru: "Lumi"],
         .appHeadingNotesEtAccords: [.fr: "Notes et Accords", .en: "Notes and Chords", .de: "Noten und Akkorde", .ja: "音符とコード", .zhHans: "音符与和弦", .it: "Note e Accordi", .es: "Notas y Acordes", .pt: "Notas e Acordes", .ru: "Ноты и аккорды"],
-        .appTabCadrages: [.fr: "Cadrages", .en: "Framings", .de: "Rahmensätze", .ja: "導入文", .zhHans: "引导语句", .it: "Inquadramenti", .es: "Encuadres", .pt: "Enquadramentos", .ru: "Вводные фразы"],
         .appHeadingCadrageTexte: [.fr: "Cadrage texte", .en: "Text framing", .de: "Text-Rahmensatz", .ja: "テキスト導入文", .zhHans: "文本引导语句", .it: "Inquadramento testo", .es: "Encuadre de texto", .pt: "Enquadramento de texto", .ru: "Вводная фраза (текст)"],
         .appHeadingCadrageSoundtrack: [.fr: "Cadrage soundtrack", .en: "Soundtrack framing", .de: "Soundtrack-Rahmensatz", .ja: "サウンドトラック導入文", .zhHans: "音轨引导语句", .it: "Inquadramento soundtrack", .es: "Encuadre de soundtrack", .pt: "Enquadramento de soundtrack", .ru: "Вводная фраза (саундтрек)"],
         .appHeadingIndicationsSoundtrack: [.fr: "Indications soundtrack", .en: "Soundtrack instructions", .de: "Soundtrack-Hinweise", .ja: "サウンドトラック指示", .zhHans: "音轨风格指示", .it: "Indicazioni soundtrack", .es: "Indicaciones de soundtrack", .pt: "Indicações de soundtrack", .ru: "Указания (саундтрек)"],
@@ -416,13 +415,12 @@ enum L10nTable {
         .appTabStudio: [.fr: "Studio", .en: "Studio", .de: "Studio", .ja: "スタジオ", .zhHans: "工作室", .it: "Studio", .es: "Estudio", .pt: "Estúdio", .ru: "Студия"],
         .appTabEnregistrements: [.fr: "Enregistrements", .en: "Recordings", .de: "Aufnahmen", .ja: "録音", .zhHans: "录音", .it: "Registrazioni", .es: "Grabaciones", .pt: "Gravações", .ru: "Записи"],
         .appStatusDemarrage: [.fr: "Demarrage...", .en: "Starting...", .de: "Wird gestartet...", .ja: "起動中...", .zhHans: "正在启动…", .it: "Avvio in corso...", .es: "Iniciando...", .pt: "Iniciando...", .ru: "Запуск…"],
-        .appTabDossiers: [.fr: "Dossiers", .en: "Folders", .de: "Ordner", .ja: "フォルダ", .zhHans: "文件夹", .it: "Cartelle", .es: "Carpetas", .pt: "Pastas", .ru: "Папки"],
         .appTabSons: [.fr: "Sons", .en: "Sounds", .de: "Klänge", .ja: "サウンド", .zhHans: "声音", .it: "Suoni", .es: "Sonidos", .pt: "Sons", .ru: "Звуки"],
         .appTabMIDI: [.fr: "MIDI", .en: "MIDI", .de: "MIDI", .ja: "MIDI", .zhHans: "MIDI", .it: "MIDI", .es: "MIDI", .pt: "MIDI", .ru: "MIDI"],
         .appTabMicrophone: [.fr: "Microphone", .en: "Microphone", .de: "Mikrofon", .ja: "マイク", .zhHans: "麦克风", .it: "Microfono", .es: "Micrófono", .pt: "Microfone", .ru: "Микрофон"],
         .appTabCouleurs: [.fr: "Couleurs", .en: "Colors", .de: "Farben", .ja: "カラー", .zhHans: "颜色", .it: "Colori", .es: "Colores", .pt: "Cores", .ru: "Цвета"],
         .appTabLangue: [.fr: "Langue", .en: "Language", .de: "Sprache", .ja: "言語", .zhHans: "语言", .it: "Lingua", .es: "Idioma", .pt: "Idioma", .ru: "Язык"],
-        .appTabLLM: [.fr: "LLM", .en: "LLM", .de: "LLM", .ja: "LLM", .zhHans: "LLM", .it: "LLM", .es: "LLM", .pt: "LLM", .ru: "LLM"],
+        .appTabLLM: [.fr: "I.A.", .en: "AI", .de: "KI", .ja: "AI", .zhHans: "AI", .it: "IA", .es: "IA", .pt: "IA", .ru: "ИИ"],
         .appTabFichierMorceau: [.fr: "Fichier de morceau", .en: "Piece file", .de: "Stückdatei", .ja: "曲ファイル", .zhHans: "曲目文件", .it: "File del brano", .es: "Archivo de la pieza", .pt: "Arquivo da peça", .ru: "Файл произведения"],
         .appTabFichierSoundtrack: [.fr: "Fichier de soundtrack", .en: "Soundtrack file", .de: "Soundtrack-Datei", .ja: "Soundtrack ファイル", .zhHans: "Soundtrack 文件", .it: "File Soundtrack", .es: "Archivo Soundtrack", .pt: "Arquivo Soundtrack", .ru: "Файл Soundtrack"],
         .appTabFichierComposition: [.fr: "Fichier de composition", .en: "Composition file", .de: "Kompositionsdatei", .ja: "作曲ファイル", .zhHans: "作曲文件", .it: "File di composizione", .es: "Archivo de composición", .pt: "Arquivo de composição", .ru: "Файл композиции"],
@@ -442,30 +440,6 @@ enum L10nTable {
         .appHeadingDossierCompositionIA: [.fr: "Descriptions enregistrees", .en: "Saved descriptions", .de: "Gespeicherte Beschreibungen", .ja: "保存済みの説明", .zhHans: "已保存的描述", .it: "Descrizioni salvate", .es: "Descripciones guardadas", .pt: "Descrições salvas", .ru: "Сохранённые описания"],
 
         // MARK: - App: JamShack > Dossiers
-        .appFormatFichiersTrouves: [.fr: "%d fichier(s) trouve(s).", .en: "%d file(s) found.", .de: "%d Datei(en) gefunden.", .ja: "%d件のファイルが見つかりました。", .zhHans: "找到 %d 个文件。", .it: "%d file trovati.", .es: "%d archivo(s) encontrado(s).", .pt: "%d arquivo(s) encontrado(s).", .ru: "Найдено файлов: %d."],
-        .appHeadingConfiguration: [.fr: "Configuration", .en: "Configuration", .de: "Konfiguration", .ja: "設定", .zhHans: "配置", .it: "Configurazione", .es: "Configuración", .pt: "Configuração", .ru: "Конфигурация"],
-        .appHintCreeSousDossiers: [.fr: "Cree les sous-dossiers necessaires s'ils n'existent pas encore.", .en: "Creates the necessary subfolders if they don't already exist.", .de: "Erstellt die nötigen Unterordner, falls sie noch nicht existieren.", .ja: "必要なサブフォルダがまだ存在しない場合に作成します。", .zhHans: "如果尚不存在，则创建所需的子文件夹。", .it: "Crea le sottocartelle necessarie se non esistono già.", .es: "Crea las subcarpetas necesarias si aún no existen.", .pt: "Cria as subpastas necessárias se ainda não existirem.", .ru: "Создаёт необходимые подпапки, если их ещё не существует."],
-        .appHeadingDossiersParDefaut: [.fr: "Dossiers par defaut", .en: "Default folders", .de: "Standardordner", .ja: "デフォルトフォルダ", .zhHans: "默认文件夹", .it: "Cartelle predefinite", .es: "Carpetas predeterminadas", .pt: "Pastas padrão", .ru: "Папки по умолчанию"],
-        // Folder names (Composition IA/Pieces/Scenes/Sequences/SoundFonts/SoundTracks) are real on-disk directory
-        // names created by DefaultFolders.swift's `ensure(...)` calls — deliberately NOT translated, so the text
-        // always names the actual folder the user will see in Finder/Files regardless of UI language.
-        .appHintDossiersParDefautDetail: [
-            .fr: "Cree/utilise Composition IA, Pieces, Scenes, Sequences, SoundFonts et SoundTracks a l'interieur du dossier choisi — iCloud Drive > JamShack par defaut. Retenu au prochain lancement.",
-            .en: "Creates/uses Composition IA, Pieces, Scenes, Sequences, SoundFonts and SoundTracks inside the chosen folder — iCloud Drive > JamShack by default. Remembered on next launch.",
-            .de: "Erstellt/verwendet Composition IA, Pieces, Scenes, Sequences, SoundFonts und SoundTracks innerhalb des gewählten Ordners — standardmäßig iCloud Drive > JamShack. Wird beim nächsten Start beibehalten.",
-            .ja: "選択したフォルダ内に Composition IA、Pieces、Scenes、Sequences、SoundFonts、SoundTracks を作成/使用します — デフォルトでは iCloud Drive > JamShack。次回起動時にも記憶されます。",
-            .zhHans: "在所选文件夹内创建/使用 Composition IA、Pieces、Scenes、Sequences、SoundFonts 和 SoundTracks — 默认为 iCloud Drive > JamShack。下次启动时会记住此设置。",
-            .it: "Crea/utilizza Composition IA, Pieces, Scenes, Sequences, SoundFonts e SoundTracks all'interno della cartella scelta — iCloud Drive > JamShack per impostazione predefinita. Ricordato al prossimo avvio.",
-            .es: "Crea/utiliza Composition IA, Pieces, Scenes, Sequences, SoundFonts y SoundTracks dentro de la carpeta elegida — iCloud Drive > JamShack de forma predeterminada. Se recuerda en el próximo inicio.",
-            .pt: "Cria/usa Composition IA, Pieces, Scenes, Sequences, SoundFonts e SoundTracks dentro da pasta escolhida — iCloud Drive > JamShack por padrão. Lembrado na próxima inicialização.",
-            .ru: "Создаёт/использует Composition IA, Pieces, Scenes, Sequences, SoundFonts и SoundTracks внутри выбранной папки — по умолчанию iCloud Drive > JamShack. Запоминается при следующем запуске.",
-        ],
-        .appButtonChoisirCreerDossierJamShack: [.fr: "Choisir/creer le dossier JamShack...", .en: "Choose/create the JamShack folder...", .de: "JamShack-Ordner wählen/erstellen...", .ja: "JamShackフォルダを選択/作成...", .zhHans: "选择/创建 JamShack 文件夹…", .it: "Scegli/crea la cartella JamShack...", .es: "Elegir/crear la carpeta JamShack...", .pt: "Escolher/criar a pasta JamShack...", .ru: "Выбрать/создать папку JamShack…"],
-        .appButtonChangerDossierJamShack: [.fr: "Changer de dossier JamShack...", .en: "Change the JamShack folder...", .de: "JamShack-Ordner ändern...", .ja: "JamShackフォルダを変更...", .zhHans: "更改 JamShack 文件夹…", .it: "Cambia la cartella JamShack...", .es: "Cambiar la carpeta JamShack...", .pt: "Alterar a pasta JamShack...", .ru: "Изменить папку JamShack…"],
-        .appButtonChoisir: [.fr: "Choisir", .en: "Choose", .de: "Wählen", .ja: "選択", .zhHans: "选择", .it: "Scegli", .es: "Elegir", .pt: "Escolher", .ru: "Выбрать"],
-        .appHintChoisisCreeDossierJamShack: [.fr: "Choisis ou cree le dossier JamShack (iCloud Drive recommande)", .en: "Choose or create the JamShack folder (iCloud Drive recommended)", .de: "Wähle oder erstelle den JamShack-Ordner (iCloud Drive empfohlen)", .ja: "JamShackフォルダを選択または作成してください（iCloud Driveを推奨）", .zhHans: "选择或创建 JamShack 文件夹（建议使用 iCloud Drive）", .it: "Scegli o crea la cartella JamShack (si consiglia iCloud Drive)", .es: "Elige o crea la carpeta JamShack (se recomienda iCloud Drive)", .pt: "Escolha ou crie a pasta JamShack (recomenda-se o iCloud Drive)", .ru: "Выберите или создайте папку JamShack (рекомендуется iCloud Drive)"],
-        .appLabelDossierCompositionIA: [.fr: "Composition IA (prompts)", .en: "AI Composition (prompts)", .de: "KI-Komposition (Prompts)", .ja: "AI作曲（プロンプト）", .zhHans: "AI 作曲（提示词）", .it: "Composizione IA (prompt)", .es: "Composición IA (prompts)", .pt: "Composição IA (prompts)", .ru: "ИИ-композиция (промпты)"],
-        .appLabelDossierReglages: [.fr: "Reglages", .en: "Settings", .de: "Einstellungen", .ja: "設定", .zhHans: "设置", .it: "Impostazioni", .es: "Ajustes", .pt: "Configurações", .ru: "Настройки"],
         .appLabelDossierSons: [.fr: "Sons (samples)", .en: "Sounds (samples)", .de: "Klänge (Samples)", .ja: "サウンド（サンプル）", .zhHans: "声音（采样）", .it: "Suoni (sample)", .es: "Sonidos (samples)", .pt: "Sons (samples)", .ru: "Звуки (сэмплы)"],
 
         // MARK: - App: Guide tab
@@ -643,18 +617,6 @@ enum L10nTable {
 
         // MARK: - App: JamShack > Clavier ordinateur
         .appTabClavierOrdinateur: [.fr: "Clavier ordinateur", .en: "Computer keyboard", .de: "Computertastatur", .ja: "コンピューターキーボード", .zhHans: "电脑键盘", .it: "Tastiera del computer", .es: "Teclado del ordenador", .pt: "Teclado do computador", .ru: "Клавиатура компьютера"],
-        .appToggleClavierOrdinateurActif: [.fr: "Activer le clavier ordinateur", .en: "Enable computer keyboard", .de: "Computertastatur aktivieren", .ja: "コンピューターキーボードを有効化", .zhHans: "启用电脑键盘", .it: "Attiva la tastiera del computer", .es: "Activar el teclado del ordenador", .pt: "Ativar o teclado do computador", .ru: "Включить клавиатуру компьютера"],
-        .appHintClavierOrdinateurActif: [
-            .fr: "Desactive par defaut : une fois active, chaque lettre tapee (\"ASDFGHJKL;\" pour les touches blanches, \"WETYUOP\" pour les touches noires) joue une note, ou que tu sois dans l'application — un clavier long reste visible en bas de la fenetre tant que c'est actif.",
-            .en: "Off by default: once enabled, every letter typed (\"ASDFGHJKL;\" for white keys, \"WETYUOP\" for black keys) plays a note, wherever you are in the app — a long keyboard stays visible at the bottom of the window while it's on.",
-            .de: "Standardmäßig deaktiviert: einmal aktiviert, spielt jeder getippte Buchstabe (\"ASDFGHJKL;\" für weiße Tasten, \"WETYUOP\" für schwarze Tasten) eine Note, egal wo in der App du bist — eine lange Tastatur bleibt unten im Fenster sichtbar, solange es aktiv ist.",
-            .ja: "既定では無効 — 有効にすると、入力した文字（白鍵は「ASDFGHJKL;」、黒鍵は「WETYUOP」）がアプリ内のどこにいても音を鳴らします。有効な間はウィンドウ下部に長いキーボードが表示されたままになります。",
-            .zhHans: "默认关闭——启用后，无论你在应用的哪个位置，输入的每个字母（白键为“ASDFGHJKL;”，黑键为“WETYUOP”）都会发出一个音符。启用期间，窗口底部会一直显示一个长键盘。",
-            .it: "Disattivato per impostazione predefinita: una volta attivato, ogni lettera digitata (\"ASDFGHJKL;\" per i tasti bianchi, \"WETYUOP\" per i tasti neri) suona una nota, ovunque tu sia nell'app — una tastiera lunga resta visibile in fondo alla finestra finché è attivo.",
-            .es: "Desactivado de forma predeterminada: una vez activado, cada letra escrita (\"ASDFGHJKL;\" para las teclas blancas, \"WETYUOP\" para las teclas negras) reproduce una nota, estés donde estés en la app — un teclado largo permanece visible en la parte inferior de la ventana mientras esté activo.",
-            .pt: "Desativado por predefinição: depois de ativado, cada letra digitada (\"ASDFGHJKL;\" para as teclas brancas, \"WETYUOP\" para as teclas pretas) toca uma nota, esteja onde estiveres na app — um teclado longo permanece visível na parte inferior da janela enquanto estiver ativo.",
-            .ru: "Отключено по умолчанию: после включения каждая набранная буква (\"ASDFGHJKL;\" для белых клавиш, \"WETYUOP\" для чёрных) воспроизводит ноту, где бы вы ни находились в приложении — длинная клавиатура остаётся видимой в нижней части окна, пока функция включена.",
-        ],
         .appLabelClavierOrdinateurActif: [.fr: "Clavier ordinateur actif", .en: "Computer keyboard active", .de: "Computertastatur aktiv", .ja: "コンピューターキーボード有効", .zhHans: "电脑键盘已启用", .it: "Tastiera del computer attiva", .es: "Teclado del ordenador activo", .pt: "Teclado do computador ativo", .ru: "Клавиатура компьютера активна"],
 
         // MARK: - App: JamShack > MIDI

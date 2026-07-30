@@ -3,7 +3,7 @@ import Foundation
 /// Tracks which soundfonts were actually played on THIS device recently — a signal used only to
 /// bias `SoundFontDownloadPolicy` toward downloading something the user demonstrably still
 /// cares about, even past the size/space thresholds that would otherwise skip it. Deliberately
-/// NOT synced (plain `UserDefaults`, same convention as `DefaultFolderBookmark`/
+/// NOT synced (plain `UserDefaults`, same convention as
 /// `DeviceStorageProfile`): playing a soundfont on the Mac must never force its download on the
 /// iPhone too — each device judges "recently used" only by its own history.
 public enum SoundFontLocalUsageLedger {
