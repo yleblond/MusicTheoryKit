@@ -296,6 +296,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHeadingTesterLeSon, appHintTesterLeSon
     case appPlaceholderRechercherFichier, appPlaceholderChoisirFichierSons
     case appHeadingFichiersSoundfont, appFormatFichiersCompte
+    case appButtonTelecharger, appLabelSynchronise, appLabelLocalUniquement, appLabelNonTelecharge
+    case appHeadingProfilStockage, appOptionProfilEconome, appOptionProfilStandard, appOptionProfilGenereux
+    case appFormatEspaceDisqueLibre
 
     // MARK: - App: JamShack > Clavier ordinateur
     case appTabClavierOrdinateur, appToggleClavierOrdinateurActif, appHintClavierOrdinateurActif

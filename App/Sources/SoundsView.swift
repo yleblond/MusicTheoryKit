@@ -1,17 +1,23 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import AppCore
 import JamShackUI
 import Localization
 import SoundFontModel
 
-/// "Sons" sub-tab of the "JamShack" tab: curates `session.sampleFiles` (every .sf2/.dls/
-/// .aupreset file found under "Sons (samples)", subfolders included — see
-/// `ImprovSession.listSampleFiles`) into a small, named set worth actually picking from
-/// elsewhere. Shows EVERY file/sound found, unlike `PiecesPlayView`/`GuideEditionView`/
-/// `SceneLayoutView`'s sound pickers (which show only favorites, via
-/// `session.favoriteSounds`) — this is the one screen where the full, possibly huge,
-/// decompressed-library list needs to be visible at all, so favorites can be chosen from it in
-/// the first place.
+/// "Sons" sub-tab of the "JamShack" tab: curates `session.soundFonts` (the hash-indexed
+/// soundfont library — see `SoundFontLibrary`/`ImprovSession.startSoundFontLibrary`) into a
+/// small, named set worth actually picking from elsewhere. Shows EVERY known soundfont, unlike
+/// `PiecesPlayView`/`GuideEditionView`/`SceneLayoutView`'s sound pickers (which show only
+/// favorites, via `session.favoriteSounds`) — this is the one screen where the full, possibly
+/// huge, library list needs to be visible at all, so favorites can be chosen from it in the
+/// first place.
+///
+/// A soundfont known to the index isn't necessarily downloaded on THIS device (a `.synced`
+/// entry discovered via iCloud Drive might not be materialized here yet — see
+/// `ImprovSession.soundFontPath(forHash:)`) — this screen shows a sync/download badge per
+/// soundfont and lets the user download one on demand, instead of assuming every listed
+/// soundfont can be played immediately.
 ///
 /// Two-column browser, not a flat list: a `.sf2` can bundle dozens of presets (a full General
 /// MIDI bank), and a favorite/alias/test always applies to one SPECIFIC sound within a file,
@@ -37,11 +43,19 @@ struct SoundsView: View {
     @State private var fileSearchText = ""
     @State private var actionError: String?
 
+    // MARK: - Import
+    @State private var showFileImporter = false
+    @State private var importSyncPreference: SoundFontSyncPreference = .localOnly
+    @State private var isImporting = false
+
+    // MARK: - Storage profile
+    @State private var storageProfile: DeviceStorageProfile = DeviceStorageProfile.current
+
     // MARK: - File/sound navigation
-    @State private var selectedFilePath: String?
+    @State private var selectedHash: String?
     @State private var soundRows: [SoundRow] = []
     @State private var soundSearchText = ""
-    /// Identifies the row currently being alias-edited as `"<path>|<row.id>"` (not just
+    /// Identifies the row currently being alias-edited as `"<hash>|<row.id>"` (not just
     /// `row.id`) so switching files can never collide with a same-shaped id in the new file's
     /// own row list (e.g. two different single-preset files both use `row.id == "_default"`).
     @State private var editingAliasFor: String?
@@ -72,7 +86,7 @@ struct SoundsView: View {
     /// turned test mode on (see `setTestMode`) — so leaving restores it to that same state
     /// instead of unconditionally turning it back off.
     @State private var computerKeyboardWasEnabledBeforeTestMode = false
-    /// `"<path>|<row.id>"` of the sound row a `testSound` call is currently loading, `nil`
+    /// `"<hash>|<row.id>"` of the sound row a `testSound` call is currently loading, `nil`
     /// otherwise — `setInstrument` (see `testSound`) does real disk I/O (and, for a sample
     /// under an iCloud-synced folder not yet downloaded locally, a real network wait), so it
     /// must not run on the main thread. Also doubles as a simple lock: a second tap while one
@@ -80,11 +94,14 @@ struct SoundsView: View {
     @State private var testingSoundKey: String?
     /// Same reasoning as `testingSoundKey`, for `applyTestSource`'s own instrument-restore step.
     @State private var isChangingTestSource = false
+    /// Hash currently being downloaded (see `downloadSoundFont`) — shows a spinner instead of
+    /// the download button while in flight, and prevents a duplicate concurrent request.
+    @State private var downloadingHash: String?
 
     /// One row in the right-hand "sounds of the selected file" column — either a real preset
     /// read from a multi-preset `.sf2` (see `SoundFontPresetReader`), or the single stand-in
-    /// row used for a `.dls`/`.aupreset` (no preset enumeration possible) and for a `.sf2` the
-    /// reader couldn't parse (`preset == nil` either way means "this file's own default sound").
+    /// row used for a `.dls` (no preset enumeration possible) and for a `.sf2` the reader
+    /// couldn't parse (`preset == nil` either way means "this file's own default sound").
     private struct SoundRow: Identifiable {
         let preset: SoundFontPresetIdentity?
         let originalName: String
@@ -113,26 +130,42 @@ struct SoundsView: View {
     }
 
     /// The test source's own track — read directly rather than cached separately, so
-    /// `currentlyTestedPath`/`currentlyTestedPreset` can never drift from what's actually
+    /// `currentlyTestedHash`/`currentlyTestedPreset` can never drift from what's actually
     /// loaded (both `instrumentName`/`instrumentPreset` are only ever set by `setInstrument`).
     private var testTrack: TrackInfo? {
         guard let testSourceID else { return nil }
         return session.tracks.first { $0.id == testSourceID }
     }
 
-    private var currentlyTestedPath: String? { testTrack?.instrumentName }
+    /// `setInstrument` stores whatever absolute path was loaded — resolve it back to a hash by
+    /// matching the index, so the "currently playing" badge can key off `selectedHash`/`row.id`
+    /// like everything else here, instead of carrying a second, path-based identity around.
+    private var currentlyTestedHash: String? {
+        guard let path = testTrack?.instrumentName else { return nil }
+        return session.soundFonts.first { session.soundFontPath(forHash: $0.hash) == path }?.hash
+    }
     private var currentlyTestedPreset: SoundFontPresetIdentity? { testTrack?.instrumentPreset }
 
-    private var filteredFiles: [String] {
-        guard !fileSearchText.isEmpty else { return session.sampleFiles }
-        return session.sampleFiles.filter { $0.localizedCaseInsensitiveContains(fileSearchText) }
+    private var filteredSoundFonts: [SoundFontEntry] {
+        let all = session.soundFonts.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        guard !fileSearchText.isEmpty else { return all }
+        return all.filter {
+            $0.displayName.localizedCaseInsensitiveContains(fileSearchText)
+                || $0.fileName.localizedCaseInsensitiveContains(fileSearchText)
+                || $0.userTags.contains { $0.localizedCaseInsensitiveContains(fileSearchText) }
+        }
+    }
+
+    private var selectedSoundFont: SoundFontEntry? {
+        guard let selectedHash else { return nil }
+        return session.soundFonts.first { $0.hash == selectedHash }
     }
 
     private var filteredSoundRows: [SoundRow] {
-        guard !soundSearchText.isEmpty, let selectedFilePath else { return soundRows }
+        guard !soundSearchText.isEmpty, let selectedHash else { return soundRows }
         return soundRows.filter { row in
             row.originalName.localizedCaseInsensitiveContains(soundSearchText)
-                || (session.soundAlias(forPath: selectedFilePath, preset: row.preset)?
+                || (session.soundAlias(forHash: selectedHash, preset: row.preset)?
                     .localizedCaseInsensitiveContains(soundSearchText) ?? false)
         }
     }
@@ -144,12 +177,24 @@ struct SoundsView: View {
             }
             switch screen {
             case .list:
-                // Screen 1: pick a file — a single, compact column instead of the old
+                // Screen 1: pick a soundfont — a single, compact column instead of the old
                 // always-visible 3-column layout.
                 Form { filesColumnContent }
                     #if os(macOS)
                     .formStyle(.grouped)
                     #endif
+                    // Drag & drop straight from Finder/Files — essential on macOS, appreciated
+                    // on iPad (see `KnowledgeBase/SoundfontMgt/soundfontmgt.txt`). Each dropped
+                    // item goes through the exact same `importFile(at:)` path as `.fileImporter`.
+                    .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                        for provider in providers {
+                            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                                guard let url else { return }
+                                DispatchQueue.main.async { importFile(at: url) }
+                            }
+                        }
+                        return !providers.isEmpty
+                    }
             case .detail:
                 // Screen 2: curate/test the selected file's sounds. Left: its sounds. Right:
                 // the test-mode controls (source picker, keyboard, chord/mode commentary) —
@@ -186,100 +231,191 @@ struct SoundsView: View {
         .onChange(of: isActive, initial: true) { _, active in
             setTestMode(active)
         }
+        .fileImporter(
+            isPresented: $showFileImporter,
+            allowedContentTypes: [
+                UTType(importedAs: "com.jamshack.soundfont2"),
+                UTType(importedAs: "com.jamshack.downloadable-sound"),
+            ]
+        ) { result in
+            switch result {
+            case .success(let url): importFile(at: url)
+            case .failure(let error): actionError = "\(error)"
+            }
+        }
+    }
+
+    // MARK: - Import
+
+    private func importFile(at url: URL) {
+        guard !isImporting else { return }
+        isImporting = true
+        let accessed = url.startAccessingSecurityScopedResource()
+        let syncPreference = importSyncPreference
+        Task {
+            defer {
+                if accessed { url.stopAccessingSecurityScopedResource() }
+                isImporting = false
+            }
+            let outcome = await Task.detached {
+                Result { try session.importSoundFont(at: url, syncPreference: syncPreference) }
+            }.value
+            if case .failure(let error) = outcome { actionError = "\(error)" }
+        }
     }
 
     // MARK: - Files column
 
     @ViewBuilder
     private var filesColumnContent: some View {
-        if session.sampleFiles.isEmpty {
+        Section {
+            Button {
+                showFileImporter = true
+            } label: {
+                if isImporting {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Label(L10n.string(.appButtonImporter, session.currentLanguage), systemImage: "square.and.arrow.down")
+                }
+            }
+            .disabled(isImporting)
+            Picker(L10n.string(.fieldSon, session.currentLanguage), selection: $importSyncPreference) {
+                Text(L10n.string(.appLabelSynchronise, session.currentLanguage)).tag(SoundFontSyncPreference.synced)
+                Text(L10n.string(.appLabelLocalUniquement, session.currentLanguage)).tag(SoundFontSyncPreference.localOnly)
+            }
+            .pickerStyle(.segmented)
+        } header: {
+            Text(L10n.string(.appHeadingFichiersSoundfont, session.currentLanguage))
+        }
+
+        if session.soundFonts.isEmpty {
             Section {
                 Text(L10n.string(.appPlaceholderAucunSonTrouve, session.currentLanguage, L10n.string(.appLabelDossierSons, session.currentLanguage)))
                     .foregroundStyle(.secondary)
-            } header: {
-                Text(L10n.string(.appHeadingFichiersSoundfont, session.currentLanguage))
             }
         } else {
             Section {
                 TextField(L10n.string(.appPlaceholderRechercherFichier, session.currentLanguage), text: $fileSearchText)
-            } header: {
-                Text(L10n.string(.appHeadingFichiersSoundfont, session.currentLanguage))
             }
             Section {
-                ForEach(filteredFiles, id: \.self) { path in
-                    fileRow(path)
+                ForEach(filteredSoundFonts) { entry in
+                    fileRow(entry)
                 }
             } header: {
-                Text(L10n.string(.appFormatFichiersCompte, session.currentLanguage, filteredFiles.count, session.sampleFiles.count))
+                Text(L10n.string(.appFormatFichiersCompte, session.currentLanguage, filteredSoundFonts.count, session.soundFonts.count))
             }
+        }
+
+        Section {
+            Picker(L10n.string(.appHeadingProfilStockage, session.currentLanguage), selection: $storageProfile) {
+                Text(L10n.string(.appOptionProfilEconome, session.currentLanguage)).tag(DeviceStorageProfile.economical)
+                Text(L10n.string(.appOptionProfilStandard, session.currentLanguage)).tag(DeviceStorageProfile.standard)
+                Text(L10n.string(.appOptionProfilGenereux, session.currentLanguage)).tag(DeviceStorageProfile.generous)
+            }
+            .onChange(of: storageProfile) { _, newValue in DeviceStorageProfile.current = newValue }
+            Text(L10n.string(.appFormatEspaceDisqueLibre, session.currentLanguage, ByteCountFormatter.string(fromByteCount: DeviceFreeSpace.availableBytes(), countStyle: .file)))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } header: {
+            Text(L10n.string(.appHeadingProfilStockage, session.currentLanguage))
         }
     }
 
     @ViewBuilder
-    private func fileRow(_ path: String) -> some View {
+    private func fileRow(_ entry: SoundFontEntry) -> some View {
+        let isDownloaded = session.soundFontPath(forHash: entry.hash) != nil
         Button {
-            selectFile(path)
+            selectFile(entry.hash)
         } label: {
             HStack {
-                Text(path)
-                    .foregroundStyle(selectedFilePath == path ? Color.accentColor : .primary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.displayName)
+                        .foregroundStyle(selectedHash == entry.hash ? Color.accentColor : .primary)
+                    Text(syncBadgeText(entry: entry, isDownloaded: isDownloaded))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
-                if path == currentlyTestedPath {
+                if entry.hash == currentlyTestedHash {
                     Image(systemName: "speaker.wave.2.fill").foregroundStyle(.blue)
+                }
+                if !isDownloaded {
+                    if downloadingHash == entry.hash {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button(L10n.string(.appButtonTelecharger, session.currentLanguage)) {
+                            downloadSoundFont(entry.hash)
+                        }
+                        .buttonStyle(.borderless)
+                    }
                 }
             }
         }
         .buttonStyle(.plain)
     }
 
-    private func selectFile(_ path: String) {
-        if selectedFilePath != path {
-            selectedFilePath = path
+    private func syncBadgeText(entry: SoundFontEntry, isDownloaded: Bool) -> String {
+        switch entry.syncPreference {
+        case .localOnly:
+            return L10n.string(.appLabelLocalUniquement, session.currentLanguage)
+        case .synced:
+            return isDownloaded
+                ? L10n.string(.appLabelSynchronise, session.currentLanguage)
+                : L10n.string(.appLabelNonTelecharge, session.currentLanguage)
+        }
+    }
+
+    private func downloadSoundFont(_ hash: String) {
+        guard downloadingHash == nil else { return }
+        downloadingHash = hash
+        Task {
+            let outcome = await Task.detached {
+                Result { try session.downloadSoundFont(hash: hash) }
+            }.value
+            downloadingHash = nil
+            if case .failure(let error) = outcome { actionError = "\(error)" }
+        }
+    }
+
+    private func selectFile(_ hash: String) {
+        if selectedHash != hash {
+            selectedHash = hash
             soundSearchText = ""
             editingAliasFor = nil
             aliasDraft = ""
-            loadSoundRows(for: path)
+            loadSoundRows(for: hash)
         }
         screen = .detail
     }
 
-    /// `.sf2` is the only format `SoundFontPresetReader` can enumerate presets from — a
-    /// `.dls`/`.aupreset`, or a `.sf2` it fails to parse, falls back to one stand-in row
-    /// (`preset == nil`) representing that file's own single default sound, same as before
-    /// multi-preset support existed.
-    private func loadSoundRows(for path: String) {
-        guard path.lowercased().hasSuffix(".sf2") else {
-            soundRows = [SoundRow(preset: nil, originalName: displayFileName(path))]
+    /// Reads straight from the already-indexed `SoundFontEntry.presets` — no disk I/O, unlike
+    /// the old path-based equivalent this replaces, which had to re-parse the file every time a
+    /// row was selected. This also means a `.synced` soundfont not yet downloaded on this
+    /// device still shows its full preset list (only actually playing one requires the
+    /// download).
+    private func loadSoundRows(for hash: String) {
+        guard let entry = session.soundFonts.first(where: { $0.hash == hash }) else {
+            soundRows = []
             return
         }
-        do {
-            let presets = try session.soundFontPresets(forPath: path)
-            soundRows = presets.isEmpty
-                ? [SoundRow(preset: nil, originalName: displayFileName(path))]
-                : presets.map { SoundRow(preset: $0.identity, originalName: $0.name) }
-        } catch {
-            actionError = "\(error)"
-            soundRows = [SoundRow(preset: nil, originalName: displayFileName(path))]
-        }
-    }
-
-    private func displayFileName(_ path: String) -> String {
-        (path as NSString).lastPathComponent
+        soundRows = entry.presets.isEmpty
+            ? [SoundRow(preset: nil, originalName: entry.displayName)]
+            : entry.presets.map { SoundRow(preset: $0.identity, originalName: $0.name) }
     }
 
     // MARK: - Sounds column (the selected file's own sounds)
 
     @ViewBuilder
     private var soundsColumnContent: some View {
-        if let selectedFilePath {
+        if let selectedHash, let selectedSoundFont {
             Section {
                 TextField(L10n.string(.appPlaceholderRechercherSonAlias, session.currentLanguage), text: $soundSearchText)
             } header: {
-                Text(displayFileName(selectedFilePath))
+                Text(selectedSoundFont.displayName)
             }
             Section {
                 ForEach(filteredSoundRows) { row in
-                    soundRow(selectedFilePath, row)
+                    soundRow(selectedHash, row)
                 }
             } header: {
                 Text(L10n.string(.appFormatSonsCompte, session.currentLanguage, filteredSoundRows.count, soundRows.count))
@@ -296,40 +432,41 @@ struct SoundsView: View {
     }
 
     @ViewBuilder
-    private func soundRow(_ path: String, _ row: SoundRow) -> some View {
-        let editKey = "\(path)|\(row.id)"
+    private func soundRow(_ hash: String, _ row: SoundRow) -> some View {
+        let editKey = "\(hash)|\(row.id)"
+        let isDownloaded = session.soundFontPath(forHash: hash) != nil
         HStack {
             Button {
-                toggleFavorite(path, row.preset)
+                toggleFavorite(hash, row.preset)
             } label: {
-                Image(systemName: session.isSoundFavorite(path, preset: row.preset) ? "star.fill" : "star")
-                    .foregroundStyle(session.isSoundFavorite(path, preset: row.preset) ? .yellow : .secondary)
+                Image(systemName: session.isSoundFavorite(forHash: hash, preset: row.preset) ? "star.fill" : "star")
+                    .foregroundStyle(session.isSoundFavorite(forHash: hash, preset: row.preset) ? .yellow : .secondary)
             }
             .buttonStyle(.borderless)
 
             IconAssignmentButton(
-                currentIcon: session.soundIcon(forPath: path, preset: row.preset),
+                currentIcon: session.soundIcon(forHash: hash, preset: row.preset),
                 defaultIcon: "music.note",
                 canUseAI: session.currentLLMConnection != nil,
                 language: session.currentLanguage,
                 onSuggestAI: {
-                    let icon = try session.suggestIcon(kind: "instrument", name: session.soundAlias(forPath: path, preset: row.preset) ?? row.originalName)
-                    try session.setSoundIcon(path, preset: row.preset, iconSystemName: icon)
+                    let icon = try session.suggestIcon(kind: "instrument", name: session.soundAlias(forHash: hash, preset: row.preset) ?? row.originalName)
+                    try session.setSoundIcon(forHash: hash, preset: row.preset, iconSystemName: icon)
                 },
                 onPickManual: { icon in
-                    try? session.setSoundIcon(path, preset: row.preset, iconSystemName: icon)
+                    try? session.setSoundIcon(forHash: hash, preset: row.preset, iconSystemName: icon)
                 },
                 onError: { actionError = $0 }
             )
 
             VStack(alignment: .leading, spacing: 2) {
                 if editingAliasFor == editKey {
-                    TextField(L10n.string(.appFieldAlias, session.currentLanguage), text: $aliasDraft, onCommit: { commitAlias(path, row.preset, editKey) })
+                    TextField(L10n.string(.appFieldAlias, session.currentLanguage), text: $aliasDraft, onCommit: { commitAlias(hash, row.preset, editKey) })
                         #if os(macOS)
                         .textFieldStyle(.roundedBorder)
                         #endif
                 } else {
-                    let alias = session.soundAlias(forPath: path, preset: row.preset)
+                    let alias = session.soundAlias(forHash: hash, preset: row.preset)
                     Text(alias ?? row.originalName)
                     if alias != nil {
                         Text(row.originalName).font(.caption2).foregroundStyle(.secondary)
@@ -340,12 +477,23 @@ struct SoundsView: View {
             Spacer()
 
             if isTestModeOn, let testSourceID {
-                if testingSoundKey == editKey {
+                if !isDownloaded {
+                    if downloadingHash == hash {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button {
+                            downloadSoundFont(hash)
+                        } label: {
+                            Image(systemName: "icloud.and.arrow.down")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                } else if testingSoundKey == editKey {
                     ProgressView().controlSize(.small)
                 } else {
-                    let isCurrent = path == currentlyTestedPath && row.preset == currentlyTestedPreset
+                    let isCurrent = hash == currentlyTestedHash && row.preset == currentlyTestedPreset
                     Button {
-                        testSound(path: path, preset: row.preset, testSourceID: testSourceID, key: editKey)
+                        testSound(hash: hash, preset: row.preset, testSourceID: testSourceID, key: editKey)
                     } label: {
                         Image(systemName: isCurrent ? "speaker.wave.2.fill" : "speaker.wave.2")
                             .foregroundStyle(isCurrent ? .blue : .secondary)
@@ -357,9 +505,9 @@ struct SoundsView: View {
 
             Button {
                 if editingAliasFor == editKey {
-                    commitAlias(path, row.preset, editKey)
+                    commitAlias(hash, row.preset, editKey)
                 } else {
-                    aliasDraft = session.soundAlias(forPath: path, preset: row.preset) ?? ""
+                    aliasDraft = session.soundAlias(forHash: hash, preset: row.preset) ?? ""
                     editingAliasFor = editKey
                 }
             } label: {
@@ -369,17 +517,17 @@ struct SoundsView: View {
         }
     }
 
-    private func toggleFavorite(_ path: String, _ preset: SoundFontPresetIdentity?) {
+    private func toggleFavorite(_ hash: String, _ preset: SoundFontPresetIdentity?) {
         do {
-            try session.setSoundFavorite(path, preset: preset, isFavorite: !session.isSoundFavorite(path, preset: preset))
+            try session.setSoundFavorite(forHash: hash, preset: preset, isFavorite: !session.isSoundFavorite(forHash: hash, preset: preset))
         } catch {
             actionError = "\(error)"
         }
     }
 
-    private func commitAlias(_ path: String, _ preset: SoundFontPresetIdentity?, _ editKey: String) {
+    private func commitAlias(_ hash: String, _ preset: SoundFontPresetIdentity?, _ editKey: String) {
         do {
-            try session.setSoundAlias(path, preset: preset, alias: aliasDraft)
+            try session.setSoundAlias(forHash: hash, preset: preset, alias: aliasDraft)
         } catch {
             actionError = "\(error)"
         }
@@ -389,8 +537,8 @@ struct SoundsView: View {
         aliasDraft = ""
     }
 
-    private func testSound(path: String, preset: SoundFontPresetIdentity?, testSourceID: TrackID, key: String) {
-        guard testingSoundKey == nil else { return }
+    private func testSound(hash: String, preset: SoundFontPresetIdentity?, testSourceID: TrackID, key: String) {
+        guard testingSoundKey == nil, let path = session.soundFontPath(forHash: hash) else { return }
         testingSoundKey = key
         Task {
             let outcome = await Task.detached {

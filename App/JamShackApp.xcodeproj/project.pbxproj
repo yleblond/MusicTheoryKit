@@ -9,18 +9,17 @@
 /* Begin PBXBuildFile section */
 		00E5EF6FB05246A3A709AE8E /* GuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AE61DA02F48C19951B955F1 /* GuideView.swift */; };
 		066DB6ECE6F1061FC797DF56 /* PiecesPlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7171E005C138F689954FCE0 /* PiecesPlayView.swift */; };
-		0A1B2C3D4E5F60718293A4B5 /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A697887766A5B4 /* RecordingDetailView.swift */; };
 		0D0BCF53627C4D85D9E30A54 /* GuideLectureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A903AE71C48BA50018C5E22 /* GuideLectureView.swift */; };
 		0EE109635C4ED7522CB6F528 /* GuidePlayIndicationRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EA276BC19892B1D37813D15 /* GuidePlayIndicationRow.swift */; };
 		12B769366D7FED7F404F8EF2 /* PiecesFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0DA62416ED6B405EBDF8DF /* PiecesFileView.swift */; };
 		13DBE3AB0C3614B6F8D37BE1 /* FileDisplayName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9144B6EB7F1029254BDA64AB /* FileDisplayName.swift */; };
 		143F82B51732D9FC35633767 /* GuidePlayIndicationRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EA276BC19892B1D37813D15 /* GuidePlayIndicationRow.swift */; };
-		1481CD1EB22CC7D497D07C5A /* FolderPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */; };
 		1AB02A5A72BD4D7D84652261 /* GuideStepsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95942B8846FAA9B3ED42228B /* GuideStepsSection.swift */; };
 		1D60040DDEDC4055CB2542BA /* RecordingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E99978CED2C145262C1B3B4 /* RecordingsView.swift */; };
 		229D85BA441B10CCDA617FD6 /* RemoteNotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61EB999B2BB050D2A3FD5F3B /* RemoteNotificationDelegate.swift */; };
 		2636F5B565CF2E54B614292F /* PlaybackControlButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA393FDD6590DDE0D1E4FAEF /* PlaybackControlButton.swift */; };
 		2697496573116390CEDCD939 /* FileDisplayName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9144B6EB7F1029254BDA64AB /* FileDisplayName.swift */; };
+		27305D20A22D4C57844F87F9 /* JamShackPromptsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E248E215BC0B815C103FF2AB /* JamShackPromptsView.swift */; };
 		280A9ECBDACA278B699919B9 /* SceneLayoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC498287531CCB5772C1258B /* SceneLayoutView.swift */; };
 		303D7201D5131E7A9DF4AAD6 /* PaletteEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D58534383002A55C5D49F9D /* PaletteEditorView.swift */; };
 		34D898F93E23EC88710EAE78 /* SoundsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4765E80FA8CA331E5728B0F0 /* SoundsView.swift */; };
@@ -28,22 +27,21 @@
 		38F537A45F6133BAC6560CE5 /* PlainDataDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */; };
 		3D9A4A9A9A91CE71B7CD7525 /* GuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AE61DA02F48C19951B955F1 /* GuideView.swift */; };
 		3F1965A4076A70B46D629A59 /* RemoteNotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61EB999B2BB050D2A3FD5F3B /* RemoteNotificationDelegate.swift */; };
-		499812C7FD4D8433B09B41AA /* FolderPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */; };
 		4B891030B381AABC680DEB7A /* JamShackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5998490361DA6721A074DBB /* JamShackApp.swift */; };
 		4BB6D21B8D92741E91EA8936 /* RecordingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E99978CED2C145262C1B3B4 /* RecordingsView.swift */; };
 		4BF48752328F746D8FCF5953 /* MicrophoneControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */; };
 		4C043C2C57524919E87375D2 /* GuideConfigurationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26C37BCD338FB3890089C34 /* GuideConfigurationView.swift */; };
 		4EEAA109475539B7C1E920E4 /* JamShackMIDIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */; };
-		5B6C7D8E9F0A1B2C3D4E5F60 /* IconAssignmentButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A5B6C7D8E9F0A1B2C3D4E5F /* IconAssignmentButton.swift */; };
 		4F9D9870DE0C14034FC845B7 /* JamShackLLMView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7DEF8B5C7B029CBF137DA9B /* JamShackLLMView.swift */; };
-		3B4C5D6E7F8091A2B3C4D5E6 /* JamShackPromptsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A3B4C5D6E7F8091A2B3C4D5 /* JamShackPromptsView.swift */; };
 		502F86EA7E61395F1407D160 /* GameCenterCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56783C5791125C49D8104883 /* GameCenterCoordinator.swift */; };
 		516781E2797147CAD075BE74 /* JamShackFoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1393183ADD7BD2ED1C60FA8 /* JamShackFoldersView.swift */; };
 		51DECC108DA490A5C2D4A1F3 /* ColorHex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80BD5958DD843BF49738DE9 /* ColorHex.swift */; };
 		565F0AD0D4439E562FFECF4F /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85845D37B71BB8E94BC0A6E4 /* ContentView.swift */; };
 		577625AA73822F8E4B000BF0 /* CompositionFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCD1C63D851BB483B73CD474 /* CompositionFileView.swift */; };
+		57E075DA1FCD4D568E942FE8 /* IconAssignmentButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DF506E12A5E6829884DCE65 /* IconAssignmentButton.swift */; };
 		591A99B18A4B87B7EC3CD7A2 /* GuideDescriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E2F51CDF00A0B57FE9AEAB /* GuideDescriptionView.swift */; };
 		59C2A00572CF722DEE6994C6 /* PlaybackControlButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA393FDD6590DDE0D1E4FAEF /* PlaybackControlButton.swift */; };
+		5B96313EFB77310851F02CD7 /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71953E7D8E1B09B320DEFE6A /* RecordingDetailView.swift */; };
 		5CBF610F3E1F2E9AEF2F0200 /* AppCore in Frameworks */ = {isa = PBXBuildFile; productRef = 69847B491F4CE42354F05B6F /* AppCore */; };
 		5E26D90A74444A5D8BB4504E /* PiecesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DAE2E35B014C09B62C4CE0A /* PiecesView.swift */; };
 		5E6F9AC439CDE09175FD0C3B /* MicrophoneControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */; };
@@ -55,6 +53,7 @@
 		6DFBB4E9B841927603BEE0F7 /* JamShackColorsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C99CBF1FBD1605E7FEA1F5C3 /* JamShackColorsView.swift */; };
 		7A5A34186E7782C4BB0A0B56 /* RecordingFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43140D25200D4FC00530C882 /* RecordingFileView.swift */; };
 		7BD222D7E9E9F200C5547F58 /* CompositionComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8B884B9A1FFA6496D1A1DE6 /* CompositionComposerView.swift */; };
+		7BE0C0A023643D78A3A5B5DC /* JamShackPromptsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E248E215BC0B815C103FF2AB /* JamShackPromptsView.swift */; };
 		7D96CDE3B349798C438C76EB /* DefaultFolders.swift in Sources */ = {isa = PBXBuildFile; fileRef = E65E68A369BA12BBAE7A4558 /* DefaultFolders.swift */; };
 		8044ABB2BF2C4C7E282F75F7 /* SceneManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */; };
 		81A9DF4DEF87ABCF374B5812 /* GuideDescriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E2F51CDF00A0B57FE9AEAB /* GuideDescriptionView.swift */; };
@@ -76,11 +75,12 @@
 		AE9F39EB072B95572BAAB60C /* PaletteEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D58534383002A55C5D49F9D /* PaletteEditorView.swift */; };
 		AECB34D8EA6C8AD0329034AC /* GuideConfigurationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26C37BCD338FB3890089C34 /* GuideConfigurationView.swift */; };
 		B3BEFD433A0B1B32F423302A /* PiecesPlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7171E005C138F689954FCE0 /* PiecesPlayView.swift */; };
-		B4C5D6E7F8091A2B3C4D5E6F /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A697887766A5B4 /* RecordingDetailView.swift */; };
 		B58D6F16866C835C999DFA92 /* JamShackUI in Frameworks */ = {isa = PBXBuildFile; productRef = 87F816FA700F02A4EAC0B7EC /* JamShackUI */; };
 		B59DF314E07D8821C2881B99 /* JamSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44E28F5AF89E79FD7606B5CD /* JamSessionView.swift */; };
 		BAB1C701AC9506CD9EF781D7 /* ServerControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE00B5478A71F5B75E67AE6 /* ServerControlsView.swift */; };
 		BCA1F9419457B861023D6282 /* CompositionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9678EC3E37F61041F0877632 /* CompositionView.swift */; };
+		C33A55FBA8141B020899B27F /* IconAssignmentButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DF506E12A5E6829884DCE65 /* IconAssignmentButton.swift */; };
+		C441350505E48894B5559800 /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71953E7D8E1B09B320DEFE6A /* RecordingDetailView.swift */; };
 		C6A60D2024F2CAE6B169624D /* JamShackLLMView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7DEF8B5C7B029CBF137DA9B /* JamShackLLMView.swift */; };
 		C716A5DC69D121C276897938 /* GuideEditionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556A46486C82BF4F493BD822 /* GuideEditionView.swift */; };
 		D1A542BC7D7E156E0F21685F /* TrackChannelLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B879BE0E843A4E0BF8940DEB /* TrackChannelLabel.swift */; };
@@ -89,8 +89,6 @@
 		DE754A12EE4D8EA7F6026199 /* GameCenterCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56783C5791125C49D8104883 /* GameCenterCoordinator.swift */; };
 		E182D86105890618BC2F4355 /* SceneFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D4854E83A4DBE291EDAA3CC /* SceneFileView.swift */; };
 		E207723CD7F95E3114B11027 /* JamShackMIDIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */; };
-		6C7D8E9F0A1B2C3D4E5F6071 /* IconAssignmentButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A5B6C7D8E9F0A1B2C3D4E5F /* IconAssignmentButton.swift */; };
-		E4F5061728394A5B6C7D8E9F /* JamShackPromptsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A3B4C5D6E7F8091A2B3C4D5 /* JamShackPromptsView.swift */; };
 		EC8B892B4CA0DE1539FC11AE /* GuideFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0EEDCEAF1C96726ACE9B17 /* GuideFileView.swift */; };
 		EFC7F17F89F0B8DA703B4AD3 /* AppCore in Frameworks */ = {isa = PBXBuildFile; productRef = FAA934C8A384EC61D40B89BF /* AppCore */; };
 		EFCCEA61877C2BA798E018CC /* ComputerKeyboardSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFC142E149DF9A3BAF1BA0EB /* ComputerKeyboardSettingsView.swift */; };
@@ -112,8 +110,6 @@
 		1AE61DA02F48C19951B955F1 /* GuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideView.swift; sourceTree = "<group>"; };
 		1DAE2E35B014C09B62C4CE0A /* PiecesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiecesView.swift; sourceTree = "<group>"; };
 		1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackMIDIView.swift; sourceTree = "<group>"; };
-		4A5B6C7D8E9F0A1B2C3D4E5F /* IconAssignmentButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconAssignmentButton.swift; sourceTree = "<group>"; };
-		2A3B4C5D6E7F8091A2B3C4D5 /* JamShackPromptsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackPromptsView.swift; sourceTree = "<group>"; };
 		2D4854E83A4DBE291EDAA3CC /* SceneFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneFileView.swift; sourceTree = "<group>"; };
 		43140D25200D4FC00530C882 /* RecordingFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFileView.swift; sourceTree = "<group>"; };
 		44E28F5AF89E79FD7606B5CD /* JamSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamSessionView.swift; sourceTree = "<group>"; };
@@ -123,7 +119,7 @@
 		56783C5791125C49D8104883 /* GameCenterCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterCoordinator.swift; sourceTree = "<group>"; };
 		61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlainDataDocument.swift; sourceTree = "<group>"; };
 		61EB999B2BB050D2A3FD5F3B /* RemoteNotificationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteNotificationDelegate.swift; sourceTree = "<group>"; };
-		74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPickerRow.swift; sourceTree = "<group>"; };
+		71953E7D8E1B09B320DEFE6A /* RecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailView.swift; sourceTree = "<group>"; };
 		83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrophoneControlsView.swift; sourceTree = "<group>"; };
 		85845D37B71BB8E94BC0A6E4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		8A903AE71C48BA50018C5E22 /* GuideLectureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideLectureView.swift; sourceTree = "<group>"; };
@@ -133,11 +129,12 @@
 		9144B6EB7F1029254BDA64AB /* FileDisplayName.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDisplayName.swift; sourceTree = "<group>"; };
 		95942B8846FAA9B3ED42228B /* GuideStepsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideStepsSection.swift; sourceTree = "<group>"; };
 		9678EC3E37F61041F0877632 /* CompositionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionView.swift; sourceTree = "<group>"; };
+		9DF506E12A5E6829884DCE65 /* IconAssignmentButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconAssignmentButton.swift; sourceTree = "<group>"; };
 		A1393183ADD7BD2ED1C60FA8 /* JamShackFoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackFoldersView.swift; sourceTree = "<group>"; };
 		A7171E005C138F689954FCE0 /* PiecesPlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiecesPlayView.swift; sourceTree = "<group>"; };
 		A80BD5958DD843BF49738DE9 /* ColorHex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorHex.swift; sourceTree = "<group>"; };
 		AC498287531CCB5772C1258B /* SceneLayoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneLayoutView.swift; sourceTree = "<group>"; };
-		ACB2E6D6180EE0915C04B78D /* JamShackApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JamShackApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ACB2E6D6180EE0915C04B78D /* JamShackApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = JamShackApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B6E2F51CDF00A0B57FE9AEAB /* GuideDescriptionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideDescriptionView.swift; sourceTree = "<group>"; };
 		B7DEF8B5C7B029CBF137DA9B /* JamShackLLMView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackLLMView.swift; sourceTree = "<group>"; };
 		B879BE0E843A4E0BF8940DEB /* TrackChannelLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackChannelLabel.swift; sourceTree = "<group>"; };
@@ -150,8 +147,8 @@
 		D26C37BCD338FB3890089C34 /* GuideConfigurationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideConfigurationView.swift; sourceTree = "<group>"; };
 		D5998490361DA6721A074DBB /* JamShackApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackApp.swift; sourceTree = "<group>"; };
 		DE39EAC785B1BF4AA9F44EDE /* JamShackLanguageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackLanguageView.swift; sourceTree = "<group>"; };
+		E248E215BC0B815C103FF2AB /* JamShackPromptsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamShackPromptsView.swift; sourceTree = "<group>"; };
 		E65E68A369BA12BBAE7A4558 /* DefaultFolders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultFolders.swift; sourceTree = "<group>"; };
-		F1E2D3C4B5A697887766A5B4 /* RecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailView.swift; sourceTree = "<group>"; };
 		FA393FDD6590DDE0D1E4FAEF /* PlaybackControlButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackControlButton.swift; sourceTree = "<group>"; };
 		FC0DA62416ED6B405EBDF8DF /* PiecesFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiecesFileView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -201,7 +198,6 @@
 				85845D37B71BB8E94BC0A6E4 /* ContentView.swift */,
 				E65E68A369BA12BBAE7A4558 /* DefaultFolders.swift */,
 				9144B6EB7F1029254BDA64AB /* FileDisplayName.swift */,
-				74D738C0D913B596AD2BC386 /* FolderPickerRow.swift */,
 				56783C5791125C49D8104883 /* GameCenterCoordinator.swift */,
 				D26C37BCD338FB3890089C34 /* GuideConfigurationView.swift */,
 				B6E2F51CDF00A0B57FE9AEAB /* GuideDescriptionView.swift */,
@@ -211,6 +207,7 @@
 				4EA276BC19892B1D37813D15 /* GuidePlayIndicationRow.swift */,
 				95942B8846FAA9B3ED42228B /* GuideStepsSection.swift */,
 				1AE61DA02F48C19951B955F1 /* GuideView.swift */,
+				9DF506E12A5E6829884DCE65 /* IconAssignmentButton.swift */,
 				44E28F5AF89E79FD7606B5CD /* JamSessionView.swift */,
 				D5998490361DA6721A074DBB /* JamShackApp.swift */,
 				C99CBF1FBD1605E7FEA1F5C3 /* JamShackColorsView.swift */,
@@ -218,8 +215,7 @@
 				DE39EAC785B1BF4AA9F44EDE /* JamShackLanguageView.swift */,
 				B7DEF8B5C7B029CBF137DA9B /* JamShackLLMView.swift */,
 				1F67D019D9BC8989A58A8E8A /* JamShackMIDIView.swift */,
-				4A5B6C7D8E9F0A1B2C3D4E5F /* IconAssignmentButton.swift */,
-				2A3B4C5D6E7F8091A2B3C4D5 /* JamShackPromptsView.swift */,
+				E248E215BC0B815C103FF2AB /* JamShackPromptsView.swift */,
 				83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */,
 				8D58534383002A55C5D49F9D /* PaletteEditorView.swift */,
 				FC0DA62416ED6B405EBDF8DF /* PiecesFileView.swift */,
@@ -227,8 +223,8 @@
 				1DAE2E35B014C09B62C4CE0A /* PiecesView.swift */,
 				61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */,
 				FA393FDD6590DDE0D1E4FAEF /* PlaybackControlButton.swift */,
+				71953E7D8E1B09B320DEFE6A /* RecordingDetailView.swift */,
 				43140D25200D4FC00530C882 /* RecordingFileView.swift */,
-				F1E2D3C4B5A697887766A5B4 /* RecordingDetailView.swift */,
 				8E99978CED2C145262C1B3B4 /* RecordingsView.swift */,
 				61EB999B2BB050D2A3FD5F3B /* RemoteNotificationDelegate.swift */,
 				2D4854E83A4DBE291EDAA3CC /* SceneFileView.swift */,
@@ -313,6 +309,14 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					EDB359A90F03C37144C8B096 = {
+						DevelopmentTeam = T2L9QQQ4PL;
+					};
+					F288464C9A2E64AB332C2C95 = {
+						DevelopmentTeam = T2L9QQQ4PL;
+					};
+				};
 			};
 			buildConfigurationList = 71EABA9A79435D9019306CD6 /* Build configuration list for PBXProject "JamShackApp" */;
 			developmentRegion = en;
@@ -369,7 +373,6 @@
 				68C6FE5177D67E4E3CAC7446 /* ContentView.swift in Sources */,
 				D839BAEC37283785BFC857AA /* DefaultFolders.swift in Sources */,
 				13DBE3AB0C3614B6F8D37BE1 /* FileDisplayName.swift in Sources */,
-				1481CD1EB22CC7D497D07C5A /* FolderPickerRow.swift in Sources */,
 				DE754A12EE4D8EA7F6026199 /* GameCenterCoordinator.swift in Sources */,
 				AECB34D8EA6C8AD0329034AC /* GuideConfigurationView.swift in Sources */,
 				591A99B18A4B87B7EC3CD7A2 /* GuideDescriptionView.swift in Sources */,
@@ -379,6 +382,7 @@
 				143F82B51732D9FC35633767 /* GuidePlayIndicationRow.swift in Sources */,
 				909FDDEF1B37DDFE810F6CAD /* GuideStepsSection.swift in Sources */,
 				3D9A4A9A9A91CE71B7CD7525 /* GuideView.swift in Sources */,
+				57E075DA1FCD4D568E942FE8 /* IconAssignmentButton.swift in Sources */,
 				B59DF314E07D8821C2881B99 /* JamSessionView.swift in Sources */,
 				4B891030B381AABC680DEB7A /* JamShackApp.swift in Sources */,
 				6DFBB4E9B841927603BEE0F7 /* JamShackColorsView.swift in Sources */,
@@ -386,8 +390,7 @@
 				C6A60D2024F2CAE6B169624D /* JamShackLLMView.swift in Sources */,
 				F25BEAE07D00B5537CCD3CA5 /* JamShackLanguageView.swift in Sources */,
 				E207723CD7F95E3114B11027 /* JamShackMIDIView.swift in Sources */,
-				6C7D8E9F0A1B2C3D4E5F6071 /* IconAssignmentButton.swift in Sources */,
-				E4F5061728394A5B6C7D8E9F /* JamShackPromptsView.swift in Sources */,
+				27305D20A22D4C57844F87F9 /* JamShackPromptsView.swift in Sources */,
 				4BF48752328F746D8FCF5953 /* MicrophoneControlsView.swift in Sources */,
 				303D7201D5131E7A9DF4AAD6 /* PaletteEditorView.swift in Sources */,
 				F069C2E7AFFA1D00E85D6D76 /* PiecesFileView.swift in Sources */,
@@ -395,8 +398,8 @@
 				F08F348DB63C1F25930AC00D /* PiecesView.swift in Sources */,
 				F1B775220E08B345D98C1E69 /* PlainDataDocument.swift in Sources */,
 				2636F5B565CF2E54B614292F /* PlaybackControlButton.swift in Sources */,
+				C441350505E48894B5559800 /* RecordingDetailView.swift in Sources */,
 				EFE1F540F63FE5F86C1CE27B /* RecordingFileView.swift in Sources */,
-				B4C5D6E7F8091A2B3C4D5E6F /* RecordingDetailView.swift in Sources */,
 				4BB6D21B8D92741E91EA8936 /* RecordingsView.swift in Sources */,
 				3F1965A4076A70B46D629A59 /* RemoteNotificationDelegate.swift in Sources */,
 				E182D86105890618BC2F4355 /* SceneFileView.swift in Sources */,
@@ -420,7 +423,6 @@
 				565F0AD0D4439E562FFECF4F /* ContentView.swift in Sources */,
 				7D96CDE3B349798C438C76EB /* DefaultFolders.swift in Sources */,
 				2697496573116390CEDCD939 /* FileDisplayName.swift in Sources */,
-				499812C7FD4D8433B09B41AA /* FolderPickerRow.swift in Sources */,
 				502F86EA7E61395F1407D160 /* GameCenterCoordinator.swift in Sources */,
 				4C043C2C57524919E87375D2 /* GuideConfigurationView.swift in Sources */,
 				81A9DF4DEF87ABCF374B5812 /* GuideDescriptionView.swift in Sources */,
@@ -430,6 +432,7 @@
 				0EE109635C4ED7522CB6F528 /* GuidePlayIndicationRow.swift in Sources */,
 				1AB02A5A72BD4D7D84652261 /* GuideStepsSection.swift in Sources */,
 				00E5EF6FB05246A3A709AE8E /* GuideView.swift in Sources */,
+				C33A55FBA8141B020899B27F /* IconAssignmentButton.swift in Sources */,
 				6743E9D3C12B1E174E105531 /* JamSessionView.swift in Sources */,
 				DE4436B33AD885B08B6E0E84 /* JamShackApp.swift in Sources */,
 				89FA5DA51B57871082FEFA6D /* JamShackColorsView.swift in Sources */,
@@ -437,8 +440,7 @@
 				4F9D9870DE0C14034FC845B7 /* JamShackLLMView.swift in Sources */,
 				60CEB1142DD1D191145837E6 /* JamShackLanguageView.swift in Sources */,
 				4EEAA109475539B7C1E920E4 /* JamShackMIDIView.swift in Sources */,
-				5B6C7D8E9F0A1B2C3D4E5F60 /* IconAssignmentButton.swift in Sources */,
-				3B4C5D6E7F8091A2B3C4D5E6 /* JamShackPromptsView.swift in Sources */,
+				7BE0C0A023643D78A3A5B5DC /* JamShackPromptsView.swift in Sources */,
 				5E6F9AC439CDE09175FD0C3B /* MicrophoneControlsView.swift in Sources */,
 				AE9F39EB072B95572BAAB60C /* PaletteEditorView.swift in Sources */,
 				12B769366D7FED7F404F8EF2 /* PiecesFileView.swift in Sources */,
@@ -446,8 +448,8 @@
 				5E26D90A74444A5D8BB4504E /* PiecesView.swift in Sources */,
 				38F537A45F6133BAC6560CE5 /* PlainDataDocument.swift in Sources */,
 				59C2A00572CF722DEE6994C6 /* PlaybackControlButton.swift in Sources */,
+				5B96313EFB77310851F02CD7 /* RecordingDetailView.swift in Sources */,
 				7A5A34186E7782C4BB0A0B56 /* RecordingFileView.swift in Sources */,
-				0A1B2C3D4E5F60718293A4B5 /* RecordingDetailView.swift in Sources */,
 				1D60040DDEDC4055CB2542BA /* RecordingsView.swift in Sources */,
 				229D85BA441B10CCDA617FD6 /* RemoteNotificationDelegate.swift in Sources */,
 				A42BBCF8F1E99FA7A334C4CF /* SceneFileView.swift in Sources */,
@@ -467,14 +469,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Generated/JamShackApp.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				"CODE_SIGN_STYLE[sdk=macosx*]" = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = T2L9QQQ4PL;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Generated/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Jam Shack";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -482,7 +484,6 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.jamshack.JamShackApp-macOS";
 				PRODUCT_NAME = JamShackApp;
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 6.0;
 			};
@@ -494,11 +495,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Generated/JamShackApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				"CODE_SIGN_STYLE[sdk=macosx*]" = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = T2L9QQQ4PL;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Generated/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Jam Shack";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -518,11 +521,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Generated/JamShackApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				"CODE_SIGN_STYLE[sdk=macosx*]" = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = T2L9QQQ4PL;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Generated/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Jam Shack";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -604,14 +609,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Generated/JamShackApp.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				"CODE_SIGN_STYLE[sdk=macosx*]" = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = T2L9QQQ4PL;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Generated/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Jam Shack";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -619,7 +624,6 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.jamshack.JamShackApp-macOS";
 				PRODUCT_NAME = JamShackApp;
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 6.0;
 			};

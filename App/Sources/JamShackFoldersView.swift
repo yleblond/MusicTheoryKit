@@ -9,12 +9,16 @@ import AppKit
 /// First sub-tab of the "JamShack" tab: pick every folder the app still needs a real
 /// user-chosen location for. Pieces/scenes/guides/soundtracks/composition descriptions/prompt
 /// snippets all moved to a private SwiftData store (no folder to pick anymore, see each
-/// feature's own `migrate...FromJSONIfNeeded`) — only sounds (soundfont files, which stay
-/// files on purpose) still has a real, ongoing folder to pick here. "Reglages" and
-/// "Composition IA" used to have their own rows here too, but both are purely one-time JSON
-/// migration sources today (see `setSettingsFolder`/`setPromptsFolder`'s own doc comments) —
-/// already auto-configured at launch by `configureDefaultFolders`, never needing a manual pick
-/// for a fresh install — so their rows were removed (2026-07-29) as vestigial.
+/// feature's own `migrate...FromJSONIfNeeded`) — sounds (soundfont files) moved off this screen
+/// too (2026-07-30): they now resolve automatically to the app's own iCloud Drive container/
+/// `Application Support` (see `SoundFontLocations`/`SoundFontLibrary`), never a user-picked
+/// folder — the sync/local choice per soundfont lives in `SoundsView` instead, right next to
+/// the library it applies to. "Reglages" and "Composition IA" used to have their own rows here
+/// too, but both are purely one-time JSON migration sources today (see
+/// `setSettingsFolder`/`setPromptsFolder`'s own doc comments) — already auto-configured at
+/// launch by `configureDefaultFolders`, never needing a manual pick for a fresh install — so
+/// their rows were removed (2026-07-29) as vestigial. This leaves only the JamShack root picker
+/// itself (still needed by those one-time migration sources).
 struct JamShackFoldersView: View {
     let session: ImprovSession
 
@@ -25,18 +29,6 @@ struct JamShackFoldersView: View {
     var body: some View {
         Form {
             defaultFoldersSection
-            Section {
-                FolderPickerRow(
-                    title: L10n.string(.appLabelDossierSons, session.currentLanguage),
-                    currentPath: session.sampleFolder,
-                    fileCount: session.sampleFiles.isEmpty ? nil : session.sampleFiles.count,
-                    language: session.currentLanguage
-                ) { try session.listSampleFiles(in: $0) }
-            } header: {
-                Text(L10n.string(.appHeadingConfiguration, session.currentLanguage))
-            } footer: {
-                Text(L10n.string(.appHintCreeSousDossiers, session.currentLanguage))
-            }
         }
         #if os(macOS)
         .formStyle(.grouped)

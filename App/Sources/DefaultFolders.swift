@@ -2,12 +2,12 @@ import Foundation
 import AppCore
 
 /// Persists ONE security-scoped bookmark — the "JamShack" root folder, wherever the user put
-/// it (by default, iCloud Drive/JamShack) — across app launches, so the sandboxed folder
-/// access `FolderPickerRow` documents as "only lasts while the app runs" doesn't have to be
-/// redone by hand every single time for this, the common case. Deliberately ONE bookmark for
-/// a whole root, not six (one per subfolder) — simpler, and matches how the CLI's own default
-/// setup (`Sources/JamShack/main.swift`) always moves `User`/`Library` together as fixed
-/// children of one root, never independently.
+/// it (by default, iCloud Drive/JamShack) — across app launches, so sandboxed folder access
+/// (which otherwise only lasts while the app runs) doesn't have to be redone by hand every
+/// single time for this, the common case. Deliberately ONE bookmark for a whole root, not six
+/// (one per subfolder) — simpler, and matches how the CLI's own default setup
+/// (`Sources/JamShack/main.swift`) always moves `User`/`Library` together as fixed children of
+/// one root, never independently.
 enum DefaultFolderBookmark {
     private static let key = "JamShackDefaultRootFolderBookmark"
 
@@ -18,10 +18,10 @@ enum DefaultFolderBookmark {
 
     /// Resolves the saved bookmark and starts security-scoped access for it — the caller is
     /// responsible for keeping that access alive for as long as it's needed (same
-    /// "app-lifetime, never explicitly stopped" convention already used for a folder picked
-    /// via `FolderPickerRow`). `nil` if nothing was ever saved, or the saved location can no
-    /// longer be resolved/accessed (e.g. iCloud Drive not signed in on this device) — the
-    /// caller should just fall back to the per-category manual pickers in that case.
+    /// "app-lifetime, never explicitly stopped" convention already used elsewhere). `nil` if
+    /// nothing was ever saved, or the saved location can no longer be resolved/accessed (e.g.
+    /// iCloud Drive not signed in on this device) — the caller should just fall back to the
+    /// per-category manual pickers in that case.
     static func resolve() -> URL? {
         guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
         var isStale = false
@@ -53,7 +53,16 @@ func configureDefaultFolders(in root: URL, session: ImprovSession) {
         return folder
     }
     session.migratePiecesFromJSONIfNeeded(in: ensure("Pieces").path)
-    try? session.listSampleFiles(in: ensure("SoundFonts").path)
+    // Soundfonts moved from a plain folder scan (`sampleFolder`/`sampleFiles`, still how the
+    // CLI's own `SoundFonts` folder works) to a hash-indexed library backed by SwiftData/
+    // CloudKit + the app's own iCloud Drive container — see `SoundFontLocations`/
+    // `SoundFontLibrary`. `startSoundFontLibrary` must run FIRST: it's what resolves/creates the
+    // two physical folders `migrateSoundFontsFromFolderScanIfNeeded` copies non-synced files
+    // into (`SoundFontLibrary.importFile` has nowhere to copy to otherwise). The migration
+    // itself only ever runs once (guarded by "store still empty"); `startSoundFontLibrary`
+    // takes over reconciliation for the rest of this session's lifetime either way.
+    session.startSoundFontLibrary()
+    session.migrateSoundFontsFromFolderScanIfNeeded(in: ensure("SoundFonts").path)
     session.migrateSoundTracksFromJSONIfNeeded(in: ensure("SoundTracks").path)
     session.migrateGuideSequencesFromJSONIfNeeded(in: ensure("Sequences").path)
     session.ensureGuideReadyForLaunch()

@@ -86,6 +86,12 @@ public final class ImprovSession: @unchecked Sendable {
     /// `sampleFiles` — see `SoundEntry`/`setSoundAlias`/`setSoundFavorite`/`favoriteSampleFiles`.
     /// Persisted to `sound-settings.json`, only entries the user has actually touched.
     public private(set) var soundEntries: [SoundEntry] = []
+    /// Every soundfont known to this device — indexed by content hash (see `SoundFontEntry`),
+    /// backed by `SoundFontRecord` in the same shared CloudKit-synced store as everything else.
+    /// Unlike `sampleFiles` (a raw folder scan, still used by the CLI), an entry here can exist
+    /// even when its bytes aren't downloaded on THIS device yet (`soundFontPath(forHash:)`
+    /// returns `nil` in that case) — see `startSoundFontLibrary`.
+    public private(set) var soundFonts: [SoundFontEntry] = []
     /// Every piece's title currently in the SwiftData store, sorted — mirrors
     /// `guideSequenceNames`. Refreshed after every migrate/insert/update/delete.
     public private(set) var pieceNames: [String] = []
@@ -517,6 +523,7 @@ public final class ImprovSession: @unchecked Sendable {
             CompositionDescriptionRecord.self,
             PieceRecord.self,
             MIDIDeviceIconRecord.self,
+            SoundFontRecord.self,
         ])
         if let container = try? ModelContainer(
             for: schema,
@@ -537,6 +544,11 @@ public final class ImprovSession: @unchecked Sendable {
     /// already treats itself as effectively single-threaded for its own state, per its own
     /// `@unchecked Sendable` rationale above).
     @ObservationIgnored private lazy var modelContext = ModelContext(modelContainer)
+
+    /// Owns `NSMetadataQuery`-based discovery/reconciliation of soundfont files — see
+    /// `startSoundFontLibrary`. Lazy for the same reason as `modelContainer`/`modelContext`:
+    /// most test-only `ImprovSession()` instances never touch soundfonts at all.
+    @ObservationIgnored private lazy var soundFontLibrary = SoundFontLibrary(modelContext: modelContext)
 
     /// Registered once, in `start()` — not `init()`, so the hundreds of test-only
     /// `ImprovSession()` instances that never call `start()` never pay for it. Holds the
@@ -1009,6 +1021,11 @@ public final class ImprovSession: @unchecked Sendable {
         migrateLLMAPIKeysFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("llm-api-keys.json"))
         migrateMicrophoneCalibrationFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("microphone-calibration.json"))
         migrateSoundSettingsFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("sound-settings.json"))
+        // Must run after the JSON migration right above (which inserts path-keyed entries with
+        // no hash yet) AND after `startSoundFontLibrary` has had a chance to populate
+        // `soundFonts` (see `configureDefaultFolders`'s call order) — resolves each pending
+        // entry's file name to a stable hash.
+        migrateSoundEntriesToHashKeyedIfNeeded()
         settingsFolder = folderPath
         append("Dossier de reglages: \(folderPath).")
     }
@@ -2751,14 +2768,10 @@ public final class ImprovSession: @unchecked Sendable {
     /// simply left out, letting `PiecePlayer.play` fall back to (and warn about) its
     /// per-instrument default sound instead.
     private func resolvedInstrumentURLs(for notes: [RenderedNote]) -> [String: URL] {
-        guard let sampleFolder else { return [:] }
-        let folderURL = URL(fileURLWithPath: sampleFolder)
         var result: [String: URL] = [:]
         for name in Set(notes.compactMap(\.instrumentName)) {
-            let url = folderURL.appendingPathComponent(name)
-            if FileManager.default.fileExists(atPath: url.path) {
-                result[name] = url
-            }
+            guard let url = try? resolvedSampleURL(named: name), FileManager.default.fileExists(atPath: url.path) else { continue }
+            result[name] = url
         }
         return result
     }
@@ -3091,14 +3104,28 @@ public final class ImprovSession: @unchecked Sendable {
         append("Piste '\(tracks[index].label)' : son \(enabled ? "active" : "desactive").")
     }
 
+    /// Resolves a sound "name" to a real file URL — either an absolute path (what
+    /// `soundFontPath(forHash:)`/`favoriteSounds` hand back now, since a soundfont's real
+    /// location lives under `SoundFontLocations`, not `sampleFolder`) or, unchanged, a path
+    /// relative to `sampleFolder` (the CLI's own long-standing convention — see
+    /// `listSampleFiles`). Every sample-loading entry point in this class accepts either shape
+    /// through this one helper, so a hash-resolved favorite and a CLI-relative name both work
+    /// with the exact same calls.
+    private func resolvedSampleURL(named name: String) throws -> URL {
+        if (name as NSString).isAbsolutePath {
+            return URL(fileURLWithPath: name)
+        }
+        guard let sampleFolder else { throw SessionError.noSampleFolderListed }
+        return URL(fileURLWithPath: sampleFolder).appendingPathComponent(name)
+    }
+
     /// Loads a sample-based instrument by name from `sampleFolder` (see `listSampleFiles`)
     /// onto one track's own sampler, enabling its sound if it wasn't already — each track
     /// can carry a different instrument, sounding at the same time as any other track's.
     public func setInstrument(named name: String, for id: TrackID, preset: SoundFontPresetIdentity? = nil) throws {
         let index = try trackIndex(id)
         guard tracks[index].canHaveSound else { throw SessionError.trackCannotHaveSound }
-        guard let sampleFolder else { throw SessionError.noSampleFolderListed }
-        let url = URL(fileURLWithPath: sampleFolder).appendingPathComponent(name)
+        let url = try resolvedSampleURL(named: name)
         let unit: SamplerUnit
         if let existing = samplers[id] {
             unit = existing
@@ -3127,9 +3154,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// or a `.sf2` the reader can't parse) — callers should treat that the same as "just the
     /// file's own single default sound," same as before multi-preset support existed.
     public func soundFontPresets(forPath path: String) throws -> [SoundFontPreset] {
-        guard let sampleFolder else { throw SessionError.noSampleFolderListed }
-        let url = URL(fileURLWithPath: sampleFolder).appendingPathComponent(path)
-        return try SoundFontPresetReader.presets(at: url)
+        try SoundFontPresetReader.presets(at: resolvedSampleURL(named: path))
     }
 
     /// Convenience over `setInstrument(named:for:)` using the 0-based position in `sampleFiles`.
@@ -3219,14 +3244,184 @@ public final class ImprovSession: @unchecked Sendable {
             : "Found \(sampleFiles.count) sample file(s) in \(folderPath) (including subfolders).")
     }
 
+    /// Every soundfont hash `refreshSoundFonts` has ever seen this session — lets it tell "a
+    /// soundfont that just newly appeared in the index" (worth running the download policy for
+    /// once) apart from "a soundfont that was already here and simply hasn't been downloaded by
+    /// choice" (never re-runs the policy on it every single refresh).
+    @ObservationIgnored private var soundFontHashesEverSeen: Set<String> = []
+
+    /// Re-reads `soundFonts` from `modelContext` — mirrors `refreshSoundEntries`, called after
+    /// every `SoundFontLibrary` reconciliation/import so the in-memory list never drifts from
+    /// what's actually indexed. Also runs `SoundFontDownloadPolicy` once for each soundfont
+    /// newly seen this session (e.g. a synced entry discovered by `NSMetadataQuery` on another
+    /// device's import) — see `applyDownloadPolicyIfNeeded(forHash:)`.
+    private func refreshSoundFonts() {
+        soundFonts = ((try? modelContext.fetch(FetchDescriptor<SoundFontRecord>())) ?? []).compactMap(\.asSoundFontEntry)
+        let newlySeenHashes = Set(soundFonts.map(\.hash)).subtracting(soundFontHashesEverSeen)
+        soundFontHashesEverSeen.formUnion(newlySeenHashes)
+        for hash in newlySeenHashes {
+            applyDownloadPolicyIfNeeded(forHash: hash)
+        }
+    }
+
+    /// Runs `SoundFontDownloadPolicy` for one `.synced` soundfont not yet materialized on this
+    /// device, downloading it immediately if the policy says `.autoDownload` — the `.askUser`
+    /// and `.metadataOnly` outcomes are left for the UI to surface (see
+    /// `downloadDecision(forHash:)`), never acted on automatically here.
+    private func applyDownloadPolicyIfNeeded(forHash hash: String) {
+        guard let entry = soundFonts.first(where: { $0.hash == hash }),
+              entry.syncPreference == .synced, soundFontPath(forHash: hash) == nil else { return }
+        if downloadDecision(for: entry) == .autoDownload {
+            try? soundFontLibrary.requestDownload(of: entry)
+        }
+    }
+
+    /// What `SoundFontDownloadPolicy` recommends for `entry` on THIS device right now — exposed
+    /// so a UI (see `SoundsView`) can show an appropriate prompt/badge for the `.askUser`/
+    /// `.metadataOnly` outcomes `applyDownloadPolicyIfNeeded` deliberately doesn't act on by
+    /// itself.
+    public func downloadDecision(for entry: SoundFontEntry) -> SoundFontLocalDownloadDecision {
+        SoundFontDownloadPolicy.decide(
+            fileSize: entry.fileSize,
+            currentFreeSpace: DeviceFreeSpace.availableBytes(),
+            profile: DeviceStorageProfile.current,
+            isFavorite: soundEntries.contains { $0.soundFontHash == entry.hash && $0.isFavorite },
+            recentlyUsedOnThisDevice: SoundFontLocalUsageLedger.wasUsedRecently(entry.hash)
+        )
+    }
+
+    /// Explicitly requests download of a `.synced` soundfont not yet materialized on this
+    /// device — the manual counterpart to `applyDownloadPolicyIfNeeded`'s automatic path, for
+    /// the `.askUser`/`.metadataOnly` cases the user chooses to act on anyway (e.g. a "Download"
+    /// button in `SoundsView`).
+    public func downloadSoundFont(hash: String) throws {
+        guard let entry = soundFonts.first(where: { $0.hash == hash }) else { return }
+        try soundFontLibrary.requestDownload(of: entry)
+    }
+
+    /// Starts the soundfont library's `NSMetadataQuery`-backed discovery for both physical
+    /// folders (see `SoundFontLocations`) — call once at launch, BEFORE
+    /// `migrateSoundFontsFromFolderScanIfNeeded` (which needs `soundFontLibrary`'s folders
+    /// already resolved to copy non-synced files into). `syncedFolderURLIfAvailable()` returning
+    /// `nil` (no iCloud account, or this build isn't signed with the ubiquity-container
+    /// capability) just means every soundfont behaves as local-only for now — never a hard
+    /// failure.
+    public func startSoundFontLibrary() {
+        startSoundFontLibrary(
+            syncedFolder: SoundFontLocations.syncedFolderURLIfAvailable(),
+            localFolder: SoundFontLocations.localFolderURL()
+        )
+    }
+
+    /// Same as `startSoundFontLibrary()` but with explicit folder overrides instead of
+    /// resolving `SoundFontLocations` (which always points at real, non-sandboxed system
+    /// locations — the real `Application Support`, the real iCloud Drive container) — lets
+    /// tests exercise the whole soundfont pipeline against an isolated temp directory instead.
+    public func startSoundFontLibrary(syncedFolder: URL?, localFolder: URL) {
+        refreshSoundFonts()
+        soundFontLibrary.start(syncedFolder: syncedFolder, localFolder: localFolder, onChange: { [weak self] in self?.refreshSoundFonts() })
+    }
+
+    /// One-time bridge from the old folder-scan-based soundfont storage (`sampleFolder`/
+    /// `sampleFiles`, still how the CLI itself works) to the hash-indexed `soundFonts` store —
+    /// mirrors `migrateSoundSettingsFromJSONIfNeeded`'s "only if the store is still empty"
+    /// guard. Must run AFTER `startSoundFontLibrary` (which resolves the physical folders this
+    /// copies non-synced files into). Files already sitting under the app's own iCloud Drive
+    /// container (a common case: many users already pointed their JamShack root there) are
+    /// indexed in place with no copy; everything else is copied into the local-only folder as a
+    /// safe default (never guesses a user's iCloud quota tolerance — see `SoundFontStorage`'s
+    /// adaptive policy for what decides sync preference for anything imported after this
+    /// one-time migration).
+    public func migrateSoundFontsFromFolderScanIfNeeded(in oldSampleFolderPath: String) {
+        refreshSoundFonts()
+        guard soundFonts.isEmpty else { return }
+        guard let contents = try? FileManager.default.subpathsOfDirectory(atPath: oldSampleFolderPath) else { return }
+        let files = contents.filter { Self.supportedSampleExtensions.contains(($0 as NSString).pathExtension.lowercased()) }
+        guard !files.isEmpty else { return }
+
+        let syncedFolder = soundFontLibrary.syncedFolder
+        let oldRoot = URL(fileURLWithPath: oldSampleFolderPath).standardizedFileURL
+        var migratedCount = 0
+        for relativePath in files {
+            let sourceURL = oldRoot.appendingPathComponent(relativePath)
+            let alreadyUnderSyncedFolder = syncedFolder.map { sourceURL.path.hasPrefix($0.standardizedFileURL.path) } ?? false
+            do {
+                if alreadyUnderSyncedFolder {
+                    let presets = (try? SoundFontPresetReader.presets(at: sourceURL)) ?? []
+                    let hash = try SoundFontHasher.sha256Hex(ofFileAt: sourceURL)
+                    let size = ((try? FileManager.default.attributesOfItem(atPath: sourceURL.path)[.size]) as? NSNumber)?.int64Value ?? 0
+                    let entry = SoundFontEntry(
+                        hash: hash, displayName: sourceURL.lastPathComponent, fileName: sourceURL.lastPathComponent,
+                        fileSize: size, presets: presets, dateAdded: Date(), syncPreference: .synced
+                    )
+                    modelContext.insert(SoundFontRecord(entry))
+                } else {
+                    try soundFontLibrary.importFile(at: sourceURL, destination: .localOnly)
+                }
+                migratedCount += 1
+            } catch {
+                append("Could not migrate soundfont '\(relativePath)' from folder scan: \(error).")
+            }
+        }
+        try? modelContext.save()
+        refreshSoundFonts()
+        append("Migrated \(migratedCount) soundfont(s) from folder scan at \(oldSampleFolderPath) (original files left in place).")
+    }
+
+    /// Imports a soundfont file the user picked explicitly (`.fileImporter`, drag & drop — see
+    /// `SoundsView`), copying+hashing it into the chosen physical location and adding it to the
+    /// index. See `SoundFontLibrary.importFile`.
+    @discardableResult
+    public func importSoundFont(
+        at url: URL, syncPreference: SoundFontSyncPreference, displayName: String? = nil, origin: SoundFontOrigin = .userImported
+    ) throws -> SoundFontEntry {
+        let entry = try soundFontLibrary.importFile(at: url, destination: syncPreference, displayName: displayName, origin: origin)
+        refreshSoundFonts()
+        return entry
+    }
+
+    /// Downloads one of the app's own "offered" soundfonts (see `CuratedSoundFontCatalog`) and
+    /// imports it through the exact same path as a user-picked file — `origin: .curated` is the
+    /// only difference, letting a future re-download button work if the local copy ever
+    /// disappears (the reconciliation in `SoundFontLibrary` never prunes a `.curated` entry just
+    /// because its file is temporarily missing). Always imported `.localOnly`: nothing about an
+    /// offered soundfont implies the user wants to spend their own iCloud quota syncing it.
+    @discardableResult
+    public func installCuratedSoundFont(_ descriptor: CuratedSoundFontDescriptor) throws -> SoundFontEntry {
+        let downloadedURL = try CuratedSoundFontCatalog.download(descriptor)
+        defer { try? FileManager.default.removeItem(at: downloadedURL) }
+        return try importSoundFont(
+            at: downloadedURL, syncPreference: .localOnly,
+            displayName: descriptor.displayName, origin: .curated(sourceURL: descriptor.downloadURL)
+        )
+    }
+
+    /// The absolute path to a soundfont's bytes on THIS device, if they're actually present —
+    /// `nil` for a soundfont known to the index (visible in `soundFonts`, presets browsable)
+    /// but not yet downloaded here (`.synced`, not materialized on this device) or genuinely
+    /// missing. Never resolves through `sampleFolder`/`sampleFiles` — soundfonts found this way
+    /// live in `soundFontLibrary`'s own folders instead (read back from there, not re-resolved
+    /// via `SoundFontLocations` directly, so this agrees with whatever folders
+    /// `startSoundFontLibrary`/`importSoundFont` actually used — real system folders in
+    /// production, an isolated temp directory in tests).
+    public func soundFontPath(forHash hash: String) -> String? {
+        guard let entry = soundFonts.first(where: { $0.hash == hash }) else { return nil }
+        let folder: URL?
+        switch entry.syncPreference {
+        case .synced: folder = soundFontLibrary.syncedFolder
+        case .localOnly: folder = soundFontLibrary.localFolder
+        }
+        guard let folder else { return nil }
+        let url = folder.appendingPathComponent(entry.fileName)
+        return FileManager.default.fileExists(atPath: url.path) ? url.path : nil
+    }
+
     /// Loads a sample-based instrument by name from the last-listed folder (see
     /// `listSampleFiles`), replacing the piece-playback sampler's current sound (the
     /// default sine synth, or whatever was loaded before) — used by `play()`, entirely
     /// separate from any live-input track's own instrument (see `setInstrument(named:for:)`).
     public func loadSample(named name: String, preset: SoundFontPresetIdentity? = nil) throws {
-        guard let sampleFolder else { throw SessionError.noSampleFolderListed }
-        let url = URL(fileURLWithPath: sampleFolder).appendingPathComponent(name)
-        try player.loadSample(at: url, preset: preset)
+        try player.loadSample(at: resolvedSampleURL(named: name), preset: preset)
         append("Loaded instrument: \(name)")
     }
 
@@ -3240,9 +3435,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// piece-playback one — until this is called, a `SoundTrack` recording plays back through
     /// the default sine synth, exactly like a piece would before its own `loadSample`.
     public func loadSoundTrackSample(named name: String, preset: SoundFontPresetIdentity? = nil) throws {
-        guard let sampleFolder else { throw SessionError.noSampleFolderListed }
-        let url = URL(fileURLWithPath: sampleFolder).appendingPathComponent(name)
-        try soundTrackPlayer.loadSample(at: url, preset: preset)
+        try soundTrackPlayer.loadSample(at: resolvedSampleURL(named: name), preset: preset)
         append("Son de lecture (enregistrement): \(name)")
     }
 
@@ -3255,9 +3448,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// Same as `loadSoundTrackSample(named:)`, for `guideAuditionPlayer`'s own sampler — until
     /// this is called, "Ecouter le guide" plays back through the default sine synth.
     public func loadGuideAuditionSample(named name: String, preset: SoundFontPresetIdentity? = nil) throws {
-        guard let sampleFolder else { throw SessionError.noSampleFolderListed }
-        let url = URL(fileURLWithPath: sampleFolder).appendingPathComponent(name)
-        try guideAuditionPlayer.loadSample(at: url, preset: preset)
+        try guideAuditionPlayer.loadSample(at: resolvedSampleURL(named: name), preset: preset)
         append("Son d'ecoute du guide: \(name)")
     }
 
@@ -3300,98 +3491,107 @@ public final class ImprovSession: @unchecked Sendable {
         }
     }
 
-    /// Every favorited sound (see `SoundEntry.isFavorite`) whose file still exists in
-    /// `sampleFiles` — this is what every sound *picker* in the app should show
-    /// (`PiecesPlayView`/`GuideEditionView`/`SceneLayoutView`'s role-sound menu), so a big
-    /// decompressed library dumped into `sampleFolder` doesn't turn every picker into an
-    /// unusable wall of cryptic filenames/presets. The Sounds sub-tab itself (where favorites
-    /// get chosen from in the first place) browses every file/preset directly, not through
-    /// this list — deliberately no "fall back to showing everything when there are zero
-    /// favorites" exception: marking at least one favorite is the expected first step before
-    /// using any other sound picker.
+    /// Every favorited sound (see `SoundEntry.isFavorite`) whose soundfont is actually present
+    /// on this device right now (see `soundFontPath(forHash:)`) — this is what every sound
+    /// *picker* in the app should show (`PiecesPlayView`/`GuideEditionView`/`SceneLayoutView`'s
+    /// role-sound menu), so a big decompressed library dumped into the soundfont folder doesn't
+    /// turn every picker into an unusable wall of cryptic filenames/presets. The Sounds sub-tab
+    /// itself (where favorites get chosen from in the first place) browses every file/preset
+    /// directly, not through this list — deliberately no "fall back to showing everything when
+    /// there are zero favorites" exception: marking at least one favorite is the expected first
+    /// step before using any other sound picker. A favorite whose soundfont is indexed
+    /// (`soundFonts`) but not downloaded on this device (`.synced`, not materialized here) is
+    /// silently omitted, same as a genuinely missing file always was — the difference is this
+    /// case is recoverable (download it) rather than a permanently broken reference.
     public var favoriteSounds: [FavoriteSound] {
-        let existingPaths = Set(sampleFiles)
-        var presetsByPath: [String: [SoundFontPreset]] = [:]
-        return soundEntries
-            .filter { $0.isFavorite && existingPaths.contains($0.path) }
-            .map { entry in
-                let displayName = entry.alias ?? "\((entry.path as NSString).lastPathComponent) — \(originalSoundName(forPath: entry.path, preset: entry.preset, cache: &presetsByPath))"
-                return FavoriteSound(path: entry.path, preset: entry.preset, displayName: displayName, iconSystemName: entry.iconSystemName)
-            }
+        var presetsByHash: [String: [SoundFontPreset]] = [:]
+        return soundEntries.compactMap { entry -> FavoriteSound? in
+            guard entry.isFavorite, let path = soundFontPath(forHash: entry.soundFontHash) else { return nil }
+            let fallbackName = "\(soundFonts.first { $0.hash == entry.soundFontHash }?.displayName ?? (path as NSString).lastPathComponent) — \(originalSoundName(forHash: entry.soundFontHash, preset: entry.preset, cache: &presetsByHash))"
+            return FavoriteSound(path: path, preset: entry.preset, displayName: entry.alias ?? fallbackName, iconSystemName: entry.iconSystemName)
+        }
     }
 
     /// The preset's own name as authored in the `.sf2` file (e.g. "Alto Sax"), used as the
     /// second half of `favoriteSounds`' fallback display name ("file — sound") when no alias
-    /// was set — falls back to the bare file name when the file can't be parsed as a `.sf2`
-    /// (a `.dls`/`.aupreset`, or a `.sf2` `SoundFontPresetReader` fails on) or has no preset
-    /// matching `preset` (defaulting to program 0/bank 0, the file's own implicit default, when
-    /// `preset` itself is `nil`). `cache` avoids re-parsing the same (possibly huge) file once
-    /// per favorited preset it contributes.
-    private func originalSoundName(forPath path: String, preset: SoundFontPresetIdentity?, cache: inout [String: [SoundFontPreset]]) -> String {
+    /// was set — read straight from the already-indexed `soundFonts` entry (never re-parses the
+    /// file itself, unlike the old path-based equivalent this replaces). `cache` avoids
+    /// repeating the lookup once per favorited preset sharing the same soundfont.
+    private func originalSoundName(forHash hash: String, preset: SoundFontPresetIdentity?, cache: inout [String: [SoundFontPreset]]) -> String {
         let presets: [SoundFontPreset]
-        if let cached = cache[path] {
+        if let cached = cache[hash] {
             presets = cached
         } else {
-            presets = (try? soundFontPresets(forPath: path)) ?? []
-            cache[path] = presets
+            presets = soundFonts.first { $0.hash == hash }?.presets ?? []
+            cache[hash] = presets
         }
         let identity = preset ?? SoundFontPresetIdentity(program: 0, bank: 0)
-        return presets.first { $0.identity == identity }?.name ?? (path as NSString).lastPathComponent
+        return presets.first { $0.identity == identity }?.name ?? soundFonts.first { $0.hash == hash }?.displayName ?? hash
     }
 
-    /// The alias for a specific sound if one was assigned, else `nil` — callers show the bare
-    /// path as a fallback (see `displayName(forSamplePath:preset:)`). `preset` identifies WHICH
-    /// sound within `path`; `nil` means that file's own single/default sound (the only case
-    /// that existed before multi-preset `.sf2` support).
-    public func soundAlias(forPath path: String, preset: SoundFontPresetIdentity? = nil) -> String? {
-        soundEntries.first { $0.path == path && $0.preset == preset }?.alias
+    /// The alias for a specific sound if one was assigned, else `nil`. `preset` identifies WHICH
+    /// sound within the soundfont; `nil` means that file's own single/default sound.
+    public func soundAlias(forHash hash: String, preset: SoundFontPresetIdentity? = nil) -> String? {
+        soundEntries.first { $0.soundFontHash == hash && $0.preset == preset }?.alias
     }
 
-    public func isSoundFavorite(_ path: String, preset: SoundFontPresetIdentity? = nil) -> Bool {
-        soundEntries.first { $0.path == path && $0.preset == preset }?.isFavorite ?? false
+    public func isSoundFavorite(forHash hash: String, preset: SoundFontPresetIdentity? = nil) -> Bool {
+        soundEntries.first { $0.soundFontHash == hash && $0.preset == preset }?.isFavorite ?? false
     }
 
     /// The icon assigned to a specific sound if one was assigned (suggested by the active LLM
     /// connection or picked manually — see `IconVocabulary`), else `nil`.
-    public func soundIcon(forPath path: String, preset: SoundFontPresetIdentity? = nil) -> String? {
-        soundEntries.first { $0.path == path && $0.preset == preset }?.iconSystemName
+    public func soundIcon(forHash hash: String, preset: SoundFontPresetIdentity? = nil) -> String? {
+        soundEntries.first { $0.soundFontHash == hash && $0.preset == preset }?.iconSystemName
     }
 
-    /// What to show in any sound picker for a given (file, preset) — its alias if one was
-    /// assigned, otherwise the path itself.
+    /// Best-effort translation from a path-based sound reference — still how `SceneRole.soundName`
+    /// works (see that type's own doc comment; migrating scene roles to a hash-based identity is
+    /// explicitly out of scope for this pass, a separate known follow-up) — to this soundfont's
+    /// stable hash, by matching the path's file name against the current index. `nil` if no
+    /// indexed soundfont has that file name (never indexed, or renamed since).
+    private func soundFontHash(forLegacyPath path: String) -> String? {
+        let fileName = (path as NSString).lastPathComponent
+        return soundFonts.first { $0.fileName == fileName }?.hash
+    }
+
+    /// What to show in any sound picker for a path-based sound reference (`SceneRole.soundName`)
+    /// — its alias if the path resolves to a known, curated soundfont, otherwise the path
+    /// itself unchanged (today's behavior for anything not yet migrated to hash-based identity).
     public func displayName(forSamplePath path: String, preset: SoundFontPresetIdentity? = nil) -> String {
-        soundAlias(forPath: path, preset: preset) ?? path
+        guard let hash = soundFontHash(forLegacyPath: path), let alias = soundAlias(forHash: hash, preset: preset) else { return path }
+        return alias
     }
 
     /// Sets (or clears, with `nil`/empty) a sound's alias and persists. Removes the entry
-    /// entirely once it has neither an alias nor a favorite flag, keeping `sound-settings.json`
-    /// limited to sounds the user actually curated.
-    public func setSoundAlias(_ path: String, preset: SoundFontPresetIdentity? = nil, alias: String?) throws {
+    /// entirely once it has neither an alias nor a favorite flag, keeping the store limited to
+    /// sounds the user actually curated.
+    public func setSoundAlias(forHash hash: String, preset: SoundFontPresetIdentity? = nil, alias: String?) throws {
         let trimmed = alias?.trimmingCharacters(in: .whitespacesAndNewlines)
-        try updateSoundEntry(path, preset: preset) { $0.alias = (trimmed?.isEmpty ?? true) ? nil : trimmed }
+        try updateSoundEntry(forHash: hash, preset: preset) { $0.alias = (trimmed?.isEmpty ?? true) ? nil : trimmed }
     }
 
     /// Marks (or unmarks) a sound as a favorite and persists — see `favoriteSounds`.
-    public func setSoundFavorite(_ path: String, preset: SoundFontPresetIdentity? = nil, isFavorite: Bool) throws {
-        try updateSoundEntry(path, preset: preset) { $0.isFavorite = isFavorite }
+    public func setSoundFavorite(forHash hash: String, preset: SoundFontPresetIdentity? = nil, isFavorite: Bool) throws {
+        try updateSoundEntry(forHash: hash, preset: preset) { $0.isFavorite = isFavorite }
     }
 
     /// Sets (or clears, with `nil`) a sound's icon and persists — same shape as `setSoundAlias`.
-    public func setSoundIcon(_ path: String, preset: SoundFontPresetIdentity? = nil, iconSystemName: String?) throws {
-        try updateSoundEntry(path, preset: preset) { $0.iconSystemName = iconSystemName }
+    public func setSoundIcon(forHash hash: String, preset: SoundFontPresetIdentity? = nil, iconSystemName: String?) throws {
+        try updateSoundEntry(forHash: hash, preset: preset) { $0.iconSystemName = iconSystemName }
     }
 
-    /// Shared mutator behind `setSoundAlias`/`setSoundFavorite`: finds or creates the entry for
-    /// `(path, preset)`, applies `mutate`, drops the entry if it ends up with no alias and not
-    /// a favorite (the "untouched" state), then persists either way. Fetches every
+    /// Shared mutator behind `setSoundAlias`/`setSoundFavorite`/`setSoundIcon`: finds or creates
+    /// the entry for `(hash, preset)`, applies `mutate`, drops the entry if it ends up with no
+    /// alias and not a favorite (the "untouched" state), then persists either way. Fetches every
     /// `SoundEntryRecord` and filters in memory rather than a `#Predicate` on the flattened
     /// `presetProgram`/`presetBank` fields — only ever a handful of curated sounds, and this
     /// sidesteps any doubt about optional-`Int` equality inside a SwiftData predicate.
-    private func updateSoundEntry(_ path: String, preset: SoundFontPresetIdentity?, mutate: (inout SoundEntry) -> Void) throws {
+    private func updateSoundEntry(forHash hash: String, preset: SoundFontPresetIdentity?, mutate: (inout SoundEntry) -> Void) throws {
         let records = (try? modelContext.fetch(FetchDescriptor<SoundEntryRecord>())) ?? []
         let presetProgram = preset.map { Int($0.program) }
         let presetBank = preset.map { Int($0.bank) }
-        if let record = records.first(where: { $0.path == path && $0.presetProgram == presetProgram && $0.presetBank == presetBank }) {
+        if let record = records.first(where: { $0.soundFontHash == hash && $0.presetProgram == presetProgram && $0.presetBank == presetBank }) {
             var entry = record.asSoundEntry
             mutate(&entry)
             if entry.alias == nil && !entry.isFavorite && entry.iconSystemName == nil {
@@ -3402,7 +3602,7 @@ public final class ImprovSession: @unchecked Sendable {
                 record.iconSystemName = entry.iconSystemName
             }
         } else {
-            var entry = SoundEntry(path: path, preset: preset)
+            var entry = SoundEntry(soundFontHash: hash, preset: preset)
             mutate(&entry)
             if entry.alias != nil || entry.isFavorite || entry.iconSystemName != nil {
                 modelContext.insert(SoundEntryRecord(entry))
@@ -3418,21 +3618,58 @@ public final class ImprovSession: @unchecked Sendable {
         soundEntries = ((try? modelContext.fetch(FetchDescriptor<SoundEntryRecord>())) ?? []).map(\.asSoundEntry)
     }
 
-    /// One-time bridge from `sound-settings.json` to the SwiftData store — mirrors
-    /// `migrateColorPalettesFromJSONIfNeeded(fromJSONFile:)`, but with no "seed built-ins"
-    /// branch: an empty store is this category's own correct fresh-install default (only
-    /// curated sounds ever get an entry at all — see `SoundEntry`'s own doc comment).
+    /// One-time bridge from the OLD, path-keyed `sound-settings.json` to the SwiftData store —
+    /// mirrors `migrateColorPalettesFromJSONIfNeeded(fromJSONFile:)`'s "only if the store is
+    /// still empty" guard. Each entry is inserted with `legacyPath` set and `soundFontHash`
+    /// still empty — `migrateSoundEntriesToHashKeyedIfNeeded` (which must run afterward) is what
+    /// actually resolves the hash.
     public func migrateSoundSettingsFromJSONIfNeeded(fromJSONFile path: String) {
         refreshSoundEntries()
         guard soundEntries.isEmpty else { return }
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
               let file = try? JSONDecoder().decode(SoundSettingsFile.self, from: data), !file.sounds.isEmpty else { return }
-        for entry in file.sounds {
-            modelContext.insert(SoundEntryRecord(entry))
+        for legacy in file.sounds {
+            let record = SoundEntryRecord(SoundEntry(
+                soundFontHash: "", alias: legacy.alias, isFavorite: legacy.isFavorite,
+                preset: legacy.preset, iconSystemName: legacy.iconSystemName
+            ))
+            record.legacyPath = legacy.path
+            modelContext.insert(record)
         }
         try? modelContext.save()
         refreshSoundEntries()
-        append("Migrated \(file.sounds.count) sound setting(s) from \(path) (original left in place).")
+        append("Migrated \(file.sounds.count) sound setting(s) from \(path) (original left in place, pending hash resolution).")
+    }
+
+    /// One-time bridge for any `SoundEntryRecord` still carrying the OLD path-keyed identity
+    /// (`legacyPath` set, `soundFontHash` empty — only ever produced by
+    /// `migrateSoundSettingsFromJSONIfNeeded`) — resolves each to a stable hash by matching its
+    /// path's file name against the now-populated `soundFonts` index. Must run after
+    /// `startSoundFontLibrary`/`migrateSoundFontsFromFolderScanIfNeeded` (see
+    /// `configureDefaultFolders`'s call order), so the hashes it needs to match against actually
+    /// exist. An entry that can't be matched (its file was already renamed/removed before this
+    /// update ever ran) is dropped rather than left permanently stuck — it was already
+    /// effectively unreachable under the old path-based scheme too.
+    public func migrateSoundEntriesToHashKeyedIfNeeded() {
+        let records = (try? modelContext.fetch(FetchDescriptor<SoundEntryRecord>())) ?? []
+        let pending = records.filter(\.soundFontHash.isEmpty)
+        guard !pending.isEmpty else { return }
+        var resolvedCount = 0
+        for record in pending {
+            guard let legacyPath = record.legacyPath, let hash = soundFontHash(forLegacyPath: legacyPath) else {
+                append("Sound favorite/alias '\(record.legacyPath ?? "?")' no longer matches any indexed soundfont — dropped (already broken before this update).")
+                modelContext.delete(record)
+                continue
+            }
+            record.soundFontHash = hash
+            record.legacyPath = nil
+            resolvedCount += 1
+        }
+        try? modelContext.save()
+        refreshSoundEntries()
+        if resolvedCount > 0 {
+            append("Resolved \(resolvedCount) sound favorite/alias entry(ies) to hash-based identity.")
+        }
     }
 
     /// Simulates a key press/release without real MIDI hardware — useful for testing and

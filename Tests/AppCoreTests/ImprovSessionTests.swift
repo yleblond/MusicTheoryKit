@@ -2741,92 +2741,111 @@ final class ImprovSessionTests: XCTestCase {
 
     // MARK: - Sound aliases & favorites
 
-    func testSetSoundAliasAndFavoritePersistToSoundSettingsFile() throws {
-        let schema = Schema([SoundEntryRecord.self])
+    /// Sets up an `ImprovSession` with an isolated temp folder standing in for the local-only
+    /// soundfont folder `SoundFontLocations.localFolderURL()` would otherwise resolve to (the
+    /// real `Application Support` — never touched by tests). `syncedFolder: nil` throughout:
+    /// these tests only exercise local-only soundfonts, same as running with no iCloud account.
+    /// `sourceFolder` is a SEPARATE temp directory for tests to write fake incoming `.sf2` files
+    /// into before importing them — distinct from `localFolder` (the import destination) so
+    /// `SoundFontLibrary.importFile`'s own "destination already occupied" rename logic never
+    /// kicks in just because the fake source happened to already sit at its own destination
+    /// path (a real import's source is wherever the user picked it from, never the destination
+    /// folder itself).
+    private func makeSoundFontTestSession() throws -> (session: ImprovSession, container: ModelContainer, localFolder: URL, sourceFolder: URL) {
+        let schema = Schema([SoundEntryRecord.self, SoundFontRecord.self])
         let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
         let session = ImprovSession(modelContainer: container)
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        try session.setSettingsFolder(folder.path)
-
-        try session.setSoundAlias("OrchestralLib/Strings/Violin.sf2", alias: "Violon chaud")
-        try session.setSoundFavorite("OrchestralLib/Strings/Violin.sf2", isFavorite: true)
-        try session.setSoundFavorite("Piano.sf2", isFavorite: true)
-
-        XCTAssertEqual(session.soundAlias(forPath: "OrchestralLib/Strings/Violin.sf2"), "Violon chaud")
-        XCTAssertTrue(session.isSoundFavorite("OrchestralLib/Strings/Violin.sf2"))
-        XCTAssertTrue(session.isSoundFavorite("Piano.sf2"))
-        XCTAssertFalse(session.isSoundFavorite("Cello.sf2"))
-
-        // A second session sharing the SAME store must see the persisted entries.
-        let reloaded = ImprovSession(modelContainer: container)
-        try reloaded.setSettingsFolder(folder.path)
-        XCTAssertEqual(reloaded.soundAlias(forPath: "OrchestralLib/Strings/Violin.sf2"), "Violon chaud")
-        XCTAssertTrue(reloaded.isSoundFavorite("Piano.sf2"))
+        let localFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let sourceFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: localFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: sourceFolder, withIntermediateDirectories: true)
+        session.startSoundFontLibrary(syncedFolder: nil, localFolder: localFolder)
+        return (session, container, localFolder, sourceFolder)
     }
 
-    func testFavoriteSoundsFiltersSampleFilesToFavoritesOnly() throws {
-        let session = makeTestSession()
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        try Data().write(to: folder.appendingPathComponent("Piano.sf2"))
-        try Data().write(to: folder.appendingPathComponent("Cello.sf2"))
-        try session.listSampleFiles(in: folder.path)
-        try session.setSettingsFolder(folder.appendingPathComponent("Settings").path)
+    func testSetSoundAliasAndFavoritePersistAcrossSessionsSharingTheSameStore() throws {
+        let (session, container, _, sourceFolder) = try makeSoundFontTestSession()
+        // Distinct content per file: `SoundFontHasher` identifies a soundfont by its bytes, so
+        // two empty files would collapse into the exact same hash/record — not what these
+        // tests want to exercise (three separately favoritable/aliasable soundfonts).
+        try Data([0x01]).write(to: sourceFolder.appendingPathComponent("Violin.sf2"))
+        try Data([0x02]).write(to: sourceFolder.appendingPathComponent("Piano.sf2"))
+        try Data([0x03]).write(to: sourceFolder.appendingPathComponent("Cello.sf2"))
+        let violin = try session.importSoundFont(at: sourceFolder.appendingPathComponent("Violin.sf2"), syncPreference: .localOnly)
+        let piano = try session.importSoundFont(at: sourceFolder.appendingPathComponent("Piano.sf2"), syncPreference: .localOnly)
+
+        try session.setSoundAlias(forHash: violin.hash, alias: "Violon chaud")
+        try session.setSoundFavorite(forHash: violin.hash, isFavorite: true)
+        try session.setSoundFavorite(forHash: piano.hash, isFavorite: true)
+
+        XCTAssertEqual(session.soundAlias(forHash: violin.hash), "Violon chaud")
+        XCTAssertTrue(session.isSoundFavorite(forHash: violin.hash))
+        XCTAssertTrue(session.isSoundFavorite(forHash: piano.hash))
+        XCTAssertFalse(session.isSoundFavorite(forHash: "not-a-real-hash"))
+
+        // A second session sharing the SAME model container must see the persisted entries —
+        // `soundEntries` only actually reflects the store after some refresh call, same as
+        // every other SwiftData-backed list in this class (nothing loads it eagerly at init).
+        let reloaded = ImprovSession(modelContainer: container)
+        reloaded.migrateSoundSettingsFromJSONIfNeeded(fromJSONFile: "/nonexistent-\(UUID()).json")
+        XCTAssertEqual(reloaded.soundAlias(forHash: violin.hash), "Violon chaud")
+        XCTAssertTrue(reloaded.isSoundFavorite(forHash: piano.hash))
+    }
+
+    func testFavoriteSoundsFiltersToFavoritesOnly() throws {
+        let (session, _, localFolder, sourceFolder) = try makeSoundFontTestSession()
+        try Data().write(to: sourceFolder.appendingPathComponent("Piano.sf2"))
+        let piano = try session.importSoundFont(at: sourceFolder.appendingPathComponent("Piano.sf2"), syncPreference: .localOnly)
 
         XCTAssertEqual(session.favoriteSounds, [], "nothing favorited yet")
 
-        try session.setSoundFavorite("Piano.sf2", isFavorite: true)
-        XCTAssertEqual(session.favoriteSounds.map(\.path), ["Piano.sf2"])
+        try session.setSoundFavorite(forHash: piano.hash, isFavorite: true)
+        XCTAssertEqual(session.favoriteSounds.map(\.path), [localFolder.appendingPathComponent("Piano.sf2").path])
 
-        try session.setSoundFavorite("Piano.sf2", isFavorite: false)
+        try session.setSoundFavorite(forHash: piano.hash, isFavorite: false)
         XCTAssertEqual(session.favoriteSounds, [])
     }
 
     func testFavoriteSoundsDistinguishesPresetsOfTheSameFile() throws {
-        let session = makeTestSession()
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        try Data().write(to: folder.appendingPathComponent("GMBank.sf2"))
-        try session.listSampleFiles(in: folder.path)
-        try session.setSettingsFolder(folder.appendingPathComponent("Settings").path)
+        let (session, _, localFolder, sourceFolder) = try makeSoundFontTestSession()
+        try Self.minimalSoundFont(presets: [
+            (name: "Grand Piano", program: 0, bank: 0), (name: "Church Organ", program: 19, bank: 0),
+        ]).write(to: sourceFolder.appendingPathComponent("GMBank.sf2"))
+        let bank = try session.importSoundFont(at: sourceFolder.appendingPathComponent("GMBank.sf2"), syncPreference: .localOnly)
 
         let piano = SoundFontPresetIdentity(program: 0, bank: 0)
         let organ = SoundFontPresetIdentity(program: 19, bank: 0)
-        try session.setSoundFavorite("GMBank.sf2", preset: piano, isFavorite: true)
-        try session.setSoundAlias("GMBank.sf2", preset: organ, alias: "Orgue")
-        try session.setSoundFavorite("GMBank.sf2", preset: organ, isFavorite: true)
+        try session.setSoundFavorite(forHash: bank.hash, preset: piano, isFavorite: true)
+        try session.setSoundAlias(forHash: bank.hash, preset: organ, alias: "Orgue")
+        try session.setSoundFavorite(forHash: bank.hash, preset: organ, isFavorite: true)
 
+        let bankPath = localFolder.appendingPathComponent("GMBank.sf2").path
         XCTAssertEqual(Set(session.favoriteSounds.map(\.id)), [
-            "GMBank.sf2#0:0", "GMBank.sf2#19:0",
+            "\(bankPath)#0:0", "\(bankPath)#19:0",
         ])
-        XCTAssertTrue(session.isSoundFavorite("GMBank.sf2", preset: piano))
-        XCTAssertFalse(session.isSoundFavorite("GMBank.sf2"), "the file's own default preset (nil) was never favorited, only program 0 explicitly")
-        XCTAssertEqual(session.soundAlias(forPath: "GMBank.sf2", preset: organ), "Orgue")
-        XCTAssertNil(session.soundAlias(forPath: "GMBank.sf2", preset: piano))
+        XCTAssertTrue(session.isSoundFavorite(forHash: bank.hash, preset: piano))
+        XCTAssertFalse(session.isSoundFavorite(forHash: bank.hash), "the file's own default preset (nil) was never favorited, only program 0 explicitly")
+        XCTAssertEqual(session.soundAlias(forHash: bank.hash, preset: organ), "Orgue")
+        XCTAssertNil(session.soundAlias(forHash: bank.hash, preset: piano))
     }
 
     /// `favoriteSounds` must show "file — sound name" when no alias was set (the user's own
     /// explicit ask, 2026-07-27: a bare file/preset id isn't enough to recognize a favorite in
     /// a picker), and just the alias once one exists.
     func testFavoriteSoundsDisplayNameFallsBackToFileAndSoundNameWithoutAlias() throws {
-        let session = makeTestSession()
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
+        let (session, _, _, sourceFolder) = try makeSoundFontTestSession()
         try Self.minimalSoundFont(presets: [(name: "Grand Piano", program: 0, bank: 0)])
-            .write(to: folder.appendingPathComponent("Bank.sf2"))
-        try session.listSampleFiles(in: folder.path)
-        try session.setSettingsFolder(folder.appendingPathComponent("Settings").path)
+            .write(to: sourceFolder.appendingPathComponent("Bank.sf2"))
+        let bank = try session.importSoundFont(at: sourceFolder.appendingPathComponent("Bank.sf2"), syncPreference: .localOnly)
 
         let piano = SoundFontPresetIdentity(program: 0, bank: 0)
-        try session.setSoundFavorite("Bank.sf2", preset: piano, isFavorite: true)
-        XCTAssertEqual(session.favoriteSounds.first?.displayName, "Bank.sf2 — Grand Piano")
+        try session.setSoundFavorite(forHash: bank.hash, preset: piano, isFavorite: true)
+        // `SoundFontEntry.displayName` defaults to the extension-stripped file name (see
+        // `SoundFontLibrary.importFile`) — a deliberately friendlier default than the old
+        // path-based system's bare "Bank.sf2", which never had a separate display name concept.
+        XCTAssertEqual(session.favoriteSounds.first?.displayName, "Bank — Grand Piano")
 
-        try session.setSoundAlias("Bank.sf2", preset: piano, alias: "Mon Piano")
+        try session.setSoundAlias(forHash: bank.hash, preset: piano, alias: "Mon Piano")
         XCTAssertEqual(session.favoriteSounds.first?.displayName, "Mon Piano")
     }
 
@@ -2857,32 +2876,34 @@ final class ImprovSessionTests: XCTestCase {
         return Data(chunk(id: "RIFF", body: riffBody))
     }
 
+    /// `displayName(forSamplePath:)` is the one remaining path-based accessor (still how
+    /// `SceneRole.soundName` works — migrating scene roles to hash-based identity is a separate,
+    /// explicitly out-of-scope follow-up) — it resolves the path's file name against the
+    /// hash-indexed `soundFonts` library to find an alias, rather than storing anything by path
+    /// itself.
     func testDisplayNameForSamplePathFallsBackToPathWithoutAlias() throws {
-        let session = makeTestSession()
-        XCTAssertEqual(session.displayName(forSamplePath: "Piano.sf2"), "Piano.sf2")
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        try session.setSettingsFolder(folder.path)
-        try session.setSoundAlias("Piano.sf2", alias: "  Piano chaud  ")
+        let (session, _, _, sourceFolder) = try makeSoundFontTestSession()
+        XCTAssertEqual(session.displayName(forSamplePath: "Piano.sf2"), "Piano.sf2", "no indexed soundfont named that yet")
+
+        try Data().write(to: sourceFolder.appendingPathComponent("Piano.sf2"))
+        let piano = try session.importSoundFont(at: sourceFolder.appendingPathComponent("Piano.sf2"), syncPreference: .localOnly)
+        try session.setSoundAlias(forHash: piano.hash, alias: "  Piano chaud  ")
+
         XCTAssertEqual(session.displayName(forSamplePath: "Piano.sf2"), "Piano chaud", "alias is trimmed")
+        XCTAssertEqual(session.displayName(forSamplePath: "SomeSubfolder/Piano.sf2"), "Piano chaud", "matches by file name alone, ignoring subfolders")
     }
 
     func testSettingAliasToEmptyOrFavoriteToFalseRemovesTheEntryEntirely() throws {
-        let session = makeTestSession()
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        try session.setSettingsFolder(folder.path)
+        let (session, _, _, _) = try makeSoundFontTestSession()
 
-        try session.setSoundAlias("Piano.sf2", alias: "Piano chaud")
+        try session.setSoundAlias(forHash: "hash-piano", alias: "Piano chaud")
         XCTAssertEqual(session.soundEntries.count, 1)
-        try session.setSoundAlias("Piano.sf2", alias: "")
+        try session.setSoundAlias(forHash: "hash-piano", alias: "")
         XCTAssertEqual(session.soundEntries.count, 0, "clearing the only field an entry had removes it")
 
-        try session.setSoundFavorite("Cello.sf2", isFavorite: true)
+        try session.setSoundFavorite(forHash: "hash-cello", isFavorite: true)
         XCTAssertEqual(session.soundEntries.count, 1)
-        try session.setSoundFavorite("Cello.sf2", isFavorite: false)
+        try session.setSoundFavorite(forHash: "hash-cello", isFavorite: false)
         XCTAssertEqual(session.soundEntries.count, 0)
     }
 }

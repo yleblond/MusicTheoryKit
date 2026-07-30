@@ -2,16 +2,20 @@ import XCTest
 import SoundFontModel
 @testable import AppCore
 
-/// `SoundEntry.preset` was added after `sound-settings.json` was already in use on real
-/// installs — these tests guard the two things that matter for that: old files (no `preset`
-/// key at all) must still decode, and a `path` can now carry more than one entry as long as
-/// `preset` differs (what multi-preset `.sf2` support in a later phase will rely on).
+/// `SoundEntry` is keyed by soundfont content hash, not path (see `ImprovSession
+/// .migrateSoundEntriesToHashKeyedIfNeeded` for why: a `.sf2` can be freely renamed/moved).
+/// `LegacySoundEntry` is the OLD, path-keyed on-disk shape `migrateSoundSettingsFromJSONIfNeeded`
+/// still needs to read once from a pre-existing `sound-settings.json` — these tests guard both
+/// shapes independently, plus the multi-preset behavior (`preset` was added after
+/// `sound-settings.json` was already in use on real installs: old files with no `preset` key at
+/// all must still decode as `nil`, and a single soundfont can carry more than one entry as long
+/// as `preset` differs).
 final class SoundEntryTests: XCTestCase {
-    func testDecodesPreExistingJSONWithNoPresetKeyAsNilPreset() throws {
+    func testLegacySoundEntryDecodesPreExistingJSONWithNoPresetKeyAsNilPreset() throws {
         let json = """
         {"path": "OrchestralLib/Strings/Violin.sf2", "alias": "Violon chaud", "isFavorite": true}
         """
-        let entry = try JSONDecoder().decode(SoundEntry.self, from: Data(json.utf8))
+        let entry = try JSONDecoder().decode(LegacySoundEntry.self, from: Data(json.utf8))
 
         XCTAssertEqual(entry.path, "OrchestralLib/Strings/Violin.sf2")
         XCTAssertEqual(entry.alias, "Violon chaud")
@@ -19,9 +23,9 @@ final class SoundEntryTests: XCTestCase {
         XCTAssertNil(entry.preset)
     }
 
-    func testRoundTripsAPresetIdentityThroughJSON() throws {
+    func testSoundEntryRoundTripsAPresetIdentityThroughJSON() throws {
         let entry = SoundEntry(
-            path: "GMBank.sf2",
+            soundFontHash: "abc123",
             alias: "Orgue d'eglise",
             isFavorite: true,
             preset: SoundFontPresetIdentity(program: 19, bank: 0)
@@ -33,9 +37,9 @@ final class SoundEntryTests: XCTestCase {
         XCTAssertEqual(decoded, entry)
     }
 
-    func testTwoEntriesForTheSamePathWithDifferentPresetsAreNotEqual() {
-        let piano = SoundEntry(path: "GMBank.sf2", preset: SoundFontPresetIdentity(program: 0, bank: 0))
-        let organ = SoundEntry(path: "GMBank.sf2", preset: SoundFontPresetIdentity(program: 19, bank: 0))
+    func testTwoEntriesForTheSameSoundFontWithDifferentPresetsAreNotEqual() {
+        let piano = SoundEntry(soundFontHash: "abc123", preset: SoundFontPresetIdentity(program: 0, bank: 0))
+        let organ = SoundEntry(soundFontHash: "abc123", preset: SoundFontPresetIdentity(program: 19, bank: 0))
 
         XCTAssertNotEqual(piano, organ)
     }

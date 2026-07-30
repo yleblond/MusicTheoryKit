@@ -41,6 +41,44 @@ targets:
         # tolerance as `com.apple.security.files.user-selected.read-write` below).
         UIBackgroundModes:
           - remote-notification
+        # Makes the app's iCloud Drive container (same identifier as the CloudKit database
+        # above) visible in Files/Finder as "JamShack" — this is what lets a soundfont dropped
+        # in Files show up in-app without going through any picker, and vice versa (see
+        # `SoundFontLocations`/`SoundFontLibrary`). Distinct capability from the CloudKit
+        # database sync already declared above: that one syncs the lightweight index (hash,
+        # presets, tags...), this one syncs the actual `.sf2` bytes.
+        NSUbiquitousContainers:
+          iCloud.com.jamshack.JamShackApp:
+            NSUbiquitousContainerIsDocumentScopePublic: true
+            NSUbiquitousContainerSupportedFolderLevels: Any
+            NSUbiquitousContainerName: JamShack
+        # Lets Files/Finder treat the container above as a normal folder the user can drop
+        # files into directly, and lets this app declare itself a handler for `.sf2`/`.dls`
+        # documents opened from elsewhere (Mail, Safari, "Open in...").
+        LSSupportsOpeningDocumentsInPlace: true
+        UIFileSharingEnabled: true
+        # Apple declares no public UTI for SoundFont2/DLS files — these two are this app's own,
+        # conforming only to `public.data` (a generic binary file), which is all that's needed
+        # for `.fileImporter`/drag-and-drop/"Open in..." to recognize them by extension.
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.jamshack.soundfont2
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - sf2
+          - UTTypeIdentifier: com.jamshack.downloadable-sound
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - dls
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: SoundFont
+            LSItemContentTypes:
+              - com.jamshack.soundfont2
+              - com.jamshack.downloadable-sound
+            LSHandlerRank: Owner
     settings:
       base:
         ENABLE_HARDENED_RUNTIME: YES
@@ -48,6 +86,17 @@ targets:
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Local code-signing setup, previously configured by hand in Xcode's Signing &
+        # Capabilities and committed directly in the .xcodeproj (never tracked in this file
+        # until now) — every iCloud/CloudKit-tied entitlement above makes `xcodebuild` demand a
+        # real provisioning profile, so an ad-hoc "Sign to Run Locally" build needs a real
+        # DEVELOPMENT_TEAM. Tracked here now so a future `xcodegen generate` can't silently drop
+        # it again (it's the .xcodeproj's own build settings, not something XcodeGen can infer
+        # from anywhere else — regenerating the project without this present wipes it).
+        DEVELOPMENT_TEAM: T2L9QQQ4PL
+        "CODE_SIGN_IDENTITY[sdk=macosx*]": "Apple Development"
+        "CODE_SIGN_STYLE[sdk=macosx*]": Automatic
+        "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "iPhone Developer"
     entitlements:
       path: Generated/JamShackApp.entitlements
       properties:
@@ -83,6 +132,17 @@ targets:
           - iCloud.com.jamshack.JamShackApp
         com.apple.developer.icloud-services:
           - CloudKit
+          # Ubiquity-container (iCloud Drive) file sync for soundfont bytes — a distinct
+          # capability from the CloudKit database service right above, which only syncs the
+          # lightweight index. See `NSUbiquitousContainers` in the Info.plist properties above.
+          - CloudDocuments
+        # Required for `FileManager.url(forUbiquityContainerIdentifier:)` to resolve the same
+        # container declared via `icloud-container-identifiers`/`NSUbiquitousContainers` above —
+        # without this key that call returns nil even though the CloudKit database entitlement
+        # is present, because ubiquity containers and the CloudKit container identifier list are
+        # separate entitlement keys that happen to share the same identifier string by choice.
+        com.apple.developer.ubiquity-container-identifiers:
+          - iCloud.com.jamshack.JamShackApp
         # Push Notifications capability, needed for the silent push declared via
         # `UIBackgroundModes: remote-notification` above. Like the iCloud container entitlement
         # right above it, this alone makes `xcodebuild` demand a real provisioning profile — a
