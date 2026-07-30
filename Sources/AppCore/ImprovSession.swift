@@ -524,6 +524,7 @@ public final class ImprovSession: @unchecked Sendable {
             PieceRecord.self,
             MIDIDeviceIconRecord.self,
             SoundFontRecord.self,
+            CloudStorageThresholdRecord.self,
         ])
         if let container = try? ModelContainer(
             for: schema,
@@ -610,6 +611,14 @@ public final class ImprovSession: @unchecked Sendable {
         refreshPieceNames()
         refreshCompositionDescriptionNames()
         refreshSoundEntries()
+        // Previously missing here — a change from ANOTHER device (e.g. importing a soundfont,
+        // toggling its sync preference) only ever showed up on this one after a full relaunch,
+        // never live, because nothing refreshed `soundFonts` in reaction to CloudKit's own
+        // remote-change notification. Confirmed as a real contributor to "two devices show
+        // different synced files": each device's view was only ever as fresh as its last
+        // launch, not its last CloudKit sync.
+        refreshSoundFonts()
+        refreshCloudStorageThreshold()
         textFramingSentenceNames = refreshPromptSnippetNames(category: .textFraming)
         soundTrackFramingSentenceNames = refreshPromptSnippetNames(category: .soundTrackFraming)
         soundTrackInstructionsNames = refreshPromptSnippetNames(category: .soundTrackInstructions)
@@ -3299,6 +3308,73 @@ public final class ImprovSession: @unchecked Sendable {
         try soundFontLibrary.requestDownload(of: entry)
     }
 
+    /// Deletes a soundfont entirely (see `SoundFontLibrary.delete(hash:)` for what that means
+    /// for a `.synced` entry — every device, not just this one) and any favorite/alias entries
+    /// that referenced it, which would otherwise be orphaned (unreachable — `soundEntries`
+    /// already can't resolve a hash `soundFonts` no longer lists — but never cleaned up).
+    public func deleteSoundFont(hash: String) {
+        guard soundFontLibrary.delete(hash: hash) != nil else { return }
+        let orphanedEntries = (try? modelContext.fetch(FetchDescriptor<SoundEntryRecord>())) ?? []
+        for record in orphanedEntries where record.soundFontHash == hash {
+            modelContext.delete(record)
+        }
+        try? modelContext.save()
+        refreshSoundFonts()
+        refreshSoundEntries()
+    }
+
+    /// Wipes the ENTIRE soundfont library — every index record, every `.sf2`/`.dls` file this
+    /// device can see (local-only folder AND the app's iCloud Drive container, the latter
+    /// removing them from every device signed into the account), and every favorite/alias that
+    /// referenced any of them. A deliberate, explicit, user-requested nuke-and-pave — see
+    /// `SoundFontLibrary.wipeEverything()`'s own doc comment for when this is the right call
+    /// (recovering from cross-device duplicate-hash corruption a plain `deduplicate()` pass
+    /// can't retroactively fix once the user has already acted on the corrupted state, e.g.
+    /// deleted/toggled the "wrong" one of two duplicate rows).
+    public func wipeSoundFontLibrary() {
+        soundFontLibrary.wipeEverything()
+        let allSoundEntries = (try? modelContext.fetch(FetchDescriptor<SoundEntryRecord>())) ?? []
+        for record in allSoundEntries {
+            modelContext.delete(record)
+        }
+        try? modelContext.save()
+        refreshSoundFonts()
+        refreshSoundEntries()
+        append("Soundfont library wiped: every soundfont file and favorite/alias removed (local and synced).")
+    }
+
+    /// Moves an already-imported soundfont between synced (iCloud Drive, every device) and
+    /// local-only (this device alone) — see `SoundFontLibrary.changeSyncPreference(hash:to:)`
+    /// for exactly what that means physically. Throws `SoundFontLibraryError
+    /// .notDownloadedOnThisDevice` if the file isn't actually present here right now (a
+    /// `.synced` entry not yet downloaded) — download it first (`downloadSoundFont(hash:)`).
+    @discardableResult
+    public func setSoundFontSyncPreference(hash: String, to preference: SoundFontSyncPreference) throws -> SoundFontEntry {
+        let entry = try soundFontLibrary.changeSyncPreference(hash: hash, to: preference)
+        refreshSoundFonts()
+        return entry
+    }
+
+    /// The user's own self-imposed iCloud storage budget for synced soundfonts, in bytes — see
+    /// `CloudStorageThresholdRecord`'s own doc comment for why this is synced (account-wide,
+    /// not per-device) rather than a `UserDefaults` setting like `DeviceStorageProfile`/
+    /// `LocalStorageThreshold`. `nil` until ever set.
+    public private(set) var cloudStorageThresholdBytes: Int64?
+
+    private func refreshCloudStorageThreshold() {
+        cloudStorageThresholdBytes = (try? modelContext.fetch(FetchDescriptor<CloudStorageThresholdRecord>()))?.first?.bytes
+    }
+
+    public func setCloudStorageThresholdBytes(_ bytes: Int64?) throws {
+        if let existing = try modelContext.fetch(FetchDescriptor<CloudStorageThresholdRecord>()).first {
+            existing.bytes = bytes
+        } else {
+            modelContext.insert(CloudStorageThresholdRecord(bytes: bytes))
+        }
+        try modelContext.save()
+        cloudStorageThresholdBytes = bytes
+    }
+
     /// Starts the soundfont library's `NSMetadataQuery`-backed discovery for both physical
     /// folders (see `SoundFontLocations`) — call once at launch, BEFORE
     /// `migrateSoundFontsFromFolderScanIfNeeded` (which needs `soundFontLibrary`'s folders
@@ -3319,6 +3395,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// tests exercise the whole soundfont pipeline against an isolated temp directory instead.
     public func startSoundFontLibrary(syncedFolder: URL?, localFolder: URL) {
         refreshSoundFonts()
+        refreshCloudStorageThreshold()
         soundFontLibrary.start(syncedFolder: syncedFolder, localFolder: localFolder, onChange: { [weak self] in self?.refreshSoundFonts() })
     }
 
@@ -3354,7 +3431,26 @@ public final class ImprovSession: @unchecked Sendable {
                         hash: hash, displayName: sourceURL.lastPathComponent, fileName: sourceURL.lastPathComponent,
                         fileSize: size, presets: presets, dateAdded: Date(), syncPreference: .synced
                     )
-                    modelContext.insert(SoundFontRecord(entry))
+                    // Check for an existing record by hash FIRST (same as `SoundFontLibrary
+                    // .upsert`, which every other insertion path already goes through) — this
+                    // branch used to insert unconditionally, which was the actual root cause of
+                    // real duplicate-hash corruption: two devices, each with the JamShack root
+                    // already pointed at (or containing) the synced folder, could both run this
+                    // one-time migration before CloudKit's own index sync had caught up between
+                    // them (the `soundFonts.isEmpty` guard above only checks what THIS device
+                    // has pulled down so far, not what actually exists elsewhere), each creating
+                    // its own separate row for the exact same file. CloudKit then dutifully
+                    // synced BOTH rows forever after, with no way to tell they were the same
+                    // soundfont — exactly the "two devices show different synced files, deletes
+                    // behave strangely" bug reported. See `SoundFontLibrary.deduplicate()` for
+                    // the one-time cleanup of rows already corrupted this way.
+                    if let existingRecord = try? modelContext.fetch(
+                        FetchDescriptor<SoundFontRecord>(predicate: #Predicate<SoundFontRecord> { $0.contentHash == hash })
+                    ).first {
+                        existingRecord.update(from: entry)
+                    } else {
+                        modelContext.insert(SoundFontRecord(entry))
+                    }
                 } else {
                     try soundFontLibrary.importFile(at: sourceURL, destination: .localOnly)
                 }

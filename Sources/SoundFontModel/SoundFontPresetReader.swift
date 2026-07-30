@@ -48,6 +48,42 @@ public enum SoundFontPresetReaderError: Error, Equatable {
     case truncatedData
 }
 
+/// Human-readable metadata from a `.sf2` file's own `INFO` chunk — bank name, the engineer/
+/// author, product, copyright/license terms, free-text comments, the software used to author
+/// it. Every field is independently optional: the SoundFont2 spec requires none of them beyond
+/// the version stamps this type doesn't bother surfacing (`ifil`/`iver`, internal/technical, not
+/// generally interesting to a user). See `SoundFontPresetReader.info(at:)`.
+public struct SoundFontInfo: Codable, Equatable, Sendable {
+    public var bankName: String?
+    public var soundEngine: String?
+    public var creationDate: String?
+    public var engineer: String?
+    public var product: String?
+    public var copyright: String?
+    public var comment: String?
+    public var software: String?
+
+    public init(
+        bankName: String? = nil, soundEngine: String? = nil, creationDate: String? = nil,
+        engineer: String? = nil, product: String? = nil, copyright: String? = nil,
+        comment: String? = nil, software: String? = nil
+    ) {
+        self.bankName = bankName
+        self.soundEngine = soundEngine
+        self.creationDate = creationDate
+        self.engineer = engineer
+        self.product = product
+        self.copyright = copyright
+        self.comment = comment
+        self.software = software
+    }
+
+    public var isEmpty: Bool {
+        bankName == nil && soundEngine == nil && creationDate == nil && engineer == nil
+            && product == nil && copyright == nil && comment == nil && software == nil
+    }
+}
+
 /// Reads the list of presets/instruments bundled inside a `.sf2` file by walking its RIFF
 /// structure down to the `pdta` LIST's `phdr` sub-chunk. Reads only chunk headers plus the
 /// (small — tens of bytes per preset) `phdr` chunk itself, never the bulk sample data (`sdta`,
@@ -60,6 +96,67 @@ public enum SoundFontPresetReader {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         return try presets(readingFrom: handle)
+    }
+
+    /// Reads the file's `INFO` chunk, if any — every field is best-effort: a `.dls`, a
+    /// corrupt/truncated `.sf2`, or an `.sf2` with no `INFO` chunk at all (technically allowed
+    /// by the spec, though rare in practice) all just return an all-`nil` `SoundFontInfo`
+    /// instead of throwing, since missing metadata is never a reason to refuse showing whatever
+    /// else is known about the file (name, size, sync state...). Independent of `presets(at:)`:
+    /// `INFO` and `pdta` are sibling top-level chunks, read in whatever order they appear.
+    public static func info(at url: URL) throws -> SoundFontInfo {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        return (try? info(readingFrom: handle)) ?? SoundFontInfo()
+    }
+
+    static func info(readingFrom handle: FileHandle) throws -> SoundFontInfo {
+        let riffHeader = try readExactly(handle, 12)
+        guard riffHeader[0..<4].elementsEqual(Array("RIFF".utf8)), riffHeader[8..<12].elementsEqual(Array("sfbk".utf8)) else {
+            return SoundFontInfo()
+        }
+        while let (id, size) = try readChunkHeader(handle) {
+            let sizeInt = Int(size)
+            if id == "LIST" {
+                let listType = try readExactly(handle, 4)
+                let remaining = sizeInt - 4
+                if String(decoding: listType, as: UTF8.self) == "INFO" {
+                    return try readInfoSubChunks(handle, remainingBytes: remaining)
+                }
+                try skip(handle, remaining)
+            } else {
+                try skip(handle, sizeInt)
+            }
+            if sizeInt % 2 == 1 { try skip(handle, 1) }
+        }
+        return SoundFontInfo()
+    }
+
+    private static func readInfoSubChunks(_ handle: FileHandle, remainingBytes: Int) throws -> SoundFontInfo {
+        var remaining = remainingBytes
+        var info = SoundFontInfo()
+        while remaining >= 8 {
+            guard let (id, size) = try readChunkHeader(handle) else { break }
+            remaining -= 8
+            let sizeInt = Int(size)
+            let bytes = try readExactly(handle, sizeInt)
+            remaining -= sizeInt
+            if sizeInt % 2 == 1 { try skip(handle, 1); remaining -= 1 }
+            let text = decodeCString(bytes[...])
+            guard !text.isEmpty else { continue }
+            switch id {
+            case "INAM": info.bankName = text
+            case "isng": info.soundEngine = text
+            case "ICRD": info.creationDate = text
+            case "IENG": info.engineer = text
+            case "IPRD": info.product = text
+            case "ICOP": info.copyright = text
+            case "ICMT": info.comment = text
+            case "ISFT": info.software = text
+            default: break
+            }
+        }
+        return info
     }
 
     static func presets(readingFrom handle: FileHandle) throws -> [SoundFontPreset] {

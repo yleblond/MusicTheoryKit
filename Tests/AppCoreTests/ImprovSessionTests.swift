@@ -2906,6 +2906,67 @@ final class ImprovSessionTests: XCTestCase {
         try session.setSoundFavorite(forHash: "hash-cello", isFavorite: false)
         XCTAssertEqual(session.soundEntries.count, 0)
     }
+
+    /// Same as `makeSoundFontTestSession` but with a (temp-directory-backed) synced folder too,
+    /// standing in for a real iCloud Drive container being available — needed to exercise
+    /// `setSoundFontSyncPreference`'s `.localOnly` -> `.synced` direction, which
+    /// `makeSoundFontTestSession`'s `syncedFolder: nil` can't (matches "no iCloud account").
+    private func makeSoundFontTestSessionWithSyncedFolder() throws -> (session: ImprovSession, localFolder: URL, syncedFolder: URL, sourceFolder: URL) {
+        let schema = Schema([SoundEntryRecord.self, SoundFontRecord.self])
+        let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
+        let session = ImprovSession(modelContainer: container)
+        let localFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let syncedFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let sourceFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: localFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: syncedFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: sourceFolder, withIntermediateDirectories: true)
+        session.startSoundFontLibrary(syncedFolder: syncedFolder, localFolder: localFolder)
+        return (session, localFolder, syncedFolder, sourceFolder)
+    }
+
+    func testSetSoundFontSyncPreferenceMovesTheFileBetweenFolders() throws {
+        let (session, localFolder, syncedFolder, sourceFolder) = try makeSoundFontTestSessionWithSyncedFolder()
+        try Data([0x01]).write(to: sourceFolder.appendingPathComponent("Bank.sf2"))
+        let imported = try session.importSoundFont(at: sourceFolder.appendingPathComponent("Bank.sf2"), syncPreference: .localOnly)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: localFolder.appendingPathComponent("Bank.sf2").path))
+
+        let synced = try session.setSoundFontSyncPreference(hash: imported.hash, to: .synced)
+        XCTAssertEqual(synced.syncPreference, .synced)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: localFolder.appendingPathComponent("Bank.sf2").path), "moved out of local")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: syncedFolder.appendingPathComponent("Bank.sf2").path), "moved into synced")
+        XCTAssertEqual(session.soundFonts.first { $0.hash == imported.hash }?.syncPreference, .synced)
+
+        let backToLocal = try session.setSoundFontSyncPreference(hash: imported.hash, to: .localOnly)
+        XCTAssertEqual(backToLocal.syncPreference, .localOnly)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: localFolder.appendingPathComponent("Bank.sf2").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: syncedFolder.appendingPathComponent("Bank.sf2").path))
+    }
+
+    func testSetSoundFontSyncPreferenceIsANoOpWhenAlreadyAtThatPreference() throws {
+        let (session, _, _, sourceFolder) = try makeSoundFontTestSessionWithSyncedFolder()
+        try Data([0x01]).write(to: sourceFolder.appendingPathComponent("Bank.sf2"))
+        let imported = try session.importSoundFont(at: sourceFolder.appendingPathComponent("Bank.sf2"), syncPreference: .localOnly)
+
+        let result = try session.setSoundFontSyncPreference(hash: imported.hash, to: .localOnly)
+        XCTAssertEqual(result, imported)
+    }
+
+    func testSetSoundFontSyncPreferenceThrowsWhenTheSyncedFileIsntDownloadedHere() throws {
+        let (session, _, syncedFolder, sourceFolder) = try makeSoundFontTestSessionWithSyncedFolder()
+        try Data([0x01]).write(to: sourceFolder.appendingPathComponent("Bank.sf2"))
+        let imported = try session.importSoundFont(at: sourceFolder.appendingPathComponent("Bank.sf2"), syncPreference: .synced)
+        XCTAssertEqual(imported.syncPreference, .synced)
+
+        // Simulate the file being evicted/not-yet-downloaded on this device (a real not-yet-
+        // downloaded iCloud item behaves the same way from `FileManager`'s point of view: no
+        // regular file at that path) — the index still knows about it, only the bytes are gone.
+        try FileManager.default.removeItem(at: syncedFolder.appendingPathComponent("Bank.sf2"))
+
+        XCTAssertThrowsError(try session.setSoundFontSyncPreference(hash: imported.hash, to: .localOnly)) { error in
+            XCTAssertEqual(error as? SoundFontLibraryError, .notDownloadedOnThisDevice)
+        }
+    }
 }
 
 extension ImprovSession.SessionError: Equatable {

@@ -67,6 +67,45 @@ final class SoundFontPresetReaderTests: XCTestCase {
         }
     }
 
+    func testReadsInfoChunkTextFields() throws {
+        var data = riffHeader(formType: "sfbk")
+        let infoBody = stringChunk(id: "INAM", text: "General MIDI Bank")
+            + stringChunk(id: "ICOP", text: "Copyright 2020 Someone")
+            + stringChunk(id: "IENG", text: "Jane Doe")
+            + stringChunk(id: "ICMT", text: "A test bank")
+            + stringChunk(id: "ISFT", text: "Polyphone")
+        data += listChunk(type: "INFO", body: infoBody)
+        data += listChunk(type: "pdta", body: chunk(id: "phdr", body: phdrRecords(presets: [("Solo", program: 0, bank: 0)])))
+        let url = try writeTempFile(data)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let info = try SoundFontPresetReader.info(at: url)
+
+        XCTAssertEqual(info.bankName, "General MIDI Bank")
+        XCTAssertEqual(info.copyright, "Copyright 2020 Someone")
+        XCTAssertEqual(info.engineer, "Jane Doe")
+        XCTAssertEqual(info.comment, "A test bank")
+        XCTAssertEqual(info.software, "Polyphone")
+        XCTAssertNil(info.soundEngine, "isng wasn't included in this fixture")
+    }
+
+    func testInfoReturnsEmptyWhenNoInfoChunkIsPresent() throws {
+        let data = makeMinimalSoundFont(presets: [("Solo", program: 0, bank: 0)])
+        let url = try writeTempFile(data)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        XCTAssertTrue(try SoundFontPresetReader.info(at: url).isEmpty)
+    }
+
+    func testInfoReturnsEmptyForANonSoundFontFileRatherThanThrowing() throws {
+        let url = try writeTempFile(Array("not a sound font".utf8))
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        // Unlike `presets(at:)`, metadata is never important enough to justify refusing to show
+        // whatever else is known about a file — a bad format degrades to "no metadata", not an error.
+        XCTAssertTrue(try SoundFontPresetReader.info(at: url).isEmpty)
+    }
+
     // MARK: - Synthetic SF2 byte builders
 
     private func makeMinimalSoundFont(presets: [(String, program: UInt16, bank: UInt16)]) -> [UInt8] {
@@ -89,6 +128,12 @@ final class SoundFontPresetReaderTests: XCTestCase {
         var bytes = Array(id.utf8) + uint32LE(UInt32(body.count)) + body
         if body.count % 2 == 1 { bytes.append(0) } // word-align, like a real RIFF writer would
         return bytes
+    }
+
+    private func stringChunk(id: String, text: String) -> [UInt8] {
+        var body = Array(text.utf8)
+        body.append(0) // null-terminated, like every real INFO text sub-chunk
+        return chunk(id: id, body: body)
     }
 
     private func phdrRecords(presets: [(String, program: UInt16, bank: UInt16)]) -> [UInt8] {

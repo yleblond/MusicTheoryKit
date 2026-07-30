@@ -298,7 +298,20 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHeadingFichiersSoundfont, appFormatFichiersCompte
     case appButtonTelecharger, appLabelSynchronise, appLabelLocalUniquement, appLabelNonTelecharge
     case appHeadingProfilStockage, appOptionProfilEconome, appOptionProfilStandard, appOptionProfilGenereux
-    case appFormatEspaceDisqueLibre
+    case appTabBibliotheque, appTabFavoris
+    case appAlertSupprimerSoundFont, appHintSupprimerSoundFont, appPlaceholderAucunFavori
+    case appHintSyncBadgeToggle
+    case appToggleFichierPartage, appButtonFermer
+    case appLabelNomFichier, appLabelTaille, appLabelAjouteLe, appLabelOrigine
+    case appOptionOrigineImporte, appOptionOrigineCuree, appLabelEtiquettes
+    case appHeadingMetadonneesFichier, appLabelBanque, appLabelMoteurSonore, appLabelDateCreationFichier
+    case appLabelIngenieur, appLabelProduit, appLabelCopyright, appLabelCommentaire, appLabelLogiciel
+    case appPlaceholderAucuneMetadonnee, appHintTelechargerPourMetadonnees
+    case appHeadingUtilisationStockage, appLabelStockageLocal, appLabelStockageICloud
+    case appLabelAutresFichiers, appLabelEspaceLibre, appHintPasDeQuotaICloud
+    case appHintProfilStockageExplication
+    case appLabelSeuilLocal, appLabelSeuilICloud, appUnitGo, appHintSeuilDepasse
+    case appButtonNettoyerBibliotheque, appAlertNettoyerBibliotheque, appHintNettoyerBibliotheque
 
     // MARK: - App: JamShack > Clavier ordinateur
     case appTabClavierOrdinateur, appToggleClavierOrdinateurActif, appHintClavierOrdinateurActif
