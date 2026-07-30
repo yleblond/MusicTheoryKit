@@ -46,11 +46,13 @@ public struct SoundFontEntry: Codable, Equatable, Sendable, Identifiable {
 
 /// Where a `SoundFontEntry` came from — a curated soundfont is otherwise a perfectly ordinary
 /// imported one (same file layout, same import code path via `SoundFontLibrary.importFile`);
-/// the only thing worth remembering is where to re-download it from if the local file ever
-/// disappears (see `CuratedSoundFontCatalog`).
+/// what's worth remembering is where to re-download it from if the local file ever disappears,
+/// and which catalog entry/version it was installed from, so a later catalog update (a new app
+/// release changing `version` for the same `catalogEntryId`) can be surfaced as "update
+/// available" instead of silently going unnoticed (see `CuratedSoundFontCatalog`).
 public enum SoundFontOrigin: Codable, Equatable, Sendable {
     case userImported
-    case curated(sourceURL: URL)
+    case curated(sourceURL: URL, catalogEntryId: String, catalogVersion: String)
 }
 
 /// Physical placement choice for a soundfont's bytes — `synced` means "lives in the app's

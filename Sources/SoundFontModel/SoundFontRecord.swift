@@ -31,6 +31,11 @@ public final class SoundFontRecord {
     /// side field" pattern as `MIDIDeviceIconRecord`'s own fallback fields.
     public var originKind: String = "userImported"
     public var curatedSourceURLString: String?
+    /// The catalog entry `id`/`version` this was installed from — `nil` for anything predating
+    /// this pair of fields (safe: `originKind == "curated"` alone still resolves a usable
+    /// `.curated` origin, just without update-detection support for that one row).
+    public var curatedCatalogEntryId: String?
+    public var curatedCatalogVersion: String?
     /// Raw `SoundFontSyncPreference` value ("synced" | "localOnly").
     public var syncPreference: String = "localOnly"
 
@@ -42,15 +47,23 @@ public final class SoundFontRecord {
         encodedPresets = (try? JSONEncoder().encode(entry.presets)) ?? Data()
         dateAdded = entry.dateAdded
         userTags = entry.userTags
-        switch entry.origin {
+        applyOrigin(entry.origin)
+        syncPreference = entry.syncPreference.rawValue
+    }
+
+    private func applyOrigin(_ origin: SoundFontOrigin) {
+        switch origin {
         case .userImported:
             originKind = "userImported"
             curatedSourceURLString = nil
-        case .curated(let sourceURL):
+            curatedCatalogEntryId = nil
+            curatedCatalogVersion = nil
+        case .curated(let sourceURL, let catalogEntryId, let catalogVersion):
             originKind = "curated"
             curatedSourceURLString = sourceURL.absoluteString
+            curatedCatalogEntryId = catalogEntryId
+            curatedCatalogVersion = catalogVersion
         }
-        syncPreference = entry.syncPreference.rawValue
     }
 
     /// `nil` only if `encodedPresets` somehow fails to decode (should never happen for a row
@@ -60,7 +73,11 @@ public final class SoundFontRecord {
         guard let presets = try? JSONDecoder().decode([SoundFontPreset].self, from: encodedPresets) else { return nil }
         let origin: SoundFontOrigin
         if originKind == "curated", let urlString = curatedSourceURLString, let url = URL(string: urlString) {
-            origin = .curated(sourceURL: url)
+            origin = .curated(
+                sourceURL: url,
+                catalogEntryId: curatedCatalogEntryId ?? "",
+                catalogVersion: curatedCatalogVersion ?? ""
+            )
         } else {
             origin = .userImported
         }
@@ -80,14 +97,7 @@ public final class SoundFontRecord {
         fileSize = entry.fileSize
         encodedPresets = (try? JSONEncoder().encode(entry.presets)) ?? encodedPresets
         userTags = entry.userTags
-        switch entry.origin {
-        case .userImported:
-            originKind = "userImported"
-            curatedSourceURLString = nil
-        case .curated(let sourceURL):
-            originKind = "curated"
-            curatedSourceURLString = sourceURL.absoluteString
-        }
+        applyOrigin(entry.origin)
         syncPreference = entry.syncPreference.rawValue
     }
 }

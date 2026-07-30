@@ -298,7 +298,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHeadingFichiersSoundfont, appFormatFichiersCompte
     case appButtonTelecharger, appLabelSynchronise, appLabelLocalUniquement, appLabelNonTelecharge
     case appHeadingProfilStockage, appOptionProfilEconome, appOptionProfilStandard, appOptionProfilGenereux
-    case appTabBibliotheque, appTabFavoris
+    case appTabBibliotheque, appTabFavoris, appTabStockage
     case appAlertSupprimerSoundFont, appHintSupprimerSoundFont, appPlaceholderAucunFavori
     case appHintSyncBadgeToggle
     case appToggleFichierPartage, appButtonFermer
@@ -312,6 +312,16 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHintProfilStockageExplication
     case appLabelSeuilLocal, appLabelSeuilICloud, appUnitGo, appHintSeuilDepasse
     case appButtonNettoyerBibliotheque, appAlertNettoyerBibliotheque, appHintNettoyerBibliotheque
+
+    // MARK: - App: JamShack > Sons > Catalogue de banques offertes
+    case appButtonParcourirCatalogue, appHeadingCatalogue, appButtonInstaller
+    case appFormatCatalogueParAuteur, appHintCatalogueImportManuelAussi
+    case appButtonEnSavoirPlus, appLabelAttributionRequise, appLabelLicence
+    case appLabelCatalogueMiseAJourDisponible, appButtonMettreAJour
+    case appPlaceholderRechercherCatalogue, appLabelRecommande
+    case appHeadingCredits, appPlaceholderAucunCredit, appHintCredits
+    case appPlaceholderAucuneEntreeCatalogue
+    case appButtonAbandonner, appFormatTelechargementPourcent, appLabelInstallationEnCours
 
     // MARK: - App: JamShack > Clavier ordinateur
     case appTabClavierOrdinateur, appToggleClavierOrdinateurActif, appHintClavierOrdinateurActif

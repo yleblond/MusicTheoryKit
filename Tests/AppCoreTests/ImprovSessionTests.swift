@@ -2792,6 +2792,43 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertTrue(reloaded.isSoundFavorite(forHash: piano.hash))
     }
 
+    func testCatalogUpdatesDetectsAnOlderInstalledVersion() throws {
+        let (session, _, _, sourceFolder) = try makeSoundFontTestSession()
+        try Data([0x09]).write(to: sourceFolder.appendingPathComponent("Old.sf2"))
+        let installed = try session.importSoundFont(
+            at: sourceFolder.appendingPathComponent("Old.sf2"), syncPreference: .localOnly,
+            origin: .curated(sourceURL: URL(string: "https://example.com/old.sf2")!, catalogEntryId: "musescore-general", catalogVersion: "0.1")
+        )
+
+        let updates = session.catalogUpdates
+        XCTAssertEqual(updates.count, 1)
+        XCTAssertEqual(updates.first?.installed.hash, installed.hash)
+        XCTAssertEqual(updates.first?.latest.id, "musescore-general")
+    }
+
+    func testCatalogUpdatesIsEmptyWhenInstalledVersionMatchesTheCatalog() throws {
+        let (session, _, _, sourceFolder) = try makeSoundFontTestSession()
+        guard let latest = CuratedSoundFontCatalog.entries.first(where: { $0.id == "musescore-general" }) else {
+            XCTFail("expected the musescore-general catalog entry to exist")
+            return
+        }
+        try Data([0x0A]).write(to: sourceFolder.appendingPathComponent("Current.sf2"))
+        _ = try session.importSoundFont(
+            at: sourceFolder.appendingPathComponent("Current.sf2"), syncPreference: .localOnly,
+            origin: .curated(sourceURL: latest.downloadURL, catalogEntryId: latest.id, catalogVersion: latest.version)
+        )
+
+        XCTAssertTrue(session.catalogUpdates.isEmpty)
+    }
+
+    func testCatalogUpdatesIgnoresUserImportedSoundfonts() throws {
+        let (session, _, _, sourceFolder) = try makeSoundFontTestSession()
+        try Data([0x0B]).write(to: sourceFolder.appendingPathComponent("Mine.sf2"))
+        _ = try session.importSoundFont(at: sourceFolder.appendingPathComponent("Mine.sf2"), syncPreference: .localOnly)
+
+        XCTAssertTrue(session.catalogUpdates.isEmpty)
+    }
+
     func testFavoriteSoundsFiltersToFavoritesOnly() throws {
         let (session, _, localFolder, sourceFolder) = try makeSoundFontTestSession()
         try Data().write(to: sourceFolder.appendingPathComponent("Piano.sf2"))

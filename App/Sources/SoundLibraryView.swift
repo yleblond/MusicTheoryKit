@@ -23,6 +23,10 @@ import SoundFontModel
 /// MIDI bank), and a favorite/alias/test always applies to one SPECIFIC sound within a file,
 /// never to the file as a whole — so the left column picks the FILE, the right column picks
 /// (and curates) one of ITS sounds.
+///
+/// Storage-profile/threshold management and the destructive "Nettoyer la bibliothèque" reset
+/// live in the sibling "Stockage" tab (`SoundStorageView`), not here — this screen is scoped to
+/// browsing/importing/curating files.
 struct SoundLibraryView: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
@@ -37,14 +41,7 @@ struct SoundLibraryView: View {
     // MARK: - Import
     @State private var showFileImporter = false
     @State private var isImporting = false
-
-    // MARK: - Storage profile
-    @State private var storageProfile: DeviceStorageProfile = DeviceStorageProfile.current
-    /// Editable "Go" text for `LocalStorageThreshold.bytes`/`session.cloudStorageThresholdBytes`
-    /// — kept as free-form text (not bound straight to the byte value) so a half-typed number
-    /// isn't clobbered by every re-render; committed to the real setting `onSubmit`.
-    @State private var localThresholdText = ""
-    @State private var cloudThresholdText = ""
+    @State private var showCatalog = false
 
     // MARK: - File/sound navigation
     @State private var selectedHash: String?
@@ -64,10 +61,6 @@ struct SoundLibraryView: View {
     @State private var changingSyncPreferenceHash: String?
     /// The entry the info sheet is showing, if any (see `SoundFontInfoSheet`).
     @State private var infoEntry: SoundFontEntry?
-
-    // MARK: - Clean library
-    @State private var showCleanConfirmation = false
-    @State private var isCleaning = false
 
     /// One row in the right-hand "sounds of the selected file" column — either a real preset
     /// read from a multi-preset `.sf2` (see `SoundFontPresetReader`), or the single stand-in
@@ -186,31 +179,8 @@ struct SoundLibraryView: View {
         .sheet(item: $infoEntry) { entry in
             SoundFontInfoSheet(session: session, entry: entry, isDownloaded: session.soundFontPath(forHash: entry.hash) != nil)
         }
-        .alert(
-            L10n.string(.appAlertNettoyerBibliotheque, session.currentLanguage),
-            isPresented: $showCleanConfirmation
-        ) {
-            Button(L10n.string(.appButtonNettoyerBibliotheque, session.currentLanguage), role: .destructive) {
-                cleanLibrary()
-            }
-            Button(L10n.string(.appAnnuler, session.currentLanguage), role: .cancel) {}
-        } message: {
-            Text(L10n.string(.appHintNettoyerBibliotheque, session.currentLanguage))
-        }
-    }
-
-    /// Wipes the entire soundfont library (see `ImprovSession.wipeSoundFontLibrary()`) —
-    /// deliberately NOT `Task.detached`: same reasoning as `importFile`/`deleteSoundFont`/
-    /// `toggleSyncPreference` above, this touches `modelContext` directly.
-    private func cleanLibrary() {
-        guard !isCleaning else { return }
-        isCleaning = true
-        selectedHash = nil
-        screen = .list
-        Task {
-            await Task.yield()
-            defer { isCleaning = false }
-            session.wipeSoundFontLibrary()
+        .sheet(isPresented: $showCatalog) {
+            SoundFontCatalogView(session: session)
         }
     }
 
@@ -252,16 +222,33 @@ struct SoundLibraryView: View {
     @ViewBuilder
     private var filesColumnContent: some View {
         Section {
-            Button {
-                showFileImporter = true
-            } label: {
-                if isImporting {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Label(L10n.string(.appButtonImporter, session.currentLanguage), systemImage: "square.and.arrow.down")
+            HStack {
+                Button {
+                    showFileImporter = true
+                } label: {
+                    if isImporting {
+                        ProgressView().controlSize(.small).frame(maxWidth: .infinity)
+                    } else {
+                        Label(L10n.string(.appButtonImporter, session.currentLanguage), systemImage: "square.and.arrow.down")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .disabled(isImporting)
+
+                // Same hierarchical level as "Importer", never behind it — the catalog is a
+                // convenience that downloads a file the app already knows about, not a
+                // replacement for bringing your own (see `SoundFontCatalogView`'s own doc
+                // comment). Side by side with "Importer" (equal width) rather than stacked.
+                Button {
+                    showCatalog = true
+                } label: {
+                    Label(L10n.string(.appButtonParcourirCatalogue, session.currentLanguage), systemImage: "square.grid.2x2")
+                        .frame(maxWidth: .infinity)
                 }
             }
-            .disabled(isImporting)
+            #if os(macOS)
+            .buttonStyle(.bordered)
+            #endif
         } header: {
             Text(L10n.string(.appHeadingFichiersSoundfont, session.currentLanguage))
         }
@@ -274,8 +261,6 @@ struct SoundLibraryView: View {
         } else {
             Section {
                 TextField(L10n.string(.appPlaceholderRechercherFichier, session.currentLanguage), text: $fileSearchText)
-            }
-            Section {
                 ForEach(filteredSoundFonts) { entry in
                     fileRow(entry)
                 }
@@ -285,132 +270,6 @@ struct SoundLibraryView: View {
                 Text(L10n.string(.appHintSyncBadgeToggle, session.currentLanguage))
             }
         }
-
-        Section {
-            Picker(L10n.string(.appHeadingProfilStockage, session.currentLanguage), selection: $storageProfile) {
-                Text(L10n.string(.appOptionProfilEconome, session.currentLanguage)).tag(DeviceStorageProfile.economical)
-                Text(L10n.string(.appOptionProfilStandard, session.currentLanguage)).tag(DeviceStorageProfile.standard)
-                Text(L10n.string(.appOptionProfilGenereux, session.currentLanguage)).tag(DeviceStorageProfile.generous)
-            }
-            .onChange(of: storageProfile) { _, newValue in DeviceStorageProfile.current = newValue }
-        } header: {
-            Text(L10n.string(.appHeadingProfilStockage, session.currentLanguage))
-        } footer: {
-            Text(L10n.string(.appHintProfilStockageExplication, session.currentLanguage))
-        }
-
-        Section {
-            HStack {
-                Text(L10n.string(.appLabelStockageLocal, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                thresholdField(L10n.string(.appLabelSeuilLocal, session.currentLanguage), text: $localThresholdText, onCommit: commitLocalThreshold)
-            }
-            StorageUsageBar(segments: localUsage.segments, thresholdFraction: localUsage.thresholdFraction, language: session.currentLanguage)
-            if localUsage.thresholdFraction != nil {
-                Text(L10n.string(.appHintSeuilDepasse, session.currentLanguage)).font(.caption2).foregroundStyle(.orange)
-            }
-
-            HStack {
-                Text(L10n.string(.appLabelStockageICloud, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                thresholdField(L10n.string(.appLabelSeuilICloud, session.currentLanguage), text: $cloudThresholdText, onCommit: commitCloudThreshold)
-            }
-            .padding(.top, 6)
-            if syncedUsage.segments.isEmpty {
-                Text(L10n.string(.appLabelLocalUniquement, session.currentLanguage)).font(.caption2).foregroundStyle(.secondary)
-            } else {
-                StorageUsageBar(segments: syncedUsage.segments, thresholdFraction: syncedUsage.thresholdFraction, language: session.currentLanguage)
-                if syncedUsage.thresholdFraction != nil {
-                    Text(L10n.string(.appHintSeuilDepasse, session.currentLanguage)).font(.caption2).foregroundStyle(.orange)
-                }
-            }
-        } header: {
-            Text(L10n.string(.appHeadingUtilisationStockage, session.currentLanguage))
-        } footer: {
-            Text(L10n.string(.appHintPasDeQuotaICloud, session.currentLanguage))
-        }
-        .onAppear {
-            localThresholdText = gbText(fromBytes: LocalStorageThreshold.bytes)
-            cloudThresholdText = gbText(fromBytes: session.cloudStorageThresholdBytes)
-        }
-
-        Section {
-            Button(role: .destructive) {
-                showCleanConfirmation = true
-            } label: {
-                if isCleaning {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Label(L10n.string(.appButtonNettoyerBibliotheque, session.currentLanguage), systemImage: "trash.fill")
-                }
-            }
-            .disabled(isCleaning)
-        } footer: {
-            Text(L10n.string(.appHintNettoyerBibliotheque, session.currentLanguage))
-        }
-    }
-
-    @ViewBuilder
-    private func thresholdField(_ label: String, text: Binding<String>, onCommit: @escaping () -> Void) -> some View {
-        HStack(spacing: 4) {
-            TextField(label, text: text, onCommit: onCommit)
-                #if os(iOS)
-                .keyboardType(.decimalPad)
-                #endif
-                .frame(width: 50)
-                #if os(macOS)
-                .textFieldStyle(.roundedBorder)
-                #endif
-            Text(L10n.string(.appUnitGo, session.currentLanguage)).font(.caption2).foregroundStyle(.secondary)
-        }
-    }
-
-    private func gbText(fromBytes bytes: Int64?) -> String {
-        guard let bytes, bytes > 0 else { return "" }
-        return String(format: "%.1f", Double(bytes) / 1_000_000_000)
-    }
-
-    private func bytes(fromGBText text: String) -> Int64? {
-        guard let value = Double(text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")), value > 0 else { return nil }
-        return Int64(value * 1_000_000_000)
-    }
-
-    private func commitLocalThreshold() {
-        LocalStorageThreshold.bytes = bytes(fromGBText: localThresholdText)
-        localThresholdText = gbText(fromBytes: LocalStorageThreshold.bytes)
-    }
-
-    private func commitCloudThreshold() {
-        do {
-            try session.setCloudStorageThresholdBytes(bytes(fromGBText: cloudThresholdText))
-            cloudThresholdText = gbText(fromBytes: session.cloudStorageThresholdBytes)
-        } catch {
-            actionError = "\(error)"
-        }
-    }
-
-    /// Every soundfont actually resident on THIS device's disk right now — local-only files
-    /// (always resident) plus any `.synced` file that happens to be downloaded here — since
-    /// that's what genuinely counts against this device's own free space, regardless of where
-    /// each file's "home" is considered to be.
-    private var localUsage: (segments: [StorageSegment], thresholdFraction: Double?) {
-        let resident = session.soundFonts.filter { session.soundFontPath(forHash: $0.hash) != nil }
-        return StorageSegment.build(
-            from: resident, threshold: LocalStorageThreshold.bytes,
-            deviceFreeSpace: DeviceFreeSpace.availableBytes(), language: session.currentLanguage
-        )
-    }
-
-    /// Every `.synced` soundfont regardless of download state on this device — this is what
-    /// actually occupies space in the app's iCloud Drive container (hence every device signed
-    /// into the account), not just what happens to be downloaded here right now. No free-space
-    /// segment unless a threshold is set: Apple exposes no API to read the account's remaining
-    /// iCloud quota (see `appHintPasDeQuotaICloud`).
-    private var syncedUsage: (segments: [StorageSegment], thresholdFraction: Double?) {
-        let synced = session.soundFonts.filter { $0.syncPreference == .synced }
-        return StorageSegment.build(
-            from: synced, threshold: session.cloudStorageThresholdBytes, deviceFreeSpace: nil, language: session.currentLanguage
-        )
     }
 
     @ViewBuilder

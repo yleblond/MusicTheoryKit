@@ -24,7 +24,7 @@ struct SoundsView: View {
     /// leaving for another tab.
     let isActive: Bool
 
-    private enum SubTab: Hashable { case library, favorites }
+    private enum SubTab: Hashable { case library, favorites, storage }
 
     @State private var subTab: SubTab = .library
     /// `@State`, not a plain `let` — this view struct can be recreated by its parent (e.g. on
@@ -45,6 +45,7 @@ struct SoundsView: View {
             Picker("", selection: $subTab) {
                 Text(L10n.string(.appTabBibliotheque, session.currentLanguage)).tag(SubTab.library)
                 Text(L10n.string(.appTabFavoris, session.currentLanguage)).tag(SubTab.favorites)
+                Text(L10n.string(.appTabStockage, session.currentLanguage)).tag(SubTab.storage)
             }
             .labelsHidden()
             .pickerStyle(.segmented)
@@ -55,6 +56,8 @@ struct SoundsView: View {
                 SoundLibraryView(session: session, bridge: bridge, controller: controller)
             case .favorites:
                 FavoriteSoundsView(session: session, bridge: bridge, controller: controller)
+            case .storage:
+                SoundStorageView(session: session)
             }
         }
         // `initial: true` covers the very first appearance too (this screen's whole purpose is

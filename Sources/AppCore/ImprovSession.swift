@@ -3481,15 +3481,65 @@ public final class ImprovSession: @unchecked Sendable {
     /// only difference, letting a future re-download button work if the local copy ever
     /// disappears (the reconciliation in `SoundFontLibrary` never prunes a `.curated` entry just
     /// because its file is temporarily missing). Always imported `.localOnly`: nothing about an
-    /// offered soundfont implies the user wants to spend their own iCloud quota syncing it.
+    /// offered soundfont implies the user wants to spend their own iCloud quota syncing it —
+    /// sharing it afterward is the same one-tap "Partagé" toggle as any other soundfont.
+    ///
+    /// Verifies the freshly-imported file's own hash (computed by `importFile` itself while
+    /// copying it into place) against `entry.sha256` — the catalog's pinned expectation from
+    /// curation time. A mismatch means either a corrupted transfer or the origin silently
+    /// replacing the file at that URL since curation; either way the newly-created record and
+    /// file are rolled back and `.integrityCheckFailed` is thrown rather than ever indexing a
+    /// bank that doesn't match what was promised. Because the catalog itself is embedded in the
+    /// app binary (see `CuratedSoundFontCatalog`'s own doc comment), a mismatch that turns out to be a
+    /// genuinely-updated origin file can't self-heal here — it needs a new catalog entry
+    /// (new `sha256`/`version`) shipped in a future app release.
+    ///
+    /// The only `async` entry point on this class — deliberately isolated to this one feature
+    /// rather than making the rest of `ImprovSession` `async` too (see `modelContext`'s own doc
+    /// comment for why the class otherwise stays synchronous). `CuratedSoundFontCatalog.download`
+    /// is itself genuinely non-blocking (delegate + continuation, no thread-blocking wait — an
+    /// earlier semaphore-based version froze the whole UI, main thread included, for the
+    /// download's entire duration when called from a plain, non-detached `Task`, since such a
+    /// `Task` inherits its creator's actor and a blocking call on it blocks that actor's real
+    /// thread). Awaiting it here resumes the rest of this function back on whatever actor called
+    /// `installCuratedSoundFont` in the first place (same "await resumes on the awaiting
+    /// context's actor" rule this codebase already relies on for `Task { await Task.yield(); … }`
+    /// elsewhere) — which is what makes it safe for `importSoundFont` below to touch
+    /// `modelContext` right after. `onProgress` is called on the main actor as the transfer
+    /// progresses (see `CuratedSoundFontCatalog.download`'s own doc comment) — a no-op default
+    /// for callers (tests, a future CLI) that don't need progress UI.
     @discardableResult
-    public func installCuratedSoundFont(_ descriptor: CuratedSoundFontDescriptor) throws -> SoundFontEntry {
-        let downloadedURL = try CuratedSoundFontCatalog.download(descriptor)
+    public func installCuratedSoundFont(
+        _ entry: SoundFontCatalogEntry, onProgress: @escaping @MainActor (Double) -> Void = { _ in }
+    ) async throws -> SoundFontEntry {
+        let downloadedURL = try await CuratedSoundFontCatalog.download(entry, onProgress: onProgress)
         defer { try? FileManager.default.removeItem(at: downloadedURL) }
-        return try importSoundFont(
-            at: downloadedURL, syncPreference: .localOnly,
-            displayName: descriptor.displayName, origin: .curated(sourceURL: descriptor.downloadURL)
+        let installed = try importSoundFont(
+            at: downloadedURL, syncPreference: .localOnly, displayName: entry.displayName,
+            origin: .curated(sourceURL: entry.downloadURL, catalogEntryId: entry.id, catalogVersion: entry.version)
         )
+        guard installed.hash.caseInsensitiveCompare(entry.sha256) == .orderedSame else {
+            deleteSoundFont(hash: installed.hash)
+            throw CuratedSoundFontCatalogError.integrityCheckFailed
+        }
+        return installed
+    }
+
+    /// Every installed `.curated` soundfont whose catalog entry has since moved to a newer
+    /// `version` than what was installed — the "update available" signal from
+    /// `KnowledgeBase/SoundfontMgt/SPEC-catalogue-soundfonts.md` §9. Comparison is purely by
+    /// `id`+`version` string equality (no semantic version parsing): the catalog is embedded in
+    /// the app binary, so "a newer version exists" always means "this app build's catalog
+    /// disagrees with what was installed," never a live server telling a possibly-older client
+    /// something it can't act on yet.
+    public var catalogUpdates: [(installed: SoundFontEntry, latest: SoundFontCatalogEntry)] {
+        soundFonts.compactMap { installed in
+            guard case .curated(_, let catalogEntryId, let catalogVersion) = installed.origin,
+                  let latest = CuratedSoundFontCatalog.entries.first(where: { $0.id == catalogEntryId }),
+                  latest.version != catalogVersion
+            else { return nil }
+            return (installed, latest)
+        }
     }
 
     /// The absolute path to a soundfont's bytes on THIS device, if they're actually present —
