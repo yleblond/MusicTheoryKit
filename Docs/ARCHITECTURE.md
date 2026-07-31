@@ -1838,9 +1838,21 @@ son retrait est une décision distincte, pas encore prise.
   parsing d'en-têtes/`Content-Length`/en-têtes additionnels de réponse. Vérifié aussi via un
   vrai `xcodebuild` du scheme `JamShackApp_macOS` (l'UI du panneau "I.A." vit dans le projet
   Xcode, hors SwiftPM).
-- **Pas encore vérifié** : une connexion bout-en-bout avec une vraie installation de Claude
-  Desktop (le pont a été validé par test contre un vrai serveur HTTP, mais jamais encore lancé
-  par Claude Desktop lui-même en conditions réelles).
+- **Vérifié en conditions réelles (2026-07-31)** contre une vraie installation de Claude
+  Desktop de l'utilisateur — l'interrogation de l'app fonctionne effectivement. Un vrai
+  incident de démarrage a été trouvé et corrigé au passage : Claude Desktop lance le pont et
+  envoie son handshake `initialize` dès SON PROPRE démarrage, ce qui gagne régulièrement la
+  course contre JamShack.app encore en train de démarrer (charge scènes/guides, puis atteint
+  enfin `startMCPServerIfEnabled()`) — la première tentative HTTP du pont échouait alors
+  (port pas encore lié), remontant en "Could not attach to MCP server jamshack" côté Claude
+  Desktop, même si l'interrogation suivante, une fois JamShack réellement démarré, fonctionnait
+  déjà. `JamShackMCPBridge` retente désormais chaque requête jusqu'à 20 fois/250ms (5s au
+  total) avant d'abandonner (`postWithRetry` dans `main.swift`) — couvre un démarrage à froid
+  normal sans faire attendre Claude Desktop indéfiniment si JamShack n'est vraiment pas lancé.
+  **Rappel pratique** : `.build/release/JamShackMCPBridge` (le binaire que Claude Desktop lance
+  réellement, via `claude_desktop_config.json`) doit être recompilé
+  (`swift build -c release --product JamShackMCPBridge`) après toute modification de ce
+  fichier — `swift build`/`swift test` seuls ne touchent que `.build/debug/`.
 
 ## JamShack — l'interface en ligne de commande
 

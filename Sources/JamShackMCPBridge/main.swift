@@ -44,15 +44,17 @@ func errorResponseLine(id: Any, message: String) -> String {
     return text
 }
 
-while let line = readLine(strippingNewline: true) {
-    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { continue }
-
+/// One POST attempt against the JamShack MCP endpoint — `error` is only ever a transport-level
+/// failure (connection refused, host down, etc.), never a non-2xx HTTP status, since
+/// `URLSession` reports those as a normal (if unhappy) response, not an `error`. That's exactly
+/// the class of failure `postWithRetry` below retries: "nothing is listening there (yet)", not
+/// "something answered badly".
+func postOnce(_ body: Data) -> (data: Data?, error: Error?) {
     var request = URLRequest(url: mcpURL)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("application/json", forHTTPHeaderField: "Accept")
-    request.httpBody = Data(trimmed.utf8)
+    request.httpBody = body
 
     let semaphore = DispatchSemaphore(value: 0)
     nonisolated(unsafe) var responseData: Data?
@@ -63,6 +65,34 @@ while let line = readLine(strippingNewline: true) {
         semaphore.signal()
     }.resume()
     semaphore.wait()
+    return (responseData, requestError)
+}
+
+/// Retries a connection failure for a few seconds before giving up — confirmed empirically:
+/// Claude Desktop spawns this bridge and immediately sends its `initialize` handshake at
+/// Claude Desktop's OWN launch, which routinely wins the race against JamShack.app still
+/// starting up (loading scenes/guides, then finally reaching `startMCPServerIfEnabled()` — see
+/// `ContentView.swift`) and hasn't bound the port yet. A single failed attempt there used to
+/// surface as "Could not attach to MCP server jamshack" even though the very next real query,
+/// moments later once JamShack has finished launching, worked fine. 20 attempts / 250ms apart
+/// (5s total) comfortably covers a cold app launch without making a genuinely-not-running
+/// JamShack hang Claude Desktop for long.
+func postWithRetry(_ body: Data) -> (data: Data?, error: Error?) {
+    var result = postOnce(body)
+    var attempt = 1
+    while result.error != nil, attempt < 20 {
+        usleep(250_000)
+        result = postOnce(body)
+        attempt += 1
+    }
+    return result
+}
+
+while let line = readLine(strippingNewline: true) {
+    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { continue }
+
+    let (responseData, requestError) = postWithRetry(Data(trimmed.utf8))
 
     if let requestError {
         writeLine(errorResponseLine(
