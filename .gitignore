@@ -1,4 +1,6 @@
 .build/
+build/
+App/build/
 mcp-server/.venv/
 mcp-server/__pycache__/
 .swiftpm/

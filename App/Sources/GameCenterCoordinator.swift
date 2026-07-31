@@ -16,6 +16,7 @@ public typealias PlatformViewController = NSViewController
 /// around the local-network Bonjour discovery UI (`JamSessionView` itself does the
 /// discovering/connecting, `ImprovSession` just takes host/port).
 @Observable
+@MainActor
 final class GameCenterCoordinator: NSObject {
     private(set) var isAuthenticated = false
     var authenticationError: String?
@@ -75,7 +76,11 @@ final class GameCenterCoordinator: NSObject {
     }
 }
 
-extension GameCenterCoordinator: GKMatchmakerViewControllerDelegate {
+// `@preconcurrency`: `GKMatchmakerViewControllerDelegate`'s requirements aren't `@MainActor` in
+// the SDK (GameKit predates Swift concurrency annotations), even though GameKit always calls
+// them on the main thread — this tells the compiler to trust that instead of treating this
+// (now `@MainActor`) coordinator's conformance as an isolation-crossing data race risk.
+extension GameCenterCoordinator: @preconcurrency GKMatchmakerViewControllerDelegate {
     func matchmakerViewControllerWasCancelled(_ viewController: GKMatchmakerViewController) {
         presentedController = nil
     }

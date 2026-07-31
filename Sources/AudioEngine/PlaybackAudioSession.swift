@@ -14,7 +14,7 @@ enum PlaybackAudioSession {
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         guard session.category != .playAndRecord else { return }
-        try? session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+        try? session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
         try? session.setActive(true, options: .notifyOthersOnDeactivation)
         #endif
     }

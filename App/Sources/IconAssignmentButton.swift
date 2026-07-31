@@ -16,7 +16,7 @@ struct IconAssignmentButton: View {
     /// plain throwing, not `async`: real network I/O, so this view wraps it in the same
     /// `Task { await Task.detached { ... } }` bridge used everywhere else in the app for a
     /// session call that shouldn't block the main thread.
-    let onSuggestAI: () throws -> Void
+    let onSuggestAI: @Sendable () throws -> Void
     let onPickManual: (String) -> Void
     let onError: (String) -> Void
 
@@ -52,6 +52,7 @@ struct IconAssignmentButton: View {
 
     private func suggest() {
         isSuggesting = true
+        let onSuggestAI = onSuggestAI
         Task {
             let outcome = await Task.detached {
                 Result { try onSuggestAI() }

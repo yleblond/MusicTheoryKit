@@ -37,7 +37,11 @@ public enum DeviceStorageProfile: String, Codable, CaseIterable, Sendable {
     /// smaller local storage warrants starting conservative.
     private static var defaultForThisDevice: DeviceStorageProfile {
         #if os(iOS)
-        return UIDevice.current.userInterfaceIdiom == .phone ? .economical : .standard
+        // `UIDevice` is `@MainActor`-isolated in the SDK, but every call path into `current`
+        // (SwiftData-backed `ImprovSession.refreshSoundFonts`, `SoundStorageView`'s `@State`
+        // init) already runs on the main actor in practice, so asserting it here is safe.
+        let idiom = MainActor.assumeIsolated { UIDevice.current.userInterfaceIdiom }
+        return idiom == .phone ? .economical : .standard
         #else
         return .standard
         #endif
