@@ -31,7 +31,7 @@ let package = Package(
         // `WebConsole`/`NetEngine`, specifically so both `AppCore` AND `WebConsole` can depend on
         // it without `WebConsole` ever depending on `AppCore` (the reverse of the existing
         // dependency direction below) just to reach the shared translation table.
-        .target(name: "Localization"),
+        .target(name: "Localization", resources: [.copy("Resources/L10nTable.json")]),
         .testTarget(name: "LocalizationTests", dependencies: ["Localization"]),
         .testTarget(name: "MusicTheoryKitTests", dependencies: ["MusicTheoryKit"]),
         .target(name: "PieceModel", dependencies: ["MusicTheoryKit", "SoundFontModel"]),
@@ -77,7 +77,7 @@ let package = Package(
             // which this target never references) — consistent with this codebase's existing
             // "no heavyweight third-party HTTP stack" preference (see `WebConsole`'s own doc
             // comment).
-            .product(name: "MCP", package: "swift-sdk"),
+            .product(name: "MCP", package: "swift-sdk", condition: .when(platforms: [.macOS])),
         ]),
         .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit", "LLMEngine", "NetEngine", "SoundTrackModel", "SoundFontModel", "AudioEngine"]),
         .executableTarget(name: "JamShack", dependencies: ["AppCore", "Localization"]),

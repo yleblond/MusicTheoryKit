@@ -379,8 +379,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
 
 public enum L10n {
     /// Falls back to French, then to the raw key name, so a missing translation degrades
-    /// gracefully instead of crashing — the `SanityChecks` completeness check is the real
-    /// safety net for catching a missing entry during development.
+    /// gracefully instead of crashing — `LocalizationTests.L10nTests` is the real safety net
+    /// for catching a missing entry during development.
     public static func string(_ key: L10nKey, _ language: AppLanguage) -> String {
         guard let entry = L10nTable.table[key] else { return key.rawValue }
         return entry[language] ?? entry[.fr] ?? key.rawValue

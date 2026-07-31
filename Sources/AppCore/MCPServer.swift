@@ -1,8 +1,8 @@
 import Foundation
 import WebConsole
-import MCP
 
 #if os(macOS)
+import MCP
 /// Embeds a Model Context Protocol server directly in the app — macOS only. See the approved
 /// implementation plan for why iOS is structurally out of scope: Claude's iOS app only supports
 /// "remote" MCP connectors, whose actual HTTP calls are made server-side by Anthropic's own
