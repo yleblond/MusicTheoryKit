@@ -15,9 +15,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "EDB359A90F03C37144C8B096"
+               BlueprintIdentifier = "F288464C9A2E64AB332C2C95"
                BuildableName = "JamShackApp.app"
-               BlueprintName = "JamShackApp_iOS"
+               BlueprintName = "JamShackApp_macOS"
                ReferencedContainer = "container:JamShackApp.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -32,9 +32,9 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "EDB359A90F03C37144C8B096"
+            BlueprintIdentifier = "F288464C9A2E64AB332C2C95"
             BuildableName = "JamShackApp.app"
-            BlueprintName = "JamShackApp_iOS"
+            BlueprintName = "JamShackApp_macOS"
             ReferencedContainer = "container:JamShackApp.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
@@ -57,9 +57,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "EDB359A90F03C37144C8B096"
+            BlueprintIdentifier = "F288464C9A2E64AB332C2C95"
             BuildableName = "JamShackApp.app"
-            BlueprintName = "JamShackApp_iOS"
+            BlueprintName = "JamShackApp_macOS"
             ReferencedContainer = "container:JamShackApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -76,9 +76,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "EDB359A90F03C37144C8B096"
+            BlueprintIdentifier = "F288464C9A2E64AB332C2C95"
             BuildableName = "JamShackApp.app"
-            BlueprintName = "JamShackApp_iOS"
+            BlueprintName = "JamShackApp_macOS"
             ReferencedContainer = "container:JamShackApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

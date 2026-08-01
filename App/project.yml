@@ -24,6 +24,11 @@ targets:
       path: Generated/Info.plist
       properties:
         CFBundleDisplayName: JamShack
+        # Macro substitution (not a literal number) so Xcode resolves it per-build-config —
+        # XcodeGen's own default bakes a hardcoded "1.0"/"1" here instead if these two keys
+        # are left unset, ignoring MARKETING_VERSION/CURRENT_PROJECT_VERSION above.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSMicrophoneUsageDescription: >-
           JamShack ecoute le microphone pour reconnaitre les accords et modes joues.
         NSLocalNetworkUsageDescription: >-
@@ -31,6 +36,9 @@ targets:
           session collaborative.
         NSBonjourServices:
           - _musicimprov._tcp
+        # App Store category — previously patched by hand straight into the generated
+        # Info.plist (never tracked here), so a `xcodegen generate` would silently drop it.
+        LSApplicationCategoryType: public.app-category.music
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
@@ -79,11 +87,26 @@ targets:
               - com.jamshack.soundfont2
               - com.jamshack.downloadable-sound
             LSHandlerRank: Owner
+        # Supported orientations — previously patched by hand straight into the generated
+        # Info.plist (never tracked here), so a `xcodegen generate` would silently drop it.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     settings:
       base:
         ENABLE_HARDENED_RUNTIME: YES
         SWIFT_VERSION: "6.0"
-        MARKETING_VERSION: "1.0"
+        # Bumped to 1.1 in fbed9f2 by hand-editing the generated .pbxproj (never tracked here),
+        # right after LSApplicationCategoryType was added — kept in sync here now so
+        # `xcodegen generate` doesn't silently revert it to 1.0.
+        MARKETING_VERSION: "1.1"
         CURRENT_PROJECT_VERSION: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Local code-signing setup, previously configured by hand in Xcode's Signing &
@@ -168,3 +191,9 @@ targets:
         product: AppCore
       - package: MusicTheoryKit
         product: Localization
+    # Generates a shared scheme per platform (JamShackApp_iOS / JamShackApp_macOS) so
+    # `xcodebuild -scheme ...` works without opening Xcode first. Previously only the iOS one
+    # existed, hand-committed straight into .xcshareddata (never tracked here) — a
+    # `xcodegen generate` would silently delete it since XcodeGen owns the whole .xcodeproj
+    # bundle and doesn't know to keep schemes it didn't create.
+    scheme: {}

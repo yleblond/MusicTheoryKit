@@ -23,6 +23,22 @@ CHANGELOG une fois traitée.
    documentée dans le README) et rien n'empêche aujourd'hui ces serveurs d'écouter sur toutes
    les interfaces réseau plutôt que juste le LAN local. Pas un problème à la maison, mais à
    vérifier avant un usage sur réseau partagé (café, conférence).
+4. **Synchroniser `colorPalettes`/`activeColorPaletteIndex` par une queue dédiée** (même
+   discipline que `liveInputQueue`/`playbackStateQueue`), au lieu des simples `var` actuelles.
+   Trouvé le 2026-08-01 : un crash en TestFlight (build iOS 1.1/17 tournant sur Mac via
+   "Designed for iPad") plantait dans `ImprovSession.activeColorPalette` (`ImprovSession.swift`,
+   alors ligne 140) — `buildWebConsoleState()` lit cette valeur depuis une `Task.detached` en
+   arrière-plan (voir `SessionUIBridge.swift`) sans aucune synchronisation avec les écritures de
+   `refreshColorPalettes()`/`migrateColorPalettesFromJSONIfNeeded`/`selectColorPalette(atIndex:)`,
+   qui ne passent par aucune queue. Un correctif immédiat a été appliqué (le getter retombe sur
+   `ColorPalette.builtInDefaults[0]` si l'index est momentanément hors bornes plutôt que de
+   crasher), mais ça neutralise le symptôme, pas la race elle-même. Le vrai correctif, pas fait
+   faute de temps : ajouter une queue série dédiée (ex. `colorPaletteQueue`) et y faire passer
+   les 2-3 sites d'écriture ci-dessus plus la lecture dans `buildWebConsoleState()` — pas besoin
+   de toucher les lectures directes côté SwiftUI (`JamShackColorsView`, `PaletteEditorView`) ou
+   CLI (`Sources/JamShack/main.swift`), qui tolèrent déjà la même race bénigne que `tracks`.
+   Change borné (5-6 sites, un seul fichier), à faire indépendamment du refactor `actor` plus
+   large du point 1 ci-dessus.
 
 ## Fonctionnalités (2026-07-11)
 

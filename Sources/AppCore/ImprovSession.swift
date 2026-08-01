@@ -137,7 +137,15 @@ public final class ImprovSession: @unchecked Sendable {
     /// lists what's *available*, not what's currently selected); resets to the first palette
     /// every time migration runs.
     public private(set) var activeColorPaletteIndex: Int = 0
-    public var activeColorPalette: ColorPalette { colorPalettes[activeColorPaletteIndex] }
+    /// Bounds-checked rather than a plain subscript: `buildWebConsoleState()` reads this from
+    /// a detached background task (see `SessionUIBridge`) with no synchronization against
+    /// `migrateColorPalettesFromJSONIfNeeded`/`selectColorPalette` mutating `colorPalettes`/
+    /// `activeColorPaletteIndex` on the main actor — the same class of benign cross-thread
+    /// read documented on `SessionUIBridge`, except an out-of-range index here crashes instead
+    /// of just returning a stale value, so it falls back to the first palette instead.
+    public var activeColorPalette: ColorPalette {
+        colorPalettes.indices.contains(activeColorPaletteIndex) ? colorPalettes[activeColorPaletteIndex] : ColorPalette.builtInDefaults[0]
+    }
     /// Every composition description's addressable name currently in the SwiftData store,
     /// sorted — mirrors `guideSequenceNames`. Refreshed after every migrate/insert/update/delete.
     public private(set) var compositionDescriptionNames: [String] = []
