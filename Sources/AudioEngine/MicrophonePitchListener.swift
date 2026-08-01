@@ -117,7 +117,7 @@ public final class MicrophonePitchListener {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         accumulated.removeAll()
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif
     }
@@ -125,7 +125,7 @@ public final class MicrophonePitchListener {
     /// No-op on macOS (`AVAudioSession` isn't a macOS concept — the system handles input
     /// routing automatically there, which is why this class worked on macOS without it).
     private static func configureAudioSessionForRecording() throws {
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])

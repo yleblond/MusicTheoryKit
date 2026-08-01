@@ -1,4 +1,4 @@
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 import UIKit
 
 /// Registers for silent remote push at launch so CloudKit can wake this app to merge changes

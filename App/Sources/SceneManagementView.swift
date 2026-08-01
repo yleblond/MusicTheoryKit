@@ -13,6 +13,11 @@ import Localization
 struct SceneManagementView: View {
     let session: ImprovSession
 
+    @Environment(AppModel.self) private var appModel
+    #if os(macOS) || os(visionOS)
+    @Environment(\.dismissWindow) private var dismissWindow
+    #endif
+
     private enum Screen { case list, configuration }
 
     @State private var screen: Screen
@@ -28,7 +33,19 @@ struct SceneManagementView: View {
             case .list:
                 SceneFileView(session: session, onLoaded: { screen = .configuration })
             case .configuration:
+                #if os(macOS) || os(visionOS)
+                if appModel.openAuxiliaryWindows.contains(.sceneLayout) {
+                    DetachedPlaceholderView(
+                        message: L10n.string(.appLabelOuvertDansFenetreSeparee, session.currentLanguage),
+                        language: session.currentLanguage,
+                        onReintegrate: { dismissWindow(id: AuxiliaryWindowID.sceneLayout.rawValue) }
+                    )
+                } else {
+                    SceneLayoutView(session: session, onBackToList: { screen = .list })
+                }
+                #else
                 SceneLayoutView(session: session, onBackToList: { screen = .list })
+                #endif
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

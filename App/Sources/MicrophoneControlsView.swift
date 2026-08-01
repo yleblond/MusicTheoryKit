@@ -15,6 +15,15 @@ import Localization
 struct MicrophoneControlsView: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
+    /// `true` when this instance IS the detached window's own content (see `MicrophoneWindow`)
+    /// — swaps the button below from "Ouvrir dans une fenetre" (`openWindow`) to "Reintegrer"
+    /// (`dismissWindow`).
+    var isDetachedWindow: Bool = false
+
+    #if os(macOS) || os(visionOS)
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    #endif
 
     @State private var microphoneError: String?
     @State private var spectroscopeEnabled = false
@@ -118,6 +127,21 @@ struct MicrophoneControlsView: View {
                         }
                     }
                 }
+                #if os(macOS) || os(visionOS)
+                if isDetachedWindow {
+                    Button {
+                        dismissWindow(id: AuxiliaryWindowID.microphone.rawValue)
+                    } label: {
+                        Label(L10n.string(.appButtonReintegrer, session.currentLanguage), systemImage: "arrow.down.right.and.arrow.up.left")
+                    }
+                } else {
+                    Button {
+                        openWindow(id: AuxiliaryWindowID.microphone.rawValue)
+                    } label: {
+                        Label(L10n.string(.appButtonOuvrirDansUneFenetre, session.currentLanguage), systemImage: "rectangle.on.rectangle")
+                    }
+                }
+                #endif
             } header: {
                 Text(L10n.string(.appHeadingMicrophone, session.currentLanguage))
             }
@@ -176,6 +200,18 @@ struct MicrophoneControlsView: View {
         #if os(macOS)
         .formStyle(.grouped)
         #endif
+        // Only ever stopped by `onChange(of: displayMode)` before this (see that handler's own
+        // doc comment) — nothing stopped it if the whole screen disappeared instead (e.g. this
+        // window closing, once detachable — see `MicrophoneWindow`), silently leaving FFT
+        // capture running. Safe unconditionally: only one instance of this view is ever visible
+        // at a time (main tab XOR detached window, true detach — see `ContentView`), so there's
+        // no other instance's capture request to stomp.
+        .onDisappear {
+            if spectroscopeEnabled {
+                spectroscopeEnabled = false
+                session.setMicrophoneSpectrumCaptureEnabled(false)
+            }
+        }
     }
 
     @ViewBuilder

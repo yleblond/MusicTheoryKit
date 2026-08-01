@@ -8,6 +8,7 @@ options:
     # new `Tab()` API show an icon in that style on this OS — only `.sidebarAdaptable` does).
     iOS: "18.0"
     macOS: "15.0"
+    visionOS: "2.0"
   createIntermediateGroups: true
 
 packages:
@@ -17,7 +18,7 @@ packages:
 targets:
   JamShackApp:
     type: application
-    platform: [iOS, macOS]
+    platform: [iOS, macOS, visionOS]
     sources:
       - path: Sources
     info:
@@ -40,8 +41,14 @@ targets:
         # Info.plist (never tracked here), so a `xcodegen generate` would silently drop it.
         LSApplicationCategoryType: public.app-category.music
         UILaunchScreen: {}
+        # `true` since the detachable auxiliary windows (`AppModel`/`JamShackApp`) need it on
+        # visionOS — like iOS, visionOS is UIScene-based and actually enforces this key (unlike
+        # AppKit/macOS, which ignores it), so `false` here silently made every `openWindow(id:)`
+        # call a no-op there. Harmless on iOS (nothing there ever calls `openWindow` — that UI
+        # is `#if os(macOS) || os(visionOS)`-gated) and on macOS (AppKit doesn't consult this
+        # key regardless).
         UIApplicationSceneManifest:
-          UIApplicationSupportsMultipleScenes: false
+          UIApplicationSupportsMultipleScenes: true
         # Lets CloudKit wake this app via silent push when another device changes something in
         # the shared container, instead of only syncing on a schedule/next foreground — see
         # `RemoteNotificationDelegate.swift` and `ImprovSession.startObservingRemoteStoreChanges`.

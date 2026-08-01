@@ -17,6 +17,11 @@ struct GuideConfigurationView: View {
     let bridge: SessionUIBridge
     let onBackToList: () -> Void
 
+    @Environment(AppModel.self) private var appModel
+    #if os(macOS) || os(visionOS)
+    @Environment(\.dismissWindow) private var dismissWindow
+    #endif
+
     private enum Mode { case edition, lecture }
 
     @State private var mode: Mode
@@ -94,7 +99,19 @@ struct GuideConfigurationView: View {
                 case .edition:
                     GuideEditionView(session: session, bridge: bridge, onRequestLecture: { mode = .lecture })
                 case .lecture:
+                    #if os(macOS) || os(visionOS)
+                    if appModel.openAuxiliaryWindows.contains(.guideLecture) {
+                        DetachedPlaceholderView(
+                            message: L10n.string(.appLabelOuvertDansFenetreSeparee, session.currentLanguage),
+                            language: session.currentLanguage,
+                            onReintegrate: { dismissWindow(id: AuxiliaryWindowID.guideLecture.rawValue) }
+                        )
+                    } else {
+                        GuideLectureView(session: session, bridge: bridge, onGuideStopped: { mode = .edition })
+                    }
+                    #else
                     GuideLectureView(session: session, bridge: bridge, onGuideStopped: { mode = .edition })
+                    #endif
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

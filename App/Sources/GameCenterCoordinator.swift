@@ -1,6 +1,6 @@
 import GameKit
 import SwiftUI
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 import UIKit
 public typealias PlatformViewController = UIViewController
 #elseif os(macOS)
@@ -99,7 +99,7 @@ extension GameCenterCoordinator: @preconcurrency GKMatchmakerViewControllerDeleg
 /// Presents an already-created platform view controller (from `GameCenterCoordinator`) inside
 /// SwiftUI — GameKit's authentication and matchmaker sheets are UIKit/AppKit-only, there's no
 /// SwiftUI-native equivalent.
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 struct PresentedControllerView: UIViewControllerRepresentable {
     let controller: UIViewController
     func makeUIViewController(context: Context) -> UIViewController { controller }

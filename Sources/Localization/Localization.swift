@@ -279,6 +279,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appPlaceholderTousInstrumentsAffectes, appHeadingInstrumentsNonAffectes
     case appButtonAjouterUnRole, appButtonAjouterUnRoleEllipsis, appButtonCreerEtAttacher
     case appMenuAttacherA, appButtonDetacher, appLabelLibre
+    /// Closes a detached auxiliary window (clavier/live/guide/microphone) and brings its
+    /// screen back into the main window — see `DetachedPlaceholderView`.
+    case appButtonReintegrer, appLabelOuvertDansFenetreSeparee, appButtonOuvrirDansUneFenetre
     case appPlaceholderAucunSonFavoriParenthese, appButtonAucun, appButtonSupprimer
     case appFormatOccupeParRole
     case appFieldVolume

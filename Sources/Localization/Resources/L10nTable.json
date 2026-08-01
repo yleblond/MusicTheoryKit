@@ -340,6 +340,27 @@
   "ru": "Отменить назначение",
   "zhHans": "取消分配"
  },
+ "appButtonReintegrer": {
+  "de": "Wieder andocken",
+  "en": "Reattach",
+  "es": "Volver a acoplar",
+  "fr": "Reintegrer",
+  "it": "Riaggancia"
+ },
+ "appLabelOuvertDansFenetreSeparee": {
+  "de": "In einem separaten Fenster geöffnet",
+  "en": "Open in a separate window",
+  "es": "Abierto en una ventana separada",
+  "fr": "Ouvert dans une fenetre separee",
+  "it": "Aperto in una finestra separata"
+ },
+ "appButtonOuvrirDansUneFenetre": {
+  "de": "In eigenem Fenster öffnen",
+  "en": "Open in Window",
+  "es": "Abrir en ventana",
+  "fr": "Ouvrir dans une fenetre",
+  "it": "Apri in finestra"
+ },
  "appButtonEnSavoirPlus": {
   "de": "Mehr erfahren",
   "en": "Learn more",
