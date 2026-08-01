@@ -11,7 +11,7 @@
 /// miss while testing than a crash.
 enum PlaybackAudioSession {
     static func activateIfNeeded() {
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         let session = AVAudioSession.sharedInstance()
         guard session.category != .playAndRecord else { return }
         try? session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])

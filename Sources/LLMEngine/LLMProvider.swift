@@ -164,7 +164,7 @@ public struct AnthropicProvider: LLMProvider {
 #if canImport(FoundationModels)
 import FoundationModels
 
-@available(iOS 26, macOS 26, *)
+@available(iOS 26, macOS 26, visionOS 26, *)
 public struct FoundationModelsProvider: LLMProvider {
     public init() {}
 
@@ -211,7 +211,7 @@ public struct FoundationModelsProvider: LLMProvider {
 // file) — so `scaleID`/`templateID` are guide-constrained to the theory library's actual
 // vocabulary directly, on top of (not instead of) `compose(from:)`'s runtime validation.
 
-@available(iOS 26, macOS 26, *)
+@available(iOS 26, macOS 26, visionOS 26, *)
 @Generable
 struct FMChordDTO {
     var measure: Int
@@ -221,7 +221,7 @@ struct FMChordDTO {
     var durationBeats: Double?
 }
 
-@available(iOS 26, macOS 26, *)
+@available(iOS 26, macOS 26, visionOS 26, *)
 @Generable
 struct FMMelodyNoteDTO {
     var measure: Int
@@ -231,7 +231,7 @@ struct FMMelodyNoteDTO {
     var pitch: Int
 }
 
-@available(iOS 26, macOS 26, *)
+@available(iOS 26, macOS 26, visionOS 26, *)
 @Generable
 struct FMSectionDTO {
     var name: String
@@ -243,7 +243,7 @@ struct FMSectionDTO {
     var melody: [FMMelodyNoteDTO]?
 }
 
-@available(iOS 26, macOS 26, *)
+@available(iOS 26, macOS 26, visionOS 26, *)
 @Generable
 struct FMPieceDTO {
     var title: String
@@ -255,21 +255,21 @@ struct FMPieceDTO {
     var sections: [FMSectionDTO]
 }
 
-@available(iOS 26, macOS 26, *)
+@available(iOS 26, macOS 26, visionOS 26, *)
 private extension FMChordDTO {
     func toLLMChordDTO() -> LLMChordDTO {
         LLMChordDTO(measure: measure, root: root, templateID: templateID, durationBeats: durationBeats)
     }
 }
 
-@available(iOS 26, macOS 26, *)
+@available(iOS 26, macOS 26, visionOS 26, *)
 private extension FMMelodyNoteDTO {
     func toLLMMelodyNoteDTO() -> LLMMelodyNoteDTO {
         LLMMelodyNoteDTO(measure: measure, beat: beat, durationBeats: durationBeats, pitch: pitch)
     }
 }
 
-@available(iOS 26, macOS 26, *)
+@available(iOS 26, macOS 26, visionOS 26, *)
 private extension FMSectionDTO {
     func toLLMSectionDTO() -> LLMSectionDTO {
         LLMSectionDTO(
@@ -283,7 +283,7 @@ private extension FMSectionDTO {
     }
 }
 
-@available(iOS 26, macOS 26, *)
+@available(iOS 26, macOS 26, visionOS 26, *)
 private extension FMPieceDTO {
     func toLLMPieceDTO() -> LLMPieceDTO {
         LLMPieceDTO(
@@ -305,7 +305,7 @@ private extension FMPieceDTO {
 /// classic self-deadlock risk if the pool is momentarily saturated. Waiting on a dedicated
 /// `Thread` instead (not part of the cooperative pool) decouples the two, so the pool's
 /// capacity to actually run `operation()` is never reduced by this bridge.
-@available(iOS 26, macOS 26, *)
+@available(iOS 26, macOS 26, visionOS 26, *)
 func syncAwait<T: Sendable>(_ operation: @escaping @Sendable () async throws -> T) throws -> T {
     let semaphore = DispatchSemaphore(value: 0)
     nonisolated(unsafe) var result: Result<T, Error>!
@@ -331,10 +331,10 @@ public enum LLMClient {
         case "anthropic": return try AnthropicProvider().generate(prompt: prompt, connection: connection)
         case "foundation-models":
             #if canImport(FoundationModels)
-            if #available(iOS 26, macOS 26, *) {
+            if #available(iOS 26, macOS 26, visionOS 26, *) {
                 return try FoundationModelsProvider().generate(prompt: prompt, connection: connection)
             } else {
-                throw LLMError.modelUnavailable("Foundation Models requires iOS 26 / macOS 26 or later")
+                throw LLMError.modelUnavailable("Foundation Models requires iOS 26 / macOS 26 / visionOS 26 or later")
             }
             #else
             throw LLMError.modelUnavailable("Foundation Models is not available in this build")
@@ -351,7 +351,7 @@ public enum LLMClient {
     /// generic "test connection" ping intentionally keeps calling `generate` directly instead.
     public static func generatePieceJSON(prompt: String, connection: LLMConnection) throws -> String {
         #if canImport(FoundationModels)
-        if connection.provider == "foundation-models", #available(iOS 26, macOS 26, *) {
+        if connection.provider == "foundation-models", #available(iOS 26, macOS 26, visionOS 26, *) {
             let dto = try FoundationModelsProvider().generatePieceDTO(prompt: prompt, connection: connection)
             return String(data: try JSONEncoder().encode(dto), encoding: .utf8) ?? ""
         }

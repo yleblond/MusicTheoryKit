@@ -6,6 +6,7 @@ let package = Package(
     platforms: [
         .iOS(.v17),
         .macOS(.v14),
+        .visionOS(.v2),
     ],
     products: [
         .library(name: "MusicTheoryKit", targets: ["MusicTheoryKit"]),

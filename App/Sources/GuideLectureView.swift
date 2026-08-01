@@ -25,8 +25,18 @@ struct GuideLectureView: View {
     /// Switches the parent `GuideConfigurationView` back to Edition mode once the guide is
     /// stopped — called explicitly from the stop button's own action (NOT from `onDisappear`,
     /// which also fires on a plain manual tab switch and would fight that navigation instead
-    /// of following it).
+    /// of following it). A true no-op when hosted standalone in `GuideLectureWindow` — see
+    /// its own doc comment.
     let onGuideStopped: () -> Void
+    /// `true` when this instance IS the detached window's own content (see
+    /// `GuideLectureWindow`) — swaps the button below from "Ouvrir dans une fenetre"
+    /// (`openWindow`) to "Reintegrer" (`dismissWindow`).
+    var isDetachedWindow: Bool = false
+
+    #if os(macOS) || os(visionOS)
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    #endif
 
     @State private var actionError: String?
     @FocusState private var isFocused: Bool
@@ -132,6 +142,21 @@ struct GuideLectureView: View {
             Spacer()
             Button(L10n.string(.appButtonPrecedent, session.currentLanguage)) { session.advanceGuideStep(by: -1) }
             Button(L10n.string(.appButtonSuivant, session.currentLanguage)) { session.advanceGuideStep(by: 1) }
+            #if os(macOS) || os(visionOS)
+            if isDetachedWindow {
+                Button {
+                    dismissWindow(id: AuxiliaryWindowID.guideLecture.rawValue)
+                } label: {
+                    Label(L10n.string(.appButtonReintegrer, session.currentLanguage), systemImage: "arrow.down.right.and.arrow.up.left")
+                }
+            } else {
+                Button {
+                    openWindow(id: AuxiliaryWindowID.guideLecture.rawValue)
+                } label: {
+                    Label(L10n.string(.appButtonOuvrirDansUneFenetre, session.currentLanguage), systemImage: "rectangle.on.rectangle")
+                }
+            }
+            #endif
         }
     }
 }

@@ -94,3 +94,64 @@ CHANGELOG une fois traitée.
    `kSecClassGenericPassword`) sans changer la surface d'API (`ImprovSession.setLLMAPIKey`/
    `APIKeyStore.resolve` dans `Sources/LLMEngine/APIKeyStore.swift` resteraient les mêmes
    points d'entrée, seule l'implémentation de la persistance changerait).
+
+## visionOS — fonctionnalités spatiales (2026-08-01)
+
+Bloqué en attendant un Vision Pro physique : ni le hand-tracking ni un vrai flux passthrough
+pour caler un overlay sur un clavier réel ne sont testables dans le simulateur visionOS — seule
+la compilation/revue de code est vérifiable sans casque. Les deux points ci-dessous documentent
+l'architecture déjà dégrossie et les briques réutilisables déjà identifiées dans le code, pour
+être directement exploitables plus tard sans redérivation.
+
+**Briques déjà réutilisables pour les deux fonctionnalités** (rien n'existe encore côté
+ARKit/RealityKit/ImmersiveSpace dans ce repo — terrain vierge pour le rendu 3D, mais la logique/
+données existent déjà) :
+- Injection de note générique : `ImprovSession.pressKey(pitch:track:)`/`releaseKey(pitch:track:)`
+  (`Sources/AppCore/ImprovSession.swift:3838`) — son propre commentaire anticipe déjà "a future
+  on-screen/touch virtual keyboard".
+- Pattern de piste dynamique à répliquer : `TrackID.webKeyboard(clientID:)`
+  (`Sources/AppCore/Track.swift`) + `ensureWebKeyboardTrack`/`removeAllWebKeyboardTracks`
+  (`ImprovSession.swift:5731`/`5746`) — un nouveau cas (ex. `.handTracking`) suivrait ce même
+  patron (piste créée/détruite à la demande, ajoutée à la liste blanche "dynamique" de
+  `refreshTracks()` vers la ligne 2931-2936).
+- Calcul couleur par touche déjà centralisé : `pitchDisplayState(pitch:heldPitches:chordRoot:
+  chordTones:modeTones:...)` (`Sources/AppCore/PitchDisplayState.swift`), alimenté par
+  `ImprovSession.pitchClassSets(...)` (ligne 5902) à partir du `recognizedChord`/
+  `recognizedModes` d'une piste en écoute ; rôle → couleur hex via `NoteColorSettingsFile`
+  (`Sources/AppCore/NoteColorSettings.swift`). Le chemin LUMI (`LumiColorMap`/`LumiGuideMap`,
+  SysEx) est une fausse piste ici — plus pauvre (2 couleurs, pas les 6 rôles) et pensé pour
+  piloter du matériel, pas pour de l'affichage.
+- Géométrie clavier : `PitchKeyboardView.layout(for:)` (`Sources/JamShackUI/PitchKeyboardView.swift:197`,
+  actuellement `internal`) a déjà tout le calcul touche blanche/noire → position. À extraire
+  dans un petit type `public` partagé (ex. `PianoKeyGeometry`) pour être appelable à la fois par
+  la vue existante et par le nouveau code AR/hand-tracking, qui vivra dans le target App (module
+  SPM différent de `JamShackUI`).
+- Nouveau réglage requis : `NSHandsTrackingUsageDescription` dans `App/project.yml` (Info.plist
+  partagé) — API standard visionOS 2, aucun entitlement entreprise nécessaire.
+
+1. **Clavier virtuel jouable au hand-tracking** (mains en l'air, comme le clavier virtuel
+   système pour le texte). Suggéré en premier : pose les fondations `ImmersiveSpace`/ARKit
+   communes aux deux fonctionnalités. Architecture : nouvelle scène `ImmersiveSpace` (visionOS
+   uniquement) dans `App/Sources/JamShackApp.swift`, style `.mixed` (passthrough conservé,
+   pas de VR complète) ; `ARKitSession` + `HandTrackingProvider` (mise à jour 90Hz sur
+   visionOS 2) ; clavier flottant en RealityKit positionné via `PianoKeyGeometry` ; détection
+   doigt/touche par simple test de proximité (bounding volume) pour un premier prototype, pas
+   de détection de vélocité/pression sophistiquée dans un premier temps ; appelle
+   `pressKey(pitch:track: .handTracking)`/`releaseKey(...)` sur entrée/sortie de volume.
+
+2. **Overlay AR qui colore les touches d'un clavier réel** selon le mode/accord reconnu en
+   direct — même idée que l'intégration LUMI Keys existante, mais en réalité augmentée plutôt
+   que sur du matériel. Réutilise la Phase 1 ci-dessus. Calibration **manuelle** (décision
+   explicite de l'utilisateur, plutôt que `ObjectTrackingProvider`/reconnaissance d'objet
+   pré-scanné) : l'utilisateur aligne par glisser/pincer un repère virtuel semi-transparent
+   (même géométrie `PianoKeyGeometry`) sur son clavier réel, puis verrouille — ancré via
+   `WorldTrackingProvider`/`WorldAnchor` pour rester en place spatialement. Fonctionne avec
+   n'importe quel clavier, sans étape de scan préalable hors app (contrairement à
+   `ObjectTrackingProvider`, qui ne suivrait que le clavier précis scanné via l'app Object
+   Capture d'Apple). Par touche réelle dans la plage calibrée : `pitchDisplayState(...)` →
+   couleur via `NoteColorSettingsFile` → quad RealityKit coloré positionné selon la
+   calibration, rafraîchi au rythme de `bridge.state` (~30Hz déjà utilisé ailleurs, à limiter
+   si coût de rendu trop élevé). Purement en lecture — aucun nouveau `pressKey`/`TrackID`
+   nécessaire ici. Limite connue à noter pour un premier prototype : pas de persistance de la
+   calibration entre lancements (à refaire à chaque session) — amélioration possible plus
+   tard.

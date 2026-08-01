@@ -1,5 +1,5 @@
 import SwiftUI
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 import UIKit
 #else
 import AppKit
@@ -23,7 +23,7 @@ extension Color {
     }
 
     var hexString: String {
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
         let components = UIColor(self).cgColor.components ?? [0, 0, 0]
         #else
         let components = NSColor(self).usingColorSpace(.deviceRGB)?.cgColor.components ?? [0, 0, 0]

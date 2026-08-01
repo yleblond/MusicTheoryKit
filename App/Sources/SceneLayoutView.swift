@@ -25,6 +25,15 @@ import Localization
 struct SceneLayoutView: View {
     let session: ImprovSession
     let onBackToList: () -> Void
+    /// `true` when this instance IS the detached window's own content (see
+    /// `SceneLayoutWindow`) — swaps the button below from "Ouvrir dans une fenetre"
+    /// (`openWindow`) to "Reintegrer" (`dismissWindow`).
+    var isDetachedWindow: Bool = false
+
+    #if os(macOS) || os(visionOS)
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    #endif
 
     @State private var newRoleName = ""
     @State private var showNewRoleAlert = false
@@ -67,6 +76,21 @@ struct SceneLayoutView: View {
                             }
                         }
                         Spacer()
+                        #if os(macOS) || os(visionOS)
+                        if isDetachedWindow {
+                            Button {
+                                dismissWindow(id: AuxiliaryWindowID.sceneLayout.rawValue)
+                            } label: {
+                                Label(L10n.string(.appButtonReintegrer, session.currentLanguage), systemImage: "arrow.down.right.and.arrow.up.left")
+                            }
+                        } else {
+                            Button {
+                                openWindow(id: AuxiliaryWindowID.sceneLayout.rawValue)
+                            } label: {
+                                Label(L10n.string(.appButtonOuvrirDansUneFenetre, session.currentLanguage), systemImage: "rectangle.on.rectangle")
+                            }
+                        }
+                        #endif
                     }
                     .padding([.horizontal, .top])
                     if let actionError {

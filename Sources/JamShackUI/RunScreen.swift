@@ -16,12 +16,22 @@ import Localization
 public struct RunScreen: View {
     public let session: ImprovSession
     public let bridge: SessionUIBridge
+    /// `true` when this instance IS the detached window's own content (see `RunScreenWindow`)
+    /// — swaps the button below from "Ouvrir dans une fenetre" (`openWindow`) to "Reintegrer"
+    /// (`dismissWindow`), instead of showing "open" from inside the window that's already open.
+    public let isDetachedWindow: Bool
+
+    #if os(macOS) || os(visionOS)
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    #endif
 
     @State private var recordingError: String?
 
-    public init(session: ImprovSession, bridge: SessionUIBridge) {
+    public init(session: ImprovSession, bridge: SessionUIBridge, isDetachedWindow: Bool = false) {
         self.session = session
         self.bridge = bridge
+        self.isDetachedWindow = isDetachedWindow
     }
 
     public var body: some View {
@@ -37,6 +47,26 @@ public struct RunScreen: View {
             Divider()
             VStack(spacing: 0) {
                 recordingBar
+                #if os(macOS) || os(visionOS)
+                // Literal "runScreen", matching `AuxiliaryWindowID.runScreen.rawValue` in the
+                // App target (JamShackUI is a separate SPM module, no access to that enum) —
+                // see `RunScreenWindow`/`JamShackApp`.
+                if isDetachedWindow {
+                    Button {
+                        dismissWindow(id: "runScreen")
+                    } label: {
+                        Label(L10n.string(.appButtonReintegrer, session.currentLanguage), systemImage: "arrow.down.right.and.arrow.up.left")
+                    }
+                    .padding(.horizontal)
+                } else {
+                    Button {
+                        openWindow(id: "runScreen")
+                    } label: {
+                        Label(L10n.string(.appButtonOuvrirDansUneFenetre, session.currentLanguage), systemImage: "rectangle.on.rectangle")
+                    }
+                    .padding(.horizontal)
+                }
+                #endif
                 List(bridge.state.tracks, id: \.id) { track in
                     TrackRunRow(
                         track: track,

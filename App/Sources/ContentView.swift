@@ -79,9 +79,12 @@ struct ContentView: View {
         }
     }
 
-    @State private var session = ImprovSession()
-    @State private var bridge: SessionUIBridge?
-    @State private var startError: String?
+    @Environment(AppModel.self) private var appModel
+    #if os(macOS) || os(visionOS)
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    #endif
+
     @State private var mode: AppMode = .studio
     // Same default as the old `StudioView` — that's where you set up which instrument sounds
     // through which role before playing, so it's the natural first screen.
@@ -89,8 +92,7 @@ struct ContentView: View {
     @State private var selectedSettingsTab: SettingsTab = .sons
 
     var body: some View {
-        Group {
-            if let bridge {
+        SessionGatedView { session, bridge in
                 // `Tab(_:systemImage:)` + `.sidebarAdaptable`, not the older `.tabItem { Label }`
                 // — confirmed empirically (off-screen test app, not guessed) that on macOS's
                 // current top "pill" tab bar style, NEITHER API shows an icon next to the
@@ -104,10 +106,7 @@ struct ContentView: View {
                         case .studio:
                             TabView(selection: $selectedStudioTab) {
                                 Tab(StudioTab.live.label(session.currentLanguage), systemImage: StudioTab.live.systemImage, value: StudioTab.live) {
-                                    RunScreen(session: session, bridge: bridge)
-                                        // Same LUMI-follows-the-active-screen wiring as Guide > Lecture.
-                                        .onAppear { session.notifyActiveScreen(.run) }
-                                        .onDisappear { session.notifyActiveScreen(.other) }
+                                    LiveTabContent(session: session, bridge: bridge)
                                 }
                                 Tab(StudioTab.scene.label(session.currentLanguage), systemImage: StudioTab.scene.systemImage, value: StudioTab.scene) {
                                     SceneManagementView(session: session)
@@ -134,7 +133,7 @@ struct ContentView: View {
                                     JamShackMIDIView(session: session, bridge: bridge)
                                 }
                                 Tab(SettingsTab.microphone.label(session.currentLanguage), systemImage: SettingsTab.microphone.systemImage, value: SettingsTab.microphone) {
-                                    MicrophoneControlsView(session: session, bridge: bridge)
+                                    MicrophoneTabContent(session: session, bridge: bridge)
                                 }
                                 Tab(SettingsTab.jamSession.label(session.currentLanguage), systemImage: SettingsTab.jamSession.systemImage, value: SettingsTab.jamSession) {
                                     JamSessionView(session: session)
@@ -177,6 +176,15 @@ struct ContentView: View {
                                 Label(L10n.string(.appTabClavierOrdinateur, session.currentLanguage), systemImage: "keyboard")
                             }
                             .foregroundStyle(session.computerKeyboardInputEnabled ? Color.accentColor : Color.primary)
+                            #if os(macOS) || os(visionOS)
+                            if session.computerKeyboardInputEnabled && !appModel.openAuxiliaryWindows.contains(.computerKeyboard) {
+                                Button {
+                                    openWindow(id: AuxiliaryWindowID.computerKeyboard.rawValue)
+                                } label: {
+                                    Image(systemName: "rectangle.on.rectangle")
+                                }
+                            }
+                            #endif
                         }
                         Spacer()
                     }
@@ -189,6 +197,26 @@ struct ContentView: View {
                     // switch, a constant reminder that typing anywhere now plays notes.
                     if mode == .studio && session.computerKeyboardInputEnabled {
                         Divider()
+                        #if os(macOS) || os(visionOS)
+                        if appModel.openAuxiliaryWindows.contains(.computerKeyboard) {
+                            DetachedPlaceholderView(
+                                message: L10n.string(.appLabelOuvertDansFenetreSeparee, session.currentLanguage),
+                                language: session.currentLanguage,
+                                onReintegrate: { dismissWindow(id: AuxiliaryWindowID.computerKeyboard.rawValue) }
+                            )
+                            .frame(height: 120)
+                        } else {
+                            ComputerKeyboardInputBar(
+                                heldPitches: session.tracks.first { $0.id == .computerKeyboard }?.heldPitches ?? [],
+                                palette: bridge.state.palette, paletteTextColors: bridge.state.paletteTextColors,
+                                label: L10n.string(.appLabelClavierOrdinateurActif, session.currentLanguage),
+                                octaveShift: session.computerKeyboardOctaveShift,
+                                onNoteOn: { pitch in session.pressKey(pitch: pitch) },
+                                onNoteOff: { pitch in session.releaseKey(pitch: pitch) },
+                                onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) }
+                            )
+                        }
+                        #else
                         ComputerKeyboardInputBar(
                             heldPitches: session.tracks.first { $0.id == .computerKeyboard }?.heldPitches ?? [],
                             palette: bridge.state.palette, paletteTextColors: bridge.state.paletteTextColors,
@@ -198,6 +226,7 @@ struct ContentView: View {
                             onNoteOff: { pitch in session.releaseKey(pitch: pitch) },
                             onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) }
                         )
+                        #endif
                     }
                 }
                 .computerKeyboardInput(
@@ -208,66 +237,11 @@ struct ContentView: View {
                     onNoteOff: { pitch in session.releaseKey(pitch: pitch) },
                     onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) }
                 )
-            } else if let startError {
-                Text(startError).foregroundStyle(.red).padding()
-            } else {
-                ProgressView(L10n.string(.appStatusDemarrage, session.currentLanguage))
-            }
-        }
-        .task {
-            do {
-                try session.start()
-                // `.individual` (the session's own default — see `midiFusionMode`) creates
-                // one `.midiSource(index)` track per visible MIDI port instead of a single
-                // `.midiMerged` one. An earlier version of this code forced `.merged` here,
-                // which silently overrode that default on every launch — fixed by starting
-                // every currently-visible MIDI-source track instead of the one track
-                // `.merged` mode would have had.
-                try session.startTrack(.computerKeyboard)
-                for track in session.tracks {
-                    switch track.id {
-                    case .midiMerged, .midiSource:
-                        try? session.startTrack(track.id)
-                        try? session.setSoundEnabled(true, for: track.id)
-                    default:
-                        break
-                    }
-                }
-                // Real bug fix: `startTrack` only starts LISTENING (recognition, held-note
-                // display) — it never touches `TrackInfo.soundEnabled` (defaults to `false`)
-                // or creates that track's `SamplerUnit`, both of which `setSoundEnabled` does
-                // lazily. Without this, playing live (computer keyboard or a MIDI keyboard)
-                // was completely silent on a fresh launch — notes registered and showed as
-                // held, but nothing was ever routed to a sampler. Piece/soundtrack playback
-                // was never affected by this, since `PiecePlayer`/`SoundTrackPlayer` each own
-                // their own always-ready sampler, entirely independent of this per-track
-                // enable step.
-                try? session.setSoundEnabled(true, for: .computerKeyboard)
-                // Soundfonts resolve to the app's own iCloud Drive container/`Application
-                // Support` automatically (see `SoundFontLocations`) — no user-picked folder,
-                // and no longer gated behind the old "Dossiers" root-folder bookmark (removed
-                // 2026-07-30, along with the one-time JSON migrations it used to also trigger:
-                // every device that needed that migration has already had it run).
-                session.startSoundFontLibrary()
-                // Idempotent (no-op once already resolved) — `sceneNames`/`guideSequenceNames`
-                // come from the shared SwiftData store, independent of any folder, so this is
-                // always safe to call unconditionally on every launch.
-                session.ensureGuideReadyForLaunch()
-                session.ensureSceneReadyForLaunch()
-                #if os(macOS)
-                // Off unless the user already turned it on in a previous session — see
-                // `startMCPServerIfEnabled`'s own doc comment. macOS only (see `MCPServer.swift`
-                // for why iOS is structurally out of scope).
-                session.startMCPServerIfEnabled()
-                #endif
-                bridge = SessionUIBridge(session: session)
-            } catch {
-                startError = "\(error)"
-            }
         }
     }
 }
 
 #Preview {
     ContentView()
+        .environment(AppModel())
 }
