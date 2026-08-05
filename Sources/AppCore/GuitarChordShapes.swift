@@ -52,12 +52,19 @@ public enum GuitarChordShape {
         public let label: String
         public let barreFret: Int
         public let positions: [StringPosition]
+        /// `true` when this diagram is a root-position fallback shown in place of a genuine
+        /// inversion shape that either doesn't exist yet (most qualities beyond "Ma"/"mi") or
+        /// wasn't requested (`inversion == 0`) — see `diagram(forRoot:chordTemplateID:inversion:)`.
+        /// A caller should show a "position de base" annotation when this is `true` and the
+        /// caller actually asked for `inversion > 0`.
+        public let isBasePositionFallback: Bool
 
         /// See `StringPosition.init`'s doc comment for why this needs to be public.
-        public init(label: String, barreFret: Int, positions: [StringPosition]) {
+        public init(label: String, barreFret: Int, positions: [StringPosition], isBasePositionFallback: Bool = false) {
             self.label = label
             self.barreFret = barreFret
             self.positions = positions
+            self.isBasePositionFallback = isBasePositionFallback
         }
     }
 
@@ -91,6 +98,76 @@ public enum GuitarChordShape {
         // fret 3, matching the real, commonly-known positions for "the F/G barre chord".
         let barreFret = (((root % 12) + 12) % 12 - 4 + 12) % 12
         return Diagram(label: chordDisplayLabel(root: root, chordTemplateID: chordTemplateID), barreFret: barreFret, positions: positions)
+    }
+
+    /// A single string's fixed offset from a shape's own `barreFret` anchor, plus a suggested
+    /// finger — see `triadInversionShapesByTemplateID`'s doc comment for how these were derived.
+    private struct TriadInversionShape {
+        /// Added to the root's own pitch class (mod 12) to get this shape's `barreFret` — see
+        /// this file's own inversion doc comment for the derivation.
+        let barreFretOffset: Int
+        /// Index 2 = string 4 (D), index 3 = string 3 (G), index 4 = string 2 (B) — strings 6,
+        /// 5, 1 (indices 0, 1, 5) are always muted for these compact 3-string shapes.
+        let dGBRelativeFrets: (d: Int, g: Int, b: Int)
+        let dGBFingers: (d: Int, g: Int, b: Int)
+    }
+
+    /// Genuine 1st/2nd-inversion shapes for the "Ma"/"mi" triads only (per the Chord Library's
+    /// confirmed scope: triads and 7th chords up to the 3rd inversion, 7th-chord inversions
+    /// deferred as a followup — a triad only has a 1st and 2nd inversion to begin with).
+    ///
+    /// These are NOT a re-ordering of `shapesByTemplateID`'s own 6-string barre shape (a real
+    /// guitarist doesn't invert a 6-string chord by moving notes around on the same 6 strings —
+    /// they switch to a different, more compact shape). Instead this is the standard "3 notes
+    /// on 3 adjacent strings" triad voicing taught for inversions, here on the D-G-B string set
+    /// (open pitch classes D=2, G=7, B=11).
+    ///
+    /// Derivation/verification: the major-triad root-position shape below (D=root+2,
+    /// G=root+1, B=root, i.e. barreFret = (root - 4 + 12) % 12) was checked against a real
+    /// fretted example (C major: D-string fret 10 = C, G-string fret 9 = E, B-string fret 8 =
+    /// G) from a published lesson (weissguitar.com, "Major Triad Shapes" D-G-B string set,
+    /// 2026-08 research pass) and matches exactly. The other 5 shapes (major 1st/2nd inversion,
+    /// minor root/1st/2nd inversion) were derived with the identical note-by-note arithmetic
+    /// (each string's fret = target pitch class minus that string's own open pitch class, mod
+    /// 12) and cross-checked by confirming every string's resulting note is the correct chord
+    /// tone — not independently verified against a second external source the way the
+    /// 6-string barre table above was. Finger numbers are a reasonable ascending-by-fret
+    /// suggestion, not sourced from a lesson reference.
+    private static let triadInversionShapesByTemplateID: [String: [Int: TriadInversionShape]] = [
+        "Ma": [
+            1: TriadInversionShape(barreFretOffset: 0, dGBRelativeFrets: (d: 2, g: 0, b: 1), dGBFingers: (d: 3, g: 1, b: 2)),
+            2: TriadInversionShape(barreFretOffset: 5, dGBRelativeFrets: (d: 0, g: 0, b: 0), dGBFingers: (d: 1, g: 1, b: 1)),
+        ],
+        "mi": [
+            1: TriadInversionShape(barreFretOffset: 0, dGBRelativeFrets: (d: 1, g: 0, b: 1), dGBFingers: (d: 2, g: 1, b: 3)),
+            2: TriadInversionShape(barreFretOffset: 4, dGBRelativeFrets: (d: 1, g: 1, b: 0), dGBFingers: (d: 2, g: 3, b: 1)),
+        ],
+    ]
+
+    /// A specific inversion's diagram (0 = root position, identical to
+    /// `diagram(forRoot:chordTemplateID:)`) — falls back to the root-position E-shape diagram,
+    /// with `Diagram.isBasePositionFallback` set, whenever `inversion > 0` isn't covered by
+    /// `triadInversionShapesByTemplateID` (every quality besides "Ma"/"mi", or an inversion
+    /// index a triad doesn't have). `nil` only when even the root-position fallback has no
+    /// diagram (same cases `diagram(forRoot:chordTemplateID:)` already returns `nil` for).
+    public static func diagram(forRoot root: Int, chordTemplateID: String, inversion: Int) -> Diagram? {
+        guard inversion > 0 else { return diagram(forRoot: root, chordTemplateID: chordTemplateID) }
+        let pitchClass = (((root % 12) + 12) % 12)
+        let label = chordDisplayLabel(root: root, chordTemplateID: chordTemplateID)
+        if let shape = triadInversionShapesByTemplateID[chordTemplateID]?[inversion] {
+            let barreFret = (pitchClass + shape.barreFretOffset) % 12
+            let positions: [StringPosition] = [
+                StringPosition(relativeFret: nil, finger: nil), // string 6, low E — muted
+                StringPosition(relativeFret: nil, finger: nil), // string 5, A — muted
+                StringPosition(relativeFret: shape.dGBRelativeFrets.d, finger: shape.dGBFingers.d), // string 4, D
+                StringPosition(relativeFret: shape.dGBRelativeFrets.g, finger: shape.dGBFingers.g), // string 3, G
+                StringPosition(relativeFret: shape.dGBRelativeFrets.b, finger: shape.dGBFingers.b), // string 2, B
+                StringPosition(relativeFret: nil, finger: nil), // string 1, high e — muted
+            ]
+            return Diagram(label: label, barreFret: barreFret, positions: positions)
+        }
+        guard let fallback = diagram(forRoot: root, chordTemplateID: chordTemplateID) else { return nil }
+        return Diagram(label: fallback.label, barreFret: fallback.barreFret, positions: fallback.positions, isBasePositionFallback: true)
     }
 
     private static func chordDisplayLabel(root: Int, chordTemplateID: String) -> String {

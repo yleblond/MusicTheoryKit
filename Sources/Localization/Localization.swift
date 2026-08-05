@@ -378,6 +378,30 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appButtonRejoindreViaGameCenter, appHintAccepteInvitationGameCenter
     case appModeIsole, appModeJamGameCenterOrganisateur, appModeJamGameCenterParticipant
     case appModeJamLocaleOrganisateur, appModeJamLocaleParticipant
+
+    // MARK: - App: Chord/Mode/Progression Library tabs
+    case appTabAccords, appTabModes, appTabProgressions, appTabNotation
+
+    // MARK: - App: Accords (Chord Library)
+    case appHeadingBibliothequeAccords, appFieldQualite
+    case appFieldPosition, appOptionPositionFondamentale, appOptionPosition1ereInversion
+    case appOptionPosition2emeInversion, appOptionPosition3emeInversion, appLabelPositionDeBase
+    case appFieldInversion
+
+    // MARK: - App: Modes (Mode Library)
+    case appHeadingBibliothequeModes, appButtonAscendant, appButtonDescendant, appButtonAscEtDescendant
+    case appHeadingAccordsDeLaTonalite, appHeadingAccordsDuMode
+
+    // MARK: - App: Progressions (Progression Library)
+    case appHeadingBibliothequeProgressions, appFieldProgressionChoisie
+    case appLabelNomUsuel, appLabelAucunNomUsuel
+
+    // MARK: - App: Reglages > Notation
+    case appHeadingNotation, appFieldStyleNotation, appOptionNotationAngloAmericaine, appHintNotationAppliqueAussi
+
+    // MARK: - App: Noms fonctionnels des accords (harmonie fonctionnelle)
+    case appFunctionalTonique, appFunctionalSusTonique, appFunctionalMediante, appFunctionalSousDominante
+    case appFunctionalDominante, appFunctionalSusDominante, appFunctionalSensible
 }
 
 public enum L10n {

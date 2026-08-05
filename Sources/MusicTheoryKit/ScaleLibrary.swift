@@ -1,5 +1,12 @@
+import Foundation
+
 /// The complete catalog of 33 "scales of harmonies", grouped in 7 families.
 /// Source: Oliver Prehn, "The Scales of Harmonies" (NewJazz), scales_of_harmonies.pdf.
+///
+/// Beyond `all`, the Mode Library feature lets a `scales.json` file (migrated once into
+/// SwiftData by `AppCore`, see `ScaleDefinitionFile`) add further scale definitions within an
+/// existing family at runtime via `register(_:)` — `byID(_:)`/`scales(inFamily:)` always see
+/// the merged catalog.
 public enum ScaleLibrary {
     public static let all: [ScaleDefinition] = [
         // Family 1 — Major Modes
@@ -50,15 +57,48 @@ public enum ScaleLibrary {
         ScaleDefinition(id: "inverted_augmented", familyID: 7, degree: 2, popularName: "Inverted Augmented", systematicName: "Inverted Augmented", chordSymbols: ["6#5"]),
     ]
 
-    private static let byIDLookup: [String: ScaleDefinition] = Dictionary(
+    private static let lock = NSLock()
+    /// Populated once from `all`, then merged with anything `register(_:)` adds. `nonisolated(unsafe)`:
+    /// every access is gated by `lock` — same pattern as `ChordVocabulary.byIDLookup`.
+    nonisolated(unsafe) private static var byIDLookup: [String: ScaleDefinition] = Dictionary(
         uniqueKeysWithValues: all.map { ($0.id, $0) }
     )
+    nonisolated(unsafe) private static var registeredScales: [ScaleDefinition] = []
 
     public static func byID(_ id: String) -> ScaleDefinition? {
-        byIDLookup[id]
+        lock.lock()
+        defer { lock.unlock() }
+        return byIDLookup[id]
     }
 
     public static func scales(inFamily familyID: Int) -> [ScaleDefinition] {
-        all.filter { $0.familyID == familyID }.sorted { $0.degree < $1.degree }
+        lock.lock()
+        let extra = registeredScales
+        lock.unlock()
+        return (all + extra).filter { $0.familyID == familyID }.sorted { $0.degree < $1.degree }
+    }
+
+    /// Restores the catalog to just `all`, discarding anything `register(_:)` added — for test
+    /// isolation only, see `ChordVocabulary.resetForTesting()`'s doc comment for why this exists.
+    static func resetForTesting() {
+        lock.lock()
+        defer { lock.unlock() }
+        byIDLookup = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
+        registeredScales = []
+    }
+
+    /// Merges `scales` into the catalog — a definition whose `id` already exists overwrites the
+    /// existing one. Called once by `AppCore` after its `scales.json`/SwiftData migration.
+    public static func register(_ scales: [ScaleDefinition]) {
+        lock.lock()
+        defer { lock.unlock() }
+        for scale in scales {
+            if byIDLookup[scale.id] == nil {
+                registeredScales.append(scale)
+            } else {
+                registeredScales = registeredScales.map { $0.id == scale.id ? scale : $0 }
+            }
+            byIDLookup[scale.id] = scale
+        }
     }
 }

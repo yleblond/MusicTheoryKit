@@ -523,6 +523,9 @@ public final class ImprovSession: @unchecked Sendable {
             ColorPaletteRecord.self,
             ChordProgressionTemplateRecord.self,
             LanguageSettingRecord.self,
+            NotationStyleSettingRecord.self,
+            ChordTemplateRecord.self,
+            ScaleDefinitionRecord.self,
             LumiSettingsRecord.self,
             SpectrogramSettingsRecord.self,
             NoteColorSettingsRecord.self,
@@ -585,6 +588,7 @@ public final class ImprovSession: @unchecked Sendable {
         try player.start()
         try soundTrackPlayer.start()
         try guideAuditionPlayer.start()
+        try theoryLibraryAuditionPlayer.start()
         append("Audio engine started.")
         startObservingRemoteStoreChanges()
     }
@@ -617,6 +621,8 @@ public final class ImprovSession: @unchecked Sendable {
         refreshLLMConnections()
         refreshColorPalettes()
         refreshChordProgressionTemplates()
+        refreshChordTemplates()
+        refreshScaleDefinitions()
         refreshSceneNames()
         refreshGuideSequenceNames()
         refreshSoundTrackNames()
@@ -1036,6 +1042,9 @@ public final class ImprovSession: @unchecked Sendable {
         migrateColorPalettesFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("palettes.json"))
         migrateChordProgressionTemplatesFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("chordprogressions.json"))
         migrateLanguageSettingFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("language.json"))
+        loadNotationStyleSetting()
+        migrateChordTemplatesFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("chords.json"))
+        migrateScaleDefinitionsFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("scales.json"))
         migrateLumiSettingsFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("lumi.json"))
         migrateSpectrogramSettingsFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("spectrogram.json"))
         migrateNoteColorSettingsFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("note-colors.json"))
@@ -1538,6 +1547,65 @@ public final class ImprovSession: @unchecked Sendable {
         guideAuditionPlayer.stopAllNotes()
         isAuditioningGuide = false
         append("Ecoute du guide arretee.")
+    }
+
+    // MARK: - Chord/Mode/Progression Library audition
+
+    /// One simultaneous group of pitches to hold for `durationSeconds`, `startSeconds` after
+    /// playback begins — an `AppCore`-native mirror of `AudioEngine.GuideAuditionChord` (see
+    /// `playTheoryLibraryAudition(_:)`) so the Chord/Mode/Progression Library screens (in the
+    /// `App` module) never need to import `AudioEngine` directly, the same boundary every other
+    /// screen already respects (they only ever reach audio playback through `ImprovSession`
+    /// methods).
+    public struct TheoryAuditionNote: Sendable {
+        public let pitches: [Int]
+        public let startSeconds: Double
+        public let durationSeconds: Double
+
+        public init(pitches: [Int], startSeconds: Double, durationSeconds: Double) {
+            self.pitches = pitches
+            self.startSeconds = startSeconds
+            self.durationSeconds = durationSeconds
+        }
+    }
+
+    /// Whether any of the Chord/Mode/Progression Library screens is currently auditioning a
+    /// chord/scale-run/progression — a single shared flag/player (like `isAuditioningGuide`'s
+    /// own single `guideAuditionPlayer`), since only one such preview is ever meaningfully
+    /// playing at a time.
+    public private(set) var isAuditioningTheoryLibrary = false
+    private let theoryLibraryAuditionPlayer = GuideAuditionPlayer()
+    private var theoryLibraryAuditionGeneration = 0
+
+    /// Loads a `FavoriteSound` (as picked from `favoriteSounds` by one of the Library screens)
+    /// into the shared theory-library audition player.
+    public func loadTheoryLibraryAuditionSample(_ sound: FavoriteSound) throws {
+        try theoryLibraryAuditionPlayer.loadSample(at: URL(fileURLWithPath: sound.path), preset: sound.preset)
+    }
+
+    /// Plays `notes` through the shared theory-library audition player — used alike for a
+    /// single chord (one note, all pitches simultaneous), a scale run (one note per degree,
+    /// ascending/descending/both already sequenced by the caller), or a progression (one note
+    /// per chord).
+    public func playTheoryLibraryAudition(_ notes: [TheoryAuditionNote]) {
+        guard !notes.isEmpty else { return }
+        theoryLibraryAuditionPlayer.play(notes.map { GuideAuditionChord(pitches: $0.pitches, startSeconds: $0.startSeconds, durationSeconds: $0.durationSeconds) })
+        theoryLibraryAuditionGeneration += 1
+        let generation = theoryLibraryAuditionGeneration
+        isAuditioningTheoryLibrary = true
+        let totalDuration = notes.map { $0.startSeconds + $0.durationSeconds }.max() ?? 0
+        playbackStateQueue.asyncAfter(deadline: .now() + totalDuration + 0.2) { [weak self] in
+            guard let self, self.theoryLibraryAuditionGeneration == generation else { return }
+            self.isAuditioningTheoryLibrary = false
+        }
+    }
+
+    /// Stops an in-progress theory-library audition early — mirrors `stopGuideAudition()`.
+    public func stopTheoryLibraryAudition() {
+        guard isAuditioningTheoryLibrary else { return }
+        theoryLibraryAuditionGeneration += 1
+        theoryLibraryAuditionPlayer.stopAllNotes()
+        isAuditioningTheoryLibrary = false
     }
 
     /// Changes ONE chord's quality within a step's already-resolved progression, keeping its
@@ -2640,6 +2708,39 @@ public final class ImprovSession: @unchecked Sendable {
         try modelContext.save()
     }
 
+    // MARK: - Chord notation style (Chord/Mode/Progression Library, see `MusicTheoryKit.NotationStyle`)
+
+    /// Which chord-naming convention chord/mode/progression names are displayed in — mirrors
+    /// `currentLanguage`'s own "persisted singleton" shape exactly (see
+    /// `NotationStyleSettingRecord`). Only one concrete style ships today
+    /// (`AngloAmericanNotationStyle`), but every chord-name display already goes through this
+    /// rather than a hardcoded style, so adding a second is additive.
+    public private(set) var notationStyle: any NotationStyle = AngloAmericanNotationStyle()
+
+    /// One-time load (there's nothing to migrate from a legacy JSON file for this setting — it
+    /// didn't exist before the Chord/Mode/Progression Library — so this only ever seeds the
+    /// default the first time, then loads whatever was last persisted).
+    private func loadNotationStyleSetting() {
+        if let existing = try? modelContext.fetch(FetchDescriptor<NotationStyleSettingRecord>()).first {
+            notationStyle = NotationStyleRegistry.byID(existing.styleID)
+        } else {
+            modelContext.insert(NotationStyleSettingRecord(notationStyle.id))
+            try? modelContext.save()
+        }
+    }
+
+    /// The one place `notationStyle` actually changes at runtime — persists immediately, same
+    /// as `setLanguage`.
+    public func setNotationStyle(_ style: any NotationStyle) throws {
+        notationStyle = style
+        if let existing = try? modelContext.fetch(FetchDescriptor<NotationStyleSettingRecord>()).first {
+            existing.styleID = style.id
+        } else {
+            modelContext.insert(NotationStyleSettingRecord(style.id))
+        }
+        try modelContext.save()
+    }
+
     // MARK: - Chord progression templates (roman-numeral libraries, see `RomanNumeralChord`)
 
     /// Every template loaded from the SwiftData store — same "flat list, hand-edited outside
@@ -2690,6 +2791,65 @@ public final class ImprovSession: @unchecked Sendable {
             }
             return ChordReference(root: root.value, chordTemplateID: templateID)
         }
+    }
+
+    // MARK: - Chord/scale library extensions (Chord & Mode Library, JSON-editable vocabulary)
+
+    /// Chord qualities added on top of `ChordVocabulary.seed` via `chords.json` — empty until
+    /// (and unless) that file exists and has content; the compiled-in seed needs no SwiftData
+    /// round-trip at all, so this is purely the *extra* entries, not the whole catalog.
+    public private(set) var extraChordTemplates: [ChordTemplate] = []
+
+    /// One-time import of `chords.json` into SwiftData, then merges every stored entry into
+    /// `ChordVocabulary` (see `ChordVocabulary.register(_:)`) — mirrors
+    /// `migrateChordProgressionTemplatesFromJSONIfNeeded`'s shape, except there is no
+    /// built-in-defaults fallback to seed: the compiled-in seed already lives in
+    /// `ChordVocabulary.seed` independent of this store.
+    public func migrateChordTemplatesFromJSONIfNeeded(fromJSONFile path: String) {
+        refreshChordTemplates()
+        guard extraChordTemplates.isEmpty else { return }
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let file = try? JSONDecoder().decode(ChordTemplateFile.self, from: data), !file.chords.isEmpty
+        else { return }
+        for (index, template) in file.chords.enumerated() {
+            modelContext.insert(ChordTemplateRecord(template, sortOrder: index))
+        }
+        try? modelContext.save()
+        append("Migrated \(file.chords.count) chord template(s) from \(path) (original left in place).")
+        refreshChordTemplates()
+    }
+
+    private func refreshChordTemplates() {
+        let descriptor = FetchDescriptor<ChordTemplateRecord>(sortBy: [SortDescriptor(\.sortOrder)])
+        let records = (try? modelContext.fetch(descriptor)) ?? []
+        extraChordTemplates = records.map(\.asChordTemplate)
+        ChordVocabulary.register(extraChordTemplates)
+    }
+
+    /// Scale definitions added on top of `ScaleLibrary.all` via `scales.json` — see
+    /// `extraChordTemplates`'s doc comment for the same "purely additive, no built-in-defaults
+    /// fallback" rationale.
+    public private(set) var extraScaleDefinitions: [ScaleDefinition] = []
+
+    public func migrateScaleDefinitionsFromJSONIfNeeded(fromJSONFile path: String) {
+        refreshScaleDefinitions()
+        guard extraScaleDefinitions.isEmpty else { return }
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let file = try? JSONDecoder().decode(ScaleDefinitionFile.self, from: data), !file.scales.isEmpty
+        else { return }
+        for (index, scale) in file.scales.enumerated() {
+            modelContext.insert(ScaleDefinitionRecord(scale, sortOrder: index))
+        }
+        try? modelContext.save()
+        append("Migrated \(file.scales.count) scale definition(s) from \(path) (original left in place).")
+        refreshScaleDefinitions()
+    }
+
+    private func refreshScaleDefinitions() {
+        let descriptor = FetchDescriptor<ScaleDefinitionRecord>(sortBy: [SortDescriptor(\.sortOrder)])
+        let records = (try? modelContext.fetch(descriptor)) ?? []
+        extraScaleDefinitions = records.map(\.asScaleDefinition)
+        ScaleLibrary.register(extraScaleDefinitions)
     }
 
     /// Sets one melodic track's instrument (a sample file name, resolved against
@@ -5804,7 +5964,20 @@ public final class ImprovSession: @unchecked Sendable {
     /// "who's playing what function right now" view.
     private func buildWebConsoleWheelState(listeningTracks: [TrackInfo]) -> WebConsoleWheelState {
         let mode = wheelReferenceMode()
-        let wheel = CircleOfFifths.wheel(tonic: CircleOfFifths.parentTonic(for: mode)!, activeTonic: mode.tonic)
+        return Self.wheelState(
+            forTonic: CircleOfFifths.parentTonic(for: mode)!, activeTonic: mode.tonic,
+            activeModeName: mode.scale.systematicName, listeningTracks: listeningTracks
+        )
+    }
+
+    /// Pure conversion from `CircleOfFifths.wheel(tonic:activeTonic:)` (`MusicTheoryKit`, no
+    /// session/SwiftData dependency) to the wire-shaped `WebConsoleWheelState` — extracted from
+    /// `buildWebConsoleWheelState(listeningTracks:)` so a caller with an arbitrary user-picked
+    /// tonic/mode (the Mode Library's own circle-of-fifths section, not tied to whatever's
+    /// currently playing/listening) can build one directly, without needing a live session's
+    /// own track/playback state. `listeningTracks` defaults to none, for exactly that case.
+    public static func wheelState(forTonic tonic: PitchClass, activeTonic: PitchClass? = nil, activeModeName: String, listeningTracks: [TrackInfo] = []) -> WebConsoleWheelState {
+        let wheel = CircleOfFifths.wheel(tonic: tonic, activeTonic: activeTonic)
         let columns = wheel.columns.map { column -> WebConsoleWheelColumnState in
             let cells = column.cells.map { cell -> WebConsoleWheelCellState in
                 let trackLabels = listeningTracks.compactMap { track -> String? in
@@ -5816,7 +5989,7 @@ public final class ImprovSession: @unchecked Sendable {
             }
             return WebConsoleWheelColumnState(pitchClass: column.pitchClass.value, modeName: column.modeName, cells: cells)
         }
-        return WebConsoleWheelState(tonic: wheel.tonic.value, activeModeName: mode.scale.systematicName, columns: columns, activeColumnIndex: wheel.activeColumnIndex)
+        return WebConsoleWheelState(tonic: wheel.tonic.value, activeModeName: activeModeName, columns: columns, activeColumnIndex: wheel.activeColumnIndex)
     }
 
     /// The Guide screen's own state (see `startGuide`/`advanceGuideStep`) — entirely

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import MusicTheoryKit
 
 /// Colors for each `PitchDisplayRole`, plus the plain white/black key backgrounds. Defaults
 /// are a reasonable starting palette, independent of `NoteColorSettingsFile` (the app's
@@ -315,6 +316,17 @@ public struct PitchKeyboardView: View {
             )
         }
         .frame(height: height) // default 144 = +50% over 96 — explicit user request.
+    }
+}
+
+public extension PitchKeyboardView {
+    /// Builds the `keyLabels` dictionary this view already accepts (currently used for the
+    /// computer-keyboard letter overlay) from a set of MIDI pitches, naming each one via
+    /// `style` — the mechanism the Chord and Mode Library screens both reuse for the
+    /// note-name "bullet" on each highlighted key, rather than each hand-rolling its own label
+    /// lookup.
+    static func noteNameKeyLabels(forPitches pitches: [Int], style: any NotationStyle, preferFlats: Bool = false) -> [Int: String] {
+        Dictionary(pitches.map { ($0, style.rootName(PitchClass($0), preferFlats: preferFlats)) }, uniquingKeysWith: { first, _ in first })
     }
 }
 

@@ -4,7 +4,9 @@ import XCTest
 final class ChordTests: XCTestCase {
 
     func testVocabularySize() {
-        XCTAssertEqual(ChordVocabulary.seed.count, 13)
+        // 13 original + 10 added for the Chord Library (5, sus2, sus4, 6, mi6, add9, miAdd9, 9,
+        // Ma9, mi9) — see ChordVocabulary.seed's own doc comment.
+        XCTAssertEqual(ChordVocabulary.seed.count, 23)
     }
 
     func testCMajorTriad() throws {

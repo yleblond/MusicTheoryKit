@@ -186,6 +186,28 @@
   "ru": "Остановить сервер",
   "zhHans": "停止服务器"
  },
+ "appButtonAscEtDescendant": {
+  "de": "Auf u. Ab",
+  "en": "Asc & Desc",
+  "es": "Asc y Desc",
+  "fr": "Asc et Desc",
+  "it": "Asc e Disc",
+  "ja": "上行と下行",
+  "pt": "Asc e Desc",
+  "ru": "Вверх и вниз",
+  "zhHans": "上下行"
+ },
+ "appButtonAscendant": {
+  "de": "Aufst.",
+  "en": "Asc",
+  "es": "Asc",
+  "fr": "Asc",
+  "it": "Asc",
+  "ja": "上行",
+  "pt": "Asc",
+  "ru": "Вверх",
+  "zhHans": "上行"
+ },
  "appButtonAucun": {
   "de": "Keiner",
   "en": "None",
@@ -329,6 +351,17 @@
   "ru": "Из шаблона",
   "zhHans": "从模板"
  },
+ "appButtonDescendant": {
+  "de": "Abst.",
+  "en": "Desc",
+  "es": "Desc",
+  "fr": "Desc",
+  "it": "Disc",
+  "ja": "下行",
+  "pt": "Desc",
+  "ru": "Вниз",
+  "zhHans": "下行"
+ },
  "appButtonDetacher": {
   "de": "Lösen",
   "en": "Detach",
@@ -339,27 +372,6 @@
   "pt": "Desatribuir",
   "ru": "Отменить назначение",
   "zhHans": "取消分配"
- },
- "appButtonReintegrer": {
-  "de": "Wieder andocken",
-  "en": "Reattach",
-  "es": "Volver a acoplar",
-  "fr": "Reintegrer",
-  "it": "Riaggancia"
- },
- "appLabelOuvertDansFenetreSeparee": {
-  "de": "In einem separaten Fenster geöffnet",
-  "en": "Open in a separate window",
-  "es": "Abierto en una ventana separada",
-  "fr": "Ouvert dans une fenetre separee",
-  "it": "Aperto in una finestra separata"
- },
- "appButtonOuvrirDansUneFenetre": {
-  "de": "In eigenem Fenster öffnen",
-  "en": "Open in Window",
-  "es": "Abrir en ventana",
-  "fr": "Ouvrir dans une fenetre",
-  "it": "Apri in finestra"
  },
  "appButtonEnSavoirPlus": {
   "de": "Mehr erfahren",
@@ -493,6 +505,13 @@
   "ru": "Новая палитра...",
   "zhHans": "新建调色板..."
  },
+ "appButtonOuvrirDansUneFenetre": {
+  "de": "In eigenem Fenster öffnen",
+  "en": "Open in Window",
+  "es": "Abrir en ventana",
+  "fr": "Ouvrir dans une fenetre",
+  "it": "Apri in finestra"
+ },
  "appButtonParcourirCatalogue": {
   "de": "Katalog durchsuchen",
   "en": "Browse the catalog",
@@ -569,6 +588,13 @@
   "pt": "Redefinir",
   "ru": "Сбросить",
   "zhHans": "重置"
+ },
+ "appButtonReintegrer": {
+  "de": "Wieder andocken",
+  "en": "Reattach",
+  "es": "Volver a acoplar",
+  "fr": "Reintegrer",
+  "it": "Riaggancia"
  },
  "appButtonRejoindreViaGameCenter": {
   "de": "Über Game Center beitreten...",
@@ -889,6 +915,17 @@
   "ru": "ID устройства (hex)",
   "zhHans": "设备 ID（十六进制）"
  },
+ "appFieldInversion": {
+  "de": "Umkehrung",
+  "en": "Inversion",
+  "es": "Inversión",
+  "fr": "Inversion",
+  "it": "Rivolto",
+  "ja": "転回形",
+  "pt": "Inversão",
+  "ru": "Обращение",
+  "zhHans": "转位"
+ },
  "appFieldLangue": {
   "de": "Sprache",
   "en": "Language",
@@ -933,6 +970,17 @@
   "ru": "Спектрограмма",
   "zhHans": "声谱图"
  },
+ "appFieldPosition": {
+  "de": "Position",
+  "en": "Position",
+  "es": "Posición",
+  "fr": "Position",
+  "it": "Posizione",
+  "ja": "ポジション",
+  "pt": "Posição",
+  "ru": "Позиция",
+  "zhHans": "把位"
+ },
  "appFieldProgressionAccordsGuide": {
   "de": "Akkordfolge",
   "en": "Chord progression",
@@ -944,6 +992,28 @@
   "ru": "Последовательность аккордов",
   "zhHans": "和弦进行"
  },
+ "appFieldProgressionChoisie": {
+  "de": "Progression",
+  "en": "Progression",
+  "es": "Progresión",
+  "fr": "Progression",
+  "it": "Progressione",
+  "ja": "進行",
+  "pt": "Progressão",
+  "ru": "Прогрессия",
+  "zhHans": "和弦进行"
+ },
+ "appFieldQualite": {
+  "de": "Qualität",
+  "en": "Quality",
+  "es": "Calidad",
+  "fr": "Qualité",
+  "it": "Qualità",
+  "ja": "コードタイプ",
+  "pt": "Qualidade",
+  "ru": "Тип аккорда",
+  "zhHans": "和弦性质"
+ },
  "appFieldSourceTest": {
   "de": "Quelle",
   "en": "Source",
@@ -954,6 +1024,17 @@
   "pt": "Fonte",
   "ru": "Источник",
   "zhHans": "来源"
+ },
+ "appFieldStyleNotation": {
+  "de": "Notationsstil",
+  "en": "Notation style",
+  "es": "Estilo de notación",
+  "fr": "Style de notation",
+  "it": "Stile di notazione",
+  "ja": "記譜スタイル",
+  "pt": "Estilo de notação",
+  "ru": "Стиль нотации",
+  "zhHans": "记谱风格"
  },
  "appFieldVitesse": {
   "de": "Geschwindigkeit",
@@ -1164,6 +1245,105 @@
   "ru": "Загрузка… %d %%",
   "zhHans": "下载中… %d%%"
  },
+ "appFunctionalDominante": {
+  "de": "Dominante",
+  "en": "Dominant",
+  "es": "Dominante",
+  "fr": "Dominante",
+  "it": "Dominante",
+  "ja": "属和音",
+  "pt": "Dominante",
+  "ru": "Доминанта",
+  "zhHans": "属和弦"
+ },
+ "appFunctionalMediante": {
+  "de": "Mediante",
+  "en": "Mediant",
+  "es": "Mediante",
+  "fr": "Médiante",
+  "it": "Mediante",
+  "ja": "中音",
+  "pt": "Mediante",
+  "ru": "Медианта",
+  "zhHans": "中音和弦"
+ },
+ "appFunctionalSensible": {
+  "de": "Leitton",
+  "en": "Leading tone",
+  "es": "Sensible",
+  "fr": "Sensible",
+  "it": "Sensibile",
+  "ja": "導音",
+  "pt": "Sensível",
+  "ru": "Вводный тон",
+  "zhHans": "导音和弦"
+ },
+ "appFunctionalSousDominante": {
+  "de": "Subdominante",
+  "en": "Subdominant",
+  "es": "Subdominante",
+  "fr": "Sous-dominante",
+  "it": "Sottodominante",
+  "ja": "下属和音",
+  "pt": "Subdominante",
+  "ru": "Субдоминанта",
+  "zhHans": "下属和弦"
+ },
+ "appFunctionalSusDominante": {
+  "de": "Submediante",
+  "en": "Submediant",
+  "es": "Superdominante",
+  "fr": "Sus-dominante",
+  "it": "Sopradominante",
+  "ja": "下中音",
+  "pt": "Superdominante",
+  "ru": "Субмедианта",
+  "zhHans": "下中音和弦"
+ },
+ "appFunctionalSusTonique": {
+  "de": "Supertonika",
+  "en": "Supertonic",
+  "es": "Supertónica",
+  "fr": "Sus-tonique",
+  "it": "Sopratonica",
+  "ja": "上主和音",
+  "pt": "Supertônica",
+  "ru": "Супертоника",
+  "zhHans": "上主和弦"
+ },
+ "appFunctionalTonique": {
+  "de": "Tonika",
+  "en": "Tonic",
+  "es": "Tónica",
+  "fr": "Tonique",
+  "it": "Tonica",
+  "ja": "主和音",
+  "pt": "Tônica",
+  "ru": "Тоника",
+  "zhHans": "主和弦"
+ },
+ "appHeadingAccordsDeLaTonalite": {
+  "de": "Akkorde der Tonart",
+  "en": "Chords of the key",
+  "es": "Acordes de la tonalidad",
+  "fr": "Accords de la tonalité",
+  "it": "Accordi della tonalità",
+  "ja": "調のコード",
+  "pt": "Acordes da tonalidade",
+  "ru": "Аккорды тональности",
+  "zhHans": "调内和弦"
+ },
+ "appHeadingAccordsDuMode": {
+  "de": "Akkorde des Modus",
+  "en": "Chords of the mode",
+  "es": "Acordes del modo",
+  "fr": "Accords du mode",
+  "it": "Accordi del modo",
+  "ja": "モードのコード",
+  "pt": "Acordes do modo",
+  "ru": "Аккорды лада",
+  "zhHans": "调式的和弦"
+ },
  "appHeadingAjouterUnMode": {
   "de": "Modus hinzufügen",
   "en": "Add a mode",
@@ -1185,6 +1365,39 @@
   "pt": "Dispositivos conectados",
   "ru": "Подключённые устройства",
   "zhHans": "已连接的设备"
+ },
+ "appHeadingBibliothequeAccords": {
+  "de": "Akkordbibliothek",
+  "en": "Chord library",
+  "es": "Biblioteca de acordes",
+  "fr": "Bibliothèque d'accords",
+  "it": "Libreria di accordi",
+  "ja": "コードライブラリ",
+  "pt": "Biblioteca de acordes",
+  "ru": "Библиотека аккордов",
+  "zhHans": "和弦库"
+ },
+ "appHeadingBibliothequeModes": {
+  "de": "Modibibliothek",
+  "en": "Mode library",
+  "es": "Biblioteca de modos",
+  "fr": "Bibliothèque de modes",
+  "it": "Libreria di modi",
+  "ja": "モードライブラリ",
+  "pt": "Biblioteca de modos",
+  "ru": "Библиотека ладов",
+  "zhHans": "调式库"
+ },
+ "appHeadingBibliothequeProgressions": {
+  "de": "Progressionsbibliothek",
+  "en": "Progression library",
+  "es": "Biblioteca de progresiones",
+  "fr": "Bibliothèque de progressions",
+  "it": "Libreria di progressioni",
+  "ja": "進行ライブラリ",
+  "pt": "Biblioteca de progressões",
+  "ru": "Библиотека прогрессий",
+  "zhHans": "和弦进行库"
  },
  "appHeadingCadrageSoundtrack": {
   "de": "Soundtrack-Rahmensatz",
@@ -1571,6 +1784,17 @@
   "ru": "Название палитры",
   "zhHans": "调色板名称"
  },
+ "appHeadingNotation": {
+  "de": "Akkordnotation",
+  "en": "Chord notation",
+  "es": "Notación de acordes",
+  "fr": "Notation des accords",
+  "it": "Notazione degli accordi",
+  "ja": "コード記譜法",
+  "pt": "Notação de acordes",
+  "ru": "Нотация аккордов",
+  "zhHans": "和弦记谱法"
+ },
  "appHeadingNotesEtAccords": {
   "de": "Noten und Akkorde",
   "en": "Notes and Chords",
@@ -1846,6 +2070,17 @@
   "ru": "Имя, под которым тебя видят другие участники.",
   "zhHans": "其他参与者看到你时显示的名字。"
  },
+ "appHintNotationAppliqueAussi": {
+  "de": "Gilt für die Akkord-, Modus- und Progressionsbibliotheken.",
+  "en": "Applies to the chord, mode, and progression libraries.",
+  "es": "Se aplica a las bibliotecas de acordes, modos y progresiones.",
+  "fr": "S'applique aux librairies d'accords, de modes et de progressions.",
+  "it": "Si applica alle librerie di accordi, modi e progressioni.",
+  "ja": "コード、モード、進行のライブラリに適用されます。",
+  "pt": "Aplica-se às bibliotecas de acordes, modos e progressões.",
+  "ru": "Применяется к библиотекам аккордов, ладов и прогрессий.",
+  "zhHans": "适用于和弦、调式和和弦进行库。"
+ },
  "appHintOuvreFenetreGameCenterOrganisateur": {
   "de": "Öffnet das Game Center-Fenster, um Freunde einzuladen oder automatisch Teilnehmer über das Internet zu finden (kein gemeinsames lokales Netzwerk nötig).",
   "en": "Opens the Game Center window to invite friends or automatically find participants, over the internet (no need for the same local network).",
@@ -2065,6 +2300,17 @@
   "pt": "Atribuição necessária",
   "ru": "Требуется указание авторства",
   "zhHans": "需要署名"
+ },
+ "appLabelAucunNomUsuel": {
+  "de": "Kein bekannter gebräuchlicher Name",
+  "en": "No known common name",
+  "es": "Sin nombre común conocido",
+  "fr": "Aucun nom usuel connu",
+  "it": "Nessun nome comune noto",
+  "ja": "既知の一般名なし",
+  "pt": "Sem nome comum conhecido",
+  "ru": "Нет известного общего названия",
+  "zhHans": "无已知常用名称"
  },
  "appLabelAutresFichiers": {
   "de": "Andere Dateien",
@@ -2297,6 +2543,17 @@
   "ru": "Имя файла",
   "zhHans": "文件名"
  },
+ "appLabelNomUsuel": {
+  "de": "Gebräuchlicher Name",
+  "en": "Common name",
+  "es": "Nombre común",
+  "fr": "Nom usuel",
+  "it": "Nome comune",
+  "ja": "一般名",
+  "pt": "Nome comum",
+  "ru": "Общее название",
+  "zhHans": "常用名称"
+ },
  "appLabelNonTelecharge": {
   "de": "Nicht heruntergeladen",
   "en": "Not downloaded",
@@ -2351,6 +2608,24 @@
   "pt": "Origem",
   "ru": "Источник",
   "zhHans": "来源"
+ },
+ "appLabelOuvertDansFenetreSeparee": {
+  "de": "In einem separaten Fenster geöffnet",
+  "en": "Open in a separate window",
+  "es": "Abierto en una ventana separada",
+  "fr": "Ouvert dans une fenetre separee",
+  "it": "Aperto in una finestra separata"
+ },
+ "appLabelPositionDeBase": {
+  "de": "Grundstellung",
+  "en": "base position",
+  "es": "posición básica",
+  "fr": "position de base",
+  "it": "posizione base",
+  "ja": "基本ポジション",
+  "pt": "posição base",
+  "ru": "базовая позиция",
+  "zhHans": "基本把位"
  },
  "appLabelProduit": {
   "de": "Produkt",
@@ -2671,6 +2946,17 @@
   "ru": "Раздельно",
   "zhHans": "独立"
  },
+ "appOptionNotationAngloAmericaine": {
+  "de": "Amerikanisch (C, Cm, Cmaj7)",
+  "en": "American (C, Cm, Cmaj7)",
+  "es": "Americana (C, Cm, Cmaj7)",
+  "fr": "Anglo-américaine (C, Cm, Cmaj7)",
+  "it": "Americana (C, Cm, Cmaj7)",
+  "ja": "アメリカ式 (C, Cm, Cmaj7)",
+  "pt": "Americana (C, Cm, Cmaj7)",
+  "ru": "Американская (C, Cm, Cmaj7)",
+  "zhHans": "美式 (C, Cm, Cmaj7)"
+ },
  "appOptionOrigineCuree": {
   "de": "Von der App vorgeschlagen",
   "en": "Suggested by the app",
@@ -2692,6 +2978,50 @@
   "pt": "Importado por ti",
   "ru": "Импортировано вами",
   "zhHans": "由你导入"
+ },
+ "appOptionPosition1ereInversion": {
+  "de": "1. Umkehrung",
+  "en": "1st inversion",
+  "es": "1a inversión",
+  "fr": "1re inversion",
+  "it": "1o rivolto",
+  "ja": "第1転回形",
+  "pt": "1a inversão",
+  "ru": "1-е обращение",
+  "zhHans": "第一转位"
+ },
+ "appOptionPosition2emeInversion": {
+  "de": "2. Umkehrung",
+  "en": "2nd inversion",
+  "es": "2a inversión",
+  "fr": "2e inversion",
+  "it": "2o rivolto",
+  "ja": "第2転回形",
+  "pt": "2a inversão",
+  "ru": "2-е обращение",
+  "zhHans": "第二转位"
+ },
+ "appOptionPosition3emeInversion": {
+  "de": "3. Umkehrung",
+  "en": "3rd inversion",
+  "es": "3a inversión",
+  "fr": "3e inversion",
+  "it": "3o rivolto",
+  "ja": "第3転回形",
+  "pt": "3a inversão",
+  "ru": "3-е обращение",
+  "zhHans": "第三转位"
+ },
+ "appOptionPositionFondamentale": {
+  "de": "Grundposition",
+  "en": "Root position",
+  "es": "Posición fundamental",
+  "fr": "Fondamentale",
+  "it": "Stato fondamentale",
+  "ja": "基本形",
+  "pt": "Posição fundamental",
+  "ru": "Основной вид",
+  "zhHans": "原位"
  },
  "appOptionProfilEconome": {
   "de": "Sparsam",
@@ -3254,6 +3584,17 @@
   "ru": "Тестирование...",
   "zhHans": "测试中..."
  },
+ "appTabAccords": {
+  "de": "Akkorde",
+  "en": "Chords",
+  "es": "Acordes",
+  "fr": "Accords",
+  "it": "Accordi",
+  "ja": "コード",
+  "pt": "Acordes",
+  "ru": "Аккорды",
+  "zhHans": "和弦"
+ },
  "appTabBibliotheque": {
   "de": "Bibliotheken",
   "en": "Libraries",
@@ -3396,6 +3737,39 @@
   "pt": "Microfone",
   "ru": "Микрофон",
   "zhHans": "麦克风"
+ },
+ "appTabModes": {
+  "de": "Modi",
+  "en": "Modes",
+  "es": "Modos",
+  "fr": "Modes",
+  "it": "Modi",
+  "ja": "モード",
+  "pt": "Modos",
+  "ru": "Лады",
+  "zhHans": "调式"
+ },
+ "appTabNotation": {
+  "de": "Notation",
+  "en": "Notation",
+  "es": "Notación",
+  "fr": "Notation",
+  "it": "Notazione",
+  "ja": "記譜法",
+  "pt": "Notação",
+  "ru": "Нотация",
+  "zhHans": "记谱法"
+ },
+ "appTabProgressions": {
+  "de": "Progressionen",
+  "en": "Progressions",
+  "es": "Progresiones",
+  "fr": "Progressions",
+  "it": "Progressioni",
+  "ja": "進行",
+  "pt": "Progressões",
+  "ru": "Прогрессии",
+  "zhHans": "和弦进行"
  },
  "appTabSons": {
   "de": "Klänge",

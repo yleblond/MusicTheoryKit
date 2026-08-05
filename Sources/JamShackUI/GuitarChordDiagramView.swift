@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import MusicTheoryKit
+import Localization
 
 /// A standard vertical guitar chord diagram (6 strings, 4 frets) rendered from
 /// `GuitarChordShape.Diagram` (`Sources/AppCore/GuitarChordShapes.swift`) — that data is
@@ -18,11 +19,25 @@ public struct GuitarChordDiagramView: View {
     /// `GuitarChordShape`'s own doc comment for why some qualities are deliberately excluded).
     public let fallbackLabel: String
     public let colorScheme: PitchKeyboardColorScheme
+    /// Only used for the "position de base" fallback caption — defaults to French like every
+    /// other JamShackUI component's default language.
+    public let language: AppLanguage
 
-    public init(root: Int, chordTemplateID: String, colorScheme: PitchKeyboardColorScheme = PitchKeyboardColorScheme()) {
+    public init(root: Int, chordTemplateID: String, colorScheme: PitchKeyboardColorScheme = PitchKeyboardColorScheme(), language: AppLanguage = .fr) {
         self.diagram = GuitarChordShape.diagram(forRoot: root, chordTemplateID: chordTemplateID)
         self.fallbackLabel = "\(PitchClass(root).name())\(chordTemplateID)"
         self.colorScheme = colorScheme
+        self.language = language
+    }
+
+    /// The Chord Library's own entry point: a specific inversion's diagram (0 = root position),
+    /// via `GuitarChordShape.diagram(forRoot:chordTemplateID:inversion:)` — see that function's
+    /// doc comment for when this falls back to the root-position shape (`diagram?.isBasePositionFallback`).
+    public init(root: Int, chordTemplateID: String, inversion: Int, colorScheme: PitchKeyboardColorScheme = PitchKeyboardColorScheme(), language: AppLanguage = .fr) {
+        self.diagram = GuitarChordShape.diagram(forRoot: root, chordTemplateID: chordTemplateID, inversion: inversion)
+        self.fallbackLabel = "\(PitchClass(root).name())\(chordTemplateID)"
+        self.colorScheme = colorScheme
+        self.language = language
     }
 
     /// Consumes an already-resolved diagram straight from `ImprovSession`'s live state (e.g.
@@ -31,7 +46,7 @@ public struct GuitarChordDiagramView: View {
     /// exact struct, so there's no need to also carry a `chordTemplateID` through just to
     /// re-derive the same diagram a second time via `GuitarChordShape.diagram(forRoot:
     /// chordTemplateID:)`.
-    public init(webDiagram: WebConsoleGuitarChordDiagram?, fallbackLabel: String, colorScheme: PitchKeyboardColorScheme = PitchKeyboardColorScheme()) {
+    public init(webDiagram: WebConsoleGuitarChordDiagram?, fallbackLabel: String, colorScheme: PitchKeyboardColorScheme = PitchKeyboardColorScheme(), language: AppLanguage = .fr) {
         self.diagram = webDiagram.map { web in
             GuitarChordShape.Diagram(
                 label: web.label,
@@ -41,6 +56,7 @@ public struct GuitarChordDiagramView: View {
         }
         self.fallbackLabel = fallbackLabel
         self.colorScheme = colorScheme
+        self.language = language
     }
 
     // MARK: - Geometry (mirrors guitarChordDiagramHTML's own width/height/margin/shownFrets)
@@ -64,6 +80,11 @@ public struct GuitarChordDiagramView: View {
                     draw(diagram: diagram, in: context, size: size)
                 }
                 .frame(width: Self.width, height: Self.height)
+                if diagram.isBasePositionFallback {
+                    Text(L10n.string(.appLabelPositionDeBase, language))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
         } else {
             Text("\(fallbackLabel): pas de position standard")

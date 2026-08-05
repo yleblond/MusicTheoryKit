@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import MusicTheoryKit
 
 /// A single "column" of notes to draw on the grand staff — mirrors
 /// `Sources/WebConsole/StaticAssets.swift`'s `renderStaffSVG` per-event shape
@@ -217,6 +218,29 @@ public struct ChordStaffView: View {
         let rootMidi = 60 + root
         let pitches = tones.map { pc in rootMidi + (((pc - root) % 12) + 12) % 12 }
         return StaffEvent(pitches: pitches, chordRoot: root, chordTones: tones)
+    }
+
+    /// One column per pitch class, each in the next octave above the previous (see
+    /// `PitchSequencing.ascendingPitches`) — a sequence of individual notes (a scale run), as
+    /// opposed to `chordEvent(root:tones:)`'s single stacked-chord column. Used by the Mode
+    /// Library (the mode's own notes in degree order) and the Progression Library (a bass-line
+    /// preview), each column highlighting `chordRoot`/`chordTones` the same way a chord's own
+    /// root/tones do.
+    public static func ascendingSequence(pitchClasses: [Int], chordRoot: Int?, chordTones: [Int], startingAbove floor: Int = 59) -> [StaffEvent] {
+        PitchSequencing.ascendingPitches(forPitchClasses: pitchClasses, startingAbove: floor).map {
+            StaffEvent(pitches: [$0], chordRoot: chordRoot, chordTones: chordTones)
+        }
+    }
+
+    /// Same ascending placement as `ascendingSequence(pitchClasses:...)`, but keeps every pitch
+    /// class in ONE column — the Chord Library's own inversion display (which tone sits lowest
+    /// determines what the inversion actually sounds like, unlike `chordEvent`'s always-root
+    /// position stacking).
+    public static func ascendingVoicing(pitchClasses: [Int], chordRoot: Int?, chordTones: [Int], startingAbove floor: Int = 59) -> StaffEvent {
+        StaffEvent(
+            pitches: PitchSequencing.ascendingPitches(forPitchClasses: pitchClasses, startingAbove: floor),
+            chordRoot: chordRoot, chordTones: chordTones
+        )
     }
 }
 
