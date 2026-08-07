@@ -111,7 +111,26 @@ public final class PiecePlayer: @unchecked Sendable {
         stateLock.lock()
         playGeneration += 1
         let generation = playGeneration
+        let previousPitchesByInstrument = activePitchesByInstrument
         stateLock.unlock()
+
+        // Bumping `playGeneration` above turns every one of a superseded previous `play(_:)`
+        // call's still-pending note-offs (including its own safety net further below) into a
+        // no-op — by design, so a stale schedule can't reach into what's playing now. But that
+        // leaves nothing to ever turn off a previous note whose note-ON already fired; this is
+        // the only thing that still can (a note started by a piece, cut off mid-playback by a
+        // second `play(_:)` before its own note-off — or that safety net — had fired, stayed
+        // stuck sounding forever otherwise).
+        for (key, pitches) in previousPitchesByInstrument {
+            let target = key.flatMap { namedSamplers[$0] }
+            for pitch in pitches {
+                if let target {
+                    target.stopNote(pitch: pitch)
+                } else {
+                    sampler.stopNote(Self.clampedByte(pitch), onChannel: 0)
+                }
+            }
+        }
 
         let now = DispatchTime.now()
         for note in notes {

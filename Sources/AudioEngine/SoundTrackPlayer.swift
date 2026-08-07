@@ -48,8 +48,18 @@ public final class SoundTrackPlayer: @unchecked Sendable {
         stateLock.lock()
         playGeneration += 1
         let generation = playGeneration
+        let previousPitches = activePitches
         activePitches = Set(soundTrack.events.map(\.pitch))
         stateLock.unlock()
+
+        // Bumping `playGeneration` above turns every one of a superseded previous `play(_:)`
+        // call's still-pending note-offs (including its own safety net below) into a no-op — by
+        // design, so a stale schedule can't reach into what's playing now. But that leaves
+        // nothing to ever turn off a previous note whose note-ON already fired; this is the only
+        // thing that still can, and it's what was missing (a note started by a recording,
+        // stopped mid-playback by a second `play(_:)` before its own note-off — or the following
+        // safety net — had fired, stayed stuck sounding forever).
+        for pitch in previousPitches { sampler.stopNote(pitch: pitch) }
 
         let now = DispatchTime.now()
         for event in soundTrack.events {

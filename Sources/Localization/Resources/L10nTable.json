@@ -904,6 +904,28 @@
   "ru": "Алиас",
   "zhHans": "别名"
  },
+ "appFieldConsonance": {
+  "de": "Konsonanz",
+  "en": "Consonance",
+  "es": "Consonancia",
+  "fr": "Consonance",
+  "it": "Consonanza",
+  "ja": "協和度",
+  "pt": "Consonância",
+  "ru": "Консонанс",
+  "zhHans": "协和度"
+ },
+ "appFieldCouleurMelodique": {
+  "de": "Farbe",
+  "en": "Color",
+  "es": "Color",
+  "fr": "Couleur",
+  "it": "Colore",
+  "ja": "カラー",
+  "pt": "Cor",
+  "ru": "Окраска",
+  "zhHans": "色彩"
+ },
  "appFieldFournisseur": {
   "de": "Anbieter",
   "en": "Provider",
@@ -1036,6 +1058,28 @@
   "ru": "Тип аккорда",
   "zhHans": "和弦性质"
  },
+ "appFieldRoleFonctionnel": {
+  "de": "Rolle",
+  "en": "Role",
+  "es": "Rol",
+  "fr": "Rôle",
+  "it": "Ruolo",
+  "ja": "役割",
+  "pt": "Papel",
+  "ru": "Роль",
+  "zhHans": "角色"
+ },
+ "appFieldSourceFonctionnelle": {
+  "de": "Quelle",
+  "en": "Source",
+  "es": "Fuente",
+  "fr": "Source",
+  "it": "Fonte",
+  "ja": "ソース",
+  "pt": "Fonte",
+  "ru": "Источник",
+  "zhHans": "来源"
+ },
  "appFieldSourceTest": {
   "de": "Quelle",
   "en": "Source",
@@ -1057,6 +1101,17 @@
   "pt": "Estilo de notação",
   "ru": "Стиль нотации",
   "zhHans": "记谱风格"
+ },
+ "appFieldTensionMelodique": {
+  "de": "Spannung",
+  "en": "Tension",
+  "es": "Tensión",
+  "fr": "Tension",
+  "it": "Tensione",
+  "ja": "緊張",
+  "pt": "Tensão",
+  "ru": "Напряжение",
+  "zhHans": "张力"
  },
  "appFieldVitesse": {
   "de": "Geschwindigkeit",
@@ -1388,6 +1443,17 @@
   "ru": "Подключённые устройства",
   "zhHans": "已连接的设备"
  },
+ "appHeadingAttractions": {
+  "de": "Anziehungen",
+  "en": "Attractions",
+  "es": "Atracciones",
+  "fr": "Attractions",
+  "it": "Attrazioni",
+  "ja": "引力",
+  "pt": "Atrações",
+  "ru": "Притяжения",
+  "zhHans": "吸引力"
+ },
  "appHeadingBibliothequeAccords": {
   "de": "Akkordbibliothek",
   "en": "Chord library",
@@ -1685,6 +1751,17 @@
   "ru": "Шаги",
   "zhHans": "步骤"
  },
+ "appHeadingExplorationFonctionnelle": {
+  "de": "Funktionale Erkundung",
+  "en": "Functional exploration",
+  "es": "Exploración funcional",
+  "fr": "Exploration fonctionnelle",
+  "it": "Esplorazione funzionale",
+  "ja": "機能的探索",
+  "pt": "Exploração funcional",
+  "ru": "Функциональное исследование",
+  "zhHans": "功能探索"
+ },
  "appHeadingFichiersSoundfont": {
   "de": "SoundFont-Dateien",
   "en": "SoundFont files",
@@ -1828,6 +1905,17 @@
   "ru": "Ноты и аккорды",
   "zhHans": "音符与和弦"
  },
+ "appHeadingOrbiteFonctionnelle": {
+  "de": "Funktionale Umlaufbahn",
+  "en": "Functional orbit",
+  "es": "Órbita funcional",
+  "fr": "Orbite fonctionnelle",
+  "it": "Orbita funzionale",
+  "ja": "機能軌道",
+  "pt": "Órbita funcional",
+  "ru": "Функциональная орбита",
+  "zhHans": "功能轨道"
+ },
  "appHeadingProfilStockage": {
   "de": "Speicherprofil",
   "en": "Storage profile",
@@ -1838,6 +1926,17 @@
   "pt": "Perfil de armazenamento",
   "ru": "Профиль хранения",
   "zhHans": "存储配置"
+ },
+ "appHeadingProgressionsTypeDuMode": {
+  "de": "Typische Progressionen dieses Modus",
+  "en": "Common progressions in this mode",
+  "es": "Progresiones típicas de este modo",
+  "fr": "Progressions type de ce mode",
+  "it": "Progressioni tipiche di questo modo",
+  "ja": "このモードの典型的な進行",
+  "pt": "Progressões típicas deste modo",
+  "ru": "Типичные последовательности этого лада",
+  "zhHans": "此调式的常见和声进行"
  },
  "appHeadingRechercher": {
   "de": "Suchen",
@@ -1860,6 +1959,17 @@
   "pt": "Reconhecimento",
   "ru": "Распознавание",
   "zhHans": "识别"
+ },
+ "appHeadingSonAudition": {
+  "de": "Anspielton",
+  "en": "Audition sound",
+  "es": "Sonido de audición",
+  "fr": "Son d'écoute",
+  "it": "Suono di ascolto",
+  "ja": "試聴音",
+  "pt": "Som de audição",
+  "ru": "Звук для прослушивания",
+  "zhHans": "试听音色"
  },
  "appHeadingSonDeLecture": {
   "de": "Wiedergabeklang",
@@ -1915,6 +2025,193 @@
   "pt": "Utilização do armazenamento",
   "ru": "Использование хранилища",
   "zhHans": "存储使用情况"
+ },
+ "appHeadingVocabulaireMelodique": {
+  "de": "Melodisches Vokabular",
+  "en": "Melodic vocabulary",
+  "es": "Vocabulario melódico",
+  "fr": "Vocabulaire mélodique",
+  "it": "Vocabolario melodico",
+  "ja": "メロディック・ボキャブラリー",
+  "pt": "Vocabulário melódico",
+  "ru": "Мелодический словарь",
+  "zhHans": "旋律词汇"
+ },
+ "appHelpFunctionalMapArrows": {
+  "de": "Pfeile: zeigen eine natürliche Tendenz zur Auflösung zu einem anderen Akkord – je dicker der Pfeil, desto stärker der Zug.",
+  "en": "Arrows: show a natural tendency to resolve toward another chord — the thicker the arrow, the stronger the pull.",
+  "es": "Flechas: indican una tendencia natural a resolver hacia otro acorde; cuanto más gruesa la flecha, más fuerte la atracción.",
+  "fr": "Flèches : indiquent une tendance naturelle à résoudre vers un autre accord — plus la flèche est épaisse, plus l'attraction est forte.",
+  "it": "Frecce: indicano una tendenza naturale a risolvere verso un altro accordo; più spessa è la freccia, più forte è l'attrazione.",
+  "ja": "矢印：別の和音へ解決する自然な傾向を示します。矢印が太いほど引力が強くなります。",
+  "pt": "Setas: indicam uma tendência natural de resolução para outro acorde; quanto mais espessa a seta, mais forte a atração.",
+  "ru": "Стрелки: показывают естественную тенденцию к разрешению в другой аккорд — чем толще стрелка, тем сильнее притяжение.",
+  "zhHans": "箭头：表示朝另一个和弦解决的自然倾向——箭头越粗，吸引力越强。"
+ },
+ "appHelpFunctionalMapAway": {
+  "de": "Gelb (Bewegung): Entfernung vom Zentrum, Vorbereitung – dient oft der Entwicklung der Progression.",
+  "en": "Yellow (Movement): moving away from the center, preparation — often used to develop the progression.",
+  "es": "Amarillo (Movimiento): alejamiento del centro, preparación, sirve a menudo para desarrollar la progresión.",
+  "fr": "Jaune (Mouvement) : éloignement du centre, préparation, sert souvent à développer la progression.",
+  "it": "Giallo (Movimento): allontanamento dal centro, preparazione, spesso usato per sviluppare la progressione.",
+  "ja": "黄色（動き）：中心からの離脱、準備。進行を展開するためによく使われます。",
+  "pt": "Amarelo (Movimento): afastamento do centro, preparação, frequentemente usado para desenvolver a progressão.",
+  "ru": "Жёлтый (движение): отдаление от центра, подготовка — часто используется для развития последовательности.",
+  "zhHans": "黄色（动感）：远离中心，起到准备作用，常用于发展和声进行。"
+ },
+ "appHelpFunctionalMapDistance": {
+  "de": "Abstand zum Zentrum: Je weiter ein Akkord entfernt ist, desto instabiler oder gespannter ist seine Funktion.",
+  "en": "Distance from the center: the farther a chord sits, the more unstable or tense its function.",
+  "es": "Distancia al centro: cuanto más alejado está un acorde, más inestable o tensa es su función.",
+  "fr": "Distance au centre : plus un accord est éloigné, plus sa fonction est instable ou tendue.",
+  "it": "Distanza dal centro: più un accordo è lontano, più la sua funzione è instabile o tesa.",
+  "ja": "中心からの距離：和音が中心から離れるほど、その機能は不安定または緊張したものになります。",
+  "pt": "Distância ao centro: quanto mais afastado um acorde, mais instável ou tensa é a sua função.",
+  "ru": "Расстояние от центра: чем дальше аккорд, тем менее устойчива или более напряжена его функция.",
+  "zhHans": "与中心的距离：和弦离中心越远，其功能越不稳定或越紧张。"
+ },
+ "appHelpFunctionalMapHome": {
+  "de": "Grün (Stabilität): Ruhe, das Zentrum des Modus. Der zentrale Akkord ist meist Stufe I bzw. i.",
+  "en": "Green (Stability): rest, the mode's own center. The central chord is usually degree I or i.",
+  "es": "Verde (Estabilidad): reposo, centro del modo. El acorde central suele ser el grado I o i.",
+  "fr": "Vert (Stabilité) : repos, centre du mode. L'accord central est généralement le degré I ou i.",
+  "it": "Verde (Stabilità): riposo, centro del modo. L'accordo centrale è di solito il grado I o i.",
+  "ja": "緑（安定）：休止、モードの中心。中心の和音は通常、度数Iまたはiです。",
+  "pt": "Verde (Estabilidade): repouso, centro do modo. O acorde central é geralmente o grau I ou i.",
+  "ru": "Зелёный (устойчивость): покой, центр лада. Центральный аккорд — как правило, степень I или i.",
+  "zhHans": "绿色（稳定）：休止，调式的中心。中心和弦通常是第I级或i级。"
+ },
+ "appHelpFunctionalMapImportant": {
+  "de": "Die Funktion eines Akkords ist nicht absolut: Sie hängt vom Modus, dem tonalen Zentrum und dem musikalischen Kontext ab.",
+  "en": "A chord's function isn't absolute: it depends on the mode, the tonal center, and the musical context.",
+  "es": "La función de un acorde no es absoluta: depende del modo, del centro tonal y del contexto musical.",
+  "fr": "La fonction d'un accord n'est pas absolue : elle dépend du mode, du centre tonal, et du contexte musical.",
+  "it": "La funzione di un accordo non è assoluta: dipende dal modo, dal centro tonale e dal contesto musicale.",
+  "ja": "和音の機能は絶対的なものではなく、モード、調的中心、音楽的文脈に依存します。",
+  "pt": "A função de um acorde não é absoluta: depende do modo, do centro tonal e do contexto musical.",
+  "ru": "Функция аккорда не абсолютна: она зависит от лада, тонального центра и музыкального контекста.",
+  "zhHans": "和弦的功能并非绝对：它取决于调式、调性中心和音乐语境。"
+ },
+ "appHelpFunctionalMapModal": {
+  "de": "◆ Violette Umrandung: Der Akkord enthält eine für den Modus besonders charakteristische Note – unabhängig von seiner funktionalen Farbe.",
+  "en": "◆ Violet outline: the chord contains a note that's especially characteristic of the mode — independent of its functional color.",
+  "es": "◆ Contorno violeta: el acorde contiene una nota especialmente característica del modo, independiente de su color funcional.",
+  "fr": "◆ Contour violet : l'accord contient une note particulièrement caractéristique du mode — indépendant de sa couleur fonctionnelle.",
+  "it": "◆ Contorno viola: l'accordo contiene una nota particolarmente caratteristica del modo, indipendentemente dal suo colore funzionale.",
+  "ja": "◆ 紫の輪郭：その和音にはモードに特に特徴的な音が含まれています。機能的な色とは無関係です。",
+  "pt": "◆ Contorno violeta: o acorde contém uma nota particularmente característica do modo, independente da sua cor funcional.",
+  "ru": "◆ Фиолетовый контур: аккорд содержит ноту, особенно характерную для лада — независимо от его функционального цвета.",
+  "zhHans": "◆ 紫色轮廓：该和弦包含调式中特别具有特征性的音符——与其功能颜色无关。"
+ },
+ "appHelpFunctionalMapNeutral": {
+  "de": "Blau (Neutral): Übergangsakkord, schwächere oder mehrdeutige Funktion, kontextabhängig.",
+  "en": "Blue (Neutral): a transitional chord, weaker or more ambiguous function, context-dependent.",
+  "es": "Azul (Neutro): acorde de transición, función más ambigua, dependiente del contexto.",
+  "fr": "Bleu (Neutre) : accord de transition, fonction plus ambiguë, dépendant du contexte.",
+  "it": "Blu (Neutro): accordo di transizione, funzione più ambigua, dipendente dal contesto.",
+  "ja": "青（中立）：経過的な和音で、機能があいまいで文脈に依存します。",
+  "pt": "Azul (Neutro): acorde de transição, função mais ambígua, dependente do contexto.",
+  "ru": "Синий (нейтральный): проходящий аккорд, более неопределённая функция, зависящая от контекста.",
+  "zhHans": "蓝色（中性）：过渡性和弦，功能较为模糊，取决于上下文。"
+ },
+ "appHelpFunctionalMapTension": {
+  "de": "Orange bis Rot (Spannung): starker Zug zur Auflösung – nicht notwendigerweise eine klassische Dominante.",
+  "en": "Orange to red (Tension): a strong pull toward resolution — not necessarily a classical dominant.",
+  "es": "Naranja a rojo (Tensión): fuerte atracción hacia una resolución, no necesariamente una dominante clásica.",
+  "fr": "Orange à rouge (Tension) : forte attraction vers une résolution — pas nécessairement une dominante classique.",
+  "it": "Da arancione a rosso (Tensione): forte attrazione verso una risoluzione, non necessariamente una dominante classica.",
+  "ja": "オレンジから赤（緊張）：解決への強い引力——古典的な属和音である必要はありません。",
+  "pt": "De laranja a vermelho (Tensão): forte atração para uma resolução — não necessariamente uma dominante clássica.",
+  "ru": "От оранжевого до красного (напряжение): сильное тяготение к разрешению — не обязательно классическая доминанта.",
+  "zhHans": "橙至红色（张力）：强烈趋向解决——不一定是传统意义上的属和弦。"
+ },
+ "appHelpFunctionalMapTitle": {
+  "de": "Wie liest man diese Visualisierung?",
+  "en": "How to read this visualization?",
+  "es": "¿Cómo leer esta visualización?",
+  "fr": "Comment lire cette visualisation ?",
+  "it": "Come leggere questa visualizzazione?",
+  "ja": "この図の読み方",
+  "pt": "Como ler esta visualização?",
+  "ru": "Как читать эту визуализацию?",
+  "zhHans": "如何阅读此可视化图？"
+ },
+ "appHelpMelodicMapChordTone": {
+  "de": "Orange (Akkordton): eine strukturelle Note des Akkords – nicht unbedingt stabil, manche tragen zu seiner Spannung bei.",
+  "en": "Orange (Chord tone): a structural note of the chord — not necessarily stable, some contribute to its tension.",
+  "es": "Naranja (Nota del acorde): nota estructural del acorde, no necesariamente estable; algunas contribuyen a su tensión.",
+  "fr": "Orange (Ton de l'accord) : note structurelle de l'accord — pas nécessairement stable, certaines participent à sa tension.",
+  "it": "Arancione (Nota dell'accordo): nota strutturale dell'accordo, non necessariamente stabile; alcune contribuiscono alla sua tensione.",
+  "ja": "オレンジ（コードトーン）：和音の構造的な音——必ずしも安定しているわけではなく、緊張感に関わるものもあります。",
+  "pt": "Laranja (Nota do acorde): nota estrutural do acorde — não necessariamente estável; algumas contribuem para a sua tensão.",
+  "ru": "Оранжевый (тон аккорда): структурная нота аккорда — не обязательно устойчивая, некоторые участвуют в его напряжении.",
+  "zhHans": "橙色（和弦音）：和弦的结构性音符——不一定稳定，有些会参与制造张力。"
+ },
+ "appHelpMelodicMapColor": {
+  "de": "Gelb (Farbe): eine Erweiterung oder Note, die harmonische Farbe verleiht, ohne stark nach Auflösung zu verlangen.",
+  "en": "Yellow (Color): an extension or note adding harmonic color without strongly needing resolution.",
+  "es": "Amarillo (Color): extensión o nota que aporta color armónico sin requerir fuertemente una resolución.",
+  "fr": "Jaune (Couleur) : extension ou note apportant une couleur harmonique sans nécessiter fortement une résolution.",
+  "it": "Giallo (Colore): estensione o nota che aggiunge colore armonico senza richiedere fortemente una risoluzione.",
+  "ja": "黄色（カラー）：強い解決を必要とせず、和声的な色彩を加えるエクステンションや音。",
+  "pt": "Amarelo (Cor): extensão ou nota que acrescenta cor harmónica sem necessitar fortemente de resolução.",
+  "ru": "Жёлтый (окраска): расширение или нота, добавляющая гармоническую окраску, не требуя явного разрешения.",
+  "zhHans": "黄色（色彩）：增添和声色彩、但不强烈需要解决的延伸音或音符。"
+ },
+ "appHelpMelodicMapContextual": {
+  "de": "Blau (Kontextabhängig): die Rolle dieser Note hängt stark vom Voicing, der Phrase oder ihrem Umfeld ab.",
+  "en": "Blue (Contextual): this note's role depends heavily on the voicing, the phrase, or what surrounds it.",
+  "es": "Azul (Contextual): el papel de esta nota depende en gran medida del voicing, la frase o lo que la rodea.",
+  "fr": "Bleu (Contextuelle) : le rôle de cette note dépend fortement du voicing, de la phrase ou de ce qui l'entoure.",
+  "it": "Blu (Contestuale): il ruolo di questa nota dipende molto dal voicing, dalla frase o da ciò che la circonda.",
+  "ja": "青（文脈依存）：この音の役割は、ボイシングやフレーズ、周囲の音に大きく依存します。",
+  "pt": "Azul (Contextual): o papel desta nota depende muito do voicing, da frase ou do que a rodeia.",
+  "ru": "Синий (контекстная): роль этой ноты сильно зависит от вуайсинга, фразы или окружения.",
+  "zhHans": "蓝色（语境相关）：这个音的作用很大程度上取决于voicing、乐句或周围的音符。"
+ },
+ "appHelpMelodicMapPrinciple": {
+  "de": "Eine Note ist an sich nicht gut oder schlecht. Ihre Farbe hängt vom erklingenden Akkord, dem verwendeten Modus und dem ab, was davor und danach kommt.",
+  "en": "A note isn't good or bad on its own. Its color depends on the chord sounding, the mode in use, and what comes before and after.",
+  "es": "Una nota no es buena ni mala en sí misma. Su color depende del acorde que sonando, del modo utilizado y de lo que viene antes y después.",
+  "fr": "Une note n'est pas bonne ou mauvaise en elle-même. Sa couleur dépend de l'accord qui sonne, du mode utilisé, et de ce qui vient avant et après.",
+  "it": "Una nota non è buona o cattiva di per sé. Il suo colore dipende dall'accordo che suona, dal modo utilizzato e da ciò che viene prima e dopo.",
+  "ja": "音そのものに良し悪しはありません。その色は、鳴っている和音、使用されているモード、そして前後に来るものによって決まります。",
+  "pt": "Uma nota não é boa ou má em si mesma. A sua cor depende do acorde que está a tocar, do modo utilizado, e do que vem antes e depois.",
+  "ru": "Нота не бывает хорошей или плохой сама по себе. Её окраска зависит от звучащего аккорда, используемого лада и от того, что было до и после.",
+  "zhHans": "音符本身无所谓好坏。它的色彩取决于正在响起的和弦、所用的调式，以及前后出现的音符。"
+ },
+ "appHelpMelodicMapStable": {
+  "de": "Grün (Stabil): eine Note, die im Verhältnis zum Akkord ein starkes Ruhegefühl vermittelt.",
+  "en": "Green (Stable): a note giving a strong sense of rest relative to the chord.",
+  "es": "Verde (Estable): nota que da una fuerte sensación de reposo respecto al acorde.",
+  "fr": "Vert (Stable) : note donnant une forte sensation de repos relativement à l'accord.",
+  "it": "Verde (Stabile): nota che dà una forte sensazione di riposo rispetto all'accordo.",
+  "ja": "緑（安定）：和音に対して強い休止感を与える音。",
+  "pt": "Verde (Estável): nota que dá uma forte sensação de repouso em relação ao acorde.",
+  "ru": "Зелёный (устойчивая): нота, создающая сильное ощущение покоя относительно аккорда.",
+  "zhHans": "绿色（稳定）：相对于和弦给人强烈休止感的音。"
+ },
+ "appHelpMelodicMapTension": {
+  "de": "Rot (Spannung): starke Reibung und/oder starke Auflösungstendenz. Bedeutet niemals „falsche Note“.",
+  "en": "Red (Tension): significant friction and/or a strong tendency to resolve. Never means \"wrong note.\"",
+  "es": "Rojo (Tensión): fricción importante o fuerte tendencia a resolver. Nunca significa «nota equivocada».",
+  "fr": "Rouge (Tension) : frottement important et/ou forte tendance de résolution. Ne signifie jamais « erreur ».",
+  "it": "Rosso (Tensione): frizione importante e/o forte tendenza a risolvere. Non significa mai «nota sbagliata».",
+  "ja": "赤（緊張）：強い摩擦、または強い解決への傾向。「間違った音」を意味するわけではありません。",
+  "pt": "Vermelho (Tensão): fricção importante e/ou forte tendência de resolução. Nunca significa «nota errada».",
+  "ru": "Красный (напряжение): значительное трение и/или сильная тенденция к разрешению. Никогда не означает «неверная нота».",
+  "zhHans": "红色（张力）：明显的摩擦感和/或强烈的解决倾向。绝不意味着「错误的音」。"
+ },
+ "appHelpMelodicMapTitle": {
+  "de": "Wie liest man die melodischen Farben?",
+  "en": "How to read the melodic colors?",
+  "es": "¿Cómo leer los colores melódicos?",
+  "fr": "Comment lire les couleurs mélodiques ?",
+  "it": "Come leggere i colori melodici?",
+  "ja": "メロディックカラーの読み方",
+  "pt": "Como ler as cores melódicas?",
+  "ru": "Как читать мелодические цвета?",
+  "zhHans": "如何解读旋律颜色？"
  },
  "appHintAccepteInvitationGameCenter": {
   "de": "Nimm eine erhaltene Game Center-Einladung an, oder finde automatisch eine offene Sitzung.",
@@ -2191,6 +2488,17 @@
   "ru": "Лимит превышен — линия показывает, где он находится.",
   "zhHans": "已超出限额 — 线条标示其位置。"
  },
+ "appHintSonAuditionTheorie": {
+  "de": "Wird für die Wiedergabe in den Tabs Akkorde, Modi und Progressionen verwendet.",
+  "en": "Used for playback in the Accords, Modes and Progressions tabs.",
+  "es": "Se usa para la reproducción en las pestañas Acordes, Modos y Progresiones.",
+  "fr": "Utilisé pour l'écoute dans les onglets Accords, Modes et Progressions.",
+  "it": "Usato per l'ascolto nelle schede Accordi, Modi e Progressioni.",
+  "ja": "「コード」「モード」「進行」タブでの試聴に使用されます。",
+  "pt": "Usado para a audição nas abas Acordes, Modos e Progressões.",
+  "ru": "Используется для прослушивания на вкладках «Аккорды», «Лады» и «Последовательности».",
+  "zhHans": "用于「和弦」「调式」「和声进行」标签页中的试听。"
+ },
  "appHintSonParDefaut": {
   "de": "Standardklang (Synthese), falls keiner gewählt ist.",
   "en": "Default (synth) sound if none chosen.",
@@ -2301,6 +2609,28 @@
   "ru": "Использует активное подключение LLM (JamShack > LLM).",
   "zhHans": "使用当前激活的 LLM 连接（JamShack > LLM）。"
  },
+ "appLabelAccordActuel": {
+  "de": "Aktueller Akkord",
+  "en": "Current chord",
+  "es": "Acorde actual",
+  "fr": "Accord actuel",
+  "it": "Accordo attuale",
+  "ja": "現在の和音",
+  "pt": "Acorde atual",
+  "ru": "Текущий аккорд",
+  "zhHans": "当前和弦"
+ },
+ "appLabelAccordsExploresRecemment": {
+  "de": "Zuletzt erkundete Akkorde",
+  "en": "Recently explored chords",
+  "es": "Acordes explorados recientemente",
+  "fr": "Accords explorés récemment",
+  "it": "Accordi esplorati di recente",
+  "ja": "最近探索した和音",
+  "pt": "Acordes explorados recentemente",
+  "ru": "Недавно исследованные аккорды",
+  "zhHans": "最近探索的和弦"
+ },
  "appLabelAjouteLe": {
   "de": "Hinzugefügt am",
   "en": "Added on",
@@ -2366,6 +2696,17 @@
   "pt": "Calibração",
   "ru": "Калибровка",
   "zhHans": "校准"
+ },
+ "appLabelCaracteristiqueModale": {
+  "de": "Modal charakteristisch",
+  "en": "Modal characteristic",
+  "es": "Característico del modo",
+  "fr": "Caractéristique du mode",
+  "it": "Caratteristico del modo",
+  "ja": "モード特有",
+  "pt": "Característico do modo",
+  "ru": "Модальная особенность",
+  "zhHans": "调式特征"
  },
  "appLabelCatalogueMiseAJourDisponible": {
   "de": "Update verfügbar",
@@ -2587,6 +2928,17 @@
   "ru": "Не загружено",
   "zhHans": "未下载"
  },
+ "appLabelNoteCaracteristique": {
+  "de": "Charakteristische Note",
+  "en": "Characteristic note",
+  "es": "Nota característica",
+  "fr": "Note caractéristique",
+  "it": "Nota caratteristica",
+  "ja": "特徴音",
+  "pt": "Nota característica",
+  "ru": "Характерная нота",
+  "zhHans": "特征音"
+ },
  "appLabelNoteFaible": {
   "de": "Leise Note",
   "en": "Quiet note",
@@ -2608,6 +2960,17 @@
   "pt": "Nota forte",
   "ru": "Громкая нота",
   "zhHans": "强音符"
+ },
+ "appLabelNotesJoueesRecemment": {
+  "de": "Zuletzt gespielte Noten",
+  "en": "Recently played notes",
+  "es": "Notas tocadas recientemente",
+  "fr": "Notes jouées récemment",
+  "it": "Note suonate di recente",
+  "ja": "最近弾いた音",
+  "pt": "Notas tocadas recentemente",
+  "ru": "Недавно сыгранные ноты",
+  "zhHans": "最近弹奏的音符"
  },
  "appLabelNotesRecues": {
   "de": "Empfangene Noten",
@@ -2670,6 +3033,17 @@
   "pt": "Recomendado",
   "ru": "Рекомендуется",
   "zhHans": "推荐"
+ },
+ "appLabelResolutionsPossibles": {
+  "de": "Mögliche Auflösungen",
+  "en": "Possible resolutions",
+  "es": "Resoluciones posibles",
+  "fr": "Résolutions possibles",
+  "it": "Risoluzioni possibili",
+  "ja": "解決の可能性",
+  "pt": "Resoluções possíveis",
+  "ru": "Возможные разрешения",
+  "zhHans": "可能的解决方向"
  },
  "appLabelSessionGameCenterActive": {
   "de": "Game Center-Sitzung aktiv",
@@ -2780,6 +3154,61 @@
   "pt": "Tamanho",
   "ru": "Размер",
   "zhHans": "大小"
+ },
+ "appMelodicRoleChordTone": {
+  "de": "Akkordton",
+  "en": "Chord tone",
+  "es": "Nota del acorde",
+  "fr": "Ton de l'accord",
+  "it": "Nota dell'accordo",
+  "ja": "コードトーン",
+  "pt": "Nota do acorde",
+  "ru": "Тон аккорда",
+  "zhHans": "和弦音"
+ },
+ "appMelodicRoleColor": {
+  "de": "Farbe",
+  "en": "Color",
+  "es": "Color",
+  "fr": "Couleur",
+  "it": "Colore",
+  "ja": "カラー",
+  "pt": "Cor",
+  "ru": "Окраска",
+  "zhHans": "色彩"
+ },
+ "appMelodicRoleContextual": {
+  "de": "Kontextabhängig",
+  "en": "Contextual",
+  "es": "Contextual",
+  "fr": "Contextuelle",
+  "it": "Contestuale",
+  "ja": "文脈依存",
+  "pt": "Contextual",
+  "ru": "Контекстная",
+  "zhHans": "语境相关"
+ },
+ "appMelodicRoleStable": {
+  "de": "Stabil",
+  "en": "Stable",
+  "es": "Estable",
+  "fr": "Stable",
+  "it": "Stabile",
+  "ja": "安定",
+  "pt": "Estável",
+  "ru": "Устойчивая",
+  "zhHans": "稳定"
+ },
+ "appMelodicRoleTension": {
+  "de": "Spannung",
+  "en": "Tension",
+  "es": "Tensión",
+  "fr": "Tension",
+  "it": "Tensione",
+  "ja": "緊張",
+  "pt": "Tensão",
+  "ru": "Напряжение",
+  "zhHans": "张力"
  },
  "appMenuAttacherA": {
   "de": "Zuweisen zu...",
@@ -2979,6 +3408,17 @@
   "ru": "Нет",
   "zhHans": "无"
  },
+ "appOptionFormuleCalculee": {
+  "de": "Berechnete Formel",
+  "en": "Computed formula",
+  "es": "Fórmula calculada",
+  "fr": "Formule calculée",
+  "it": "Formula calcolata",
+  "ja": "計算式",
+  "pt": "Fórmula calculada",
+  "ru": "Вычисленная формула",
+  "zhHans": "计算公式"
+ },
  "appOptionFusionne": {
   "de": "Zusammengeführt",
   "en": "Merged",
@@ -3132,6 +3572,17 @@
   "pt": "Padrão",
   "ru": "Стандартный",
   "zhHans": "标准"
+ },
+ "appOptionTableStandard": {
+  "de": "Standardtabelle",
+  "en": "Standard table",
+  "es": "Tabla estándar",
+  "fr": "Table standard",
+  "it": "Tabella standard",
+  "ja": "標準テーブル",
+  "pt": "Tabela padrão",
+  "ru": "Стандартная таблица",
+  "zhHans": "标准表"
  },
  "appPaletteBleu": {
   "de": "Blau",
@@ -3551,6 +4002,83 @@
   "ru": "Все инструменты назначены.",
   "zhHans": "所有乐器均已分配。"
  },
+ "appQualifierEleve": {
+  "de": "Hoch",
+  "en": "High",
+  "es": "Alta",
+  "fr": "Élevée",
+  "it": "Alta",
+  "ja": "高い",
+  "pt": "Alta",
+  "ru": "Высокая",
+  "zhHans": "高"
+ },
+ "appQualifierFaible": {
+  "de": "Niedrig",
+  "en": "Low",
+  "es": "Baja",
+  "fr": "Faible",
+  "it": "Bassa",
+  "ja": "低い",
+  "pt": "Baixa",
+  "ru": "Низкая",
+  "zhHans": "低"
+ },
+ "appQualifierMoyen": {
+  "de": "Mittel",
+  "en": "Medium",
+  "es": "Media",
+  "fr": "Moyenne",
+  "it": "Media",
+  "ja": "中程度",
+  "pt": "Média",
+  "ru": "Средняя",
+  "zhHans": "中等"
+ },
+ "appRoleAway": {
+  "de": "Bewegung",
+  "en": "Movement",
+  "es": "Movimiento",
+  "fr": "Mouvement",
+  "it": "Movimento",
+  "ja": "動き",
+  "pt": "Movimento",
+  "ru": "Движение",
+  "zhHans": "动感"
+ },
+ "appRoleHome": {
+  "de": "Stabilität",
+  "en": "Stability",
+  "es": "Estabilidad",
+  "fr": "Stabilité",
+  "it": "Stabilità",
+  "ja": "安定",
+  "pt": "Estabilidade",
+  "ru": "Устойчивость",
+  "zhHans": "稳定"
+ },
+ "appRoleNeutral": {
+  "de": "Neutral",
+  "en": "Neutral",
+  "es": "Neutro",
+  "fr": "Neutre",
+  "it": "Neutro",
+  "ja": "中立",
+  "pt": "Neutro",
+  "ru": "Нейтральный",
+  "zhHans": "中性"
+ },
+ "appRoleTension": {
+  "de": "Spannung",
+  "en": "Tension",
+  "es": "Tensión",
+  "fr": "Tension",
+  "it": "Tensione",
+  "ja": "緊張",
+  "pt": "Tensão",
+  "ru": "Напряжение",
+  "zhHans": "张力"
+ },
  "appSectionHebergerReseauLocal": {
   "de": "Hosten (lokales Netzwerk)",
   "en": "Host (local network)",
@@ -3671,6 +4199,17 @@
   "pt": "Acordes",
   "ru": "Аккорды",
   "zhHans": "和弦"
+ },
+ "appTabApercuMode": {
+  "de": "Übersicht",
+  "en": "Overview",
+  "es": "Resumen",
+  "fr": "Aperçu",
+  "it": "Panoramica",
+  "ja": "概要",
+  "pt": "Visão geral",
+  "ru": "Обзор",
+  "zhHans": "概览"
  },
  "appTabBibliotheque": {
   "de": "Bibliotheken",

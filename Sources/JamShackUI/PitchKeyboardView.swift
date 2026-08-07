@@ -103,6 +103,12 @@ public struct PitchKeyboardView: View {
     /// in this pitch range — `ComputerKeyboardInputBar` uses it to mark exactly which keys the
     /// physical keyboard's letters currently reach. `nil` (the default) draws no outline.
     public let highlightedPitches: ClosedRange<Int>?
+    /// Keyed by PITCH CLASS (0...11, not absolute MIDI pitch) — overrides `colorScheme`'s own
+    /// role-based fill for every octave of that pitch class at once, e.g. the melodic-vocabulary
+    /// panel's own mini keyboard (colored by `MelodicRole`, a dimension `PitchDisplayState` has
+    /// no concept of). A pitch class with no entry here keeps its normal role-based fill —
+    /// existing call sites are unaffected by the empty default.
+    public let customFillColors: [Int: Color]
 
     /// Same fallback arrays `StaticAssets.swift`'s `PITCH_CLASS_COLORS`/`_TEXT_COLORS` use
     /// before the first real palette is known — a reasonable default for any call site that
@@ -132,7 +138,8 @@ public struct PitchKeyboardView: View {
         onNoteOff: ((Int) -> Void)? = nil,
         height: CGFloat = 144,
         keyLabels: [Int: String] = [:],
-        highlightedPitches: ClosedRange<Int>? = nil
+        highlightedPitches: ClosedRange<Int>? = nil,
+        customFillColors: [Int: Color] = [:]
     ) {
         self.minMidi = minMidi
         self.maxMidi = maxMidi
@@ -150,6 +157,7 @@ public struct PitchKeyboardView: View {
         self.height = height
         self.keyLabels = keyLabels
         self.highlightedPitches = highlightedPitches
+        self.customFillColors = customFillColors
     }
 
     // White key slot (0...6) within its octave, for the 7 white pitch classes.
@@ -247,7 +255,8 @@ public struct PitchKeyboardView: View {
                         alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring
                     )
                     let path = Path(key.rect.insetBy(dx: 0.5, dy: 0.5))
-                    context.fill(path, with: .color(colorScheme.fillColor(for: state.role, isWhiteKey: true)))
+                    let fill = customFillColors[((key.pitch % 12) + 12) % 12] ?? colorScheme.fillColor(for: state.role, isWhiteKey: true)
+                    context.fill(path, with: .color(fill))
                     context.stroke(path, with: .color(.black.opacity(0.4)), lineWidth: 1)
                     if let degree = state.degreeBadge {
                         badges.append((key.rect, degree, ((key.pitch % 12) + 12) % 12))
@@ -260,13 +269,14 @@ public struct PitchKeyboardView: View {
                         alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring
                     )
                     let path = Path(key.rect)
-                    context.fill(path, with: .color(colorScheme.fillColor(for: state.role, isWhiteKey: false)))
+                    let customFill = customFillColors[((key.pitch % 12) + 12) % 12]
+                    context.fill(path, with: .color(customFill ?? colorScheme.fillColor(for: state.role, isWhiteKey: false)))
                     // A colored black key otherwise has no edge of its own (unlike a white key,
                     // which always gets a stroke) — a thin outline keeps its shape legible
                     // against whatever bright fill color it just got. Left undrawn for the
                     // default (uncolored) black fill so every other, unrelated keyboard keeps
                     // its plain look.
-                    if state.role != .none {
+                    if customFill != nil || state.role != .none {
                         context.stroke(path, with: .color(.black), lineWidth: 1)
                     }
                     if let degree = state.degreeBadge {

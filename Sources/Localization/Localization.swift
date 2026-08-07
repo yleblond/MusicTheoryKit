@@ -394,6 +394,26 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appFieldModeDeJeu, appOptionJeuLie, appOptionArpegeMontant, appOptionArpegeDescendant
     case appOptionArpegeAllerRetour, appOptionJeuStaccato
 
+    // MARK: - App: Modes — functional exploration panel
+    case appHeadingExplorationFonctionnelle, appTabApercuMode
+    case appRoleHome, appRoleAway, appRoleTension, appRoleNeutral
+    case appLabelCaracteristiqueModale, appFieldSourceFonctionnelle, appOptionFormuleCalculee, appOptionTableStandard
+    case appHelpFunctionalMapTitle, appHelpFunctionalMapHome, appHelpFunctionalMapAway, appHelpFunctionalMapTension
+    case appHelpFunctionalMapNeutral, appHelpFunctionalMapModal, appHelpFunctionalMapDistance
+    case appHelpFunctionalMapArrows, appHelpFunctionalMapImportant
+    case appLabelNoteCaracteristique, appFieldRoleFonctionnel
+    case appHeadingOrbiteFonctionnelle, appHeadingAttractions
+    case appHeadingSonAudition, appHintSonAuditionTheorie
+
+    // MARK: - App: Modes — melodic vocabulary panel
+    case appHeadingVocabulaireMelodique, appLabelAccordActuel
+    case appMelodicRoleStable, appMelodicRoleChordTone, appMelodicRoleColor, appMelodicRoleTension, appMelodicRoleContextual
+    case appQualifierEleve, appQualifierMoyen, appQualifierFaible
+    case appFieldConsonance, appFieldCouleurMelodique, appFieldTensionMelodique, appLabelResolutionsPossibles
+    case appHelpMelodicMapTitle, appHelpMelodicMapStable, appHelpMelodicMapChordTone, appHelpMelodicMapColor
+    case appHelpMelodicMapTension, appHelpMelodicMapContextual, appHelpMelodicMapPrinciple
+    case appLabelNotesJoueesRecemment, appLabelAccordsExploresRecemment, appHeadingProgressionsTypeDuMode
+
     // MARK: - App: Progressions (Progression Library)
     case appHeadingBibliothequeProgressions, appFieldProgressionChoisie
     case appLabelNomUsuel, appLabelAucunNomUsuel

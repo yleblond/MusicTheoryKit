@@ -4,17 +4,16 @@ import JamShackUI
 import MusicTheoryKit
 import Localization
 
-/// "Accords" section of the Théorie tab — pick a root + quality, then see its name (via the
-/// active `NotationStyle`, see `NotationStyleSettingsView`), its notes on the grand staff, a
-/// guitar diagram (with an inversion-aware position picker, see
+/// "Accords" tab — pick a root + quality, then see its name (via the active `NotationStyle`, see
+/// `NotationStyleSettingsView`), its notes on the grand staff, a guitar diagram (with an
+/// inversion-aware position picker, see
 /// `GuitarChordShape.diagram(forRoot:chordTemplateID:inversion:)`), and the same chord
 /// highlighted on a keyboard with note-name bullets — plus a play button (the instrument itself
-/// is picked once, in `TheoryView`'s shared header, and threaded down via `auditionSoundID`).
+/// is picked once, in Settings > Théorie, and read via `ImprovSession.theoryAuditionSound()`).
 /// Two side-by-side columns on macOS/visionOS/iPad-width iOS, push list→detail navigation on
 /// iPhone-width iOS — see `TheoryLibraryLayout`.
 struct ChordLibraryView: View {
     let session: ImprovSession
-    @Binding var auditionSoundID: String?
 
     @State private var screen: TheoryLibraryScreen = .list
     @State private var selectedRoot: Int = 0
@@ -195,7 +194,7 @@ struct ChordLibraryView: View {
     }
 
     private func play() {
-        guard let auditionSoundID, let sound = session.favoriteSounds.first(where: { $0.id == auditionSoundID }) else { return }
+        guard let sound = session.theoryAuditionSound() else { return }
         try? session.loadTheoryLibraryAuditionSample(sound)
         let pitches = PitchSequencing.ascendingPitches(
             forPitchClasses: chord.voicing(inversion: inversion).orderedPitchClasses.map(\.value), startingAbove: 47
@@ -205,5 +204,5 @@ struct ChordLibraryView: View {
 }
 
 #Preview {
-    ChordLibraryView(session: ImprovSession(), auditionSoundID: .constant(nil))
+    ChordLibraryView(session: ImprovSession())
 }

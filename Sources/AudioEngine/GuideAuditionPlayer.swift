@@ -49,12 +49,24 @@ public final class GuideAuditionPlayer: @unchecked Sendable {
 
     /// Schedules every chord relative to "now" and returns immediately — same calling
     /// convention as `SoundTrackPlayer.play(_:)`.
+    ///
+    /// Bumping `playGeneration` makes every one of a SUPERSEDED previous call's still-pending
+    /// note-off events (both the per-chord ones and its own end-of-sequence safety net below) a
+    /// no-op — by design, so a stale schedule can never reach into what's playing now. But that
+    /// means a previous call's note-ON that already fired has nothing left to ever turn it off
+    /// once its own generation is gone; silencing `previousPitches` here, unconditionally, is
+    /// the only thing that still can. Without this, clicking through Chord/Mode/Progression
+    /// Library taps quickly enough — a real, easy-to-hit case, not a hypothetical race — leaves
+    /// a note stuck sounding forever (confirmed the hard way).
     public func play(_ chords: [GuideAuditionChord]) {
         stateLock.lock()
         playGeneration += 1
         let generation = playGeneration
+        let previousPitches = activePitches
         activePitches = Set(chords.flatMap(\.pitches))
         stateLock.unlock()
+
+        for pitch in previousPitches { sampler.stopNote(pitch: pitch) }
 
         let now = DispatchTime.now()
         for chord in chords {

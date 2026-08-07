@@ -65,6 +65,13 @@ struct JamShackApp: App {
         }
         .environment(appModel)
         .defaultSize(width: 1100, height: 800)
+
+        WindowGroup(id: AuxiliaryWindowID.theorieLegende.rawValue) {
+            TheorieLegendWindow()
+                .preferredColorScheme(.dark)
+        }
+        .environment(appModel)
+        .defaultSize(width: 480, height: 640)
         #endif
     }
 }

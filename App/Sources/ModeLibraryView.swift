@@ -5,21 +5,28 @@ import MusicTheoryKit
 import PieceModel
 import Localization
 
-/// "Modes" section of the Théorie tab — pick a tonic + mode/scale (`ScaleLibrary`), then see it
-/// in a 2-column × 3-row `Grid` (narrow notation column on the left, wide keyboard column on the
-/// right — see `ChordStaffView`'s `widthScale`): row 1 is the mode's own scale (+ Asc/Desc/
-/// Asc-et-Desc, each button plays immediately) next to the mode's keyboard (with note-name
-/// bullets and degree badges); row 2 is the mode's harmonized chords (+ a "play the sequence"
-/// button) next to whichever chord was last tapped, on its own keyboard; row 3 is the chord
-/// list (each playable on tap, labeled with its functional-harmony role — see
-/// `FunctionalHarmonyTable`) next to a circle-of-fifths section reusing `CircleOfFifthsWheelView`
-/// for an arbitrary picked tonic (see `ImprovSession.wheelState`). The instrument itself is
-/// picked once, in `TheoryView`'s shared header, and threaded down via `auditionSoundID`. This
-/// whole grid only shows on macOS/visionOS/iPad-width iOS; iPhone-width iOS keeps the original
-/// push list→detail navigation instead — see `TheoryLibraryLayout`.
+/// "Modes" tab — pick a tonic + mode/scale (`ScaleLibrary`), then see it in a 2-column × 3-row
+/// `Grid` (narrow notation column on the left, wide keyboard column on the right — see
+/// `ChordStaffView`'s `widthScale`): row 1 is the mode's own scale (+ Asc/Desc/Asc-et-Desc, each
+/// button plays immediately) next to the mode's keyboard (with note-name bullets and degree
+/// badges); row 2 is the mode's harmonized chords (+ a "play the sequence" button) next to
+/// whichever chord was last tapped, on its own keyboard; row 3 is the chord list (each playable
+/// on tap, labeled with its functional-harmony role — see `FunctionalHarmonyTable`) next to a
+/// circle-of-fifths section reusing `CircleOfFifthsWheelView` for an arbitrary picked tonic (see
+/// `ImprovSession.wheelState`). The instrument itself is picked once, in Settings > Théorie, and
+/// read via `ImprovSession.theoryAuditionSound()`. This whole grid only shows on macOS/visionOS/
+/// iPad-width iOS; iPhone-width iOS keeps the original push list→detail navigation instead —
+/// see `TheoryLibraryLayout`. Detachable into its own window on macOS/visionOS
+/// (`isDetachedWindow`/`AuxiliaryWindowID.theorie`) — this is the one Théorie screen that still
+/// offers that, now that Accords/Progressions are their own plain top-level tabs.
 struct ModeLibraryView: View {
     let session: ImprovSession
-    @Binding var auditionSoundID: String?
+    var isDetachedWindow: Bool = false
+
+    #if os(macOS) || os(visionOS)
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    #endif
 
     @State private var screen: TheoryLibraryScreen = .list
     @State private var selectedTonic: Int = 0
@@ -40,6 +47,32 @@ struct ModeLibraryView: View {
     /// invalidates any still-pending ones instead of them firing late over whatever comes next.
     @State private var playbackGeneration = 0
 
+    private enum ModeDetailSubScreen { case overview, functionalExploration }
+    @State private var modeDetailSubScreen: ModeDetailSubScreen = .overview
+    /// Which of the two `ModalFunctionalMapBuilder.build(for:source:)` sources currently drives
+    /// the functional-exploration panel — a user-facing choice (see that type's own doc comment
+    /// for why neither is presented as "the" answer).
+    @State private var functionalRoleSource: FunctionalRoleSource = .computed
+    /// Which note the melodic-vocabulary panel's own detail card shows — `nil` until the first
+    /// tap, at which point `effectiveSelectedMelodicNote` falls back to the current chord's own
+    /// root, same "always populated" convention every other Library screen already follows.
+    @State private var selectedMelodicNote: PitchClass?
+    /// Last few notes tapped in the melodic-vocabulary row/keyboard (oldest first, capped at 4) —
+    /// purely a "what did I just explore" memory aid, per this feature's own explicit "not an
+    /// editable progression/phrase" scope decision; also the only input `detectApproachResolution`
+    /// needs.
+    @State private var recentPlayedNotes: [PitchClass] = []
+    /// Last few distinct diatonic degrees selected anywhere in this mode's detail screen (oldest
+    /// first, capped at 4) — same "memory aid, not a builder" scope as `recentPlayedNotes`.
+    @State private var recentChordDegrees: [Int] = []
+    /// Which of `session.chordProgressionTemplates` the "Progressions type" block is currently
+    /// previewing — purely a reference/reminder of how this mode's already-known progressions
+    /// are put together (per explicit request), never an editable progression of the user's own.
+    @State private var selectedProgressionName: String?
+    /// iOS-only: the combined legend has no independent-window option there (see
+    /// `AuxiliaryWindowID.theorieLegende`'s own doc comment), so it's a dismissible sheet instead.
+    @State private var showsLegendSheet = false
+
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var usesTwoColumns: Bool { TheoryLibraryLayoutMode.usesTwoColumns(horizontalSizeClass: horizontalSizeClass) }
@@ -49,12 +82,41 @@ struct ModeLibraryView: View {
     }
 
     var body: some View {
-        TheoryLibraryLayout(screen: $screen, sidebarWidth: 320) {
-            listContent
-        } detailContent: { showBackButton, onBack in
-            detailContent(showBackButton: showBackButton, onBack: onBack)
+        VStack(spacing: 0) {
+            #if os(macOS) || os(visionOS)
+            HStack {
+                Spacer()
+                detachButton
+            }
+            .padding(.horizontal)
+            .padding(.top, 6)
+            #endif
+            TheoryLibraryLayout(screen: $screen, sidebarWidth: 320) {
+                listContent
+            } detailContent: { showBackButton, onBack in
+                detailContent(showBackButton: showBackButton, onBack: onBack)
+            }
         }
     }
+
+    #if os(macOS) || os(visionOS)
+    @ViewBuilder
+    private var detachButton: some View {
+        if isDetachedWindow {
+            Button {
+                dismissWindow(id: AuxiliaryWindowID.theorie.rawValue)
+            } label: {
+                Label(L10n.string(.appButtonReintegrer, session.currentLanguage), systemImage: "arrow.down.right.and.arrow.up.left")
+            }
+        } else {
+            Button {
+                openWindow(id: AuxiliaryWindowID.theorie.rawValue)
+            } label: {
+                Image(systemName: "rectangle.on.rectangle")
+            }
+        }
+    }
+    #endif
 
     // MARK: - List
 
@@ -97,6 +159,7 @@ struct ModeLibraryView: View {
                         Button {
                             selectedScaleID = scale.id
                             selectedChordIndex = 0
+                            modeDetailSubScreen = .overview
                             screen = .detail
                         } label: {
                             HStack {
@@ -132,14 +195,62 @@ struct ModeLibraryView: View {
                     }
                 }
 
-                Text(mode.displayName).font(.largeTitle).bold()
+                // Title + sub-screen toggle share one row (rather than the toggle getting a
+                // full-width row of its own below) to save vertical space — per explicit
+                // request. The toggle itself only has anything to switch to for the 7 classic
+                // modes (see `ModalFunctionalMapBuilder`'s own `familyID == 1` restriction, the
+                // same one `diatonicChordReferences`/`circleOfFifthsSection` already have) — it
+                // stays hidden for any other scale family rather than switching to a screen that
+                // would just render empty.
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
+                    Text(mode.displayName).font(.largeTitle).bold()
+                    if mode.scale.familyID == 1 {
+                        Picker("", selection: $modeDetailSubScreen) {
+                            Text(L10n.string(.appTabApercuMode, session.currentLanguage)).tag(ModeDetailSubScreen.overview)
+                            Text(L10n.string(.appHeadingExplorationFonctionnelle, session.currentLanguage)).tag(ModeDetailSubScreen.functionalExploration)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 340)
+                        if effectiveSubScreen == .functionalExploration {
+                            theoryLegendButton
+                        }
+                    }
+                    Spacer()
+                }
 
-                // A true 2-column × 3-row grid (not two independently-stacked VStacks — those
-                // drift out of horizontal alignment as soon as either column's own content
-                // varies in height) — `Grid` sizes each row to its tallest cell and each column
-                // to its widest, so e.g. row 2's chords staff and its neighboring chord keyboard
-                // always start at the same y regardless of either one's own natural height.
-                Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 12) {
+                switch effectiveSubScreen {
+                case .overview: overviewContent
+                case .functionalExploration: functionalExplorationSection
+                }
+            }
+            // Tracks every distinct diatonic degree selected anywhere in this screen (tap in the
+            // overview's chord list/staff, the functional-orbit graphs, or the melodic panel's
+            // own chord stepper) into `recentChordDegrees` — one shared history regardless of
+            // which sub-screen the selection came from.
+            .onChange(of: selectedFunctionalDegree) { _, newDegree in
+                guard let newDegree, recentChordDegrees.last != newDegree else { return }
+                recentChordDegrees.append(newDegree)
+                if recentChordDegrees.count > 4 { recentChordDegrees.removeFirst() }
+            }
+            .padding()
+        }
+    }
+
+    /// Falls back to `.overview` regardless of `modeDetailSubScreen`'s own stored value whenever
+    /// the current mode isn't family 1 — guards against a stale "Exploration fonctionnelle"
+    /// selection surviving a scale pick that hides the picker itself (belt-and-suspenders on top
+    /// of resetting the state directly wherever a new scale is picked).
+    private var effectiveSubScreen: ModeDetailSubScreen {
+        mode.scale.familyID == 1 ? modeDetailSubScreen : .overview
+    }
+
+    private var overviewContent: some View {
+        // A true 2-column × 3-row grid (not two independently-stacked VStacks — those
+        // drift out of horizontal alignment as soon as either column's own content
+        // varies in height) — `Grid` sizes each row to its tallest cell and each column
+        // to its widest, so e.g. row 2's chords staff and its neighboring chord keyboard
+        // always start at the same y regardless of either one's own natural height.
+        Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 12) {
                     // Row 1: the mode's own scale (+ Asc/Desc/Asc-et-Desc right under it) next
                     // to the mode's keyboard.
                     GridRow(alignment: .center) {
@@ -186,9 +297,6 @@ struct ModeLibraryView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-            }
-            .padding()
-        }
     }
 
     /// The mode's parent major key's conventional signature (e.g. D Dorian's parent is C
@@ -226,7 +334,7 @@ struct ModeLibraryView: View {
     /// `playingNoteIndex` to track whichever note is currently sounding, guarded by
     /// `playbackGeneration` — see that property's doc comment.
     private func play(direction: SequencePlayDirection) {
-        guard let auditionSoundID, let sound = session.favoriteSounds.first(where: { $0.id == auditionSoundID }) else { return }
+        guard let sound = session.theoryAuditionSound() else { return }
         try? session.loadTheoryLibraryAuditionSample(sound)
         let ascending = PitchSequencing.ascendingPitches(forPitchClasses: scaleDegreesWithOctave, startingAbove: 47)
         let sequence: [Int]
@@ -267,8 +375,7 @@ struct ModeLibraryView: View {
     /// highlighted the same way a scheduled Asc/Desc/Asc-et-Desc step is.
     private func playSingleNote(atColumnIndex index: Int) {
         let ascending = PitchSequencing.ascendingPitches(forPitchClasses: scaleDegreesWithOctave, startingAbove: 47)
-        guard ascending.indices.contains(index),
-              let auditionSoundID, let sound = session.favoriteSounds.first(where: { $0.id == auditionSoundID }) else { return }
+        guard ascending.indices.contains(index), let sound = session.theoryAuditionSound() else { return }
         try? session.loadTheoryLibraryAuditionSample(sound)
         playbackGeneration += 1
         let generation = playbackGeneration
@@ -440,7 +547,7 @@ struct ModeLibraryView: View {
     /// `playbackGeneration`, so the chord list's own highlight, the row-2 keyboard, and the
     /// circle-of-fifths ring all follow along live instead of only updating on an explicit tap.
     private func playAllChords() {
-        guard let auditionSoundID, let sound = session.favoriteSounds.first(where: { $0.id == auditionSoundID }) else { return }
+        guard let sound = session.theoryAuditionSound() else { return }
         try? session.loadTheoryLibraryAuditionSample(sound)
         playbackGeneration += 1
         let generation = playbackGeneration
@@ -482,8 +589,7 @@ struct ModeLibraryView: View {
     }
 
     private func playSingleChord(_ reference: ChordReference) {
-        guard let auditionSoundID, let sound = session.favoriteSounds.first(where: { $0.id == auditionSoundID }),
-              let chord = reference.resolve() else { return }
+        guard let sound = session.theoryAuditionSound(), let chord = reference.resolve() else { return }
         try? session.loadTheoryLibraryAuditionSample(sound)
         playbackGeneration += 1
         let pitches = PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47)
@@ -521,8 +627,382 @@ struct ModeLibraryView: View {
             }
         }
     }
+
+    // MARK: - Functional exploration
+
+    /// Built fresh from `mode`/`functionalRoleSource` on every access (both graphs below take
+    /// their own `map` parameter directly rather than this view holding one in `@State`) — cheap
+    /// pure computation, same convention `staffEvents`/`chordsStaffEvents` above already use.
+    private var functionalMap: ModeFunctionalMap {
+        ModalFunctionalMapBuilder.build(for: mode, source: functionalRoleSource)
+    }
+
+    /// The single source of truth for "which chord is selected" across BOTH this panel's graphs
+    /// AND the overview panel's own `selectedChordIndex` — derived rather than a separate
+    /// `@State`, so the two panels can never disagree about which chord is current. Degree 8 (the
+    /// overview's own appended octave duplicate, see `diatonicChordReferences`) maps back to
+    /// degree 1, since the functional map only ever has 7 entries.
+    private var selectedFunctionalDegree: Int? {
+        let degree = selectedChordIndex + 1
+        return degree > 7 ? 1 : degree
+    }
+
+    /// Selecting a chord in either graph plays it AND updates `selectedChordIndex` — so the
+    /// overview panel's own keyboard/list/circle-of-fifths ring reflect it too if the user
+    /// switches back, exactly as if they'd tapped it there directly.
+    private func playFunctionalChord(atDegree degree: Int) {
+        guard let chordFunction = functionalMap.chords.first(where: { $0.degree == degree }) else { return }
+        selectedChordIndex = degree - 1
+        playSingleChord(chordFunction.reference)
+    }
+
+    /// Opens the combined harmonic+melodic legend (`TheoryLegendContent`) — an independent
+    /// window on macOS/visionOS (`AuxiliaryWindowID.theorieLegende`, stays open alongside this
+    /// screen while working), a dismissible sheet on iOS (no independent-window equivalent
+    /// there). One button for both palettes now, instead of each legend row's own popover.
+    private var theoryLegendButton: some View {
+        Button {
+            #if os(macOS) || os(visionOS)
+            openWindow(id: AuxiliaryWindowID.theorieLegende.rawValue)
+            #else
+            showsLegendSheet = true
+            #endif
+        } label: {
+            Image(systemName: "questionmark.circle")
+        }
+        .buttonStyle(.plain)
+        #if !os(macOS) && !os(visionOS)
+        .sheet(isPresented: $showsLegendSheet) {
+            NavigationStack {
+                ScrollView { TheoryLegendContent(language: session.currentLanguage).padding() }
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(L10n.string(.appButtonFermer, session.currentLanguage)) { showsLegendSheet = false }
+                        }
+                    }
+            }
+        }
+        #endif
+    }
+
+    /// Everything about exploring the mode from a chosen chord's own point of view — harmonic
+    /// geography (row 1: the two functional graphs + a reference list of this mode's known
+    /// progressions) and melodic vocabulary (row 3: a playable keyboard + note-by-note breakdown
+    /// against whichever chord row 1 currently has selected) in ONE screen, deliberately not
+    /// split across tabs: once someone is at the keyboard trying out what a note sounds like
+    /// against the current chord, they're not going to navigate away first — per explicit
+    /// request.
+    private var functionalExplorationSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            FunctionalMapLegendView(language: session.currentLanguage)
+
+            // Row 1: the two harmonic graphs + this mode's known progressions, side by side.
+            if usesTwoColumns {
+                HStack(alignment: .top, spacing: 20) {
+                    orbitGraphBlock
+                    attractionGraphBlock
+                    progressionTypeBlock
+                }
+            } else {
+                VStack(spacing: 20) {
+                    orbitGraphBlock
+                    attractionGraphBlock
+                    progressionTypeBlock
+                }
+            }
+            selectedFunctionalChordDetail
+            // Row 2: only appears once a progression is actually picked in row 1.
+            selectedProgressionChordListSection
+
+            Divider()
+            MelodicMapLegendView(language: session.currentLanguage)
+
+            // Row 3: the melodic-vocabulary playground, against whichever chord is current.
+            if usesTwoColumns {
+                HStack(alignment: .top, spacing: 20) {
+                    melodicLeftColumn.frame(maxWidth: .infinity, alignment: .leading)
+                    melodicRightColumn
+                }
+            } else {
+                VStack(spacing: 20) {
+                    melodicLeftColumn
+                    melodicRightColumn
+                }
+            }
+        }
+    }
+
+    /// This mode's own known progressions (deduplicated by name, same rule
+    /// `ProgressionLibraryView.uniqueTemplates` already uses) — tapping one only PREVIEWS it in
+    /// `selectedProgressionChordListSection` below; there is no editing here, per explicit
+    /// request (a progression BUILDER belongs to Composition/Guide, not Exploration).
+    private var uniqueProgressionTemplates: [ChordProgressionTemplate] {
+        var seen = Set<String>()
+        return session.chordProgressionTemplates.filter { seen.insert($0.name).inserted }
+    }
+
+    /// The role-source picker (unrelated to which progression is previewed below it — see
+    /// `FunctionalRoleSource`'s own doc comment) sits at the top of this same column purely to
+    /// save space elsewhere, not because the two are connected; the `Divider` keeps that
+    /// distinction visible rather than implying "this picker configures the progression list."
+    private var progressionTypeBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L10n.string(.appFieldSourceFonctionnelle, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+                Picker("", selection: $functionalRoleSource) {
+                    Text(L10n.string(.appOptionFormuleCalculee, session.currentLanguage)).tag(FunctionalRoleSource.computed)
+                    Text(L10n.string(.appOptionTableStandard, session.currentLanguage)).tag(FunctionalRoleSource.standardTable)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            Divider()
+            Text(L10n.string(.appHeadingProgressionsTypeDuMode, session.currentLanguage)).font(.headline)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(uniqueProgressionTemplates, id: \.name) { template in
+                        Button {
+                            selectedProgressionName = template.name
+                            selectedProgressionChordIndex = nil
+                        } label: {
+                            Text(template.name)
+                                .foregroundStyle(template.name == selectedProgressionName ? Color.accentColor : .primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxHeight: 200)
+        }
+        .frame(maxWidth: 260, alignment: .leading)
+    }
+
+    /// Which chip of `selectedProgressionChordListSection` was tapped last — purely a highlight,
+    /// same "tap to scrub/audition" convention `ProgressionLibraryView.chordListSection` already
+    /// uses for its own chip row (this is intentionally the same interaction, just recolored by
+    /// harmonic role instead of a flat accent color — see `progressionChipFill(for:)`).
+    @State private var selectedProgressionChordIndex: Int?
+
+    /// This mode's own diatonic degree (and therefore harmonic role/color) that `reference`'s
+    /// root matches, if any — a progression chord built from a different quality than that
+    /// degree's own "richest" one (rare) still matches by root; a chord foreign to this mode's 7
+    /// diatonic roots (e.g. a borrowed/chromatic one some progression template might use) simply
+    /// gets no color override.
+    private func matchingFunctionalChord(for reference: ChordReference) -> ModalChordFunction? {
+        functionalMap.chords.first { $0.reference.root == reference.root }
+    }
+
+    private func progressionChipFill(for reference: ChordReference) -> Color {
+        matchingFunctionalChord(for: reference).map { FunctionalRoleColors.fill(for: $0.role) } ?? Color.secondary.opacity(0.25)
+    }
+
+    private func progressionChipTextColor(for reference: ChordReference) -> Color {
+        matchingFunctionalChord(for: reference).map { FunctionalRoleColors.textColor(for: $0.role) } ?? .primary
+    }
+
+    /// Same "tap to scrub/hear, current one highlighted" interaction as
+    /// `ProgressionLibraryView.chordListSection` — recolored per chord by its harmonic role in
+    /// THIS mode's own orbit/attraction graphs (see `progressionChipFill(for:)`), so a
+    /// progression's own functional shape (e.g. "away, away, tension, home") reads at a glance,
+    /// per explicit request.
+    @ViewBuilder
+    private var selectedProgressionChordListSection: some View {
+        if let name = selectedProgressionName, let template = uniqueProgressionTemplates.first(where: { $0.name == name }) {
+            let references = ChordProgressionResolver.resolveRich(template, in: mode)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(template.name).font(.subheadline).bold()
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(references.enumerated()), id: \.offset) { index, reference in
+                            Button {
+                                selectedProgressionChordIndex = index
+                                playSingleChord(reference)
+                            } label: {
+                                Text(chordDisplayName(reference))
+                                    .fontWeight(index == selectedProgressionChordIndex ? .bold : .regular)
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(progressionChipFill(for: reference), in: RoundedRectangle(cornerRadius: 8))
+                                    .foregroundStyle(progressionChipTextColor(for: reference))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(.white, lineWidth: index == selectedProgressionChordIndex ? 2 : 0)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .font(.callout)
+        }
+    }
+
+    private var orbitGraphBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L10n.string(.appHeadingOrbiteFonctionnelle, session.currentLanguage)).font(.headline)
+            FunctionalOrbitGraphView(
+                map: functionalMap, notationStyle: session.notationStyle, language: session.currentLanguage,
+                selectedDegree: selectedFunctionalDegree, onSelect: playFunctionalChord(atDegree:)
+            )
+            .frame(maxWidth: 380)
+        }
+    }
+
+    private var attractionGraphBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L10n.string(.appHeadingAttractions, session.currentLanguage)).font(.headline)
+            FunctionalAttractionGraphView(
+                map: functionalMap, notationStyle: session.notationStyle, language: session.currentLanguage,
+                selectedDegree: selectedFunctionalDegree, onSelect: playFunctionalChord(atDegree:)
+            )
+            .frame(maxWidth: 380)
+        }
+    }
+
+    @ViewBuilder
+    private var selectedFunctionalChordDetail: some View {
+        if let degree = selectedFunctionalDegree,
+           let chordFunction = functionalMap.chords.first(where: { $0.degree == degree }),
+           let chord = chordFunction.reference.resolve() {
+            HStack(spacing: 12) {
+                Text(session.notationStyle.displayName(for: chord)).font(.headline)
+                Text(romanNumeral(degree: degree, quality: triadQuality(of: chord))).foregroundStyle(.secondary)
+                Text("\(L10n.string(.appFieldRoleFonctionnel, session.currentLanguage)) : \(functionalRoleLabel(chordFunction.role, language: session.currentLanguage))")
+                if chordFunction.isModalCharacteristic {
+                    let noteNames = chordFunction.characteristicNotes.map { session.notationStyle.rootName($0, preferFlats: false) }.joined(separator: ", ")
+                    Text("\(L10n.string(.appLabelNoteCaracteristique, session.currentLanguage)) : \(noteNames)")
+                        .foregroundStyle(.purple)
+                }
+                Spacer()
+            }
+            .font(.callout)
+        }
+    }
+
+    // MARK: - Melodic vocabulary
+
+    /// The current chord (shared with the functional-exploration panel via
+    /// `selectedFunctionalDegree`, so switching sub-screens never loses "what am I looking at")
+    /// re-read as the mode's own notes' melodic function against it — see
+    /// `MelodicVocabularyAnalyzer`'s own doc comment for why this works for any scale, not just
+    /// the 7 classic modes (only the SURROUNDING UI — this picker's own visibility — stays
+    /// gated to family 1, matching `functionalMap`'s own restriction).
+    private var melodicAnalysis: MelodicVocabularyAnalysis {
+        let chord = selectedFunctionalDegree.flatMap { degree in
+            functionalMap.chords.first { $0.degree == degree }?.reference.resolve()
+        } ?? diatonicChordReferences.first?.resolve() ?? Chord(root: mode.tonic, template: ChordVocabulary.seed[0])
+        return MelodicVocabularyAnalyzer.analyze(mode: mode, chord: chord)
+    }
+
+    private var effectiveSelectedMelodicNote: PitchClass? {
+        selectedMelodicNote ?? melodicAnalysis.notes.first { $0.chordToneType == .root }?.note ?? melodicAnalysis.notes.first?.note
+    }
+
+    /// Plays the tapped note alone (short, like `playSingleNote`) and remembers it in
+    /// `recentPlayedNotes` — the only input this panel's "recently played" history needs.
+    private func playMelodicNote(_ pitchClass: PitchClass) {
+        selectedMelodicNote = pitchClass
+        guard let sound = session.theoryAuditionSound() else { return }
+        try? session.loadTheoryLibraryAuditionSample(sound)
+        playbackGeneration += 1
+        let pitches = PitchSequencing.ascendingPitches(forPitchClasses: [pitchClass.value], startingAbove: 47)
+        session.playTheoryLibraryAudition([ImprovSession.TheoryAuditionNote(pitches: pitches, startSeconds: 0, durationSeconds: 0.55)])
+        recentPlayedNotes.append(pitchClass)
+        if recentPlayedNotes.count > 4 { recentPlayedNotes.removeFirst() }
+    }
+
+    /// Left half of row 3 — the big, actually-playable keyboard (so trying out a note is a
+    /// single tap, no aiming at a tiny chip needed), the same note-by-note chip row as a compact
+    /// reference underneath it, the selected note's detail card, then the recent-history reminder.
+    private var melodicLeftColumn: some View {
+        let analysis = melodicAnalysis
+        return VStack(alignment: .leading, spacing: 10) {
+            PitchKeyboardView(
+                modeTones: mode.pitchClasses.map(\.value),
+                showModeColoring: true,
+                onNoteOn: { pitch in playMelodicNote(PitchClass(pitch)) },
+                height: 101,
+                keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: modeTonePitchesInKeyboardRange, style: session.notationStyle)
+            )
+            HStack(alignment: .top, spacing: 10) {
+                ForEach(analysis.notes, id: \.note) { profile in
+                    MelodicNoteChipView(
+                        profile: profile, noteName: session.notationStyle.rootName(profile.note, preferFlats: false),
+                        isSelected: profile.note == effectiveSelectedMelodicNote,
+                        onTap: { playMelodicNote(profile.note) }
+                    )
+                }
+            }
+            if let note = effectiveSelectedMelodicNote, let profile = analysis.notes.first(where: { $0.note == note }) {
+                MelodicNoteDetailView(
+                    profile: profile, noteName: session.notationStyle.rootName(note, preferFlats: false), language: session.currentLanguage,
+                    resolutionNoteName: { session.notationStyle.rootName($0, preferFlats: false) }
+                )
+            }
+            recentHistorySection
+        }
+    }
+
+    /// Right half of row 3 — two small reference keyboards stacked: the mode's own notes
+    /// colored by melodic role against the current chord (top), and the current chord's own
+    /// notes alone (bottom, same convention `selectedChordKeyboard` already uses elsewhere).
+    private var melodicRightColumn: some View {
+        let analysis = melodicAnalysis
+        let chord = analysis.chord
+        let chordTones = Set(chord.pitchClasses.map(\.value))
+        let chordKeyboardPitches = (48...72).filter { chordTones.contains((($0 % 12) + 12) % 12) }
+        return VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L10n.string(.appHeadingVocabulaireMelodique, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+                PitchKeyboardView(height: 158, customFillColors: melodicRoleFillColors(for: analysis))
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L10n.string(.appLabelAccordActuel, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+                PitchKeyboardView(
+                    chordRoot: chord.root.value, chordTones: chord.pitchClasses.map(\.value), alwaysShowChord: true, height: 158,
+                    keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: chordKeyboardPitches, style: session.notationStyle)
+                )
+            }
+        }
+        .frame(maxWidth: 260, alignment: .leading)
+    }
+
+    private func melodicRoleFillColors(for analysis: MelodicVocabularyAnalysis) -> [Int: Color] {
+        Dictionary(uniqueKeysWithValues: analysis.notes.map { ($0.note.value, MelodicRoleColors.fill(for: $0.defaultRole)) })
+    }
+
+    @ViewBuilder
+    private var recentHistorySection: some View {
+        if !recentChordDegrees.isEmpty || !recentPlayedNotes.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                if !recentChordDegrees.isEmpty {
+                    HStack(spacing: 6) {
+                        Text(L10n.string(.appLabelAccordsExploresRecemment, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+                        ForEach(Array(recentChordDegrees.enumerated()), id: \.offset) { index, degree in
+                            if let chord = diatonicChordReferences.indices.contains(degree - 1) ? diatonicChordReferences[degree - 1].resolve() : nil {
+                                Text(session.notationStyle.displayName(for: chord))
+                                    .font(.caption).bold(index == recentChordDegrees.count - 1)
+                            }
+                        }
+                    }
+                }
+                if !recentPlayedNotes.isEmpty {
+                    HStack(spacing: 6) {
+                        Text(L10n.string(.appLabelNotesJoueesRecemment, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+                        ForEach(Array(recentPlayedNotes.enumerated()), id: \.offset) { index, pitchClass in
+                            Text(session.notationStyle.rootName(pitchClass, preferFlats: false))
+                                .font(.caption).bold(index == recentPlayedNotes.count - 1)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 }
 
 #Preview {
-    ModeLibraryView(session: ImprovSession(), auditionSoundID: .constant(nil))
+    ModeLibraryView(session: ImprovSession())
 }

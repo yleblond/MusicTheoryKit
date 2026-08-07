@@ -6,8 +6,15 @@ import JamShackUI
 /// visionOS only — see `JamShackApp`). Doubles as the `WindowGroup(id:)` string and as the key
 /// tracking which ones are currently open (`AppModel.openAuxiliaryWindows`), since SwiftUI has
 /// no built-in "is this WindowGroup open" query.
+///
+/// `theorieLegende` is the one exception to "screen": it's a small read-only help window
+/// (`TheorieLegendWindow`, see `ModeLibraryView`'s own legend button), not a detached LIVE
+/// screen — it has no "réintégrer" placeholder counterpart and never calls
+/// `markWindowOpen`/`markWindowClosed`, since nothing needs to know it's open. Riding on this
+/// same enum/`WindowGroup(id:)` registration anyway rather than inventing a second, parallel
+/// one just for a single extra window id.
 enum AuxiliaryWindowID: String, CaseIterable {
-    case computerKeyboard, runScreen, guideLecture, microphone, sceneLayout, theorie
+    case computerKeyboard, runScreen, guideLecture, microphone, sceneLayout, theorie, theorieLegende
 }
 
 /// Owns the single, shared `ImprovSession`/`SessionUIBridge` pair for the whole process —

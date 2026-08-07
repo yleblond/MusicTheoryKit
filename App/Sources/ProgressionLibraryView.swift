@@ -5,19 +5,18 @@ import MusicTheoryKit
 import PieceModel
 import Localization
 
-/// "Progressions" section of the Théorie tab — pick a tonic + mode (restricted to the 7
-/// classic major-family modes, where `ChordProgressionResolver`'s rich diatonic resolution and
-/// `ProgressionNameAliases`'s common-name matching are both meaningful), then browse
-/// `session.chordProgressionTemplates` (built-ins + anything added via `chordprogressions.json`):
-/// each row previews its resolved chord symbols; the detail side shows the chord list, then the
-/// keyboard + guitar tablature for whichever chord is current (tap a row to scrub, or press
-/// play to advance automatically — the staff highlights the currently-sounding column too). The
-/// instrument itself is picked once, in `TheoryView`'s shared header, and threaded down via
-/// `auditionSoundID`. Two side-by-side columns on macOS/visionOS/iPad-width iOS, push
-/// list→detail navigation on iPhone-width iOS — see `TheoryLibraryLayout`.
+/// "Progressions" tab — pick a tonic + mode (restricted to the 7 classic major-family modes,
+/// where `ChordProgressionResolver`'s rich diatonic resolution and `ProgressionNameAliases`'s
+/// common-name matching are both meaningful), then browse `session.chordProgressionTemplates`
+/// (built-ins + anything added via `chordprogressions.json`): each row previews its resolved
+/// chord symbols; the detail side shows the chord list, then the keyboard + guitar tablature for
+/// whichever chord is current (tap a row to scrub, or press play to advance automatically — the
+/// staff highlights the currently-sounding column too). The instrument itself is picked once, in
+/// Settings > Théorie, and read via `ImprovSession.theoryAuditionSound()`. Two side-by-side
+/// columns on macOS/visionOS/iPad-width iOS, push list→detail navigation on iPhone-width iOS —
+/// see `TheoryLibraryLayout`.
 struct ProgressionLibraryView: View {
     let session: ImprovSession
-    @Binding var auditionSoundID: String?
 
     @State private var screen: TheoryLibraryScreen = .list
     @State private var selectedTonic: Int = 0
@@ -259,8 +258,7 @@ struct ProgressionLibraryView: View {
     }
 
     private func playSingleChord(_ reference: ChordReference) {
-        guard let auditionSoundID, let sound = session.favoriteSounds.first(where: { $0.id == auditionSoundID }),
-              let chord = reference.resolve() else { return }
+        guard let sound = session.theoryAuditionSound(), let chord = reference.resolve() else { return }
         try? session.loadTheoryLibraryAuditionSample(sound)
         playbackGeneration += 1
         let pitches = PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47)
@@ -273,7 +271,7 @@ struct ProgressionLibraryView: View {
     /// callback), guarded by `playbackGeneration` so a Stop (or restarting playback) cancels
     /// any still-pending advances instead of them firing late over whatever comes next.
     private func playProgression() {
-        guard let auditionSoundID, let sound = session.favoriteSounds.first(where: { $0.id == auditionSoundID }) else { return }
+        guard let sound = session.theoryAuditionSound() else { return }
         try? session.loadTheoryLibraryAuditionSample(sound)
         playbackGeneration += 1
         let generation = playbackGeneration
@@ -298,5 +296,5 @@ struct ProgressionLibraryView: View {
 }
 
 #Preview {
-    ProgressionLibraryView(session: ImprovSession(), auditionSoundID: .constant(nil))
+    ProgressionLibraryView(session: ImprovSession())
 }

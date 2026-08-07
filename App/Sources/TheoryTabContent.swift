@@ -2,8 +2,11 @@ import SwiftUI
 import AppCore
 import Localization
 
-/// Wraps `TheoryView` with the same detach-into-its-own-window swap `MicrophoneTabContent`/
-/// `GuideConfigurationView` already do for their own screens.
+/// Wraps `ModeLibraryView` with the same detach-into-its-own-window swap `MicrophoneTabContent`/
+/// `GuideConfigurationView` already do for their own screens — the "Modes" tab (formerly the
+/// merged "Théorie" tab; Accords/Progressions are now their own plain top-level tabs, see
+/// `ContentView.StudioTab`, since only Modes grew enough content — the functional/melodic
+/// exploration panel — to still be worth detaching).
 struct TheoryTabContent: View {
     let session: ImprovSession
 
@@ -21,10 +24,10 @@ struct TheoryTabContent: View {
                 onReintegrate: { dismissWindow(id: AuxiliaryWindowID.theorie.rawValue) }
             )
         } else {
-            TheoryView(session: session)
+            ModeLibraryView(session: session)
         }
         #else
-        TheoryView(session: session)
+        ModeLibraryView(session: session)
         #endif
     }
 }

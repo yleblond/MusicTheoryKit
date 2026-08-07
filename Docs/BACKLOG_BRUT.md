@@ -76,3 +76,11 @@ encore prise. Retiré d'ici.
     signification de chaque rôle (tension/résolution/couleur modale, etc.) et voir si une
     convention de couleurs par rôle existe déjà quelque part (théorie académique, logiciels de
     composition) avant d'en inventer une.
+
+25. **Réglages "Théorie" > couleurs** — `TheorieSettingsView` (Settings > Théorie) ne contient pour
+    l'instant que le son d'écoute (déplacé hors des écrans Accords/Modes/Progressions). Y ajouter
+    la personnalisation de toutes les couleurs de ces écrans : les 4 rôles harmoniques (accords —
+    `FunctionalRoleColors`), les 5 rôles mélodiques (notes — `MelodicRoleColors`), et l'accent
+    "caractéristique modale" (violet, partagé par les deux). Probablement un SwiftData singleton
+    du même genre que `NoteColorSettingsFile`, avec des valeurs par défaut = les couleurs actuelles
+    codées en dur.

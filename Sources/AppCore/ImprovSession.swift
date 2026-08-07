@@ -524,6 +524,7 @@ public final class ImprovSession: @unchecked Sendable {
             ChordProgressionTemplateRecord.self,
             LanguageSettingRecord.self,
             NotationStyleSettingRecord.self,
+            TheoryAuditionSoundSettingRecord.self,
             ChordTemplateRecord.self,
             ScaleDefinitionRecord.self,
             LumiSettingsRecord.self,
@@ -1043,6 +1044,7 @@ public final class ImprovSession: @unchecked Sendable {
         migrateChordProgressionTemplatesFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("chordprogressions.json"))
         migrateLanguageSettingFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("language.json"))
         loadNotationStyleSetting()
+        loadTheoryAuditionSoundSetting()
         migrateChordTemplatesFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("chords.json"))
         migrateScaleDefinitionsFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("scales.json"))
         migrateLumiSettingsFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("lumi.json"))
@@ -2751,6 +2753,41 @@ public final class ImprovSession: @unchecked Sendable {
             modelContext.insert(NotationStyleSettingRecord(style.id))
         }
         try modelContext.save()
+    }
+
+    /// Which favorite sound the Théorie screens' audition playback uses — set from Settings >
+    /// Théorie (`TheorieSettingsView`), read (via `theoryAuditionSound()`, never this raw id
+    /// directly) by the Accords/Modes/Progressions screens themselves, which no longer own any
+    /// picker or state of their own for this — see that settings view's own doc comment for why
+    /// this moved out of the screens.
+    public private(set) var theoryAuditionSoundID: String?
+
+    private func loadTheoryAuditionSoundSetting() {
+        if let existing = try? modelContext.fetch(FetchDescriptor<TheoryAuditionSoundSettingRecord>()).first {
+            theoryAuditionSoundID = existing.soundID
+        } else {
+            modelContext.insert(TheoryAuditionSoundSettingRecord(nil))
+            try? modelContext.save()
+        }
+    }
+
+    public func setTheoryAuditionSoundID(_ soundID: String?) throws {
+        theoryAuditionSoundID = soundID
+        if let existing = try? modelContext.fetch(FetchDescriptor<TheoryAuditionSoundSettingRecord>()).first {
+            existing.soundID = soundID
+        } else {
+            modelContext.insert(TheoryAuditionSoundSettingRecord(soundID))
+        }
+        try modelContext.save()
+    }
+
+    /// The actual `FavoriteSound` to use right now — whichever `favoriteSounds` entry matches
+    /// the persisted `theoryAuditionSoundID`, or simply the first favorite if that's unset or
+    /// stale (e.g. the previously-picked sound was un-favorited since) — so every Théorie
+    /// screen's playback always has a sensible default without needing its own "pick one first"
+    /// step, even if the user never opens Settings > Théorie at all.
+    public func theoryAuditionSound() -> FavoriteSound? {
+        favoriteSounds.first { $0.id == theoryAuditionSoundID } ?? favoriteSounds.first
     }
 
     // MARK: - Chord progression templates (roman-numeral libraries, see `RomanNumeralChord`)

@@ -16,12 +16,15 @@ struct ContentView: View {
     /// with right now," now flat at the same level instead of nested one level deeper.
     private enum StudioTab: CaseIterable, Identifiable {
         case live, scene, guide, recordings, composition, pieces
-        // Théorie (Accords/Modes/Progressions, navigated via a horizontal picker inside
-        // `TheoryView`) — a reference/practice tool browsed while playing, added 2026-08
-        // alongside the rest of the flat Studio tab set (per user decision: a tab here rather
-        // than a separate sidebar). Originally 3 separate tabs, merged into one 2026-08 per
-        // usage feedback (also detachable into its own window, see `AuxiliaryWindowID.theorie`).
-        case theorie
+        // Théorie — a reference/practice tool browsed while playing, added 2026-08 alongside
+        // the rest of the flat Studio tab set (per user decision: tabs here rather than a
+        // separate sidebar). Was 3 separate tabs, merged into one shared-picker tab 2026-08 per
+        // usage feedback, then SPLIT BACK into 3 plain top-level tabs 2026-08 once "Modes" grew
+        // enough of its own content (the functional/melodic exploration panel) that sharing one
+        // tab's screen space with Accords/Progressions no longer made sense — only "Modes" kept
+        // the detachable-window capability (`AuxiliaryWindowID.theorie`) the old merged tab had;
+        // Accords/Progressions are plain, non-detachable tabs.
+        case accords, modes, progressions
 
         var id: Self { self }
 
@@ -33,7 +36,9 @@ struct ContentView: View {
             case .recordings: return "record.circle"
             case .composition: return "wand.and.stars"
             case .pieces: return "music.note.list"
-            case .theorie: return "text.book.closed"
+            case .accords: return "music.quarternote.3"
+            case .modes: return "text.book.closed"
+            case .progressions: return "list.number"
             }
         }
 
@@ -45,7 +50,9 @@ struct ContentView: View {
             case .recordings: return L10n.string(.appTabEnregistrements, language)
             case .composition: return L10n.string(.catComposition, language)
             case .pieces: return L10n.string(.catMorceaux, language)
-            case .theorie: return L10n.string(.appTabTheorie, language)
+            case .accords: return L10n.string(.appTabAccords, language)
+            case .modes: return L10n.string(.appTabModes, language)
+            case .progressions: return L10n.string(.appTabProgressions, language)
             }
         }
     }
@@ -59,6 +66,13 @@ struct ContentView: View {
     /// both was pure duplication with zero extra capability in the tab.
     private enum SettingsTab: CaseIterable, Identifiable {
         case sons, midi, microphone, jamSession, couleurs, llm, langue, notation
+        // Which sound the Accords/Modes/Progressions tabs use for audition playback — moved
+        // here from a picker inside those screens' own header (per explicit request), plus
+        // (later) per-role color customization for those same screens (see
+        // `Docs/BACKLOG_BRUT.md`). Reuses `appTabTheorie`'s own text ("Théorie"), freed up by
+        // the Studio-tab split (see `StudioTab`'s own doc comment) rather than adding a
+        // near-duplicate string.
+        case theorie
 
         var id: Self { self }
 
@@ -72,6 +86,7 @@ struct ContentView: View {
             case .llm: return "brain"
             case .langue: return "globe"
             case .notation: return "textformat.abc"
+            case .theorie: return "text.book.closed"
             }
         }
 
@@ -85,6 +100,7 @@ struct ContentView: View {
             case .llm: return L10n.string(.appTabLLM, language)
             case .langue: return L10n.string(.appTabLangue, language)
             case .notation: return L10n.string(.appTabNotation, language)
+            case .theorie: return L10n.string(.appTabTheorie, language)
             }
         }
     }
@@ -133,8 +149,14 @@ struct ContentView: View {
                                 Tab(StudioTab.pieces.label(session.currentLanguage), systemImage: StudioTab.pieces.systemImage, value: StudioTab.pieces) {
                                     PiecesView(session: session)
                                 }
-                                Tab(StudioTab.theorie.label(session.currentLanguage), systemImage: StudioTab.theorie.systemImage, value: StudioTab.theorie) {
+                                Tab(StudioTab.accords.label(session.currentLanguage), systemImage: StudioTab.accords.systemImage, value: StudioTab.accords) {
+                                    ChordLibraryView(session: session)
+                                }
+                                Tab(StudioTab.modes.label(session.currentLanguage), systemImage: StudioTab.modes.systemImage, value: StudioTab.modes) {
                                     TheoryTabContent(session: session)
+                                }
+                                Tab(StudioTab.progressions.label(session.currentLanguage), systemImage: StudioTab.progressions.systemImage, value: StudioTab.progressions) {
+                                    ProgressionLibraryView(session: session)
                                 }
                             }
                         case .settings:
@@ -162,6 +184,9 @@ struct ContentView: View {
                                 }
                                 Tab(SettingsTab.notation.label(session.currentLanguage), systemImage: SettingsTab.notation.systemImage, value: SettingsTab.notation) {
                                     NotationStyleSettingsView(session: session)
+                                }
+                                Tab(SettingsTab.theorie.label(session.currentLanguage), systemImage: SettingsTab.theorie.systemImage, value: SettingsTab.theorie) {
+                                    TheorieSettingsView(session: session)
                                 }
                             }
                         }
