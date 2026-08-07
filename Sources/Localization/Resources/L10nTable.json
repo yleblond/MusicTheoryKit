@@ -2334,6 +2334,17 @@
   "ru": "Отправляет минимальный запрос (\"Ответь только словом OK.\"), чтобы проверить, действительно ли соединение отвечает.",
   "zhHans": "发送一个最简提示(\"仅回复OK这个词。\")以确认连接确实有响应。"
  },
+ "appHintExplorationFamilleUn": {
+  "de": "Die funktionale Erkundung ist derzeit nur für die 7 klassischen Modi (Ionisch bis Lokrisch) verfügbar.",
+  "en": "Functional exploration is only available for the 7 classic modes (Ionian to Locrian) for now.",
+  "es": "La exploración funcional solo está disponible por ahora para los 7 modos clásicos (Jónico a Locrio).",
+  "fr": "L'exploration fonctionnelle n'est disponible que pour les 7 modes classiques (Ionien à Locrien) pour l'instant.",
+  "it": "L'esplorazione funzionale è disponibile per ora solo per i 7 modi classici (Ionico a Locrio).",
+  "ja": "機能的探索は現在、7つの古典的モード（イオニアンからロクリアンまで）でのみ利用可能です。",
+  "pt": "A exploração funcional só está disponível, por agora, para os 7 modos clássicos (Jónico a Lócrio).",
+  "ru": "Функциональное исследование пока доступно только для 7 классических ладов (от ионийского до локрийского).",
+  "zhHans": "功能探索目前仅适用于7种古典调式（从伊奥尼亚到洛克里亚）。"
+ },
  "appHintLangueAppliqueAussi": {
   "de": "Gilt auch für die Web-Konsole und die virtuelle Tastatur.",
   "en": "Also applies to the web console and the virtual keyboard.",

@@ -404,6 +404,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appLabelNoteCaracteristique, appFieldRoleFonctionnel
     case appHeadingOrbiteFonctionnelle, appHeadingAttractions
     case appHeadingSonAudition, appHintSonAuditionTheorie
+    case appHintExplorationFamilleUn
 
     // MARK: - App: Modes — melodic vocabulary panel
     case appHeadingVocabulaireMelodique, appLabelAccordActuel

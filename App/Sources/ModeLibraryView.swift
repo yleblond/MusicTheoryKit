@@ -5,22 +5,41 @@ import MusicTheoryKit
 import PieceModel
 import Localization
 
-/// "Modes" tab — pick a tonic + mode/scale (`ScaleLibrary`), then see it in a 2-column × 3-row
-/// `Grid` (narrow notation column on the left, wide keyboard column on the right — see
-/// `ChordStaffView`'s `widthScale`): row 1 is the mode's own scale (+ Asc/Desc/Asc-et-Desc, each
-/// button plays immediately) next to the mode's keyboard (with note-name bullets and degree
-/// badges); row 2 is the mode's harmonized chords (+ a "play the sequence" button) next to
-/// whichever chord was last tapped, on its own keyboard; row 3 is the chord list (each playable
-/// on tap, labeled with its functional-harmony role — see `FunctionalHarmonyTable`) next to a
-/// circle-of-fifths section reusing `CircleOfFifthsWheelView` for an arbitrary picked tonic (see
-/// `ImprovSession.wheelState`). The instrument itself is picked once, in Settings > Théorie, and
-/// read via `ImprovSession.theoryAuditionSound()`. This whole grid only shows on macOS/visionOS/
+/// Which of the two peer Théorie tabs this instance is — see `ContentView.TheorieTab`. Both
+/// share every other part of this view (the tonic/scale picker, all the underlying
+/// state/helpers) since they're really "the same screen, showing a different half of its
+/// content" — factored as one parameterized `ModeLibraryView` rather than two near-duplicate
+/// files, with each `Tab()` in `ContentView` constructing its OWN separate instance, so
+/// "Mode"'s and "Exploration"'s tonic/scale picks stay entirely independent (SwiftUI `@State` is
+/// per-instance) even though they're the same type.
+enum ModeLibraryContentFocus {
+    case overview, exploration
+}
+
+/// "Modes"/"Exploration" tabs — pick a tonic + mode/scale (`ScaleLibrary`), then see either:
+///
+/// - `.overview`: a 2-column × 3-row `Grid` (narrow notation column on the left, wide keyboard
+///   column on the right — see `ChordStaffView`'s `widthScale`): row 1 is the mode's own scale
+///   (+ Asc/Desc/Asc-et-Desc, each button plays immediately) next to the mode's keyboard (with
+///   note-name bullets and degree badges); row 2 is the mode's harmonized chords (+ a "play the
+///   sequence" button) next to whichever chord was last tapped, on its own keyboard; row 3 is
+///   the chord list (each playable on tap, labeled with its functional-harmony role — see
+///   `FunctionalHarmonyTable`) next to a circle-of-fifths section reusing
+///   `CircleOfFifthsWheelView` for an arbitrary picked tonic (see `ImprovSession.wheelState`).
+/// - `.exploration`: the functional (orbit/attractions/progressions) + melodic-vocabulary
+///   playground — see `functionalExplorationSection`'s own doc comment. Only has anything to
+///   show for the 7 classic modes today (`ModalFunctionalMapBuilder`'s own `familyID == 1`
+///   restriction) — an empty-state message shows instead for any other scale family.
+///
+/// The instrument itself is picked once, in Settings > Théorie, and read via
+/// `ImprovSession.theoryAuditionSound()`. The `.overview` grid only shows on macOS/visionOS/
 /// iPad-width iOS; iPhone-width iOS keeps the original push list→detail navigation instead —
-/// see `TheoryLibraryLayout`. Detachable into its own window on macOS/visionOS
-/// (`isDetachedWindow`/`AuxiliaryWindowID.theorie`) — this is the one Théorie screen that still
-/// offers that, now that Accords/Progressions are their own plain top-level tabs.
+/// see `TheoryLibraryLayout`. Only `.overview` is detachable into its own window on macOS/
+/// visionOS (`isDetachedWindow`/`AuxiliaryWindowID.theorie`) — the one Théorie screen that still
+/// offers that, now that Accords/Progressions/Exploration are their own plain top-level tabs.
 struct ModeLibraryView: View {
     let session: ImprovSession
+    var contentFocus: ModeLibraryContentFocus = .overview
     var isDetachedWindow: Bool = false
 
     #if os(macOS) || os(visionOS)
@@ -47,8 +66,6 @@ struct ModeLibraryView: View {
     /// invalidates any still-pending ones instead of them firing late over whatever comes next.
     @State private var playbackGeneration = 0
 
-    private enum ModeDetailSubScreen { case overview, functionalExploration }
-    @State private var modeDetailSubScreen: ModeDetailSubScreen = .overview
     /// Which of the two `ModalFunctionalMapBuilder.build(for:source:)` sources currently drives
     /// the functional-exploration panel — a user-facing choice (see that type's own doc comment
     /// for why neither is presented as "the" answer).
@@ -84,12 +101,14 @@ struct ModeLibraryView: View {
     var body: some View {
         VStack(spacing: 0) {
             #if os(macOS) || os(visionOS)
-            HStack {
-                Spacer()
-                detachButton
+            if contentFocus == .overview {
+                HStack {
+                    Spacer()
+                    detachButton
+                }
+                .padding(.horizontal)
+                .padding(.top, 6)
             }
-            .padding(.horizontal)
-            .padding(.top, 6)
             #endif
             TheoryLibraryLayout(screen: $screen, sidebarWidth: 320) {
                 listContent
@@ -159,7 +178,6 @@ struct ModeLibraryView: View {
                         Button {
                             selectedScaleID = scale.id
                             selectedChordIndex = 0
-                            modeDetailSubScreen = .overview
                             screen = .detail
                         } label: {
                             HStack {
@@ -195,32 +213,24 @@ struct ModeLibraryView: View {
                     }
                 }
 
-                // Title + sub-screen toggle share one row (rather than the toggle getting a
-                // full-width row of its own below) to save vertical space — per explicit
-                // request. The toggle itself only has anything to switch to for the 7 classic
-                // modes (see `ModalFunctionalMapBuilder`'s own `familyID == 1` restriction, the
-                // same one `diatonicChordReferences`/`circleOfFifthsSection` already have) — it
-                // stays hidden for any other scale family rather than switching to a screen that
-                // would just render empty.
                 HStack(alignment: .firstTextBaseline, spacing: 16) {
                     Text(mode.displayName).font(.largeTitle).bold()
-                    if mode.scale.familyID == 1 {
-                        Picker("", selection: $modeDetailSubScreen) {
-                            Text(L10n.string(.appTabApercuMode, session.currentLanguage)).tag(ModeDetailSubScreen.overview)
-                            Text(L10n.string(.appHeadingExplorationFonctionnelle, session.currentLanguage)).tag(ModeDetailSubScreen.functionalExploration)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 340)
-                        if effectiveSubScreen == .functionalExploration {
-                            theoryLegendButton
-                        }
+                    if contentFocus == .exploration && mode.scale.familyID == 1 {
+                        theoryLegendButton
                     }
                     Spacer()
                 }
 
-                switch effectiveSubScreen {
-                case .overview: overviewContent
-                case .functionalExploration: functionalExplorationSection
+                switch contentFocus {
+                case .overview:
+                    overviewContent
+                case .exploration:
+                    if mode.scale.familyID == 1 {
+                        functionalExplorationSection
+                    } else {
+                        Text(L10n.string(.appHintExplorationFamilleUn, session.currentLanguage))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             // Tracks every distinct diatonic degree selected anywhere in this screen (tap in the
@@ -234,14 +244,6 @@ struct ModeLibraryView: View {
             }
             .padding()
         }
-    }
-
-    /// Falls back to `.overview` regardless of `modeDetailSubScreen`'s own stored value whenever
-    /// the current mode isn't family 1 — guards against a stale "Exploration fonctionnelle"
-    /// selection surviving a scale pick that hides the picker itself (belt-and-suspenders on top
-    /// of resetting the state directly wherever a new scale is picked).
-    private var effectiveSubScreen: ModeDetailSubScreen {
-        mode.scale.familyID == 1 ? modeDetailSubScreen : .overview
     }
 
     private var overviewContent: some View {

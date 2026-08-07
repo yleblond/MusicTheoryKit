@@ -4,11 +4,32 @@ import JamShackUI
 import Localization
 
 struct ContentView: View {
-    /// Whether the app is showing the 6 flat "studio" tabs or the 9 flat "settings" tabs (what
-    /// used to be the standalone "JamShack" tab's own sub-tabs) — replaces the old first-level
-    /// `AppTab` TabView (2026-07-29): there's no longer a top-level "JamShack" destination to
-    /// navigate to, just a toggle at the bottom that swaps which flat tab set is showing.
-    private enum AppMode { case studio, settings }
+    /// Which of the 3 flat tab sets is showing — replaces the old first-level `AppTab` TabView
+    /// (2026-07-29), itself later a 2-state (studio/settings) toggle. Split into 3 (2026-08) once
+    /// Théorie (see `TheorieTab`) had grown well past "a reference tool browsed while
+    /// performing" — sharing Studio's own tab bar no longer matched what it had become, and
+    /// deserved the same "top-level mode" standing as Studio/Settings rather than being folded
+    /// into either.
+    private enum AppMode: CaseIterable, Identifiable, Hashable {
+        case studio, theorie, settings
+        var id: Self { self }
+
+        var systemImage: String {
+            switch self {
+            case .studio: return "pianokeys"
+            case .theorie: return "text.book.closed"
+            case .settings: return "gearshape"
+            }
+        }
+
+        func label(_ language: AppLanguage) -> String {
+            switch self {
+            case .studio: return L10n.string(.appTabStudio, language)
+            case .theorie: return L10n.string(.appTabTheorie, language)
+            case .settings: return L10n.string(.appButtonReglages, language)
+            }
+        }
+    }
 
     /// The 6 studio-mode tabs — merges what used to be `StudioView`'s own 3 sub-tabs (Live,
     /// Scene, Guide) with the 3 tabs that used to sit alongside the old "Studio" top-level tab
@@ -16,15 +37,6 @@ struct ContentView: View {
     /// with right now," now flat at the same level instead of nested one level deeper.
     private enum StudioTab: CaseIterable, Identifiable {
         case live, scene, guide, recordings, composition, pieces
-        // Théorie — a reference/practice tool browsed while playing, added 2026-08 alongside
-        // the rest of the flat Studio tab set (per user decision: tabs here rather than a
-        // separate sidebar). Was 3 separate tabs, merged into one shared-picker tab 2026-08 per
-        // usage feedback, then SPLIT BACK into 3 plain top-level tabs 2026-08 once "Modes" grew
-        // enough of its own content (the functional/melodic exploration panel) that sharing one
-        // tab's screen space with Accords/Progressions no longer made sense — only "Modes" kept
-        // the detachable-window capability (`AuxiliaryWindowID.theorie`) the old merged tab had;
-        // Accords/Progressions are plain, non-detachable tabs.
-        case accords, modes, progressions
 
         var id: Self { self }
 
@@ -36,9 +48,6 @@ struct ContentView: View {
             case .recordings: return "record.circle"
             case .composition: return "wand.and.stars"
             case .pieces: return "music.note.list"
-            case .accords: return "music.quarternote.3"
-            case .modes: return "text.book.closed"
-            case .progressions: return "list.number"
             }
         }
 
@@ -50,8 +59,40 @@ struct ContentView: View {
             case .recordings: return L10n.string(.appTabEnregistrements, language)
             case .composition: return L10n.string(.catComposition, language)
             case .pieces: return L10n.string(.catMorceaux, language)
+            }
+        }
+    }
+
+    /// The 4 Théorie-mode tabs — a reference/practice tool browsed while playing, own top-level
+    /// mode since 2026-08 (see `AppMode`'s own doc comment). Was 3 separate tabs, merged into one
+    /// shared-picker tab 2026-08 per usage feedback, then SPLIT BACK into 3 plain tabs 2026-08
+    /// once "Modes" grew enough of its own content (the functional/melodic exploration panel)
+    /// that sharing one tab's screen space with Accords/Progressions no longer made sense — then,
+    /// once that panel grew further still, "Modes" itself split again into `.modes` (the plain
+    /// reference grid, `ModeLibraryContentFocus.overview`) and `.exploration` (the functional/
+    /// melodic playground, `.exploration`) — each its own peer tab with its own independent
+    /// tonic/scale picker, per explicit request. Only `.modes` kept the detachable-window
+    /// capability (`AuxiliaryWindowID.theorie`) the old merged tab had; the other 3 are plain,
+    /// non-detachable tabs.
+    private enum TheorieTab: CaseIterable, Identifiable {
+        case accords, modes, exploration, progressions
+
+        var id: Self { self }
+
+        var systemImage: String {
+            switch self {
+            case .accords: return "music.quarternote.3"
+            case .modes: return "text.book.closed"
+            case .exploration: return "atom"
+            case .progressions: return "list.number"
+            }
+        }
+
+        func label(_ language: AppLanguage) -> String {
+            switch self {
             case .accords: return L10n.string(.appTabAccords, language)
             case .modes: return L10n.string(.appTabModes, language)
+            case .exploration: return L10n.string(.appHeadingExplorationFonctionnelle, language)
             case .progressions: return L10n.string(.appTabProgressions, language)
             }
         }
@@ -115,6 +156,7 @@ struct ContentView: View {
     // Same default as the old `StudioView` — that's where you set up which instrument sounds
     // through which role before playing, so it's the natural first screen.
     @State private var selectedStudioTab: StudioTab = .scene
+    @State private var selectedTheorieTab: TheorieTab = .modes
     @State private var selectedSettingsTab: SettingsTab = .sons
 
     var body: some View {
@@ -149,13 +191,19 @@ struct ContentView: View {
                                 Tab(StudioTab.pieces.label(session.currentLanguage), systemImage: StudioTab.pieces.systemImage, value: StudioTab.pieces) {
                                     PiecesView(session: session)
                                 }
-                                Tab(StudioTab.accords.label(session.currentLanguage), systemImage: StudioTab.accords.systemImage, value: StudioTab.accords) {
+                            }
+                        case .theorie:
+                            TabView(selection: $selectedTheorieTab) {
+                                Tab(TheorieTab.accords.label(session.currentLanguage), systemImage: TheorieTab.accords.systemImage, value: TheorieTab.accords) {
                                     ChordLibraryView(session: session)
                                 }
-                                Tab(StudioTab.modes.label(session.currentLanguage), systemImage: StudioTab.modes.systemImage, value: StudioTab.modes) {
+                                Tab(TheorieTab.modes.label(session.currentLanguage), systemImage: TheorieTab.modes.systemImage, value: TheorieTab.modes) {
                                     TheoryTabContent(session: session)
                                 }
-                                Tab(StudioTab.progressions.label(session.currentLanguage), systemImage: StudioTab.progressions.systemImage, value: StudioTab.progressions) {
+                                Tab(TheorieTab.exploration.label(session.currentLanguage), systemImage: TheorieTab.exploration.systemImage, value: TheorieTab.exploration) {
+                                    ModeLibraryView(session: session, contentFocus: .exploration)
+                                }
+                                Tab(TheorieTab.progressions.label(session.currentLanguage), systemImage: TheorieTab.progressions.systemImage, value: TheorieTab.progressions) {
                                     ProgressionLibraryView(session: session)
                                 }
                             }
@@ -193,50 +241,15 @@ struct ContentView: View {
                     }
                     .tabViewStyle(.sidebarAdaptable)
 
-                    // Bottom block, always visible regardless of tab/mode: the studio/settings
-                    // mode toggle, plus (studio mode only, per explicit user request) a quick
-                    // shortcut to turn the computer keyboard on/off without leaving Studio — the
-                    // full setting (same underlying `computerKeyboardInputEnabled`) still lives
-                    // in Settings > Clavier ordinateur (`ComputerKeyboardSettingsView`).
-                    Divider()
-                    HStack {
-                        Button {
-                            mode = (mode == .studio) ? .settings : .studio
-                        } label: {
-                            Label(
-                                mode == .studio
-                                    ? L10n.string(.appButtonReglages, session.currentLanguage)
-                                    : L10n.string(.appTabStudio, session.currentLanguage),
-                                systemImage: mode == .studio ? "gearshape" : "pianokeys"
-                            )
-                        }
-                        if mode == .studio {
-                            Button {
-                                session.setComputerKeyboardInputEnabled(!session.computerKeyboardInputEnabled)
-                            } label: {
-                                Label(L10n.string(.appTabClavierOrdinateur, session.currentLanguage), systemImage: "keyboard")
-                            }
-                            .foregroundStyle(session.computerKeyboardInputEnabled ? Color.accentColor : Color.primary)
-                            #if os(macOS) || os(visionOS)
-                            if session.computerKeyboardInputEnabled && !appModel.openAuxiliaryWindows.contains(.computerKeyboard) {
-                                Button {
-                                    openWindow(id: AuxiliaryWindowID.computerKeyboard.rawValue)
-                                } label: {
-                                    Image(systemName: "rectangle.on.rectangle")
-                                }
-                            }
-                            #endif
-                        }
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-
                     // Persistent, always-visible "long" keyboard — only while the computer
                     // keyboard mode is explicitly turned on (see `ComputerKeyboardSettingsView`,
                     // under Settings). Sits OUTSIDE the TabView so it stays put across every tab
-                    // switch, a constant reminder that typing anywhere now plays notes.
-                    if mode == .studio && session.computerKeyboardInputEnabled {
+                    // switch, a constant reminder that typing anywhere now plays notes. Placed
+                    // ABOVE the mode-toggle bar (not below) so the toggle — the one thing you
+                    // reach for constantly — stays pinned at the true bottom of the window and
+                    // never shifts position when this keyboard appears/disappears, per explicit
+                    // request ("stabilité de l'affichage").
+                    if (mode == .studio || mode == .theorie) && session.computerKeyboardInputEnabled {
                         Divider()
                         #if os(macOS) || os(visionOS)
                         if appModel.openAuxiliaryWindows.contains(.computerKeyboard) {
@@ -269,6 +282,56 @@ struct ContentView: View {
                         )
                         #endif
                     }
+
+                    // Bottom block, always visible regardless of tab/mode: the 3-way mode
+                    // toggle (current mode highlighted, per explicit request), plus
+                    // (Studio/Théorie only — both actually play notes, per explicit decision —
+                    // not Settings) a quick shortcut to turn the computer keyboard on/off
+                    // without leaving either. The full setting (same underlying
+                    // `computerKeyboardInputEnabled`) still lives in Settings > Clavier
+                    // ordinateur (`ComputerKeyboardSettingsView`).
+                    //
+                    // Plain manual `Button`s, NOT a segmented `Picker` — same empirically-found
+                    // platform quirk noted at the top of this file for `Tab()`/`.tabItem`: a
+                    // `Label`'s icon doesn't reliably render inside a segmented control on
+                    // macOS's current tab-bar style, only its text does. A plain `Button` with a
+                    // `Label` always shows both, so that's what gets full manual control here —
+                    // including the highlight fill for whichever mode is active.
+                    Divider()
+                    HStack(spacing: 8) {
+                        ForEach(AppMode.allCases) { candidate in
+                            Button {
+                                mode = candidate
+                            } label: {
+                                Label(candidate.label(session.currentLanguage), systemImage: candidate.systemImage)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(mode == candidate ? Color.accentColor.opacity(0.2) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(mode == candidate ? Color.accentColor : Color.primary)
+                        }
+                        if mode == .studio || mode == .theorie {
+                            Button {
+                                session.setComputerKeyboardInputEnabled(!session.computerKeyboardInputEnabled)
+                            } label: {
+                                Label(L10n.string(.appTabClavierOrdinateur, session.currentLanguage), systemImage: "keyboard")
+                            }
+                            .foregroundStyle(session.computerKeyboardInputEnabled ? Color.accentColor : Color.primary)
+                            #if os(macOS) || os(visionOS)
+                            if session.computerKeyboardInputEnabled && !appModel.openAuxiliaryWindows.contains(.computerKeyboard) {
+                                Button {
+                                    openWindow(id: AuxiliaryWindowID.computerKeyboard.rawValue)
+                                } label: {
+                                    Image(systemName: "rectangle.on.rectangle")
+                                }
+                            }
+                            #endif
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
                 }
                 .computerKeyboardInput(
                     isActive: session.computerKeyboardInputEnabled,
