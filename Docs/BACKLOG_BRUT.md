@@ -68,3 +68,11 @@ encore prise. Retiré d'ici.
 
 23. **Layout iPhone adapté** — l'app est aujourd'hui pensée/testée surtout pour macOS/iPad ; revoir
     la disposition pour un écran iPhone.
+
+24. **Représentation visuelle du rôle des accords dans un mode** (tension, résolution, etc.) —
+    trouver un moyen visuel (couleur ?) de représenter le rôle fonctionnel de chaque accord
+    (tonique/sus-tonique/médiante/sous-dominante/dominante/sus-dominante/sensible, voir
+    `FunctionalHarmonyTable`), pas juste son nom. Chercher dans les dictionnaires musicaux la
+    signification de chaque rôle (tension/résolution/couleur modale, etc.) et voir si une
+    convention de couleurs par rôle existe déjà quelque part (théorie académique, logiciels de
+    composition) avant d'en inventer une.

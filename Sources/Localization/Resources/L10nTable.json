@@ -948,6 +948,17 @@
   "ru": "Язык",
   "zhHans": "语言"
  },
+ "appFieldModeDeJeu": {
+  "de": "Spielweise",
+  "en": "Playback",
+  "es": "Modo de reproducción",
+  "fr": "Jeu",
+  "it": "Modalità di esecuzione",
+  "ja": "演奏方法",
+  "pt": "Modo de reprodução",
+  "ru": "Способ игры",
+  "zhHans": "演奏方式"
+ },
  "appFieldModele": {
   "de": "Modell",
   "en": "Model",
@@ -2924,6 +2935,39 @@
   "ru": "Новая сцена",
   "zhHans": "新建场景"
  },
+ "appOptionArpegeAllerRetour": {
+  "de": "Arpeggio auf und ab",
+  "en": "Arpeggio up-down",
+  "es": "Arpegio ida y vuelta",
+  "fr": "Arpège aller-retour",
+  "it": "Arpeggio su e giù",
+  "ja": "アルペジオ（往復）",
+  "pt": "Arpejo ida e volta",
+  "ru": "Арпеджио вверх-вниз",
+  "zhHans": "上下行琶音"
+ },
+ "appOptionArpegeDescendant": {
+  "de": "Arpeggio abwärts",
+  "en": "Arpeggio down",
+  "es": "Arpegio descendente",
+  "fr": "Arpège descendant",
+  "it": "Arpeggio discendente",
+  "ja": "アルペジオ（下降）",
+  "pt": "Arpejo descendente",
+  "ru": "Арпеджио вниз",
+  "zhHans": "下行琶音"
+ },
+ "appOptionArpegeMontant": {
+  "de": "Arpeggio aufwärts",
+  "en": "Arpeggio up",
+  "es": "Arpegio ascendente",
+  "fr": "Arpège montant",
+  "it": "Arpeggio ascendente",
+  "ja": "アルペジオ（上昇）",
+  "pt": "Arpejo ascendente",
+  "ru": "Арпеджио вверх",
+  "zhHans": "上行琶音"
+ },
  "appOptionAucuneFem": {
   "de": "Keine",
   "en": "None",
@@ -2956,6 +3000,28 @@
   "pt": "Individual",
   "ru": "Раздельно",
   "zhHans": "独立"
+ },
+ "appOptionJeuLie": {
+  "de": "Zusammen",
+  "en": "Block",
+  "es": "Ligado",
+  "fr": "Lié",
+  "it": "Legato",
+  "ja": "同時",
+  "pt": "Ligado",
+  "ru": "Слитно",
+  "zhHans": "同时"
+ },
+ "appOptionJeuStaccato": {
+  "de": "Staccato",
+  "en": "Staccato",
+  "es": "Staccato",
+  "fr": "Staccato",
+  "it": "Staccato",
+  "ja": "スタッカート",
+  "pt": "Staccato",
+  "ru": "Стаккато",
+  "zhHans": "断音"
  },
  "appOptionNotationAngloAmericaine": {
   "de": "Amerikanisch (C, Cm, Cmaj7)",

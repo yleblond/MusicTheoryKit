@@ -259,7 +259,16 @@ public struct PitchKeyboardView: View {
                         chordTones: chordTones, modeTones: modeTones,
                         alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring
                     )
-                    context.fill(Path(key.rect), with: .color(colorScheme.fillColor(for: state.role, isWhiteKey: false)))
+                    let path = Path(key.rect)
+                    context.fill(path, with: .color(colorScheme.fillColor(for: state.role, isWhiteKey: false)))
+                    // A colored black key otherwise has no edge of its own (unlike a white key,
+                    // which always gets a stroke) — a thin outline keeps its shape legible
+                    // against whatever bright fill color it just got. Left undrawn for the
+                    // default (uncolored) black fill so every other, unrelated keyboard keeps
+                    // its plain look.
+                    if state.role != .none {
+                        context.stroke(path, with: .color(.black), lineWidth: 1)
+                    }
                     if let degree = state.degreeBadge {
                         badges.append((key.rect, degree, ((key.pitch % 12) + 12) % 12))
                     }

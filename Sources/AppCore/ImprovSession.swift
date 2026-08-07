@@ -1576,11 +1576,23 @@ public final class ImprovSession: @unchecked Sendable {
     public private(set) var isAuditioningTheoryLibrary = false
     private let theoryLibraryAuditionPlayer = GuideAuditionPlayer()
     private var theoryLibraryAuditionGeneration = 0
+    /// `FavoriteSound.id` of whatever is currently loaded into `theoryLibraryAuditionPlayer` —
+    /// lets `loadTheoryLibraryAuditionSample` skip a redundant reload, see its own doc comment.
+    private var theoryLibraryAuditionLoadedSoundID: String?
 
     /// Loads a `FavoriteSound` (as picked from `favoriteSounds` by one of the Library screens)
-    /// into the shared theory-library audition player.
+    /// into the shared theory-library audition player — a no-op when `sound` is already the one
+    /// loaded (every Library screen calls this right before EVERY single play, including
+    /// repeated presses of the same instrument, which is by far the common case). Skipping the
+    /// redundant reload isn't just an optimization: reloading a sound bank instrument into a
+    /// running `AVAudioUnitSampler` needs a brief moment to settle, and a note scheduled right
+    /// after (at or near `startSeconds: 0`, as every caller here does for its very first note)
+    /// landed inside that window and was silently swallowed — confirmed by it consistently being
+    /// whichever note played first in time, never a later one.
     public func loadTheoryLibraryAuditionSample(_ sound: FavoriteSound) throws {
+        guard theoryLibraryAuditionLoadedSoundID != sound.id else { return }
         try theoryLibraryAuditionPlayer.loadSample(at: URL(fileURLWithPath: sound.path), preset: sound.preset)
+        theoryLibraryAuditionLoadedSoundID = sound.id
     }
 
     /// Plays `notes` through the shared theory-library audition player — used alike for a
@@ -5990,6 +6002,20 @@ public final class ImprovSession: @unchecked Sendable {
             return WebConsoleWheelColumnState(pitchClass: column.pitchClass.value, modeName: column.modeName, cells: cells)
         }
         return WebConsoleWheelState(tonic: wheel.tonic.value, activeModeName: activeModeName, columns: columns, activeColumnIndex: wheel.activeColumnIndex)
+    }
+
+    /// Builds a one-off `listeningTracks` entry for `wheelState(...)` above, for a caller that
+    /// has a chord to highlight but no real `TrackInfo`/recognition data of its own — e.g. the
+    /// Mode Library's "ring the chord currently playing" indicator, reusing the exact same
+    /// cell-matching/outline mechanism the live recognition view already uses instead of
+    /// growing a second one. Exposed here (rather than requiring the caller to import
+    /// `RecognitionEngine` itself just to build a `RecognizedChord`) since this file already
+    /// depends on that module.
+    public static func syntheticListeningTrack(chordRoot: Int, chordTemplateID: String, label: String = "current") -> TrackInfo {
+        TrackInfo(
+            id: .microphone, label: label, canHaveSound: false,
+            recognizedChord: RecognizedChord(root: PitchClass(chordRoot), chordTemplateID: chordTemplateID, bass: PitchClass(chordRoot), confidence: 1)
+        )
     }
 
     /// The Guide screen's own state (see `startGuide`/`advanceGuideStep`) — entirely

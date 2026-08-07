@@ -391,6 +391,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
     // MARK: - App: Modes (Mode Library)
     case appHeadingBibliothequeModes, appButtonAscendant, appButtonDescendant, appButtonAscEtDescendant
     case appHeadingAccordsDeLaTonalite, appHeadingAccordsDuMode, appButtonJouerLaSuiteDAccords
+    case appFieldModeDeJeu, appOptionJeuLie, appOptionArpegeMontant, appOptionArpegeDescendant
+    case appOptionArpegeAllerRetour, appOptionJeuStaccato
 
     // MARK: - App: Progressions (Progression Library)
     case appHeadingBibliothequeProgressions, appFieldProgressionChoisie

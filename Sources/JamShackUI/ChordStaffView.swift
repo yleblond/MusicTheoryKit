@@ -46,10 +46,21 @@ public struct ChordStaffView: View {
     /// gets its own inline accidental, same as before. `nil` (the default) keeps the original
     /// per-note-accidental behavior, unchanged for every existing call site.
     public let keySignature: MajorKeySignature?
+    /// Forces the drawn width to fit at least this many columns, even if `events` (after the
+    /// empty-`pitches` filter) has fewer — lets two staffs with different event counts (e.g. the
+    /// Mode Library's own scale staff vs. its diatonic-chords staff) render at the same total
+    /// length by each passing the other's count. 0 (the default) never widens anything, so every
+    /// existing call site is unaffected.
+    public let minimumColumnCount: Int
+    /// Fires with the tapped column's index into the filtered `events` (same indexing
+    /// `highlightedIndex` uses) — x-position only, any y within the view counts, since columns
+    /// are already visually separated. `nil` (the default) attaches no gesture at all.
+    public let onColumnTap: ((Int) -> Void)?
 
     public init(
         events: [StaffEvent], colorScheme: PitchKeyboardColorScheme = PitchKeyboardColorScheme(),
-        heightScale: CGFloat = 1, widthScale: CGFloat = 1, highlightedIndex: Int? = nil, keySignature: MajorKeySignature? = nil
+        heightScale: CGFloat = 1, widthScale: CGFloat = 1, highlightedIndex: Int? = nil, keySignature: MajorKeySignature? = nil,
+        minimumColumnCount: Int = 0, onColumnTap: ((Int) -> Void)? = nil
     ) {
         self.events = events
         self.colorScheme = colorScheme
@@ -57,6 +68,8 @@ public struct ChordStaffView: View {
         self.widthScale = widthScale
         self.highlightedIndex = highlightedIndex
         self.keySignature = keySignature
+        self.minimumColumnCount = minimumColumnCount
+        self.onColumnTap = onColumnTap
     }
 
     // MARK: - Row geometry (mirrors STAFF_ROWS/STAFF_TREBLE_TOP/etc. in StaticAssets.swift)
@@ -160,7 +173,7 @@ public struct ChordStaffView: View {
     private static let baseKeySignatureStartPadding: CGFloat = 6
     private static let baseLedgerHalfWidth: CGFloat = 12
     private static let baseZigzagShift: CGFloat = 20
-    private static let baseAccidentalOffset: CGFloat = 18
+    private static let baseAccidentalOffset: CGFloat = 13
     private static let baseLineRightMargin: CGFloat = 4
 
     private var linesLeftX: CGFloat { Self.baseLinesLeftX * widthScale }
@@ -197,7 +210,8 @@ public struct ChordStaffView: View {
     public var body: some View {
         let filteredEvents = events.filter { !$0.pitches.isEmpty }
         let height = marginTop + marginBottom + CGFloat(Self.rows.count - 1) * rowHeight
-        let width = firstColX + CGFloat(max(filteredEvents.count - 1, 0)) * colWidth + marginRight
+        let columnCount = max(filteredEvents.count, minimumColumnCount)
+        let width = firstColX + CGFloat(max(columnCount - 1, 0)) * colWidth + marginRight
         Canvas { context, size in
             if let highlightedIndex, filteredEvents.indices.contains(highlightedIndex) {
                 let colX = firstColX + CGFloat(highlightedIndex) * colWidth
@@ -207,6 +221,13 @@ public struct ChordStaffView: View {
             draw(events: filteredEvents, in: context, size: size)
         }
         .frame(width: width, height: height)
+        .contentShape(Rectangle())
+        .onTapGesture { location in
+            guard let onColumnTap else { return }
+            let index = Int(((location.x - firstColX) / colWidth).rounded())
+            guard filteredEvents.indices.contains(index) else { return }
+            onColumnTap(index)
+        }
     }
 
     private func draw(events: [StaffEvent], in context: GraphicsContext, size: CGSize) {
@@ -264,7 +285,7 @@ public struct ChordStaffView: View {
                 if name.count > 1 && !(keySignature?.affectedPitchClasses.contains(pc) ?? false) {
                     let glyph = name.contains("#") ? "\u{266F}" : "\u{266D}"
                     context.draw(
-                        Text(glyph).font(.system(size: 14)).foregroundStyle(color),
+                        Text(glyph).font(.system(size: 19)).foregroundStyle(color),
                         at: CGPoint(x: cx - accidentalOffset, y: y(n.row)), anchor: .center
                     )
                 }
@@ -313,8 +334,8 @@ public struct ChordStaffView: View {
     /// `(pc - root) % 12` recovers each tone's exact semitone offset from the root with no
     /// ambiguity, letting every tone be placed relative to one fixed anchor octave (60 =
     /// middle C) with no real per-note octave data needed.
-    public static func chordEvent(root: Int, tones: [Int]) -> StaffEvent {
-        let rootMidi = 60 + root
+    public static func chordEvent(root: Int, tones: [Int], octaveOffset: Int = 0) -> StaffEvent {
+        let rootMidi = 60 + root + 12 * octaveOffset
         let pitches = tones.map { pc in rootMidi + (((pc - root) % 12) + 12) % 12 }
         return StaffEvent(pitches: pitches, chordRoot: root, chordTones: tones)
     }
