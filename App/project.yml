@@ -30,6 +30,11 @@ targets:
         # are left unset, ignoring MARKETING_VERSION/CURRENT_PROJECT_VERSION above.
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Answers App Store Connect's export-compliance question ("Missing Compliance") ahead
+        # of time — this app only uses HTTPS/standard OS encryption (no custom/proprietary
+        # crypto), which is exempt, so `false` here skips that prompt on every archive upload
+        # instead of having to answer "no encryption" by hand each time.
+        ITSAppUsesNonExemptEncryption: false
         NSMicrophoneUsageDescription: >-
           JamShack ecoute le microphone pour reconnaitre les accords et modes joues.
         NSLocalNetworkUsageDescription: >-
