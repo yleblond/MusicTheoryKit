@@ -461,6 +461,17 @@
   "ru": "Пригласить / найти участников...",
   "zhHans": "邀请/查找参与者..."
  },
+ "appButtonJouerLaSuiteDAccords": {
+  "de": "Akkordfolge abspielen",
+  "en": "Play the chord sequence",
+  "es": "Reproducir la secuencia de acordes",
+  "fr": "Jouer la suite d'accords",
+  "it": "Riproduci la sequenza di accordi",
+  "ja": "コード進行を再生",
+  "pt": "Tocar a sequência de acordes",
+  "ru": "Воспроизвести последовательность аккордов",
+  "zhHans": "播放和弦序列"
+ },
  "appButtonListerDestinationsMidi": {
   "de": "Sichtbare MIDI-Ziele auflisten",
   "en": "List visible MIDI destinations",
@@ -3803,6 +3814,17 @@
   "pt": "Estúdio",
   "ru": "Студия",
   "zhHans": "工作室"
+ },
+ "appTabTheorie": {
+  "de": "Theorie",
+  "en": "Theory",
+  "es": "Teoría",
+  "fr": "Théorie",
+  "it": "Teoria",
+  "ja": "音楽理論",
+  "pt": "Teoria",
+  "ru": "Теория",
+  "zhHans": "乐理"
  },
  "appToggleActiverSpectrometre": {
   "de": "Spektrometer aktivieren",

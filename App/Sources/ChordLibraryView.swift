@@ -4,19 +4,19 @@ import JamShackUI
 import MusicTheoryKit
 import Localization
 
-/// "Accords" tab — a browsable library of chord qualities: pick a root + quality, then see its
-/// name (via the active `NotationStyle`, see `NotationStyleSettingsView`), its notes on the
-/// grand staff, a guitar diagram (with an inversion-aware position picker, see
+/// "Accords" section of the Théorie tab — pick a root + quality, then see its name (via the
+/// active `NotationStyle`, see `NotationStyleSettingsView`), its notes on the grand staff, a
+/// guitar diagram (with an inversion-aware position picker, see
 /// `GuitarChordShape.diagram(forRoot:chordTemplateID:inversion:)`), and the same chord
-/// highlighted on a keyboard with note-name bullets — plus a play button using a favorite
-/// sound. Follows the list/detail idiom already used by `SoundLibraryView` (this app has no
-/// `NavigationSplitView` anywhere).
+/// highlighted on a keyboard with note-name bullets — plus a play button (the instrument itself
+/// is picked once, in `TheoryView`'s shared header, and threaded down via `auditionSoundID`).
+/// Two side-by-side columns on macOS/visionOS/iPad-width iOS, push list→detail navigation on
+/// iPhone-width iOS — see `TheoryLibraryLayout`.
 struct ChordLibraryView: View {
     let session: ImprovSession
+    @Binding var auditionSoundID: String?
 
-    private enum Screen { case list, detail }
-
-    @State private var screen: Screen = .list
+    @State private var screen: TheoryLibraryScreen = .list
     @State private var selectedRoot: Int = 0
     @State private var selectedTemplateID: String = "Ma"
     /// Drives the staff/keyboard display — independent of `guitarPosition`, since the guitar
@@ -25,32 +25,46 @@ struct ChordLibraryView: View {
     /// allows.
     @State private var inversion: Int = 0
     @State private var guitarPosition: Int = 0
-    @State private var auditionSoundID: String?
+
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var usesTwoColumns: Bool { TheoryLibraryLayoutMode.usesTwoColumns(horizontalSizeClass: horizontalSizeClass) }
 
     private var chord: Chord {
         Chord(root: PitchClass(selectedRoot), template: ChordVocabulary.byID(selectedTemplateID) ?? ChordVocabulary.seed[0])
     }
 
     var body: some View {
-        Group {
-            switch screen {
-            case .list: listScreen
-            case .detail: detailScreen
-            }
+        TheoryLibraryLayout(screen: $screen, sidebarWidth: 320) {
+            listContent
+        } detailContent: { showBackButton, onBack in
+            detailContent(showBackButton: showBackButton, onBack: onBack)
         }
     }
 
-    // MARK: - List
+    // MARK: - List (left column / first screen)
 
-    private var listScreen: some View {
+    private var listContent: some View {
         Form {
             Section {
-                Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: $selectedRoot) {
-                    ForEach(0..<12, id: \.self) { pitchClass in
-                        Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
+                if usesTwoColumns {
+                    // A 12-way segmented control doesn't fit a fixed-width sidebar column —
+                    // same reasoning `JamShackLanguageView` already documents for its own
+                    // language picker.
+                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: $selectedRoot) {
+                        ForEach(0..<12, id: \.self) { pitchClass in
+                            Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
+                        }
                     }
+                    .pickerStyle(.menu)
+                } else {
+                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: $selectedRoot) {
+                        ForEach(0..<12, id: \.self) { pitchClass in
+                            Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
             } header: {
                 Text(L10n.string(.appHeadingBibliothequeAccords, session.currentLanguage))
             }
@@ -64,6 +78,7 @@ struct ChordLibraryView: View {
                     } label: {
                         HStack {
                             Text(displayName(forTemplateID: id))
+                                .foregroundStyle(id == selectedTemplateID ? Color.accentColor : .primary)
                             Spacer()
                         }
                         .contentShape(Rectangle())
@@ -84,20 +99,35 @@ struct ChordLibraryView: View {
         return session.notationStyle.displayName(for: Chord(root: PitchClass(selectedRoot), template: template))
     }
 
-    // MARK: - Detail
+    // MARK: - Detail (right column / second screen)
 
     private var maxInversion: Int { Chord.maxInversion(for: chord.template) }
 
-    private var detailScreen: some View {
+    /// Fondamentale (always available) plus every inversion `GuitarChordShape` actually has a
+    /// curated shape for, at the current quality — see `hasVerifiedInversionShape`'s doc comment.
+    private var availableGuitarPositions: [Int] {
+        [0] + [1, 2, 3].filter { GuitarChordShape.hasVerifiedInversionShape(chordTemplateID: selectedTemplateID, inversion: $0) }
+    }
+
+    private func guitarPositionLabel(_ position: Int) -> String {
+        switch position {
+        case 1: return L10n.string(.appOptionPosition1ereInversion, session.currentLanguage)
+        case 2: return L10n.string(.appOptionPosition2emeInversion, session.currentLanguage)
+        case 3: return L10n.string(.appOptionPosition3emeInversion, session.currentLanguage)
+        default: return L10n.string(.appOptionPositionFondamentale, session.currentLanguage)
+        }
+    }
+
+    private func detailContent(showBackButton: Bool, onBack: @escaping () -> Void) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Button {
-                        screen = .list
-                    } label: {
-                        Image(systemName: "chevron.left")
+                if showBackButton {
+                    HStack {
+                        Button(action: onBack) {
+                            Image(systemName: "chevron.left")
+                        }
+                        Spacer()
                     }
-                    Spacer()
                 }
 
                 Text(session.notationStyle.displayName(for: chord)).font(.largeTitle).bold()
@@ -118,15 +148,20 @@ struct ChordLibraryView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(L10n.string(.appFieldPosition, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-                    Picker(L10n.string(.appFieldPosition, session.currentLanguage), selection: $guitarPosition) {
-                        Text(L10n.string(.appOptionPositionFondamentale, session.currentLanguage)).tag(0)
-                        Text(L10n.string(.appOptionPosition1ereInversion, session.currentLanguage)).tag(1)
-                        Text(L10n.string(.appOptionPosition2emeInversion, session.currentLanguage)).tag(2)
-                        Text(L10n.string(.appOptionPosition3emeInversion, session.currentLanguage)).tag(3)
+                    // Only offer positions that actually produce a distinct diagram (see
+                    // `GuitarChordShape.hasVerifiedInversionShape`) — most qualities beyond
+                    // "Ma"/"mi" have no curated inversion shape yet, so showing those options
+                    // here would look tappable but silently do nothing.
+                    if availableGuitarPositions.count > 1 {
+                        Text(L10n.string(.appFieldPosition, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+                        Picker(L10n.string(.appFieldPosition, session.currentLanguage), selection: $guitarPosition) {
+                            ForEach(availableGuitarPositions, id: \.self) { position in
+                                Text(guitarPositionLabel(position)).tag(position)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
                     GuitarChordDiagramView(
                         root: selectedRoot, chordTemplateID: selectedTemplateID, inversion: guitarPosition,
                         language: session.currentLanguage
@@ -134,8 +169,6 @@ struct ChordLibraryView: View {
                 }
 
                 SequenceTransportView(
-                    favoriteSounds: session.favoriteSounds,
-                    selectedSoundID: $auditionSoundID,
                     isPlaying: session.isAuditioningTheoryLibrary,
                     language: session.currentLanguage,
                     onPlay: play,
@@ -172,5 +205,5 @@ struct ChordLibraryView: View {
 }
 
 #Preview {
-    ChordLibraryView(session: ImprovSession())
+    ChordLibraryView(session: ImprovSession(), auditionSoundID: .constant(nil))
 }

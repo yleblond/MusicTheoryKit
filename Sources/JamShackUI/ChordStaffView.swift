@@ -27,14 +27,36 @@ public struct ChordStaffView: View {
     public let colorScheme: PitchKeyboardColorScheme
     /// Scales every HEIGHT-affecting dimension (row spacing, margins, clef size) uniformly —
     /// e.g. the Guide screen's own notation is 0.9 (10% shorter than the shared default),
-    /// per explicit user request. Width (`firstColX`/`colWidth`/`marginRight`) is deliberately
-    /// untouched by this — only asked to change the height.
+    /// per explicit user request.
     public let heightScale: CGFloat
+    /// Scales every WIDTH-affecting dimension (column spacing, margins, ledger-line/accidental
+    /// offsets) uniformly, independent of `heightScale` — e.g. a narrower sidebar column asked
+    /// for 0.7 to fit tighter next to a keyboard. Glyph/font sizes (clef, accidentals, note
+    /// heads) are NOT scaled by this — only the spacing between them — so symbols stay
+    /// legible/undistorted, just packed closer together.
+    public let widthScale: CGFloat
+    /// Draws a translucent accent-colored band behind this column (index into `events` as
+    /// passed to `init` — every event this view is actually used with has a non-empty
+    /// `pitches`, so this lines up with the post-filter column the event ends up drawn in;
+    /// see `body`'s own `filteredEvents`) — the Progression Library's "which chord is
+    /// currently playing" indicator, kept in sync with playback by the caller.
+    public let highlightedIndex: Int?
+    /// When set, sharps/flats are drawn once at the clef (standard engraving) instead of next
+    /// to every affected note — any note whose pitch class isn't covered by the signature still
+    /// gets its own inline accidental, same as before. `nil` (the default) keeps the original
+    /// per-note-accidental behavior, unchanged for every existing call site.
+    public let keySignature: MajorKeySignature?
 
-    public init(events: [StaffEvent], colorScheme: PitchKeyboardColorScheme = PitchKeyboardColorScheme(), heightScale: CGFloat = 1) {
+    public init(
+        events: [StaffEvent], colorScheme: PitchKeyboardColorScheme = PitchKeyboardColorScheme(),
+        heightScale: CGFloat = 1, widthScale: CGFloat = 1, highlightedIndex: Int? = nil, keySignature: MajorKeySignature? = nil
+    ) {
         self.events = events
         self.colorScheme = colorScheme
         self.heightScale = heightScale
+        self.widthScale = widthScale
+        self.highlightedIndex = highlightedIndex
+        self.keySignature = keySignature
     }
 
     // MARK: - Row geometry (mirrors STAFF_ROWS/STAFF_TREBLE_TOP/etc. in StaticAssets.swift)
@@ -105,6 +127,13 @@ public struct ChordStaffView: View {
     private static let baseNoteRX: CGFloat = 9
     private static let baseNoteRY: CGFloat = 7.5
 
+    /// The exact height a `ChordStaffView` renders at for a given `heightScale` — lets a
+    /// sibling view (e.g. a keyboard placed next to it) match it exactly instead of guessing a
+    /// fixed constant that could drift out of sync with this view's own geometry.
+    public static func height(heightScale: CGFloat = 1) -> CGFloat {
+        (baseMarginTop + baseMarginBottom) * heightScale + CGFloat(rows.count - 1) * baseRowHeight * heightScale
+    }
+
     private var rowHeight: CGFloat { Self.baseRowHeight * heightScale }
     private var marginTop: CGFloat { Self.baseMarginTop * heightScale }
     private var marginBottom: CGFloat { Self.baseMarginBottom * heightScale }
@@ -115,25 +144,66 @@ public struct ChordStaffView: View {
     private var noteRX: CGFloat { Self.baseNoteRX * heightScale }
     private var noteRY: CGFloat { Self.baseNoteRY * heightScale }
 
-    private static let linesLeftX: CGFloat = 4
     // Reduced from the original 78/104 (stavesX/firstColX) — per feedback that the notation
     // was too wide, with the single proposed-chord note column sitting far closer to the
     // right edge than to the clef. `marginRight` was bumped up to compensate so the note
     // column now sits roughly equidistant between the clef's own right edge and the staff's
-    // right edge, instead of hugging one side. Width is deliberately NOT scaled by
-    // `heightScale` — only asked to change the height.
-    private static let stavesX: CGFloat = 48
-    private static let colWidth: CGFloat = 44
-    private static let firstColX: CGFloat = stavesX + 20
-    private static let marginRight: CGFloat = 28
+    // right edge, instead of hugging one side.
+    private static let baseLinesLeftX: CGFloat = 4
+    private static let baseStavesX: CGFloat = 48
+    private static let baseColWidth: CGFloat = 44
+    /// The "+20" in the original fixed `firstColX = stavesX + 20` — kept as its own named
+    /// constant now that `stavesX`/this offset both need to scale with `widthScale`.
+    private static let baseFirstColXOffset: CGFloat = 20
+    private static let baseMarginRight: CGFloat = 28
+    private static let baseKeySignatureAccidentalWidth: CGFloat = 9
+    private static let baseKeySignatureStartPadding: CGFloat = 6
+    private static let baseLedgerHalfWidth: CGFloat = 12
+    private static let baseZigzagShift: CGFloat = 20
+    private static let baseAccidentalOffset: CGFloat = 18
+    private static let baseLineRightMargin: CGFloat = 4
+
+    private var linesLeftX: CGFloat { Self.baseLinesLeftX * widthScale }
+    private var stavesX: CGFloat { Self.baseStavesX * widthScale }
+    private var colWidth: CGFloat { Self.baseColWidth * widthScale }
+    private var marginRight: CGFloat { Self.baseMarginRight * widthScale }
+    private var keySignatureAccidentalWidth: CGFloat { Self.baseKeySignatureAccidentalWidth * widthScale }
+    private var keySignatureStartPadding: CGFloat { Self.baseKeySignatureStartPadding * widthScale }
+    private var ledgerHalfWidth: CGFloat { Self.baseLedgerHalfWidth * widthScale }
+    private var zigzagShift: CGFloat { Self.baseZigzagShift * widthScale }
+    private var accidentalOffset: CGFloat { Self.baseAccidentalOffset * widthScale }
+    private var lineRightMargin: CGFloat { Self.baseLineRightMargin * widthScale }
+
+    /// Standard engraving positions (MIDI pitch of the NATURAL note the glyph sits on — e.g.
+    /// 77 = F5, the position an F# key-signature sharp is drawn at) for each clef, in the
+    /// standard sharp order (F,C,G,D,A,E,B) / flat order (B,E,A,D,G,C,F) — universally-taught
+    /// values, not derived from anything else in this file.
+    private static let trebleKeySigSharpMidis = [77, 72, 79, 74, 69, 76, 71] // F5,C5,G5,D5,A4,E5,B4
+    private static let trebleKeySigFlatMidis = [71, 76, 69, 74, 67, 72, 65]  // B4,E5,A4,D5,G4,C5,F4
+    private static let bassKeySigSharpMidis = [53, 48, 55, 50, 45, 52, 47]   // F3,C3,G3,D3,A2,E3,B2
+    private static let bassKeySigFlatMidis = [47, 52, 45, 50, 43, 48, 41]    // B2,E3,A2,D3,G2,C3,F2
+
+    /// Extra room reserved right after the clef for the key-signature glyphs — 0 when
+    /// `keySignature` is `nil`, so every existing call site's layout is unaffected.
+    private var keySignatureWidth: CGFloat {
+        guard let keySignature, keySignature.accidentalCount > 0 else { return 0 }
+        return CGFloat(keySignature.accidentalCount) * keySignatureAccidentalWidth + keySignatureStartPadding
+    }
+
+    private var firstColX: CGFloat { stavesX + Self.baseFirstColXOffset * widthScale + keySignatureWidth }
 
     private func y(_ row: Int) -> CGFloat { marginTop + CGFloat(row) * rowHeight }
 
     public var body: some View {
         let filteredEvents = events.filter { !$0.pitches.isEmpty }
         let height = marginTop + marginBottom + CGFloat(Self.rows.count - 1) * rowHeight
-        let width = Self.firstColX + CGFloat(max(filteredEvents.count - 1, 0)) * Self.colWidth + Self.marginRight
+        let width = firstColX + CGFloat(max(filteredEvents.count - 1, 0)) * colWidth + marginRight
         Canvas { context, size in
+            if let highlightedIndex, filteredEvents.indices.contains(highlightedIndex) {
+                let colX = firstColX + CGFloat(highlightedIndex) * colWidth
+                let band = CGRect(x: colX - colWidth / 2, y: 0, width: colWidth, height: size.height)
+                context.fill(Path(band), with: .color(Color.accentColor.opacity(0.18)))
+            }
             draw(events: filteredEvents, in: context, size: size)
         }
         .frame(width: width, height: height)
@@ -141,19 +211,23 @@ public struct ChordStaffView: View {
 
     private func draw(events: [StaffEvent], in context: GraphicsContext, size: CGSize) {
         for i in Self.trebleTop...Self.trebleBottom where Self.rows[i].isLine {
-            drawLine(context: context, y: y(i), x1: Self.linesLeftX, x2: size.width - 4)
+            drawLine(context: context, y: y(i), x1: linesLeftX, x2: size.width - lineRightMargin)
         }
         for i in Self.bassTop...Self.bassBottom where Self.rows[i].isLine {
-            drawLine(context: context, y: y(i), x1: Self.linesLeftX, x2: size.width - 4)
+            drawLine(context: context, y: y(i), x1: linesLeftX, x2: size.width - lineRightMargin)
         }
         context.draw(
             Text("\u{1D11E}").font(.system(size: clefFontSizeG)).foregroundStyle(.primary),
-            at: CGPoint(x: Self.linesLeftX, y: y(Self.g4Row) + clefGDy), anchor: .bottomLeading
+            at: CGPoint(x: linesLeftX, y: y(Self.g4Row) + clefGDy), anchor: .bottomLeading
         )
         context.draw(
             Text("\u{1D122}").font(.system(size: clefFontSizeF)).foregroundStyle(.primary),
-            at: CGPoint(x: Self.linesLeftX, y: y(Self.f3Row) + clefFDy), anchor: .bottomLeading
+            at: CGPoint(x: linesLeftX, y: y(Self.f3Row) + clefFDy), anchor: .bottomLeading
         )
+
+        if let keySignature {
+            drawKeySignature(keySignature, context: context)
+        }
 
         for (colIndex, event) in events.enumerated() {
             let tones = Set(event.chordTones)
@@ -174,7 +248,7 @@ public struct ChordStaffView: View {
                 previousRow = n.row
                 previousShifted = shift
             }
-            let colX = Self.firstColX + CGFloat(colIndex) * Self.colWidth
+            let colX = firstColX + CGFloat(colIndex) * colWidth
             for n in held {
                 let pc = ((n.pitch % 12) + 12) % 12
                 let color: Color
@@ -182,20 +256,45 @@ public struct ChordStaffView: View {
                 else if tones.contains(pc) { color = colorScheme.chordTone }
                 else if event.chordRoot != nil { color = colorScheme.heldOutsideChord }
                 else { color = .primary }
-                let cx = colX + (shiftByRow[n.row] == true ? 20 : 0)
+                let cx = colX + (shiftByRow[n.row] == true ? zigzagShift : 0)
                 for li in Self.ledgerRows(for: n.row) {
-                    drawLine(context: context, y: y(li), x1: cx - 12, x2: cx + 12)
+                    drawLine(context: context, y: y(li), x1: cx - ledgerHalfWidth, x2: cx + ledgerHalfWidth)
                 }
                 let name = Self.noteNames[pc]
-                if name.count > 1 {
+                if name.count > 1 && !(keySignature?.affectedPitchClasses.contains(pc) ?? false) {
                     let glyph = name.contains("#") ? "\u{266F}" : "\u{266D}"
                     context.draw(
                         Text(glyph).font(.system(size: 14)).foregroundStyle(color),
-                        at: CGPoint(x: cx - 18, y: y(n.row)), anchor: .center
+                        at: CGPoint(x: cx - accidentalOffset, y: y(n.row)), anchor: .center
                     )
                 }
                 let noteRect = CGRect(x: cx - noteRX, y: y(n.row) - noteRY, width: noteRX * 2, height: noteRY * 2)
                 context.fill(Path(ellipseIn: noteRect), with: .color(color))
+            }
+        }
+    }
+
+    /// Draws the sharp/flat glyphs once, right after the clefs, at their standard engraving
+    /// positions in both staves — see `trebleKeySigSharpMidis`/etc.'s own doc comment.
+    private func drawKeySignature(_ keySignature: MajorKeySignature, context: GraphicsContext) {
+        let glyph: String
+        let trebleMidis: [Int]
+        let bassMidis: [Int]
+        switch keySignature {
+        case .sharps(let count):
+            glyph = "\u{266F}"
+            trebleMidis = Array(Self.trebleKeySigSharpMidis.prefix(count))
+            bassMidis = Array(Self.bassKeySigSharpMidis.prefix(count))
+        case .flats(let count):
+            glyph = "\u{266D}"
+            trebleMidis = Array(Self.trebleKeySigFlatMidis.prefix(count))
+            bassMidis = Array(Self.bassKeySigFlatMidis.prefix(count))
+        }
+        for (clefMidis) in [trebleMidis, bassMidis] {
+            for (index, midi) in clefMidis.enumerated() {
+                guard let row = Self.rowIndex(forPitch: midi) else { continue }
+                let x = stavesX + keySignatureStartPadding + CGFloat(index) * keySignatureAccidentalWidth
+                context.draw(Text(glyph).font(.system(size: 14)).foregroundStyle(Color.primary), at: CGPoint(x: x, y: y(row)), anchor: .center)
             }
         }
     }

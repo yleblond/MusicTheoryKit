@@ -16,10 +16,12 @@ struct ContentView: View {
     /// with right now," now flat at the same level instead of nested one level deeper.
     private enum StudioTab: CaseIterable, Identifiable {
         case live, scene, guide, recordings, composition, pieces
-        // Chord/Mode/Progression Library — reference/practice tools browsed while playing,
-        // added 2026-08 alongside the rest of the flat Studio tab set (per user decision: new
-        // tabs here rather than a separate sidebar).
-        case chordLibrary, modeLibrary, progressionLibrary
+        // Théorie (Accords/Modes/Progressions, navigated via a horizontal picker inside
+        // `TheoryView`) — a reference/practice tool browsed while playing, added 2026-08
+        // alongside the rest of the flat Studio tab set (per user decision: a tab here rather
+        // than a separate sidebar). Originally 3 separate tabs, merged into one 2026-08 per
+        // usage feedback (also detachable into its own window, see `AuxiliaryWindowID.theorie`).
+        case theorie
 
         var id: Self { self }
 
@@ -31,9 +33,7 @@ struct ContentView: View {
             case .recordings: return "record.circle"
             case .composition: return "wand.and.stars"
             case .pieces: return "music.note.list"
-            case .chordLibrary: return "guitars"
-            case .modeLibrary: return "music.quarternote.3"
-            case .progressionLibrary: return "arrow.triangle.turn.up.right.diamond"
+            case .theorie: return "text.book.closed"
             }
         }
 
@@ -45,9 +45,7 @@ struct ContentView: View {
             case .recordings: return L10n.string(.appTabEnregistrements, language)
             case .composition: return L10n.string(.catComposition, language)
             case .pieces: return L10n.string(.catMorceaux, language)
-            case .chordLibrary: return L10n.string(.appTabAccords, language)
-            case .modeLibrary: return L10n.string(.appTabModes, language)
-            case .progressionLibrary: return L10n.string(.appTabProgressions, language)
+            case .theorie: return L10n.string(.appTabTheorie, language)
             }
         }
     }
@@ -135,14 +133,8 @@ struct ContentView: View {
                                 Tab(StudioTab.pieces.label(session.currentLanguage), systemImage: StudioTab.pieces.systemImage, value: StudioTab.pieces) {
                                     PiecesView(session: session)
                                 }
-                                Tab(StudioTab.chordLibrary.label(session.currentLanguage), systemImage: StudioTab.chordLibrary.systemImage, value: StudioTab.chordLibrary) {
-                                    ChordLibraryView(session: session)
-                                }
-                                Tab(StudioTab.modeLibrary.label(session.currentLanguage), systemImage: StudioTab.modeLibrary.systemImage, value: StudioTab.modeLibrary) {
-                                    ModeLibraryView(session: session)
-                                }
-                                Tab(StudioTab.progressionLibrary.label(session.currentLanguage), systemImage: StudioTab.progressionLibrary.systemImage, value: StudioTab.progressionLibrary) {
-                                    ProgressionLibraryView(session: session)
+                                Tab(StudioTab.theorie.label(session.currentLanguage), systemImage: StudioTab.theorie.systemImage, value: StudioTab.theorie) {
+                                    TheoryTabContent(session: session)
                                 }
                             }
                         case .settings:

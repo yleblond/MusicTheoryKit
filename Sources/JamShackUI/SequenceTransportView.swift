@@ -1,5 +1,4 @@
 import SwiftUI
-import AppCore
 import Localization
 
 /// Which way a mode's notes play — only meaningful for the Mode Library (a chord or a
@@ -8,12 +7,12 @@ public enum SequencePlayDirection: String, CaseIterable, Sendable {
     case ascending, descending, both
 }
 
-/// A playback bar shared by the Chord/Mode/Progression Library detail screens: an instrument
-/// picker (`FavoriteSoundPickerView`), an optional Asc/Desc/Asc-et-Desc control (Mode Library
-/// only — pass `direction: nil` to omit it), and a start/stop button.
+/// A playback bar shared by the Chord/Mode/Progression Library detail screens: an optional
+/// Asc/Desc/Asc-et-Desc control (Mode Library only — pass `direction: nil` to omit it) and a
+/// start/stop button. The instrument picker itself is NOT part of this view — it's hoisted to
+/// `TheoryView`'s shared header (one choice for all three screens, see `FavoriteSoundPickerView`
+/// there) rather than duplicated per screen.
 public struct SequenceTransportView: View {
-    public let favoriteSounds: [ImprovSession.FavoriteSound]
-    @Binding public var selectedSoundID: String?
     public let direction: Binding<SequencePlayDirection>?
     public let isPlaying: Bool
     public let language: AppLanguage
@@ -21,16 +20,12 @@ public struct SequenceTransportView: View {
     public let onStop: () -> Void
 
     public init(
-        favoriteSounds: [ImprovSession.FavoriteSound],
-        selectedSoundID: Binding<String?>,
         direction: Binding<SequencePlayDirection>? = nil,
         isPlaying: Bool,
         language: AppLanguage,
         onPlay: @escaping () -> Void,
         onStop: @escaping () -> Void
     ) {
-        self.favoriteSounds = favoriteSounds
-        self._selectedSoundID = selectedSoundID
         self.direction = direction
         self.isPlaying = isPlaying
         self.language = language
@@ -40,7 +35,6 @@ public struct SequenceTransportView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            FavoriteSoundPickerView(favoriteSounds: favoriteSounds, selectedID: $selectedSoundID, language: language)
             if let direction {
                 Picker("", selection: direction) {
                     Text(L10n.string(.appButtonAscendant, language)).tag(SequencePlayDirection.ascending)

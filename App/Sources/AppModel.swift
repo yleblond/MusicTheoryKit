@@ -2,17 +2,17 @@ import SwiftUI
 import AppCore
 import JamShackUI
 
-/// Identifies each of the 5 screens that can detach into their own `WindowGroup` (macOS/
+/// Identifies each of the 6 screens that can detach into their own `WindowGroup` (macOS/
 /// visionOS only — see `JamShackApp`). Doubles as the `WindowGroup(id:)` string and as the key
 /// tracking which ones are currently open (`AppModel.openAuxiliaryWindows`), since SwiftUI has
 /// no built-in "is this WindowGroup open" query.
 enum AuxiliaryWindowID: String, CaseIterable {
-    case computerKeyboard, runScreen, guideLecture, microphone, sceneLayout
+    case computerKeyboard, runScreen, guideLecture, microphone, sceneLayout, theorie
 }
 
 /// Owns the single, shared `ImprovSession`/`SessionUIBridge` pair for the whole process —
 /// hoisted out of `ContentView` (which used to create both directly via `@State`) so every
-/// `WindowGroup` (the main window + the 4 detachable auxiliary ones) can reach the SAME live
+/// `WindowGroup` (the main window + the 5 detachable auxiliary ones) can reach the SAME live
 /// instances via `.environment(_:)`, instead of each window accidentally constructing its own
 /// independent `ImprovSession`. There is exactly one `AppModel` for the app's lifetime,
 /// instantiated once in `JamShackApp` and injected into every `Scene`.
@@ -23,7 +23,7 @@ final class AppModel {
     private(set) var bridge: SessionUIBridge?
     private(set) var startError: String?
     /// Guards against `start()` running more than once — every window's root view (main +
-    /// the 4 auxiliary ones) carries its own `.task { await appModel.start() }` (see
+    /// the 5 auxiliary ones) carries its own `.task { await appModel.start() }` (see
     /// `SessionGatedView`), since an auxiliary window can in principle be the first one the
     /// system brings up (e.g. window restoration on macOS) — but only the first caller,
     /// whichever window happens to appear first, actually does the work.

@@ -170,6 +170,16 @@ public enum GuitarChordShape {
         return Diagram(label: fallback.label, barreFret: fallback.barreFret, positions: fallback.positions, isBasePositionFallback: true)
     }
 
+    /// Whether `diagram(forRoot:chordTemplateID:inversion:)` has a genuine, distinct shape for
+    /// this quality/inversion combination — `false` means that call would silently fall back to
+    /// the root-position diagram (`isBasePositionFallback`). Lets a caller (the Chord Library's
+    /// position picker) only offer positions that actually produce a different diagram, instead
+    /// of a control that visibly does nothing when tapped for the ~20 qualities beyond "Ma"/"mi".
+    public static func hasVerifiedInversionShape(chordTemplateID: String, inversion: Int) -> Bool {
+        guard inversion > 0 else { return true }
+        return triadInversionShapesByTemplateID[chordTemplateID]?[inversion] != nil
+    }
+
     private static func chordDisplayLabel(root: Int, chordTemplateID: String) -> String {
         "\(PitchClass(root).name())\(chordTemplateID)"
     }

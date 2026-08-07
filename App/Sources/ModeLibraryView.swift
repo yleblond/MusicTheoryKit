@@ -5,33 +5,43 @@ import MusicTheoryKit
 import PieceModel
 import Localization
 
-/// "Modes" tab — pick a tonic + mode/scale (`ScaleLibrary`), then see it highlighted on a
-/// keyboard with note-name bullets, its notes in sequence on the grand staff, Asc/Desc/Asc-et-
-/// Desc playback, its diatonic chords (each playable, labeled with its functional-harmony role
-/// where known — see `FunctionalHarmonyTable`), and a circle-of-fifths section reusing
-/// `CircleOfFifthsWheelView` for an arbitrary picked tonic (see `ImprovSession.wheelState`).
-/// Same list/detail idiom as `ChordLibraryView`/`SoundLibraryView`.
+/// "Modes" section of the Théorie tab — pick a tonic + mode/scale (`ScaleLibrary`), then see it
+/// in a 2-column × 3-row `Grid` (narrow notation column on the left, wide keyboard column on the
+/// right — see `ChordStaffView`'s `widthScale`): row 1 is the mode's own scale (+ Asc/Desc/
+/// Asc-et-Desc, each button plays immediately) next to the mode's keyboard (with note-name
+/// bullets and degree badges); row 2 is the mode's harmonized chords (+ a "play the sequence"
+/// button) next to whichever chord was last tapped, on its own keyboard; row 3 is the chord
+/// list (each playable on tap, labeled with its functional-harmony role — see
+/// `FunctionalHarmonyTable`) next to a circle-of-fifths section reusing `CircleOfFifthsWheelView`
+/// for an arbitrary picked tonic (see `ImprovSession.wheelState`). The instrument itself is
+/// picked once, in `TheoryView`'s shared header, and threaded down via `auditionSoundID`. This
+/// whole grid only shows on macOS/visionOS/iPad-width iOS; iPhone-width iOS keeps the original
+/// push list→detail navigation instead — see `TheoryLibraryLayout`.
 struct ModeLibraryView: View {
     let session: ImprovSession
+    @Binding var auditionSoundID: String?
 
-    private enum Screen { case list, detail }
-
-    @State private var screen: Screen = .list
+    @State private var screen: TheoryLibraryScreen = .list
     @State private var selectedTonic: Int = 0
     @State private var selectedScaleID: String = ScaleLibrary.all[0].id
-    @State private var direction: SequencePlayDirection = .ascending
-    @State private var auditionSoundID: String?
+    /// Which of `diatonicChordReferences` the right column's mini keyboard currently shows —
+    /// defaults to the tonic chord (index 0), same "always populated" convention the other
+    /// Library screens already follow.
+    @State private var selectedChordIndex: Int = 0
+
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var usesTwoColumns: Bool { TheoryLibraryLayoutMode.usesTwoColumns(horizontalSizeClass: horizontalSizeClass) }
 
     private var mode: Mode {
         Mode(tonic: PitchClass(selectedTonic), scale: ScaleLibrary.byID(selectedScaleID) ?? ScaleLibrary.all[0])
     }
 
     var body: some View {
-        Group {
-            switch screen {
-            case .list: listScreen
-            case .detail: detailScreen
-            }
+        TheoryLibraryLayout(screen: $screen, sidebarWidth: 320) {
+            listContent
+        } detailContent: { showBackButton, onBack in
+            detailContent(showBackButton: showBackButton, onBack: onBack)
         }
     }
 
@@ -49,15 +59,24 @@ struct ModeLibraryView: View {
         }
     }
 
-    private var listScreen: some View {
+    private var listContent: some View {
         Form {
             Section {
-                Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: $selectedTonic) {
-                    ForEach(0..<12, id: \.self) { pitchClass in
-                        Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
+                if usesTwoColumns {
+                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: $selectedTonic) {
+                        ForEach(0..<12, id: \.self) { pitchClass in
+                            Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
+                        }
                     }
+                    .pickerStyle(.menu)
+                } else {
+                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: $selectedTonic) {
+                        ForEach(0..<12, id: \.self) { pitchClass in
+                            Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
             } header: {
                 Text(L10n.string(.appHeadingBibliothequeModes, session.currentLanguage))
             }
@@ -66,10 +85,12 @@ struct ModeLibraryView: View {
                     ForEach(group.scales, id: \.id) { scale in
                         Button {
                             selectedScaleID = scale.id
+                            selectedChordIndex = 0
                             screen = .detail
                         } label: {
                             HStack {
                                 Text("\(scale.popularName) (\(scale.systematicName))")
+                                    .foregroundStyle(scale.id == selectedScaleID ? Color.accentColor : .primary)
                                 Spacer()
                             }
                             .contentShape(Rectangle())
@@ -88,43 +109,73 @@ struct ModeLibraryView: View {
 
     // MARK: - Detail
 
-    private var detailScreen: some View {
+    private func detailContent(showBackButton: Bool, onBack: @escaping () -> Void) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Button {
-                        screen = .list
-                    } label: {
-                        Image(systemName: "chevron.left")
+                if showBackButton {
+                    HStack {
+                        Button(action: onBack) {
+                            Image(systemName: "chevron.left")
+                        }
+                        Spacer()
                     }
-                    Spacer()
                 }
 
                 Text(mode.displayName).font(.largeTitle).bold()
 
-                PitchKeyboardView(
-                    modeTones: mode.pitchClasses.map(\.value),
-                    showModeColoring: true,
-                    keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: modeTonePitchesInKeyboardRange, style: session.notationStyle)
-                )
-
-                ChordStaffView(events: staffEvents)
-
-                SequenceTransportView(
-                    favoriteSounds: session.favoriteSounds,
-                    selectedSoundID: $auditionSoundID,
-                    direction: $direction,
-                    isPlaying: session.isAuditioningTheoryLibrary,
-                    language: session.currentLanguage,
-                    onPlay: play,
-                    onStop: { session.stopTheoryLibraryAudition() }
-                )
-
-                diatonicChordsSection
-                circleOfFifthsSection
+                // A true 2-column × 3-row grid (not two independently-stacked VStacks — those
+                // drift out of horizontal alignment as soon as either column's own content
+                // varies in height) — `Grid` sizes each row to its tallest cell and each column
+                // to its widest, so e.g. row 2's chords staff and its neighboring chord keyboard
+                // always start at the same y regardless of either one's own natural height.
+                Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 12) {
+                    // Row 1: the mode's own scale (+ Asc/Desc/Asc-et-Desc right under it) next
+                    // to the mode's keyboard.
+                    GridRow {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ChordStaffView(events: staffEvents, widthScale: 0.7, keySignature: modeKeySignature)
+                            scalePlaybackControls
+                        }
+                        // No custom `height:` — `PitchKeyboardView`'s own default (144) is
+                        // already tuned to look natural; forcing it to match the staff's much
+                        // taller height (or an arbitrarily smaller one) either stretched or
+                        // squished it, per feedback.
+                        PitchKeyboardView(
+                            modeTones: mode.pitchClasses.map(\.value),
+                            showModeColoring: true,
+                            keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: modeTonePitchesInKeyboardRange, style: session.notationStyle)
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    // Row 2: the mode's harmonized chords (+ a "play the sequence" button)
+                    // next to whichever chord was last tapped, on its own keyboard.
+                    GridRow {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ChordStaffView(events: chordsStaffEvents, widthScale: 0.7, keySignature: modeKeySignature)
+                            playChordSequenceButton
+                        }
+                        selectedChordKeyboard
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    // Row 3: the chord list (tap one to hear it + update row 2's keyboard)
+                    // next to the circle of fifths.
+                    GridRow(alignment: .top) {
+                        diatonicChordsSection
+                        circleOfFifthsSection
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
             }
             .padding()
         }
+    }
+
+    /// The mode's parent major key's conventional signature (e.g. D Dorian's parent is C
+    /// major, so no accidentals at all; A harmonic minor-family scale has no family-1 parent,
+    /// so `nil` — same restriction `CircleOfFifths.parentTonic(for:)` already has) — shared by
+    /// both staves above so their notes read cleanly instead of an accidental on every one.
+    private var modeKeySignature: MajorKeySignature? {
+        CircleOfFifths.parentTonic(for: mode).map { MajorKeySignature.forMajorTonic($0.value) }
     }
 
     /// The mode's own scale-degree pitch classes plus the octave-completing tonic (matches the
@@ -143,7 +194,9 @@ struct ModeLibraryView: View {
         return (48...72).filter { tones.contains((($0 % 12) + 12) % 12) }
     }
 
-    private func play() {
+    /// Plays `direction`'s sequence immediately — no separate "démarrer" step, per explicit
+    /// request (Asc/Desc/Asc-et-Desc are buttons, not a picker + a start button).
+    private func play(direction: SequencePlayDirection) {
         guard let auditionSoundID, let sound = session.favoriteSounds.first(where: { $0.id == auditionSoundID }) else { return }
         try? session.loadTheoryLibraryAuditionSample(sound)
         let ascending = PitchSequencing.ascendingPitches(forPitchClasses: scaleDegreesWithOctave, startingAbove: 47)
@@ -160,6 +213,21 @@ struct ModeLibraryView: View {
         session.playTheoryLibraryAudition(notes)
     }
 
+    private var scalePlaybackControls: some View {
+        HStack(spacing: 8) {
+            Button(L10n.string(.appButtonAscendant, session.currentLanguage)) { play(direction: .ascending) }
+            Button(L10n.string(.appButtonDescendant, session.currentLanguage)) { play(direction: .descending) }
+            Button(L10n.string(.appButtonAscEtDescendant, session.currentLanguage)) { play(direction: .both) }
+            if session.isAuditioningTheoryLibrary {
+                Button(L10n.string(.appButtonArreter, session.currentLanguage), role: .destructive) {
+                    session.stopTheoryLibraryAudition()
+                }
+            }
+            Spacer()
+        }
+        .buttonStyle(.bordered)
+    }
+
     // MARK: - Diatonic chords
 
     private var diatonicChordReferences: [ChordReference] { ChordProgressionResolver.diatonicChordReferences(in: mode) }
@@ -171,11 +239,13 @@ struct ModeLibraryView: View {
                 Text(L10n.string(.appHeadingAccordsDuMode, session.currentLanguage)).font(.headline)
                 ForEach(Array(diatonicChordReferences.enumerated()), id: \.offset) { index, reference in
                     Button {
+                        selectedChordIndex = index
                         playSingleChord(reference)
                     } label: {
                         HStack {
                             Image(systemName: "play.circle")
                             Text(chordDisplayName(reference))
+                                .foregroundStyle(index == selectedChordIndex ? Color.accentColor : .primary)
                             if let role = FunctionalHarmonyTable.role(forDegree: index + 1, familyID: mode.scale.familyID) {
                                 Text(functionalName(role)).font(.caption).foregroundStyle(.secondary)
                             }
@@ -185,6 +255,56 @@ struct ModeLibraryView: View {
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    /// All of the mode's diatonic chords, one stacked-chord column each (root position) — the
+    /// harmonized-scale staff shown under the chord list.
+    private var chordsStaffEvents: [StaffEvent] {
+        diatonicChordReferences.compactMap { reference in
+            guard let chord = reference.resolve() else { return nil }
+            return ChordStaffView.chordEvent(root: chord.root.value, tones: chord.pitchClasses.map(\.value))
+        }
+    }
+
+    private var selectedChordReference: ChordReference? {
+        diatonicChordReferences.indices.contains(selectedChordIndex) ? diatonicChordReferences[selectedChordIndex] : nil
+    }
+
+    @ViewBuilder
+    private var selectedChordKeyboard: some View {
+        if let chord = selectedChordReference?.resolve() {
+            let tones = Set(chord.pitchClasses.map(\.value))
+            let keyboardPitches = (48...72).filter { tones.contains((($0 % 12) + 12) % 12) }
+            PitchKeyboardView(
+                chordRoot: chord.root.value,
+                chordTones: chord.pitchClasses.map(\.value),
+                alwaysShowChord: true,
+                keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: keyboardPitches, style: session.notationStyle)
+            )
+        }
+    }
+
+    /// Plays every diatonic chord back to back (root position, same fixed-per-chord-duration
+    /// simplification `ProgressionLibraryView.playProgression()` already uses).
+    private func playAllChords() {
+        guard let auditionSoundID, let sound = session.favoriteSounds.first(where: { $0.id == auditionSoundID }) else { return }
+        try? session.loadTheoryLibraryAuditionSample(sound)
+        let stepDuration = 1.0
+        var notes: [ImprovSession.TheoryAuditionNote] = []
+        for (index, reference) in diatonicChordReferences.enumerated() {
+            guard let chord = reference.resolve() else { continue }
+            let pitches = PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47)
+            notes.append(ImprovSession.TheoryAuditionNote(pitches: pitches, startSeconds: Double(index) * stepDuration, durationSeconds: stepDuration * 0.9))
+        }
+        session.playTheoryLibraryAudition(notes)
+    }
+
+    @ViewBuilder
+    private var playChordSequenceButton: some View {
+        if !diatonicChordReferences.isEmpty {
+            Button(L10n.string(.appButtonJouerLaSuiteDAccords, session.currentLanguage), action: playAllChords)
+                .buttonStyle(.bordered)
         }
     }
 
@@ -232,5 +352,5 @@ struct ModeLibraryView: View {
 }
 
 #Preview {
-    ModeLibraryView(session: ImprovSession())
+    ModeLibraryView(session: ImprovSession(), auditionSoundID: .constant(nil))
 }

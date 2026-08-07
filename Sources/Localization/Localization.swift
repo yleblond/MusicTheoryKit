@@ -380,7 +380,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appModeJamLocaleOrganisateur, appModeJamLocaleParticipant
 
     // MARK: - App: Chord/Mode/Progression Library tabs
-    case appTabAccords, appTabModes, appTabProgressions, appTabNotation
+    case appTabAccords, appTabModes, appTabProgressions, appTabNotation, appTabTheorie
 
     // MARK: - App: Accords (Chord Library)
     case appHeadingBibliothequeAccords, appFieldQualite
@@ -390,7 +390,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
 
     // MARK: - App: Modes (Mode Library)
     case appHeadingBibliothequeModes, appButtonAscendant, appButtonDescendant, appButtonAscEtDescendant
-    case appHeadingAccordsDeLaTonalite, appHeadingAccordsDuMode
+    case appHeadingAccordsDeLaTonalite, appHeadingAccordsDuMode, appButtonJouerLaSuiteDAccords
 
     // MARK: - App: Progressions (Progression Library)
     case appHeadingBibliothequeProgressions, appFieldProgressionChoisie
