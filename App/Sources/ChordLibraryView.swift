@@ -14,6 +14,12 @@ import Localization
 /// iPhone-width iOS — see `TheoryLibraryLayout`.
 struct ChordLibraryView: View {
     let session: ImprovSession
+    var isDetachedWindow: Bool = false
+
+    #if os(macOS) || os(visionOS)
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    #endif
 
     @State private var screen: TheoryLibraryScreen = .list
     @State private var selectedRoot: Int = 0
@@ -34,12 +40,41 @@ struct ChordLibraryView: View {
     }
 
     var body: some View {
-        TheoryLibraryLayout(screen: $screen, sidebarWidth: 320) {
-            listContent
-        } detailContent: { showBackButton, onBack in
-            detailContent(showBackButton: showBackButton, onBack: onBack)
+        VStack(spacing: 0) {
+            #if os(macOS) || os(visionOS)
+            HStack {
+                Spacer()
+                detachButton
+            }
+            .padding(.horizontal)
+            .padding(.top, 6)
+            #endif
+            TheoryLibraryLayout(screen: $screen, sidebarWidth: 320) {
+                listContent
+            } detailContent: { showBackButton, onBack in
+                detailContent(showBackButton: showBackButton, onBack: onBack)
+            }
         }
     }
+
+    #if os(macOS) || os(visionOS)
+    @ViewBuilder
+    private var detachButton: some View {
+        if isDetachedWindow {
+            Button {
+                dismissWindow(id: AuxiliaryWindowID.theorieAccords.rawValue)
+            } label: {
+                Label(L10n.string(.appButtonReintegrer, session.currentLanguage), systemImage: "arrow.down.right.and.arrow.up.left")
+            }
+        } else {
+            Button {
+                openWindow(id: AuxiliaryWindowID.theorieAccords.rawValue)
+            } label: {
+                Image(systemName: "rectangle.on.rectangle")
+            }
+        }
+    }
+    #endif
 
     // MARK: - List (left column / first screen)
 

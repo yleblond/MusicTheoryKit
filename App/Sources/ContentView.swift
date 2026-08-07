@@ -71,11 +71,11 @@ struct ContentView: View {
     /// once that panel grew further still, "Modes" itself split again into `.modes` (the plain
     /// reference grid, `ModeLibraryContentFocus.overview`) and `.exploration` (the functional/
     /// melodic playground, `.exploration`) — each its own peer tab with its own independent
-    /// tonic/scale picker, per explicit request. Only `.modes` kept the detachable-window
-    /// capability (`AuxiliaryWindowID.theorie`) the old merged tab had; the other 3 are plain,
-    /// non-detachable tabs.
+    /// tonic/scale picker, per explicit request. All 4 detach into their own window on macOS/
+    /// visionOS (`ChordTabContent`/`TheoryTabContent`/`ProgressionTabContent`/
+    /// `ExplorationTabContent`, each its own `AuxiliaryWindowID`).
     private enum TheorieTab: CaseIterable, Identifiable {
-        case accords, modes, exploration, progressions
+        case accords, modes, progressions, exploration
 
         var id: Self { self }
 
@@ -195,16 +195,16 @@ struct ContentView: View {
                         case .theorie:
                             TabView(selection: $selectedTheorieTab) {
                                 Tab(TheorieTab.accords.label(session.currentLanguage), systemImage: TheorieTab.accords.systemImage, value: TheorieTab.accords) {
-                                    ChordLibraryView(session: session)
+                                    ChordTabContent(session: session)
                                 }
                                 Tab(TheorieTab.modes.label(session.currentLanguage), systemImage: TheorieTab.modes.systemImage, value: TheorieTab.modes) {
                                     TheoryTabContent(session: session)
                                 }
-                                Tab(TheorieTab.exploration.label(session.currentLanguage), systemImage: TheorieTab.exploration.systemImage, value: TheorieTab.exploration) {
-                                    ModeLibraryView(session: session, contentFocus: .exploration)
-                                }
                                 Tab(TheorieTab.progressions.label(session.currentLanguage), systemImage: TheorieTab.progressions.systemImage, value: TheorieTab.progressions) {
-                                    ProgressionLibraryView(session: session)
+                                    ProgressionTabContent(session: session)
+                                }
+                                Tab(TheorieTab.exploration.label(session.currentLanguage), systemImage: TheorieTab.exploration.systemImage, value: TheorieTab.exploration) {
+                                    ExplorationTabContent(session: session)
                                 }
                             }
                         case .settings:

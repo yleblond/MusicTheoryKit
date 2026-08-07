@@ -15,6 +15,7 @@ import JamShackUI
 /// one just for a single extra window id.
 enum AuxiliaryWindowID: String, CaseIterable {
     case computerKeyboard, runScreen, guideLecture, microphone, sceneLayout, theorie, theorieLegende
+    case theorieAccords, theorieExploration, theorieProgressions
 }
 
 /// Owns the single, shared `ImprovSession`/`SessionUIBridge` pair for the whole process —
@@ -51,6 +52,7 @@ final class AppModel {
         guard !didStart else { return }
         didStart = true
         do {
+            session.loadPersistedAppSettings()
             try session.start()
             // `.individual` (the session's own default — see `midiFusionMode`) creates
             // one `.midiSource(index)` track per visible MIDI port instead of a single

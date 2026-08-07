@@ -1035,6 +1035,24 @@ public final class ImprovSession: @unchecked Sendable {
     /// JSON files in this folder kept only as one-time migration sources/manual-drop spots.
     /// Unlike `pieceFolder`/`sampleFolder`/etc. (each independently redirectable), these always
     /// move together as one unit.
+    /// Loads every simple, SwiftData-singleton-backed setting that only `setSettingsFolder`
+    /// used to load (`currentLanguage`, `notationStyle`, `theoryAuditionSoundID`) — call once at
+    /// app startup (see `AppModel.start()`). `setSettingsFolder` itself is CLI-only now (its only
+    /// caller is `Sources/JamShack/main.swift`); the SwiftUI app never calls it, which meant
+    /// these three never actually reloaded their persisted value on launch — they silently reset
+    /// to their hardcoded default every time instead (confirmed the hard way: reported as "le son
+    /// choisi pour Théorie est perdu", but `currentLanguage`/`notationStyle` were equally
+    /// affected, just masked because their hardcoded defaults — French, Anglo-American — happen
+    /// to already match what most users pick). Safe to call with no settings folder at all: each
+    /// of the three checks its own SwiftData record first and only touches a JSON file path as a
+    /// last-resort fallback when no record exists yet, so passing an empty path here never
+    /// matters in practice once a record has been written at least once.
+    public func loadPersistedAppSettings() {
+        migrateLanguageSettingFromJSONIfNeeded(fromJSONFile: "")
+        loadNotationStyleSetting()
+        loadTheoryAuditionSoundSetting()
+    }
+
     public func setSettingsFolder(_ folderPath: String) throws {
         try FileManager.default.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
         let llmFolder = (folderPath as NSString).appendingPathComponent("LLMConnections")

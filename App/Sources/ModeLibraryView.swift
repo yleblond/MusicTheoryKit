@@ -34,9 +34,8 @@ enum ModeLibraryContentFocus {
 /// The instrument itself is picked once, in Settings > Théorie, and read via
 /// `ImprovSession.theoryAuditionSound()`. The `.overview` grid only shows on macOS/visionOS/
 /// iPad-width iOS; iPhone-width iOS keeps the original push list→detail navigation instead —
-/// see `TheoryLibraryLayout`. Only `.overview` is detachable into its own window on macOS/
-/// visionOS (`isDetachedWindow`/`AuxiliaryWindowID.theorie`) — the one Théorie screen that still
-/// offers that, now that Accords/Progressions/Exploration are their own plain top-level tabs.
+/// see `TheoryLibraryLayout`. Both `.overview` and `.exploration` detach into their OWN window
+/// on macOS/visionOS (`isDetachedWindow`/`auxiliaryWindowID`) — same as every other Théorie tab.
 struct ModeLibraryView: View {
     let session: ImprovSession
     var contentFocus: ModeLibraryContentFocus = .overview
@@ -101,14 +100,12 @@ struct ModeLibraryView: View {
     var body: some View {
         VStack(spacing: 0) {
             #if os(macOS) || os(visionOS)
-            if contentFocus == .overview {
-                HStack {
-                    Spacer()
-                    detachButton
-                }
-                .padding(.horizontal)
-                .padding(.top, 6)
+            HStack {
+                Spacer()
+                detachButton
             }
+            .padding(.horizontal)
+            .padding(.top, 6)
             #endif
             TheoryLibraryLayout(screen: $screen, sidebarWidth: 320) {
                 listContent
@@ -119,17 +116,24 @@ struct ModeLibraryView: View {
     }
 
     #if os(macOS) || os(visionOS)
+    /// `.overview` and `.exploration` detach into two DIFFERENT windows/ids — each is its own
+    /// peer tab now (see `ModeLibraryContentFocus`'s own doc comment), so each needs its own
+    /// independent "is this one open elsewhere" state rather than sharing `.theorie`.
+    private var auxiliaryWindowID: AuxiliaryWindowID {
+        contentFocus == .overview ? .theorie : .theorieExploration
+    }
+
     @ViewBuilder
     private var detachButton: some View {
         if isDetachedWindow {
             Button {
-                dismissWindow(id: AuxiliaryWindowID.theorie.rawValue)
+                dismissWindow(id: auxiliaryWindowID.rawValue)
             } label: {
                 Label(L10n.string(.appButtonReintegrer, session.currentLanguage), systemImage: "arrow.down.right.and.arrow.up.left")
             }
         } else {
             Button {
-                openWindow(id: AuxiliaryWindowID.theorie.rawValue)
+                openWindow(id: auxiliaryWindowID.rawValue)
             } label: {
                 Image(systemName: "rectangle.on.rectangle")
             }
@@ -925,9 +929,16 @@ struct ModeLibraryView: View {
                 modeTones: mode.pitchClasses.map(\.value),
                 showModeColoring: true,
                 onNoteOn: { pitch in playMelodicNote(PitchClass(pitch)) },
-                height: 101,
+                height: Self.melodicKeyboardSize.height,
                 keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: modeTonePitchesInKeyboardRange, style: session.notationStyle)
             )
+            // Sitting in a `maxWidth: .infinity` column (unlike the two on the right, boxed at
+            // a fixed 260pt — see `melodicRightColumn`) meant this one kept stretching to fill
+            // whatever width was left over, while `height:` alone made all three LOOK the same
+            // size only when their columns happened to end up the same width by coincidence.
+            // An explicit width, matching the other two exactly, is the only way to guarantee
+            // that regardless of window size.
+            .frame(width: Self.melodicKeyboardSize.width)
             HStack(alignment: .top, spacing: 10) {
                 ForEach(analysis.notes, id: \.note) { profile in
                     MelodicNoteChipView(
@@ -947,6 +958,11 @@ struct ModeLibraryView: View {
         }
     }
 
+    /// The one shared size for all 3 keyboards in row 3 — `height` alone wasn't enough to make
+    /// them look the same (see `melodicLeftColumn`'s own comment on why), so this is the single
+    /// source both columns pull from for `.frame(width:height:)`, not just `height:`.
+    private static let melodicKeyboardSize = CGSize(width: 390, height: 144)
+
     /// Right half of row 3 — two small reference keyboards stacked: the mode's own notes
     /// colored by melodic role against the current chord (top), and the current chord's own
     /// notes alone (bottom, same convention `selectedChordKeyboard` already uses elsewhere).
@@ -958,17 +974,20 @@ struct ModeLibraryView: View {
         return VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(L10n.string(.appHeadingVocabulaireMelodique, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-                PitchKeyboardView(height: 158, customFillColors: melodicRoleFillColors(for: analysis))
+                PitchKeyboardView(height: Self.melodicKeyboardSize.height, customFillColors: melodicRoleFillColors(for: analysis))
+                    .frame(width: Self.melodicKeyboardSize.width)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(L10n.string(.appLabelAccordActuel, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
                 PitchKeyboardView(
-                    chordRoot: chord.root.value, chordTones: chord.pitchClasses.map(\.value), alwaysShowChord: true, height: 158,
+                    chordRoot: chord.root.value, chordTones: chord.pitchClasses.map(\.value), alwaysShowChord: true,
+                    height: Self.melodicKeyboardSize.height,
                     keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: chordKeyboardPitches, style: session.notationStyle)
                 )
+                .frame(width: Self.melodicKeyboardSize.width)
             }
         }
-        .frame(maxWidth: 260, alignment: .leading)
+        .frame(width: Self.melodicKeyboardSize.width, alignment: .leading)
     }
 
     private func melodicRoleFillColors(for analysis: MelodicVocabularyAnalysis) -> [Int: Color] {

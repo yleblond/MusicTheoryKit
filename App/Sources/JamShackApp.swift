@@ -72,6 +72,27 @@ struct JamShackApp: App {
         }
         .environment(appModel)
         .defaultSize(width: 480, height: 640)
+
+        WindowGroup(id: AuxiliaryWindowID.theorieAccords.rawValue) {
+            ChordWindow()
+                .preferredColorScheme(.dark)
+        }
+        .environment(appModel)
+        .defaultSize(width: 1100, height: 800)
+
+        WindowGroup(id: AuxiliaryWindowID.theorieExploration.rawValue) {
+            ExplorationWindow()
+                .preferredColorScheme(.dark)
+        }
+        .environment(appModel)
+        .defaultSize(width: 1100, height: 800)
+
+        WindowGroup(id: AuxiliaryWindowID.theorieProgressions.rawValue) {
+            ProgressionWindow()
+                .preferredColorScheme(.dark)
+        }
+        .environment(appModel)
+        .defaultSize(width: 1100, height: 800)
         #endif
     }
 }

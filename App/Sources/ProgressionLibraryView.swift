@@ -17,6 +17,12 @@ import Localization
 /// see `TheoryLibraryLayout`.
 struct ProgressionLibraryView: View {
     let session: ImprovSession
+    var isDetachedWindow: Bool = false
+
+    #if os(macOS) || os(visionOS)
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    #endif
 
     @State private var screen: TheoryLibraryScreen = .list
     @State private var selectedTonic: Int = 0
@@ -60,19 +66,48 @@ struct ProgressionLibraryView: View {
     }
 
     var body: some View {
-        TheoryLibraryLayout(screen: $screen, sidebarWidth: 360) {
-            listContent
-        } detailContent: { showBackButton, onBack in
-            detailContent(showBackButton: showBackButton, onBack: onBack)
-        }
-        .onAppear {
-            // Keeps the right/detail column non-empty in two-column mode even before any tap —
-            // Accords/Modes already default to a real selection, this matches that.
-            if selectedTemplateName == nil {
-                selectedTemplateName = uniqueTemplates.first?.name
+        VStack(spacing: 0) {
+            #if os(macOS) || os(visionOS)
+            HStack {
+                Spacer()
+                detachButton
+            }
+            .padding(.horizontal)
+            .padding(.top, 6)
+            #endif
+            TheoryLibraryLayout(screen: $screen, sidebarWidth: 360) {
+                listContent
+            } detailContent: { showBackButton, onBack in
+                detailContent(showBackButton: showBackButton, onBack: onBack)
+            }
+            .onAppear {
+                // Keeps the right/detail column non-empty in two-column mode even before any tap
+                // — Accords/Modes already default to a real selection, this matches that.
+                if selectedTemplateName == nil {
+                    selectedTemplateName = uniqueTemplates.first?.name
+                }
             }
         }
     }
+
+    #if os(macOS) || os(visionOS)
+    @ViewBuilder
+    private var detachButton: some View {
+        if isDetachedWindow {
+            Button {
+                dismissWindow(id: AuxiliaryWindowID.theorieProgressions.rawValue)
+            } label: {
+                Label(L10n.string(.appButtonReintegrer, session.currentLanguage), systemImage: "arrow.down.right.and.arrow.up.left")
+            }
+        } else {
+            Button {
+                openWindow(id: AuxiliaryWindowID.theorieProgressions.rawValue)
+            } label: {
+                Image(systemName: "rectangle.on.rectangle")
+            }
+        }
+    }
+    #endif
 
     // MARK: - List
 
