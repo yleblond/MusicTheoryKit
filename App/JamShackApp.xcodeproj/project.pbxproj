@@ -27,6 +27,7 @@
 		1AB02A5A72BD4D7D84652261 /* GuideStepsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95942B8846FAA9B3ED42228B /* GuideStepsSection.swift */; };
 		1B11AC337EE28D19A172776C /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7D035FF241FE8B1971234F /* AppModel.swift */; };
 		51720975153363347E7A3BD3 /* ContextualHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34365A1E5BDA23B0E585C1E0 /* ContextualHelp.swift */; };
+		ED0FD1D71CFE55A96E556E2B /* MainKeyboardMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C30388F17887563F27AD58 /* MainKeyboardMode.swift */; };
 		1D60040DDEDC4055CB2542BA /* RecordingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E99978CED2C145262C1B3B4 /* RecordingsView.swift */; };
 		1D853CFAED84B8CB43BF0AB9 /* ExplorationWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66638E51F664628900DC1080 /* ExplorationWindow.swift */; };
 		1E320F17AB936D2D199DA586 /* CompositionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9678EC3E37F61041F0877632 /* CompositionView.swift */; };
@@ -86,12 +87,14 @@
 		5B96313EFB77310851F02CD7 /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71953E7D8E1B09B320DEFE6A /* RecordingDetailView.swift */; };
 		5BE54ED2E6965DC97380C0E3 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7D035FF241FE8B1971234F /* AppModel.swift */; };
 		7BE410C649355CF2BA73EC3B /* ContextualHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34365A1E5BDA23B0E585C1E0 /* ContextualHelp.swift */; };
+		5322CC5C9A6770823380BAD6 /* MainKeyboardMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C30388F17887563F27AD58 /* MainKeyboardMode.swift */; };
 		5C0FEAB0F69DD3A7CCCE0729 /* CompositionFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCD1C63D851BB483B73CD474 /* CompositionFileView.swift */; };
 		5CBF610F3E1F2E9AEF2F0200 /* AppCore in Frameworks */ = {isa = PBXBuildFile; productRef = 69847B491F4CE42354F05B6F /* AppCore */; };
 		5E26D90A74444A5D8BB4504E /* PiecesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DAE2E35B014C09B62C4CE0A /* PiecesView.swift */; };
 		5E6F9AC439CDE09175FD0C3B /* MicrophoneControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */; };
 		5F162AD3573A70DCDA49F626 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7D035FF241FE8B1971234F /* AppModel.swift */; };
 		209786ABDBE13D81ABA3CC09 /* ContextualHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34365A1E5BDA23B0E585C1E0 /* ContextualHelp.swift */; };
+		ACB999D63BADB0F3EB9D2343 /* MainKeyboardMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C30388F17887563F27AD58 /* MainKeyboardMode.swift */; };
 		600331554FB340525901983B /* GameCenterCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56783C5791125C49D8104883 /* GameCenterCoordinator.swift */; };
 		60C1B6358AA39D223D23B1D5 /* TheorieSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C933F43D9721C67F1B211310 /* TheorieSettingsView.swift */; };
 		60CEB1142DD1D191145837E6 /* JamShackLanguageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE39EAC785B1BF4AA9F44EDE /* JamShackLanguageView.swift */; };
@@ -262,6 +265,7 @@
 		4765E80FA8CA331E5728B0F0 /* SoundsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundsView.swift; sourceTree = "<group>"; };
 		4A7D035FF241FE8B1971234F /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		34365A1E5BDA23B0E585C1E0 /* ContextualHelp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextualHelp.swift; sourceTree = "<group>"; };
+		63C30388F17887563F27AD58 /* MainKeyboardMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainKeyboardMode.swift; sourceTree = "<group>"; };
 		4EA276BC19892B1D37813D15 /* GuidePlayIndicationRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuidePlayIndicationRow.swift; sourceTree = "<group>"; };
 		501FE6D05E400AEB9592DB64 /* ProgressionWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressionWindow.swift; sourceTree = "<group>"; };
 		556A46486C82BF4F493BD822 /* GuideEditionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideEditionView.swift; sourceTree = "<group>"; };
@@ -387,6 +391,7 @@
 			children = (
 				4A7D035FF241FE8B1971234F /* AppModel.swift */,
 				34365A1E5BDA23B0E585C1E0 /* ContextualHelp.swift */,
+				63C30388F17887563F27AD58 /* MainKeyboardMode.swift */,
 				04D7D71FEF77850B75E4B7B5 /* Assets.xcassets */,
 				F99F5AD2D2B255356B7BC32D /* ChordLibraryView.swift */,
 				752FD326924ED57FF5B8904E /* ChordTabContent.swift */,
@@ -618,6 +623,7 @@
 			files = (
 				5BE54ED2E6965DC97380C0E3 /* AppModel.swift in Sources */,
 				7BE410C649355CF2BA73EC3B /* ContextualHelp.swift in Sources */,
+				5322CC5C9A6770823380BAD6 /* MainKeyboardMode.swift in Sources */,
 				F3B826D2F5438763061911B0 /* ChordLibraryView.swift in Sources */,
 				F9281B4ED89BC0E4877FC764 /* ChordTabContent.swift in Sources */,
 				2647C2C6831C10B6FAD6AA7E /* ChordWindow.swift in Sources */,
@@ -698,6 +704,7 @@
 			files = (
 				5F162AD3573A70DCDA49F626 /* AppModel.swift in Sources */,
 				209786ABDBE13D81ABA3CC09 /* ContextualHelp.swift in Sources */,
+				ACB999D63BADB0F3EB9D2343 /* MainKeyboardMode.swift in Sources */,
 				FDEB0813C0AF62AA17C50FE9 /* ChordLibraryView.swift in Sources */,
 				A94AED495616EC3882EFCB7C /* ChordTabContent.swift in Sources */,
 				AD203EC0C9BB23E7571242CB /* ChordWindow.swift in Sources */,
@@ -778,6 +785,7 @@
 			files = (
 				1B11AC337EE28D19A172776C /* AppModel.swift in Sources */,
 				51720975153363347E7A3BD3 /* ContextualHelp.swift in Sources */,
+				ED0FD1D71CFE55A96E556E2B /* MainKeyboardMode.swift in Sources */,
 				A725173846870B29761E5981 /* ChordLibraryView.swift in Sources */,
 				EE74146CF858E157BDDE67BD /* ChordTabContent.swift in Sources */,
 				6192E206F66E7C2984D235E0 /* ChordWindow.swift in Sources */,

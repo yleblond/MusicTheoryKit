@@ -323,8 +323,13 @@ public enum L10nKey: String, CaseIterable, Sendable {
     // MARK: - App: JamShack > I.A. > Serveur MCP
     case appToggleServeurMCP, appFormatHintServeurMCP, appPlaceholderDossierDuProjet, appButtonCopier
 
-    // MARK: - App: JamShack > Clavier ordinateur
-    case appTabClavierOrdinateur, appLabelClavierOrdinateurActif
+    // MARK: - App: JamShack > Clavier principal (was "Clavier ordinateur" — generalized once it
+    // could also reflect other live sources/mode-coloring, not just physical typing)
+    case appTabClavierPrincipal, appLabelClavierPrincipalActif
+    /// Studio's own read-only sound display (Live/Scene/Guide) when the picked "source
+    /// principale" isn't attached to any role in the active scene — see
+    /// `ContentView.studioAssignedSoundLabel(session:)`.
+    case appLabelAucunSonAffecte
 
     // MARK: - App: JamShack > MIDI
     case appOptionFusionne, appOptionIndividuel, appHintModeMidiDetail

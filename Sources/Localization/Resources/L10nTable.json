@@ -2730,16 +2730,27 @@
   "ru": "Доступно обновление",
   "zhHans": "有可用更新"
  },
- "appLabelClavierOrdinateurActif": {
-  "de": "Computertastatur aktiv",
-  "en": "Computer keyboard active",
-  "es": "Teclado del ordenador activo",
-  "fr": "Clavier ordinateur actif",
-  "it": "Tastiera del computer attiva",
-  "ja": "コンピューターキーボード有効",
-  "pt": "Teclado do computador ativo",
-  "ru": "Клавиатура компьютера активна",
-  "zhHans": "电脑键盘已启用"
+ "appLabelAucunSonAffecte": {
+  "de": "Kein Klang zugewiesen",
+  "en": "No sound assigned",
+  "es": "Ningún sonido asignado",
+  "fr": "Aucun son affecté",
+  "it": "Nessun suono assegnato",
+  "ja": "音が割り当てられていません",
+  "pt": "Nenhum som atribuído",
+  "ru": "Звук не назначен",
+  "zhHans": "未分配声音"
+ },
+ "appLabelClavierPrincipalActif": {
+  "de": "Hauptklaviatur aktiv",
+  "en": "Main keyboard active",
+  "es": "Teclado principal activo",
+  "fr": "Clavier principal actif",
+  "it": "Tastiera principale attiva",
+  "ja": "メインキーボード有効",
+  "pt": "Teclado principal ativo",
+  "ru": "Основная клавиатура активна",
+  "zhHans": "主键盘已启用"
  },
  "appLabelCommentaire": {
   "de": "Kommentar",
@@ -4244,16 +4255,16 @@
   "ru": "Библиотеки",
   "zhHans": "资料库"
  },
- "appTabClavierOrdinateur": {
-  "de": "Computertastatur",
-  "en": "Computer keyboard",
-  "es": "Teclado del ordenador",
-  "fr": "Clavier ordinateur",
-  "it": "Tastiera del computer",
-  "ja": "コンピューターキーボード",
-  "pt": "Teclado do computador",
-  "ru": "Клавиатура компьютера",
-  "zhHans": "电脑键盘"
+ "appTabClavierPrincipal": {
+  "de": "Hauptklaviatur",
+  "en": "Main keyboard",
+  "es": "Teclado principal",
+  "fr": "Clavier principal",
+  "it": "Tastiera principale",
+  "ja": "メインキーボード",
+  "pt": "Teclado principal",
+  "ru": "Основная клавиатура",
+  "zhHans": "主键盘"
  },
  "appTabComposerCourt": {
   "de": "Komponieren",

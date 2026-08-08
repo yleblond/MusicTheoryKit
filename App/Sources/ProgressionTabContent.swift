@@ -6,6 +6,8 @@ import Localization
 /// `TheoryTabContent`/`ChordTabContent` already do for their own screens.
 struct ProgressionTabContent: View {
     let session: ImprovSession
+    /// See `ExplorationTabContent.isActive`'s own doc comment.
+    let isActive: Bool
 
     @Environment(AppModel.self) private var appModel
     #if os(macOS) || os(visionOS)
@@ -21,10 +23,10 @@ struct ProgressionTabContent: View {
                 onReintegrate: { dismissWindow(id: AuxiliaryWindowID.theorieProgressions.rawValue) }
             )
         } else {
-            ProgressionLibraryView(session: session)
+            ProgressionLibraryView(session: session, isActive: isActive)
         }
         #else
-        ProgressionLibraryView(session: session)
+        ProgressionLibraryView(session: session, isActive: isActive)
         #endif
     }
 }

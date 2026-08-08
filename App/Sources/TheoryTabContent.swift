@@ -9,6 +9,8 @@ import Localization
 /// exploration panel — to still be worth detaching).
 struct TheoryTabContent: View {
     let session: ImprovSession
+    /// See `ExplorationTabContent.isActive`'s own doc comment.
+    let isActive: Bool
 
     @Environment(AppModel.self) private var appModel
     #if os(macOS) || os(visionOS)
@@ -24,10 +26,10 @@ struct TheoryTabContent: View {
                 onReintegrate: { dismissWindow(id: AuxiliaryWindowID.theorie.rawValue) }
             )
         } else {
-            ModeLibraryView(session: session)
+            ModeLibraryView(session: session, isActive: isActive)
         }
         #else
-        ModeLibraryView(session: session)
+        ModeLibraryView(session: session, isActive: isActive)
         #endif
     }
 }

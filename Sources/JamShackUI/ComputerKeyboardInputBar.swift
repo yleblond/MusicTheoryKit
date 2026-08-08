@@ -124,12 +124,36 @@ public struct ComputerKeyboardInputBar: View {
     /// Steps by whole octaves (±1 = ±12 semitones) — see `ImprovSession
     /// .shiftComputerKeyboardOctave(by:)`.
     public let onShiftOctave: (Int) -> Void
+    /// Non-empty (with `showModeColoring: true`) when whichever screen is currently active wants
+    /// this bar to double as its own mode-notes reference — mode-tone fill + scale-degree
+    /// badges, same as any other mode-aware `PitchKeyboardView` in the app (see
+    /// `AppModel.mainKeyboardMode`). Empty by default, so every other call site keeps its plain
+    /// "what's the physical keyboard playing" look.
+    public let modeTones: [Int]
+    public let showModeColoring: Bool
+    /// Non-nil (with `alwaysShowChord: true`) when whichever screen is currently active wants
+    /// this bar to also mirror a live track's own recognized chord — e.g. Studio's "En Direct"
+    /// screen, mirroring whichever track is the picked "source principale" exactly like that
+    /// track's own mini keyboard already shows it elsewhere. `nil` by default, so every other
+    /// call site keeps its plain look.
+    public let chordRoot: Int?
+    public let chordTones: [Int]
+    public let alwaysShowChord: Bool
+    /// Whether the physical-key letters + the red "active zone" outline are drawn at all —
+    /// `false` whenever this bar isn't actually what physical typing is feeding right now (i.e.
+    /// the picked "source principale" isn't `.computerKeyboard`), per explicit request: showing
+    /// them regardless of the real source used to falsely suggest typing would always do
+    /// something. `true` by default so every other call site keeps today's look.
+    public let showsPhysicalKeyLabels: Bool
 
     public init(
         heldPitches: Set<Int>, palette: [String], paletteTextColors: [String],
         label: String, octaveShift: Int,
         onNoteOn: @escaping (Int) -> Void, onNoteOff: @escaping (Int) -> Void,
-        onShiftOctave: @escaping (Int) -> Void
+        onShiftOctave: @escaping (Int) -> Void,
+        modeTones: [Int] = [], showModeColoring: Bool = false,
+        chordRoot: Int? = nil, chordTones: [Int] = [], alwaysShowChord: Bool = false,
+        showsPhysicalKeyLabels: Bool = true
     ) {
         self.heldPitches = heldPitches
         self.palette = palette
@@ -139,18 +163,29 @@ public struct ComputerKeyboardInputBar: View {
         self.onNoteOn = onNoteOn
         self.onNoteOff = onNoteOff
         self.onShiftOctave = onShiftOctave
+        self.modeTones = modeTones
+        self.showModeColoring = showModeColoring
+        self.chordRoot = chordRoot
+        self.chordTones = chordTones
+        self.alwaysShowChord = alwaysShowChord
+        self.showsPhysicalKeyLabels = showsPhysicalKeyLabels
     }
 
     /// `computerKeyboardNoteMap`'s pitches, shifted by `octaveShift` and keyed by the resulting
     /// sounding pitch — what actually gets highlighted/labeled below always matches what typing
-    /// actually plays right now.
+    /// actually plays right now. Lowercase (not `.uppercased()`, the note-name/chord-name
+    /// convention every other label in the app uses) specifically so these read as physical-key
+    /// letters, not note names, per explicit request. Empty while `showsPhysicalKeyLabels` is
+    /// false — see that property's own doc comment.
     private var shiftedKeyLabels: [Int: String] {
-        Dictionary(uniqueKeysWithValues: computerKeyboardNoteMap.map { character, pitch in
-            (pitch + octaveShift, String(character).uppercased())
+        guard showsPhysicalKeyLabels else { return [:] }
+        return Dictionary(uniqueKeysWithValues: computerKeyboardNoteMap.map { character, pitch in
+            (pitch + octaveShift, String(character))
         })
     }
 
-    private var highlightedRange: ClosedRange<Int> {
+    private var highlightedRange: ClosedRange<Int>? {
+        guard showsPhysicalKeyLabels else { return nil }
         let shiftedPitches = computerKeyboardNoteMap.values.map { $0 + octaveShift }
         return (shiftedPitches.min() ?? 60)...(shiftedPitches.max() ?? 76)
     }
@@ -170,6 +205,8 @@ public struct ComputerKeyboardInputBar: View {
             // which keys typing currently reaches (see `octaveShift`).
             PitchKeyboardView(
                 minMidi: 21, maxMidi: 108, heldPitches: heldPitches,
+                chordRoot: chordRoot, chordTones: chordTones,
+                modeTones: modeTones, alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring,
                 palette: palette, paletteTextColors: paletteTextColors,
                 onNoteOn: onNoteOn, onNoteOff: onNoteOff, height: 90,
                 keyLabels: shiftedKeyLabels, highlightedPitches: highlightedRange

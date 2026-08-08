@@ -18,6 +18,10 @@ import Localization
 struct ProgressionLibraryView: View {
     let session: ImprovSession
     var isDetachedWindow: Bool = false
+    /// Whether THIS instance is the one currently on screen — see `ModeLibraryView.isActive`'s
+    /// own doc comment for why this can't just be `.onAppear`/`.onDisappear`. Feeds
+    /// `.registerMainKeyboardMode` in `body` below.
+    var isActive: Bool = true
 
     #if os(macOS) || os(visionOS)
     @Environment(\.openWindow) private var openWindow
@@ -88,6 +92,10 @@ struct ProgressionLibraryView: View {
                 }
             }
         }
+        // Colors the persistent main-keyboard bar (`ContentView`) by this screen's own picked
+        // mode while it's the active tab, per explicit request — same mechanism `ModeLibraryView`
+        // uses for its own "Modes"/"Exploration" tabs.
+        .registerMainKeyboardMode(id: "theorie.progressions", isActive: isActive, mode: mode)
     }
 
     #if os(macOS) || os(visionOS)

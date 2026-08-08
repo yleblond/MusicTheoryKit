@@ -2815,11 +2815,16 @@ public final class ImprovSession: @unchecked Sendable {
         favoriteSounds.first { $0.id == theoryAuditionSoundID } ?? favoriteSounds.first
     }
 
-    /// Which single live track the Exploration screen currently reacts to — playing a note/chord
-    /// that matches the mode's own melodic note or one of its diatonic chords selects it exactly
-    /// as if it had been tapped. Purely a UI choice, never persisted (resets to `nil` each
-    /// launch) — Théorie's own restricted analog of Studio's "several tracks armed at once,"
-    /// deliberately limited to exactly one source at a time, per explicit request.
+    /// The app's single "source principale" — which live track both Exploration's own live-match
+    /// feature reacts to (playing a note/chord that matches the mode's own melodic note or one of
+    /// its diatonic chords selects it exactly as if it had been tapped) AND, once
+    /// `ContentView`'s bottom-bar picker is no longer Théorie-only, whether physical-keyboard
+    /// typing actually plays notes (only when this is `.computerKeyboard`, see
+    /// `setComputerKeyboardInputEnabled`'s own doc comment). Purely a UI choice, never persisted
+    /// (resets to `nil` each launch) — Théorie's own restricted analog of Studio's "several
+    /// tracks armed at once," deliberately limited to exactly one source at a time, per explicit
+    /// request. The name still says "theory" for now — TODO rename away from that now-inaccurate
+    /// prefix once Studio's own scene-role source gets wired into this same concept.
     public private(set) var theoryLiveInputSourceID: TrackID?
 
     /// Every track kind sensible as Exploration's own live-match source — the same kinds
@@ -3159,8 +3164,18 @@ public final class ImprovSession: @unchecked Sendable {
     /// `.computerKeyboard`'s own listening/sound state (unrelated — that track can be listening
     /// today, e.g. showing held-note display from a scene, regardless of whether typing on the
     /// physical keyboard is what's feeding it).
+    ///
+    /// Also defaults `theoryLiveInputSourceID` to `.computerKeyboard` when turning ON with no
+    /// source picked yet (never on turning OFF, and never overriding an existing pick) — per
+    /// explicit "main keyboard" design: physical typing only actually plays notes once BOTH this
+    /// is on AND the picked source is `.computerKeyboard` (see `ContentView`'s own
+    /// `.computerKeyboardInput(isActive:)` call), so simply flipping this toggle on must still
+    /// "just work" for anyone who never touches the source picker at all.
     public func setComputerKeyboardInputEnabled(_ enabled: Bool) {
         computerKeyboardInputEnabled = enabled
+        if enabled, theoryLiveInputSourceID == nil {
+            setTheoryLiveInputSource(.computerKeyboard)
+        }
         append("Clavier ordinateur : \(enabled ? "actif" : "inactif").")
     }
 
@@ -6188,6 +6203,20 @@ public final class ImprovSession: @unchecked Sendable {
                 )
             }
         )
+    }
+
+    /// `trackID`'s own recognized chord/mode, as flat pitch-class sets — same computation
+    /// `webConsoleTrackState(_:)` does for the web console's own per-track keyboard, exposed
+    /// publicly so `ContentView`'s persistent main-keyboard bar can mirror a Studio track's own
+    /// recognition state (e.g. the "En Direct" screen's picked "source principale") without
+    /// needing `WebConsoleTrackState`'s own string-keyed `tracks` array.
+    public func recognizedChordAndModeTones(for trackID: TrackID) -> (chordRoot: Int?, chordTones: [Int], modeTones: [Int]) {
+        guard let track = tracks.first(where: { $0.id == trackID }) else { return (nil, [], []) }
+        let (chordTones, modeTones) = Self.pitchClassSets(
+            forChordRoot: track.recognizedChord?.root.value, chordTemplateID: track.recognizedChord?.chordTemplateID,
+            modeTonic: track.recognizedModes.first?.tonic.value, scaleID: track.recognizedModes.first?.scaleID
+        )
+        return (track.recognizedChord?.root.value, chordTones, modeTones)
     }
 
     /// One listening track's state, transposed from `TrackInfo`'s structured recognition into

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import JamShackUI
+import MusicTheoryKit
 
 /// Identifies each of the 6 screens that can detach into their own `WindowGroup` (macOS/
 /// visionOS only — see `JamShackApp`). Doubles as the `WindowGroup(id:)` string and as the key
@@ -71,6 +72,28 @@ final class AppModel {
         guard contextualHelpOwnerID == id else { return }
         contextualHelpOwnerID = nil
         contextualHelpContent = nil
+    }
+
+    /// The mode (tonic + scale) whichever Théorie screen is currently active wants the persistent
+    /// main-keyboard bar (`ComputerKeyboardInputBar`, in `ContentView`) to color itself by —
+    /// mode-tone fill + scale-degree badges, same as any other mode-aware keyboard in the app
+    /// (see `PitchKeyboardView.modeTones`/`showModeColoring`). `nil` when no active screen has
+    /// one (Studio, Settings, or a Théorie screen that hasn't registered one) — the bar then
+    /// falls back to its own plain "what's the physical keyboard playing" look. Use
+    /// `View.registerMainKeyboardMode` rather than setting this directly; same owner-ID guard as
+    /// `contextualHelpOwnerID` above, for the same reason.
+    private(set) var mainKeyboardMode: Mode?
+    private var mainKeyboardModeOwnerID: String?
+
+    func setMainKeyboardMode(id: String, mode: Mode?) {
+        mainKeyboardModeOwnerID = id
+        mainKeyboardMode = mode
+    }
+
+    func clearMainKeyboardMode(id: String) {
+        guard mainKeyboardModeOwnerID == id else { return }
+        mainKeyboardModeOwnerID = nil
+        mainKeyboardMode = nil
     }
 
     /// Identical body to `ContentView`'s old startup `.task { }` — moved here verbatim so

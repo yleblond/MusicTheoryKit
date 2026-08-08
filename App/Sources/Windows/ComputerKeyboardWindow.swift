@@ -14,14 +14,25 @@ struct ComputerKeyboardWindow: View {
             ComputerKeyboardInputBar(
                 heldPitches: session.tracks.first { $0.id == .computerKeyboard }?.heldPitches ?? [],
                 palette: bridge.state.palette, paletteTextColors: bridge.state.paletteTextColors,
-                label: L10n.string(.appLabelClavierOrdinateurActif, session.currentLanguage),
+                // Same rule as `ContentView.mainKeyboardBarLabel(session:)` — kept inline here
+                // since this is the only other call site.
+                label: appModel.mainKeyboardMode != nil
+                    ? L10n.string(.appLabelNotesDuMode, session.currentLanguage)
+                    : L10n.string(.appLabelClavierPrincipalActif, session.currentLanguage),
                 octaveShift: session.computerKeyboardOctaveShift,
                 onNoteOn: { pitch in session.pressKey(pitch: pitch) },
                 onNoteOff: { pitch in session.releaseKey(pitch: pitch) },
-                onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) }
+                onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) },
+                modeTones: appModel.mainKeyboardMode?.pitchClasses.map(\.value) ?? [],
+                showModeColoring: appModel.mainKeyboardMode != nil,
+                showsPhysicalKeyLabels: session.theoryLiveInputSourceID == .computerKeyboard
             )
             .computerKeyboardInput(
-                isActive: session.computerKeyboardInputEnabled,
+                // Same both-conditions gate `ContentView`'s own bar uses (see
+                // `ImprovSession.setComputerKeyboardInputEnabled`'s own doc comment) — this
+                // detached window is "the same view, same wiring," so it must never let typing
+                // stay live here after the main window's own toggle/source say it shouldn't.
+                isActive: session.computerKeyboardInputEnabled && session.theoryLiveInputSourceID == .computerKeyboard,
                 focusRequestToken: session.computerKeyboardFocusRequestToken,
                 octaveShift: session.computerKeyboardOctaveShift,
                 onNoteOn: { pitch in session.pressKey(pitch: pitch) },

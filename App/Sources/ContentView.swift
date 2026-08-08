@@ -2,6 +2,7 @@ import SwiftUI
 import AppCore
 import JamShackUI
 import Localization
+import MusicTheoryKit
 
 struct ContentView: View {
     /// Which of the 3 flat tab sets is showing — replaces the old first-level `AppTab` TabView
@@ -202,10 +203,10 @@ struct ContentView: View {
                                     ChordTabContent(session: session)
                                 }
                                 Tab(TheorieTab.modes.label(session.currentLanguage), systemImage: TheorieTab.modes.systemImage, value: TheorieTab.modes) {
-                                    TheoryTabContent(session: session)
+                                    TheoryTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .modes)
                                 }
                                 Tab(TheorieTab.progressions.label(session.currentLanguage), systemImage: TheorieTab.progressions.systemImage, value: TheorieTab.progressions) {
-                                    ProgressionTabContent(session: session)
+                                    ProgressionTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .progressions)
                                 }
                                 Tab(TheorieTab.exploration.label(session.currentLanguage), systemImage: TheorieTab.exploration.systemImage, value: TheorieTab.exploration) {
                                     ExplorationTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .exploration)
@@ -247,13 +248,15 @@ struct ContentView: View {
 
                     // Persistent, always-visible "long" keyboard — only while the computer
                     // keyboard mode is explicitly turned on (see `ComputerKeyboardSettingsView`,
-                    // under Settings). Sits OUTSIDE the TabView so it stays put across every tab
-                    // switch, a constant reminder that typing anywhere now plays notes. Placed
-                    // ABOVE the mode-toggle bar (not below) so the toggle — the one thing you
-                    // reach for constantly — stays pinned at the true bottom of the window and
-                    // never shifts position when this keyboard appears/disappears, per explicit
-                    // request ("stabilité de l'affichage").
-                    if (mode == .studio || mode == .theorie) && session.computerKeyboardInputEnabled {
+                    // under Settings) AND the current screen doesn't hide it outright (see
+                    // `MainKeyboardPresentation.isHidden`). Sits OUTSIDE the TabView so it stays
+                    // put across every tab switch, a constant reminder that typing anywhere now
+                    // plays notes. Placed ABOVE the mode-toggle bar (not below) so the toggle —
+                    // the one thing you reach for constantly — stays pinned at the true bottom of
+                    // the window and never shifts position when this keyboard appears/disappears,
+                    // per explicit request ("stabilité de l'affichage").
+                    let mainKeyboard = mainKeyboardPresentation(session: session)
+                    if (mode == .studio || mode == .theorie) && session.computerKeyboardInputEnabled && !mainKeyboard.isHidden {
                         Divider()
                         #if os(macOS) || os(visionOS)
                         if appModel.openAuxiliaryWindows.contains(.computerKeyboard) {
@@ -265,25 +268,33 @@ struct ContentView: View {
                             .frame(height: 120)
                         } else {
                             ComputerKeyboardInputBar(
-                                heldPitches: session.tracks.first { $0.id == .computerKeyboard }?.heldPitches ?? [],
+                                heldPitches: mainKeyboard.heldPitches,
                                 palette: bridge.state.palette, paletteTextColors: bridge.state.paletteTextColors,
-                                label: L10n.string(.appLabelClavierOrdinateurActif, session.currentLanguage),
+                                label: mainKeyboardBarLabel(session: session),
                                 octaveShift: session.computerKeyboardOctaveShift,
-                                onNoteOn: { pitch in session.pressKey(pitch: pitch) },
-                                onNoteOff: { pitch in session.releaseKey(pitch: pitch) },
-                                onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) }
+                                onNoteOn: { pitch in guard mainKeyboard.isClickable else { return }; session.pressKey(pitch: pitch) },
+                                onNoteOff: { pitch in guard mainKeyboard.isClickable else { return }; session.releaseKey(pitch: pitch) },
+                                onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) },
+                                modeTones: mainKeyboard.modeTones, showModeColoring: mainKeyboard.showModeColoring,
+                                chordRoot: mainKeyboard.chordRoot, chordTones: mainKeyboard.chordTones,
+                                showsPhysicalKeyLabels: session.theoryLiveInputSourceID == .computerKeyboard
                             )
+                            .opacity(mainKeyboard.isClickable ? 1 : 0.5)
                         }
                         #else
                         ComputerKeyboardInputBar(
-                            heldPitches: session.tracks.first { $0.id == .computerKeyboard }?.heldPitches ?? [],
+                            heldPitches: mainKeyboard.heldPitches,
                             palette: bridge.state.palette, paletteTextColors: bridge.state.paletteTextColors,
-                            label: L10n.string(.appLabelClavierOrdinateurActif, session.currentLanguage),
+                            label: mainKeyboardBarLabel(session: session),
                             octaveShift: session.computerKeyboardOctaveShift,
-                            onNoteOn: { pitch in session.pressKey(pitch: pitch) },
-                            onNoteOff: { pitch in session.releaseKey(pitch: pitch) },
-                            onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) }
+                            onNoteOn: { pitch in guard mainKeyboard.isClickable else { return }; session.pressKey(pitch: pitch) },
+                            onNoteOff: { pitch in guard mainKeyboard.isClickable else { return }; session.releaseKey(pitch: pitch) },
+                            onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) },
+                            modeTones: mainKeyboard.modeTones, showModeColoring: mainKeyboard.showModeColoring,
+                            chordRoot: mainKeyboard.chordRoot, chordTones: mainKeyboard.chordTones,
+                            showsPhysicalKeyLabels: session.theoryLiveInputSourceID == .computerKeyboard
                         )
+                        .opacity(mainKeyboard.isClickable ? 1 : 0.5)
                         #endif
                     }
 
@@ -319,7 +330,7 @@ struct ContentView: View {
                             Button {
                                 session.setComputerKeyboardInputEnabled(!session.computerKeyboardInputEnabled)
                             } label: {
-                                Label(L10n.string(.appTabClavierOrdinateur, session.currentLanguage), systemImage: "keyboard")
+                                Label(L10n.string(.appTabClavierPrincipal, session.currentLanguage), systemImage: "keyboard")
                             }
                             .foregroundStyle(session.computerKeyboardInputEnabled ? Color.accentColor : Color.primary)
                             #if os(macOS) || os(visionOS)
@@ -333,26 +344,39 @@ struct ContentView: View {
                             #endif
                         }
                         Spacer()
-                        // Every Théorie tab (Accords/Modes/Progressions/Exploration alike, per
-                        // explicit request): the single live-input source (see
-                        // `ImprovSession.theoryLiveInputSourceID`'s own doc comment for why only
-                        // one, unlike Studio) and the shared audition sound, both right-aligned —
-                        // per explicit request ("dans la barre d'état du bas, aligné à droite").
-                        // Live-match REACTION (selecting a chord/note as if tapped) only actually
-                        // happens on Exploration, the one screen with anything to react on, but
-                        // every tab benefits from simply being able to hear what's played.
-                        if mode == .theorie {
+                        // "Source principale" (see `ImprovSession.theoryLiveInputSourceID`'s own
+                        // doc comment) + the shared audition sound, both right-aligned — per
+                        // explicit request. Used to be Théorie-only; now shown in Studio too
+                        // (not Settings, which isn't a "live playing" context — same gate the
+                        // computer-keyboard toggle above already uses) since this is also what
+                        // decides whether the computer-keyboard toggle's typing actually plays
+                        // anything (see `.computerKeyboardInput(isActive:)` below) — independent
+                        // of that toggle's own on/off state, per explicit request: hiding the
+                        // main keyboard must NOT forget which source was picked. Live-match
+                        // REACTION (selecting a chord/note as if tapped) only actually happens on
+                        // Exploration, the one screen with anything to react on, but every other
+                        // screen still benefits from simply being able to hear what's played.
+                        if mode == .studio || mode == .theorie {
                             theorieLiveInputSourcePicker(session: session)
-                            FavoriteSoundPickerView(
-                                favoriteSounds: session.favoriteSounds,
-                                selectedID: Binding(
-                                    get: { session.theoryAuditionSoundID },
-                                    set: { try? session.setTheoryAuditionSoundID($0) }
-                                ),
-                                language: session.currentLanguage
-                            )
-                            .labelsHidden()
-                            .frame(maxWidth: 160)
+                            if mode == .theorie {
+                                FavoriteSoundPickerView(
+                                    favoriteSounds: session.favoriteSounds,
+                                    selectedID: Binding(
+                                        get: { session.theoryAuditionSoundID },
+                                        set: { try? session.setTheoryAuditionSoundID($0) }
+                                    ),
+                                    language: session.currentLanguage
+                                )
+                                .labelsHidden()
+                                .frame(maxWidth: 160)
+                            } else {
+                                // Studio: read-only, per explicit request — see
+                                // `studioAssignedSoundLabel(session:)`'s own doc comment for why
+                                // this doesn't reuse Théorie's editable picker.
+                                Text(studioAssignedSoundLabel(session: session))
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .frame(maxWidth: 160, alignment: .trailing)
+                            }
                         }
                         // Generalized "?" — whichever screen is currently active (per its own
                         // `.registerContextualHelp`), regardless of `mode`, per explicit request
@@ -366,7 +390,11 @@ struct ContentView: View {
                     .padding(.vertical, 8)
                 }
                 .computerKeyboardInput(
-                    isActive: session.computerKeyboardInputEnabled,
+                    // Both conditions, not just the toggle — per explicit request: typing must
+                    // stay silent whenever the main keyboard is hidden (even if "Clavier
+                    // ordinateur" is still the picked source from a previous session), so a
+                    // keystroke typed elsewhere in the UI can never surprise-trigger a note.
+                    isActive: session.computerKeyboardInputEnabled && session.theoryLiveInputSourceID == .computerKeyboard,
                     focusRequestToken: session.computerKeyboardFocusRequestToken,
                     octaveShift: session.computerKeyboardOctaveShift,
                     onNoteOn: { pitch in session.pressKey(pitch: pitch) },
@@ -390,6 +418,114 @@ struct ContentView: View {
                 }
                 #endif
         }
+    }
+
+    /// Everything the persistent main-keyboard bar needs to render for the CURRENT screen —
+    /// unified across Théorie (`AppModel.mainKeyboardMode`, a fixed reference mode picked on that
+    /// screen) and Studio (per explicit request: "En Direct" mirrors whichever track is picked as
+    /// "source principale" exactly like that track's own row in the circle-of-fifths list already
+    /// does; "Scène" shows the same track plain, no coloring; "Guide" colors by the current step's
+    /// own mode ONLY while a guide sequence is actually running; "Enregistrements"/"Composition"/
+    /// "Morceaux" hide the bar outright, since it serves no purpose there) — computed once so
+    /// `body` only ever reads ONE value instead of re-deriving this per branch.
+    private struct MainKeyboardPresentation {
+        var isHidden = false
+        var heldPitches: Set<Int> = []
+        var chordRoot: Int?
+        var chordTones: [Int] = []
+        var modeTones: [Int] = []
+        var showModeColoring = false
+        /// Whether tapping/clicking the bar's own on-screen keys should do anything — per
+        /// explicit request, ONLY when the picked source really is `.computerKeyboard` (any other
+        /// source is already played through its own real input — a MIDI keyboard, the
+        /// microphone — not by clicking this reference bar) AND, in Studio, that source is
+        /// actually wired to a role with a sound in the active scene (nothing to play otherwise).
+        var isClickable = true
+    }
+
+    private func mainKeyboardPresentation(session: ImprovSession) -> MainKeyboardPresentation {
+        let sourceID = session.theoryLiveInputSourceID
+        var presentation = MainKeyboardPresentation()
+        // Always whatever's held on the picked source track, regardless of screen — the bar is
+        // "clavier principal," not "clavier ordinateur," so it should never stay hardcoded to
+        // showing only the `.computerKeyboard` track's own held notes.
+        presentation.heldPitches = sourceID.flatMap { id in session.tracks.first { $0.id == id } }?.heldPitches ?? []
+        let isComputerKeyboardSource = sourceID == .computerKeyboard
+
+        switch mode {
+        case .theorie:
+            if let theoryMode = appModel.mainKeyboardMode {
+                presentation.modeTones = theoryMode.pitchClasses.map(\.value)
+                presentation.showModeColoring = true
+            }
+            presentation.isClickable = isComputerKeyboardSource
+        case .studio:
+            switch selectedStudioTab {
+            case .recordings, .composition, .pieces:
+                presentation.isHidden = true
+            case .live:
+                if let sourceID {
+                    let recognized = session.recognizedChordAndModeTones(for: sourceID)
+                    presentation.chordRoot = recognized.chordRoot
+                    presentation.chordTones = recognized.chordTones
+                    presentation.modeTones = recognized.modeTones
+                    presentation.showModeColoring = !recognized.modeTones.isEmpty
+                }
+                presentation.isClickable = isComputerKeyboardSource && studioSourceHasAssignedSound(session: session, sourceID: sourceID)
+            case .scene:
+                // Plain — no chord/mode coloring, per explicit request ("sans coloration").
+                presentation.isClickable = isComputerKeyboardSource && studioSourceHasAssignedSound(session: session, sourceID: sourceID)
+            case .guide:
+                // Only while a guide sequence is actually running (`currentGuideStepIndex`) —
+                // per explicit request ("si le guide n'est pas démarré, pas de coloration").
+                if session.currentGuideStepIndex != nil, let guideMode = session.currentGuideStepMode() {
+                    presentation.modeTones = guideMode.pitchClasses.map(\.value)
+                    presentation.showModeColoring = true
+                }
+                presentation.isClickable = isComputerKeyboardSource && studioSourceHasAssignedSound(session: session, sourceID: sourceID)
+            }
+        case .settings:
+            break
+        }
+        return presentation
+    }
+
+    /// Whether `sourceID` is attached to a role WITH a sound in the active scene — Studio's own
+    /// gate for `MainKeyboardPresentation.isClickable` (see that property's own doc comment) and
+    /// for `studioAssignedSoundLabel(session:)`'s "aucun son affecté" fallback.
+    private func studioSourceHasAssignedSound(session: ImprovSession, sourceID: TrackID?) -> Bool {
+        guard let sourceID else { return false }
+        return session.currentScene?.roles.contains { $0.attachedTrackID == sourceID && $0.soundName != nil } ?? false
+    }
+
+    /// Studio's own read-only counterpart to Théorie's editable `FavoriteSoundPickerView` — per
+    /// explicit request, the sound here is whatever the active scene already assigns to the
+    /// picked source's role, not a separate independent pick (editing that belongs to the Scene
+    /// screen's own role editor). "Aucun son affecté" whenever that source isn't wired to any
+    /// role with a sound — per explicit request, a visible non-answer rather than silently
+    /// falling back to Théorie's own generic audition sound, which would misleadingly suggest
+    /// something is really about to play.
+    private func studioAssignedSoundLabel(session: ImprovSession) -> String {
+        guard let sourceID = session.theoryLiveInputSourceID,
+              let role = session.currentScene?.roles.first(where: { $0.attachedTrackID == sourceID }),
+              let soundName = role.soundName
+        else {
+            return L10n.string(.appLabelAucunSonAffecte, session.currentLanguage)
+        }
+        return session.displayName(forSamplePath: soundName, preset: role.soundPreset)
+    }
+
+    /// "Notes du mode" whenever a Théorie screen has registered one for the persistent
+    /// main-keyboard bar (`AppModel.mainKeyboardMode`, see `.registerMainKeyboardMode`), or
+    /// Studio's Guide screen is actively coloring by its own current step, else the bar's own
+    /// plain "clavier principal actif" label.
+    private func mainKeyboardBarLabel(session: ImprovSession) -> String {
+        if mode == .studio, selectedStudioTab == .guide, session.currentGuideStepIndex != nil {
+            return L10n.string(.appLabelNotesDuMode, session.currentLanguage)
+        }
+        return appModel.mainKeyboardMode != nil
+            ? L10n.string(.appLabelNotesDuMode, session.currentLanguage)
+            : L10n.string(.appLabelClavierPrincipalActif, session.currentLanguage)
     }
 
     /// The generalized contextual-help button — opens `AuxiliaryWindowID.contextualHelp`

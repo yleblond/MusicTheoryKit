@@ -117,6 +117,13 @@ struct ModeLibraryView: View {
                 .padding(.top, 6)
         }
         #endif
+        // Colors the persistent main-keyboard bar (`ContentView`) by this screen's own picked
+        // mode while it's the active tab, per explicit request — covers BOTH `.overview` ("Modes")
+        // and `.exploration`, each its own peer tab, hence the distinct id per `contentFocus`.
+        .registerMainKeyboardMode(
+            id: contentFocus == .overview ? "theorie.modes" : "theorie.exploration",
+            isActive: isActive, mode: mode
+        )
     }
 
     #if os(macOS) || os(visionOS)
@@ -715,9 +722,11 @@ struct ModeLibraryView: View {
 
             // Row 3: "accord" (left) next to "mélodie" (right), each its own mini keyboard plus
             // its own detail card underneath, and (per explicit request) the note-role legend as
-            // a 3rd column — followed by the mode's own keyboard, extended to 4 octaves, spanning
-            // the FULL width below both, rather than sharing this row as a 3rd narrow column of
-            // its own (its old position) — per explicit request.
+            // a 3rd column. The mode's own notes used to have a 4th, full-width keyboard of their
+            // own here (`extendedModeKeyboardRow`) — removed per explicit request now that the
+            // persistent main-keyboard bar (`ContentView`) shows the same thing (mode-tone
+            // coloring + scale-degree badges, see `.registerMainKeyboardMode` in `body`) whenever
+            // this screen is active, labeled "Notes du mode" there instead.
             if usesTwoColumns {
                 HStack(alignment: .top, spacing: 20) {
                     accordColumn
@@ -731,7 +740,6 @@ struct ModeLibraryView: View {
                     melodicLegendColumn
                 }
             }
-            extendedModeKeyboardRow
         }
         .onChange(of: liveInputHeldPitchClasses) { _, newValue in
             reactToLiveInputMatch(heldPitchClasses: newValue)
@@ -1014,50 +1022,8 @@ struct ModeLibraryView: View {
     /// The shared size for `accordColumn`/`melodieColumn`'s own mini keyboards — `height` alone
     /// wasn't enough to make them look the same (differing outer column widths stretched them
     /// unevenly), so this is the single source both pull from for `.frame(width:height:)`, not
-    /// just `height:`. NOT used by `extendedModeKeyboardRow`, which spans the full row width at
-    /// the default height instead — see that property's own doc comment.
+    /// just `height:`.
     private static let melodicKeyboardSize = CGSize(width: 390, height: 115) // -20% off the shared 144 default, per explicit request.
-
-    /// `extendedModeKeyboardRow`'s own range — 5 octaves (up from the 2 every other keyboard on
-    /// this screen uses) rather than 4: spanning the full row width means it also gets much
-    /// WIDER than a normal keyboard, which at the original 4-octave count made each key look
-    /// unnaturally tall/narrow once `extendedModeKeyboardHeight` was cut down — the extra octave
-    /// gives back enough keys for the width:height ratio to read as a normal keyboard again, per
-    /// explicit request. C3...C8, the same top note a standard 88-key piano ends on.
-    private static let extendedModeKeyboardRange = 48...108
-    /// Cut down from the shared 144 default (see `PitchKeyboardView.height`) — at full row width
-    /// that default made this keyboard needlessly tall next to `accordColumn`/`melodieColumn`'s
-    /// own much shorter minis, per explicit request; see `extendedModeKeyboardRange`'s own doc
-    /// comment for why that request also means one more octave, not just a smaller number here.
-    private static let extendedModeKeyboardHeight: CGFloat = 100
-
-    /// The mode's own scale-degree pitch classes across `extendedModeKeyboardRow`'s own range —
-    /// same idea as `modeTonePitchesInKeyboardRange` (the 2-octave range every other keyboard in
-    /// this screen still uses), kept as its own property rather than parameterizing that one so
-    /// existing call sites are unaffected.
-    private var modeTonePitchesInExtendedKeyboardRange: [Int] {
-        let tones = Set(mode.pitchClasses.map(\.value))
-        return Self.extendedModeKeyboardRange.filter { tones.contains((($0 % 12) + 12) % 12) }
-    }
-
-    /// The mode's own playable keyboard, spanning the FULL row width below `accordColumn`/
-    /// `melodieColumn` instead of sharing that row as a narrow 3rd column, per explicit request —
-    /// tapping it still drives `playMelodicNote`, so its selection still surfaces in
-    /// `melodieColumn`'s own detail card even though the two are no longer side by side.
-    private var extendedModeKeyboardRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(L10n.string(.appLabelNotesDuMode, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-            PitchKeyboardView(
-                minMidi: Self.extendedModeKeyboardRange.lowerBound, maxMidi: Self.extendedModeKeyboardRange.upperBound,
-                modeTones: mode.pitchClasses.map(\.value),
-                showModeColoring: true,
-                onNoteOn: { pitch in playMelodicNote(PitchClass(pitch), atPitch: pitch) },
-                height: Self.extendedModeKeyboardHeight,
-                keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: modeTonePitchesInExtendedKeyboardRange, style: session.notationStyle)
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
     /// The current chord's own harmonic-role color (see `FunctionalRoleColors.fill(for:)`) — the
     /// same color `progressionChipFill`/the orbit-attraction graphs already use for this chord,
