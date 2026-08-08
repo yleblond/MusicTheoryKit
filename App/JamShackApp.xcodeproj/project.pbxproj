@@ -26,6 +26,7 @@
 		179468A1F72F80E2DF6069DC /* MicrophoneWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3BF0B0539CC79DB41666172 /* MicrophoneWindow.swift */; };
 		1AB02A5A72BD4D7D84652261 /* GuideStepsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95942B8846FAA9B3ED42228B /* GuideStepsSection.swift */; };
 		1B11AC337EE28D19A172776C /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7D035FF241FE8B1971234F /* AppModel.swift */; };
+		51720975153363347E7A3BD3 /* ContextualHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34365A1E5BDA23B0E585C1E0 /* ContextualHelp.swift */; };
 		1D60040DDEDC4055CB2542BA /* RecordingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E99978CED2C145262C1B3B4 /* RecordingsView.swift */; };
 		1D853CFAED84B8CB43BF0AB9 /* ExplorationWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66638E51F664628900DC1080 /* ExplorationWindow.swift */; };
 		1E320F17AB936D2D199DA586 /* CompositionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9678EC3E37F61041F0877632 /* CompositionView.swift */; };
@@ -58,7 +59,7 @@
 		3F1965A4076A70B46D629A59 /* RemoteNotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61EB999B2BB050D2A3FD5F3B /* RemoteNotificationDelegate.swift */; };
 		408E126833D9A8B7BA74CFAF /* SoundFontCatalogDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2402C39126B093192FC0FF77 /* SoundFontCatalogDetailView.swift */; };
 		435AFCF4AFA68F67605F8AE1 /* MicrophoneTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 894DEEB4D6B48B42F8EF8C94 /* MicrophoneTabContent.swift */; };
-		4457A57DFAEE6CD1C62D122F /* TheorieLegendWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F45D85EFB72F20E218E01E98 /* TheorieLegendWindow.swift */; };
+		4457A57DFAEE6CD1C62D122F /* ContextualHelpWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F45D85EFB72F20E218E01E98 /* ContextualHelpWindow.swift */; };
 		45555DC7EAA4CA242F011BB0 /* SoundFontCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8542DB3109F0EE2C04FFBC1 /* SoundFontCatalogView.swift */; };
 		4718D979D4D3D67A1DDD8636 /* ModeLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92D0CCE52D97231126907127 /* ModeLibraryView.swift */; };
 		48F0B9D8C3E50EFE179FD8A4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04D7D71FEF77850B75E4B7B5 /* Assets.xcassets */; };
@@ -84,11 +85,13 @@
 		59E264563F1D6BD0334FB777 /* GuideFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0EEDCEAF1C96726ACE9B17 /* GuideFileView.swift */; };
 		5B96313EFB77310851F02CD7 /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71953E7D8E1B09B320DEFE6A /* RecordingDetailView.swift */; };
 		5BE54ED2E6965DC97380C0E3 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7D035FF241FE8B1971234F /* AppModel.swift */; };
+		7BE410C649355CF2BA73EC3B /* ContextualHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34365A1E5BDA23B0E585C1E0 /* ContextualHelp.swift */; };
 		5C0FEAB0F69DD3A7CCCE0729 /* CompositionFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCD1C63D851BB483B73CD474 /* CompositionFileView.swift */; };
 		5CBF610F3E1F2E9AEF2F0200 /* AppCore in Frameworks */ = {isa = PBXBuildFile; productRef = 69847B491F4CE42354F05B6F /* AppCore */; };
 		5E26D90A74444A5D8BB4504E /* PiecesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DAE2E35B014C09B62C4CE0A /* PiecesView.swift */; };
 		5E6F9AC439CDE09175FD0C3B /* MicrophoneControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E3F3D6757C2084F069B255 /* MicrophoneControlsView.swift */; };
 		5F162AD3573A70DCDA49F626 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7D035FF241FE8B1971234F /* AppModel.swift */; };
+		209786ABDBE13D81ABA3CC09 /* ContextualHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34365A1E5BDA23B0E585C1E0 /* ContextualHelp.swift */; };
 		600331554FB340525901983B /* GameCenterCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56783C5791125C49D8104883 /* GameCenterCoordinator.swift */; };
 		60C1B6358AA39D223D23B1D5 /* TheorieSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C933F43D9721C67F1B211310 /* TheorieSettingsView.swift */; };
 		60CEB1142DD1D191145837E6 /* JamShackLanguageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE39EAC785B1BF4AA9F44EDE /* JamShackLanguageView.swift */; };
@@ -99,7 +102,7 @@
 		665079528B7FF62A0F75A0B2 /* SoundFontCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8542DB3109F0EE2C04FFBC1 /* SoundFontCatalogView.swift */; };
 		6743E9D3C12B1E174E105531 /* JamSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44E28F5AF89E79FD7606B5CD /* JamSessionView.swift */; };
 		67CCA36685B322EFBE37923F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04D7D71FEF77850B75E4B7B5 /* Assets.xcassets */; };
-		6890F875B2FFE6C974536549 /* TheorieLegendWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F45D85EFB72F20E218E01E98 /* TheorieLegendWindow.swift */; };
+		6890F875B2FFE6C974536549 /* ContextualHelpWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F45D85EFB72F20E218E01E98 /* ContextualHelpWindow.swift */; };
 		68C6FE5177D67E4E3CAC7446 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85845D37B71BB8E94BC0A6E4 /* ContentView.swift */; };
 		691A300ACB4B2C5E361937B8 /* SceneManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */; };
 		69FB537F37951DBF4B01AA97 /* SessionGatedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE90A4A7D561D191DF3EDBE8 /* SessionGatedView.swift */; };
@@ -171,7 +174,7 @@
 		B06ADEC66646207A42F6CC3E /* AppCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3DDF4439EA9C3C2E97C49190 /* AppCore */; };
 		B1582EDCECFBFA0602F14007 /* JamShackLanguageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE39EAC785B1BF4AA9F44EDE /* JamShackLanguageView.swift */; };
 		B3BEFD433A0B1B32F423302A /* PiecesPlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7171E005C138F689954FCE0 /* PiecesPlayView.swift */; };
-		B4EAC41636428C54D7D37EC3 /* TheorieLegendWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F45D85EFB72F20E218E01E98 /* TheorieLegendWindow.swift */; };
+		B4EAC41636428C54D7D37EC3 /* ContextualHelpWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F45D85EFB72F20E218E01E98 /* ContextualHelpWindow.swift */; };
 		B58D6F16866C835C999DFA92 /* JamShackUI in Frameworks */ = {isa = PBXBuildFile; productRef = 87F816FA700F02A4EAC0B7EC /* JamShackUI */; };
 		B59DF314E07D8821C2881B99 /* JamSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44E28F5AF89E79FD7606B5CD /* JamSessionView.swift */; };
 		B82F181EB1C90DFFBBCAD927 /* SceneLayoutWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3D77E2216CC7C9B43720B44 /* SceneLayoutWindow.swift */; };
@@ -258,6 +261,7 @@
 		44E28F5AF89E79FD7606B5CD /* JamSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamSessionView.swift; sourceTree = "<group>"; };
 		4765E80FA8CA331E5728B0F0 /* SoundsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundsView.swift; sourceTree = "<group>"; };
 		4A7D035FF241FE8B1971234F /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		34365A1E5BDA23B0E585C1E0 /* ContextualHelp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextualHelp.swift; sourceTree = "<group>"; };
 		4EA276BC19892B1D37813D15 /* GuidePlayIndicationRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuidePlayIndicationRow.swift; sourceTree = "<group>"; };
 		501FE6D05E400AEB9592DB64 /* ProgressionWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressionWindow.swift; sourceTree = "<group>"; };
 		556A46486C82BF4F493BD822 /* GuideEditionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideEditionView.swift; sourceTree = "<group>"; };
@@ -311,7 +315,7 @@
 		DE90A4A7D561D191DF3EDBE8 /* SessionGatedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionGatedView.swift; sourceTree = "<group>"; };
 		E3BF0B0539CC79DB41666172 /* MicrophoneWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrophoneWindow.swift; sourceTree = "<group>"; };
 		F399A09A42E00F69FE65879F /* NotationStyleSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotationStyleSettingsView.swift; sourceTree = "<group>"; };
-		F45D85EFB72F20E218E01E98 /* TheorieLegendWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TheorieLegendWindow.swift; sourceTree = "<group>"; };
+		F45D85EFB72F20E218E01E98 /* ContextualHelpWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextualHelpWindow.swift; sourceTree = "<group>"; };
 		F99F5AD2D2B255356B7BC32D /* ChordLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordLibraryView.swift; sourceTree = "<group>"; };
 		FA393FDD6590DDE0D1E4FAEF /* PlaybackControlButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackControlButton.swift; sourceTree = "<group>"; };
 		FC0DA62416ED6B405EBDF8DF /* PiecesFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiecesFileView.swift; sourceTree = "<group>"; };
@@ -372,7 +376,7 @@
 				501FE6D05E400AEB9592DB64 /* ProgressionWindow.swift */,
 				737D83A55D0D5B9052B92AE7 /* RunScreenWindow.swift */,
 				D3D77E2216CC7C9B43720B44 /* SceneLayoutWindow.swift */,
-				F45D85EFB72F20E218E01E98 /* TheorieLegendWindow.swift */,
+				F45D85EFB72F20E218E01E98 /* ContextualHelpWindow.swift */,
 				644B983658E125A8D42F09FD /* TheoryWindow.swift */,
 			);
 			path = Windows;
@@ -382,6 +386,7 @@
 			isa = PBXGroup;
 			children = (
 				4A7D035FF241FE8B1971234F /* AppModel.swift */,
+				34365A1E5BDA23B0E585C1E0 /* ContextualHelp.swift */,
 				04D7D71FEF77850B75E4B7B5 /* Assets.xcassets */,
 				F99F5AD2D2B255356B7BC32D /* ChordLibraryView.swift */,
 				752FD326924ED57FF5B8904E /* ChordTabContent.swift */,
@@ -612,6 +617,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5BE54ED2E6965DC97380C0E3 /* AppModel.swift in Sources */,
+				7BE410C649355CF2BA73EC3B /* ContextualHelp.swift in Sources */,
 				F3B826D2F5438763061911B0 /* ChordLibraryView.swift in Sources */,
 				F9281B4ED89BC0E4877FC764 /* ChordTabContent.swift in Sources */,
 				2647C2C6831C10B6FAD6AA7E /* ChordWindow.swift in Sources */,
@@ -678,7 +684,7 @@
 				8E7A90E2BE9987478689DCF2 /* SoundsView.swift in Sources */,
 				77FBDFE2727587CEBAE10BAC /* StorageUsageBar.swift in Sources */,
 				0A79741651EDD5CC1118DE83 /* TestModeColumn.swift in Sources */,
-				B4EAC41636428C54D7D37EC3 /* TheorieLegendWindow.swift in Sources */,
+				B4EAC41636428C54D7D37EC3 /* ContextualHelpWindow.swift in Sources */,
 				6F3D3B02D75C1223021D0678 /* TheorieSettingsView.swift in Sources */,
 				56AA55976C81AAF973091F3C /* TheoryTabContent.swift in Sources */,
 				AC446451DBEB1E333A3C0E82 /* TheoryWindow.swift in Sources */,
@@ -691,6 +697,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5F162AD3573A70DCDA49F626 /* AppModel.swift in Sources */,
+				209786ABDBE13D81ABA3CC09 /* ContextualHelp.swift in Sources */,
 				FDEB0813C0AF62AA17C50FE9 /* ChordLibraryView.swift in Sources */,
 				A94AED495616EC3882EFCB7C /* ChordTabContent.swift in Sources */,
 				AD203EC0C9BB23E7571242CB /* ChordWindow.swift in Sources */,
@@ -757,7 +764,7 @@
 				9D45B86BF5CD2F41EA2CF0E4 /* SoundsView.swift in Sources */,
 				0FF02BA6AF1BD8ADD71D6D3B /* StorageUsageBar.swift in Sources */,
 				BA654EBBF11EDEDC04755933 /* TestModeColumn.swift in Sources */,
-				4457A57DFAEE6CD1C62D122F /* TheorieLegendWindow.swift in Sources */,
+				4457A57DFAEE6CD1C62D122F /* ContextualHelpWindow.swift in Sources */,
 				60C1B6358AA39D223D23B1D5 /* TheorieSettingsView.swift in Sources */,
 				2A007CE84B97DCB9445E0B67 /* TheoryTabContent.swift in Sources */,
 				D0123CEFB4285A2713AC5576 /* TheoryWindow.swift in Sources */,
@@ -770,6 +777,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1B11AC337EE28D19A172776C /* AppModel.swift in Sources */,
+				51720975153363347E7A3BD3 /* ContextualHelp.swift in Sources */,
 				A725173846870B29761E5981 /* ChordLibraryView.swift in Sources */,
 				EE74146CF858E157BDDE67BD /* ChordTabContent.swift in Sources */,
 				6192E206F66E7C2984D235E0 /* ChordWindow.swift in Sources */,
@@ -836,7 +844,7 @@
 				34D898F93E23EC88710EAE78 /* SoundsView.swift in Sources */,
 				7C8B21AB5A6FDA2FA2E6BED5 /* StorageUsageBar.swift in Sources */,
 				9893DFDD8C95E0DA8FBB0207 /* TestModeColumn.swift in Sources */,
-				6890F875B2FFE6C974536549 /* TheorieLegendWindow.swift in Sources */,
+				6890F875B2FFE6C974536549 /* ContextualHelpWindow.swift in Sources */,
 				D6D642AA4A16003544E79547 /* TheorieSettingsView.swift in Sources */,
 				ECB2191BCF20315A866F0F59 /* TheoryTabContent.swift in Sources */,
 				9E19FE61FA38DA28F8DD1F3B /* TheoryWindow.swift in Sources */,

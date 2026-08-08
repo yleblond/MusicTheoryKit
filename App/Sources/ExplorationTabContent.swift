@@ -6,6 +6,12 @@ import Localization
 /// swap `TheoryTabContent`/`ChordTabContent` already do for their own screens.
 struct ExplorationTabContent: View {
     let session: ImprovSession
+    /// Whether THIS tab is the one currently on screen in `ContentView` — Théorie tab content
+    /// stays mounted across tab switches (see `SoundsView.isActive`'s own doc comment), so
+    /// `ModeLibraryView` needs this passed through explicitly to know when to register/clear its
+    /// own contextual help (`View.registerContextualHelp`) rather than relying on
+    /// `.onAppear`/`.onDisappear`.
+    let isActive: Bool
 
     @Environment(AppModel.self) private var appModel
     #if os(macOS) || os(visionOS)
@@ -21,10 +27,10 @@ struct ExplorationTabContent: View {
                 onReintegrate: { dismissWindow(id: AuxiliaryWindowID.theorieExploration.rawValue) }
             )
         } else {
-            ModeLibraryView(session: session, contentFocus: .exploration)
+            ModeLibraryView(session: session, contentFocus: .exploration, isActive: isActive)
         }
         #else
-        ModeLibraryView(session: session, contentFocus: .exploration)
+        ModeLibraryView(session: session, contentFocus: .exploration, isActive: isActive)
         #endif
     }
 }

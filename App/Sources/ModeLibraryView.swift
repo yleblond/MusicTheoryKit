@@ -40,6 +40,12 @@ struct ModeLibraryView: View {
     let session: ImprovSession
     var contentFocus: ModeLibraryContentFocus = .overview
     var isDetachedWindow: Bool = false
+    /// Whether THIS instance is the one currently on screen — always `true` for a detached
+    /// window (nothing else competes for its own dedicated window) and for `.overview` (no
+    /// contextual help registered there yet), so only `ExplorationTabContent` actually overrides
+    /// it. Feeds `.registerContextualHelp` in `detailContent` below — see that call site's own
+    /// doc comment for why this can't just use `.onAppear`/`.onDisappear` instead.
+    var isActive: Bool = true
 
     #if os(macOS) || os(visionOS)
     @Environment(\.openWindow) private var openWindow
@@ -85,9 +91,6 @@ struct ModeLibraryView: View {
     /// previewing — purely a reference/reminder of how this mode's already-known progressions
     /// are put together (per explicit request), never an editable progression of the user's own.
     @State private var selectedProgressionName: String?
-    /// iOS-only: the combined legend has no independent-window option there (see
-    /// `AuxiliaryWindowID.theorieLegende`'s own doc comment), so it's a dismissible sheet instead.
-    @State private var showsLegendSheet = false
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -98,21 +101,22 @@ struct ModeLibraryView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            #if os(macOS) || os(visionOS)
-            HStack {
-                Spacer()
-                detachButton
-            }
-            .padding(.horizontal)
-            .padding(.top, 6)
-            #endif
-            TheoryLibraryLayout(screen: $screen, sidebarWidth: 320) {
-                listContent
-            } detailContent: { showBackButton, onBack in
-                detailContent(showBackButton: showBackButton, onBack: onBack)
-            }
+        TheoryLibraryLayout(screen: $screen, sidebarWidth: 320) {
+            listContent
+        } detailContent: { showBackButton, onBack in
+            detailContent(showBackButton: showBackButton, onBack: onBack)
         }
+        #if os(macOS) || os(visionOS)
+        // Floats over the screen's own top-right corner instead of reserving a whole extra row
+        // above everything else just for one small icon — per explicit request ("on perd encore
+        // beaucoup de place"). Lands over the title row's own trailing `Spacer()` (see
+        // `detailContent`), which is otherwise empty there, so nothing real gets covered.
+        .overlay(alignment: .topTrailing) {
+            detachButton
+                .padding(.horizontal)
+                .padding(.top, 6)
+        }
+        #endif
     }
 
     #if os(macOS) || os(visionOS)
@@ -218,9 +222,14 @@ struct ModeLibraryView: View {
                 }
 
                 HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    Text(mode.displayName).font(.largeTitle).bold()
-                    if contentFocus == .exploration && mode.scale.familyID == 1 {
-                        theoryLegendButton
+                    // Suppressed for `.exploration` on a family-1 mode: `progressionAndDetailColumn`
+                    // already shows the mode's own name as that screen's first element, so this
+                    // page-level title would just be a 2nd, redundant copy of it — per explicit
+                    // request. Every other case (`.overview`, or a non-family-1 `.exploration`
+                    // showing only the empty-state hint) has nowhere else this name is shown, so
+                    // it stays there.
+                    if !(contentFocus == .exploration && mode.scale.familyID == 1) {
+                        Text(mode.displayName).font(.largeTitle).bold()
                     }
                     Spacer()
                 }
@@ -229,11 +238,22 @@ struct ModeLibraryView: View {
                 case .overview:
                     overviewContent
                 case .exploration:
-                    if mode.scale.familyID == 1 {
-                        functionalExplorationSection
-                    } else {
-                        Text(L10n.string(.appHintExplorationFamilleUn, session.currentLanguage))
-                            .foregroundStyle(.secondary)
+                    // The `.registerContextualHelp` call used to be a per-screen "?" button here
+                    // instead — moved into `ContentView`'s shared bottom bar per explicit request,
+                    // to reclaim the space that button took. `isActive` (rather than
+                    // `.onAppear`/`.onDisappear`) also covers the family-1 gate itself: it goes
+                    // false the moment `mode.scale.familyID` stops being 1, exactly when this
+                    // help would otherwise stop applying.
+                    Group {
+                        if mode.scale.familyID == 1 {
+                            functionalExplorationSection
+                        } else {
+                            Text(L10n.string(.appHintExplorationFamilleUn, session.currentLanguage))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .registerContextualHelp(id: "theorie.exploration", isActive: isActive && mode.scale.familyID == 1) {
+                        TheoryLegendContent(language: session.currentLanguage)
                     }
                 }
             }
@@ -662,80 +682,56 @@ struct ModeLibraryView: View {
         playSingleChord(chordFunction.reference)
     }
 
-    /// Opens the combined harmonic+melodic legend (`TheoryLegendContent`) — an independent
-    /// window on macOS/visionOS (`AuxiliaryWindowID.theorieLegende`, stays open alongside this
-    /// screen while working), a dismissible sheet on iOS (no independent-window equivalent
-    /// there). One button for both palettes now, instead of each legend row's own popover.
-    private var theoryLegendButton: some View {
-        Button {
-            #if os(macOS) || os(visionOS)
-            openWindow(id: AuxiliaryWindowID.theorieLegende.rawValue)
-            #else
-            showsLegendSheet = true
-            #endif
-        } label: {
-            Image(systemName: "questionmark.circle")
-        }
-        .buttonStyle(.plain)
-        #if !os(macOS) && !os(visionOS)
-        .sheet(isPresented: $showsLegendSheet) {
-            NavigationStack {
-                ScrollView { TheoryLegendContent(language: session.currentLanguage).padding() }
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button(L10n.string(.appButtonFermer, session.currentLanguage)) { showsLegendSheet = false }
-                        }
-                    }
-            }
-        }
-        #endif
-    }
-
     /// Everything about exploring the mode from a chosen chord's own point of view — harmonic
     /// geography (row 1: the two functional graphs + a reference list of this mode's known
-    /// progressions) and melodic vocabulary (row 3: a playable keyboard + note-by-note breakdown
-    /// against whichever chord row 1 currently has selected) in ONE screen, deliberately not
-    /// split across tabs: once someone is at the keyboard trying out what a note sounds like
+    /// progressions) and melodic vocabulary (row 3: "accord"/"mélodie" reference keyboards side
+    /// by side, each with its own note-by-note breakdown against whichever chord row 1 currently
+    /// has selected, then the mode's own playable keyboard spanning the full width below both) in
+    /// ONE screen, deliberately not split across tabs: once someone is at the keyboard trying out
+    /// what a note sounds like
     /// against the current chord, they're not going to navigate away first — per explicit
     /// request.
     private var functionalExplorationSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            FunctionalMapLegendView(language: session.currentLanguage)
-
-            // Row 1: the two harmonic graphs + the functional-role-source toggle, side by side.
+            // Row 1: a column stacking the mode's own name, the role-source toggle, the
+            // progression picker, its chord-chip preview, and (per explicit request) the
+            // role-color legend, each directly under the previous one — to the LEFT of the two
+            // harmonic graphs (per explicit request, to save horizontal space).
             if usesTwoColumns {
                 HStack(alignment: .top, spacing: 20) {
+                    progressionAndDetailColumn
                     orbitGraphBlock
                     attractionGraphBlock
-                    roleSourceBlock
                 }
             } else {
                 VStack(spacing: 20) {
+                    progressionAndDetailColumn
                     orbitGraphBlock
                     attractionGraphBlock
-                    roleSourceBlock
                 }
             }
-            selectedFunctionalChordDetail
-            // Row 2: the progression picker (a dropdown, not a list — per explicit request) next
-            // to whichever progression it currently has picked, previewed as a chip row.
-            progressionPreviewRow
 
             Divider()
-            MelodicMapLegendView(language: session.currentLanguage)
 
-            // Row 3: the melodic-vocabulary playground, against whichever chord is current.
+            // Row 3: "accord" (left) next to "mélodie" (right), each its own mini keyboard plus
+            // its own detail card underneath, and (per explicit request) the note-role legend as
+            // a 3rd column — followed by the mode's own keyboard, extended to 4 octaves, spanning
+            // the FULL width below both, rather than sharing this row as a 3rd narrow column of
+            // its own (its old position) — per explicit request.
             if usesTwoColumns {
                 HStack(alignment: .top, spacing: 20) {
-                    melodicLeftColumn.frame(maxWidth: .infinity, alignment: .leading)
-                    melodicRightColumn
+                    accordColumn
+                    melodieColumn
+                    melodicLegendColumn
                 }
             } else {
-                VStack(spacing: 20) {
-                    melodicLeftColumn
-                    melodicRightColumn
+                VStack(alignment: .leading, spacing: 20) {
+                    accordColumn
+                    melodieColumn
+                    melodicLegendColumn
                 }
             }
+            extendedModeKeyboardRow
         }
         .onChange(of: liveInputHeldPitchClasses) { _, newValue in
             reactToLiveInputMatch(heldPitchClasses: newValue)
@@ -744,16 +740,38 @@ struct ModeLibraryView: View {
 
     /// This mode's own known progressions (deduplicated by name, same rule
     /// `ProgressionLibraryView.uniqueTemplates` already uses) — picking one in `progressionPicker`
-    /// only PREVIEWS it in `progressionPreviewRow` below; there is no editing here, per explicit
+    /// only PREVIEWS it in `progressionChordChipsRow` below; there is no editing here, per explicit
     /// request (a progression BUILDER belongs to Composition/Guide, not Exploration).
     private var uniqueProgressionTemplates: [ChordProgressionTemplate] {
         var seen = Set<String>()
         return session.chordProgressionTemplates.filter { seen.insert($0.name).inserted }
     }
 
-    /// The role-source toggle (unrelated to which progression is previewed in `progressionPreviewRow`
-    /// below — see `FunctionalRoleSource`'s own doc comment) — its own small block purely to save
-    /// space elsewhere, not because the two are connected.
+    /// Row 1's own leading column — the mode's own name (first, per explicit request, since this
+    /// column now sits ahead of the two harmonic graphs instead of after them), the role-source
+    /// toggle, the progression picker, its chord-chip preview, and (per explicit request) the
+    /// harmonic-role legend itself, stacked directly one under the other (rather than spread
+    /// across separate rows) — the legend is shown here as a vertical list (see
+    /// `FunctionalMapLegendView.axis`) since this column is too narrow for its original
+    /// horizontal row. The currently-played chord's own info line used to live here too; it's
+    /// now under `accordColumn`'s own "Accord actuel" label instead, per explicit request.
+    private var progressionAndDetailColumn: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Now the ONLY place the mode's own name shows on this screen (see the page-level
+            // title's own suppression above) — sized up from a plain `.headline` to carry that
+            // weight on its own, per explicit request.
+            Text(mode.displayName).font(.title2).bold()
+            roleSourceBlock
+            progressionPicker
+            progressionChordChipsRow
+            FunctionalMapLegendView(language: session.currentLanguage, axis: .vertical)
+        }
+        .frame(maxWidth: 260, alignment: .leading)
+    }
+
+    /// The role-source toggle (unrelated to which progression is previewed below it — see
+    /// `FunctionalRoleSource`'s own doc comment) — its own small block purely to save space
+    /// elsewhere, not because the two are connected.
     private var roleSourceBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(L10n.string(.appFieldSourceFonctionnelle, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
@@ -764,7 +782,6 @@ struct ModeLibraryView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
         }
-        .frame(maxWidth: 260, alignment: .leading)
     }
 
     /// A dropdown (not a scrollable list, per explicit request) over this mode's own known
@@ -788,10 +805,9 @@ struct ModeLibraryView: View {
             .pickerStyle(.menu)
             .labelsHidden()
         }
-        .frame(maxWidth: 220, alignment: .leading)
     }
 
-    /// Which chip of `progressionPreviewRow` was tapped last — purely a highlight,
+    /// Which chip of `progressionChordChipsRow` was tapped last — purely a highlight,
     /// same "tap to scrub/audition" convention `ProgressionLibraryView.chordListSection` already
     /// uses for its own chip row (this is intentionally the same interaction, just recolored by
     /// harmonic role instead of a flat accent color — see `progressionChipFill(for:)`).
@@ -814,49 +830,48 @@ struct ModeLibraryView: View {
         matchingFunctionalChord(for: reference).map { FunctionalRoleColors.textColor(for: $0.role) } ?? .primary
     }
 
-    /// The progression dropdown (`progressionPicker`) next to its own preview — same "tap to
-    /// scrub/hear, current one highlighted" interaction as `ProgressionLibraryView.chordListSection`,
-    /// recolored per chord by its harmonic role in THIS mode's own orbit/attraction graphs (see
+    /// The chosen progression's own chords, previewed as a chip row directly under
+    /// `progressionPicker` (see `progressionAndDetailColumn`) — same "tap to scrub/hear, current
+    /// one highlighted" interaction as `ProgressionLibraryView.chordListSection`, recolored per
+    /// chord by its harmonic role in THIS mode's own orbit/attraction graphs (see
     /// `progressionChipFill(for:)`), so a progression's own functional shape (e.g. "away, away,
     /// tension, home") reads at a glance. Tapping a chip ALSO updates `selectedChordIndex` when
     /// that chord matches one of this mode's own diatonic degrees (see `matchingFunctionalChord`),
     /// so the functional-detail/melodic-vocabulary panels below react exactly as they already do
     /// for a tap in the orbit/attraction graphs, instead of staying stuck on whatever was selected
-    /// before — per explicit bug report.
-    private var progressionPreviewRow: some View {
-        HStack(alignment: .top, spacing: 16) {
-            progressionPicker
-            if let name = selectedProgressionName, let template = uniqueProgressionTemplates.first(where: { $0.name == name }) {
-                let references = ChordProgressionResolver.resolveRich(template, in: mode)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(template.name).font(.subheadline).bold()
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(Array(references.enumerated()), id: \.offset) { index, reference in
-                                Button {
-                                    selectedProgressionChordIndex = index
-                                    if let matched = matchingFunctionalChord(for: reference) {
-                                        selectedChordIndex = matched.degree - 1
-                                    }
-                                    playSingleChord(reference)
-                                } label: {
-                                    Text(chordDisplayName(reference))
-                                        .fontWeight(index == selectedProgressionChordIndex ? .bold : .regular)
-                                        .padding(.horizontal, 10).padding(.vertical, 6)
-                                        .background(progressionChipFill(for: reference), in: RoundedRectangle(cornerRadius: 8))
-                                        .foregroundStyle(progressionChipTextColor(for: reference))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .stroke(.white, lineWidth: index == selectedProgressionChordIndex ? 2 : 0)
-                                        )
-                                }
-                                .buttonStyle(.plain)
+    /// before — per explicit bug report. Wrapped with `FlowLayout` rather than a horizontal
+    /// `ScrollView` (per explicit request) so a longer progression wraps onto further lines
+    /// instead of scrolling past this narrow column's own edge, unseen.
+    @ViewBuilder
+    private var progressionChordChipsRow: some View {
+        if let name = selectedProgressionName, let template = uniqueProgressionTemplates.first(where: { $0.name == name }) {
+            let references = ChordProgressionResolver.resolveRich(template, in: mode)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(template.name).font(.subheadline).bold()
+                FlowLayout(horizontalSpacing: 8, verticalSpacing: 8) {
+                    ForEach(Array(references.enumerated()), id: \.offset) { index, reference in
+                        Button {
+                            selectedProgressionChordIndex = index
+                            if let matched = matchingFunctionalChord(for: reference) {
+                                selectedChordIndex = matched.degree - 1
                             }
+                            playSingleChord(reference)
+                        } label: {
+                            Text(chordDisplayName(reference))
+                                .fontWeight(index == selectedProgressionChordIndex ? .bold : .regular)
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .background(progressionChipFill(for: reference), in: RoundedRectangle(cornerRadius: 8))
+                                .foregroundStyle(progressionChipTextColor(for: reference))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(.white, lineWidth: index == selectedProgressionChordIndex ? 2 : 0)
+                                )
                         }
+                        .buttonStyle(.plain)
                     }
                 }
-                .font(.callout)
             }
+            .font(.callout)
         }
     }
 
@@ -938,45 +953,54 @@ struct ModeLibraryView: View {
         if recentPlayedNotes.count > 4 { recentPlayedNotes.removeFirst() }
     }
 
-    /// Left half of row 3 — the big, actually-playable keyboard (so trying out a note is a
-    /// single tap, no aiming at a tiny chip needed), the same note-by-note chip row as a compact
-    /// reference underneath it, the selected note's detail card, then the recent-history reminder.
-    private var melodicLeftColumn: some View {
+    /// Row 3a's left column — the current chord's own mini keyboard (see `currentChordFillColors`)
+    /// with its own detail card (name + harmonic role) and recently-explored-chords reminder
+    /// underneath, per explicit request (moved here from Row 1's own leading column — see
+    /// `progressionAndDetailColumn`'s own doc comment — and paired with "mélodie" as a peer
+    /// column instead of stacking under the melodic-vocabulary keyboard as before).
+    private var accordColumn: some View {
         let analysis = melodicAnalysis
-        return VStack(alignment: .leading, spacing: 10) {
+        let chord = analysis.chord
+        let chordTones = Set(chord.pitchClasses.map(\.value))
+        let chordKeyboardPitches = (48...72).filter { chordTones.contains((($0 % 12) + 12) % 12) }
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(L10n.string(.appLabelAccordActuel, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
             PitchKeyboardView(
-                modeTones: mode.pitchClasses.map(\.value),
-                showModeColoring: true,
-                onNoteOn: { pitch in playMelodicNote(PitchClass(pitch), atPitch: pitch) },
                 height: Self.melodicKeyboardSize.height,
-                keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: modeTonePitchesInKeyboardRange, style: session.notationStyle)
+                keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: chordKeyboardPitches, style: session.notationStyle),
+                customFillColors: currentChordFillColors(for: analysis)
             )
-            // Sitting in a `maxWidth: .infinity` column (unlike the two on the right, boxed at
-            // a fixed 260pt — see `melodicRightColumn`) meant this one kept stretching to fill
-            // whatever width was left over, while `height:` alone made all three LOOK the same
-            // size only when their columns happened to end up the same width by coincidence.
-            // An explicit width, matching the other two exactly, is the only way to guarantee
-            // that regardless of window size.
             .frame(width: Self.melodicKeyboardSize.width)
-            HStack(alignment: .top, spacing: 10) {
-                ForEach(analysis.notes, id: \.note) { profile in
-                    MelodicNoteChipView(
-                        profile: profile, noteName: session.notationStyle.rootName(profile.note, preferFlats: false),
-                        isSelected: profile.note == effectiveSelectedMelodicNote,
-                        onTap: { playMelodicNote(profile.note) }
-                    )
-                }
-            }
+            selectedFunctionalChordDetail
+            recentChordDegreesRow
+        }
+        .frame(width: Self.melodicKeyboardSize.width, alignment: .leading)
+    }
+
+    /// Row 3a's right column — the melodic-vocabulary mini keyboard (colored/badged by role
+    /// against the current chord) with the currently-selected note's own detail card (name,
+    /// role — e.g. "Ton de l'accord" — and consonance/couleur/tension qualifiers), its possible
+    /// resolutions, and the recently-played-notes reminder underneath, per explicit request
+    /// (paired with "accord" as a peer column — see `accordColumn`'s own doc comment).
+    private var melodieColumn: some View {
+        let analysis = melodicAnalysis
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(L10n.string(.appHeadingVocabulaireMelodique, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+            PitchKeyboardView(
+                height: Self.melodicKeyboardSize.height,
+                keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: modeTonePitchesInKeyboardRange, style: session.notationStyle),
+                customFillColors: melodicRoleFillColors(for: analysis),
+                resolutionArrows: resolutionArrowPitchClasses(for: analysis),
+                modalCharacteristicPitchClasses: modalCharacteristicPitchClasses(for: analysis),
+                noteBadges: noteBadges(for: analysis)
+            )
+            .frame(width: Self.melodicKeyboardSize.width)
             if let note = effectiveSelectedMelodicNote, let profile = analysis.notes.first(where: { $0.note == note }) {
                 MelodicNoteDetailView(
                     profile: profile, noteName: session.notationStyle.rootName(note, preferFlats: false), language: session.currentLanguage
                 )
             }
-            // Order per explicit request: notes played recently, chords explored recently, THEN
-            // the current note's own possible resolutions (moved out of `MelodicNoteDetailView`
-            // above, see `MelodicResolutionsRowView`'s own doc comment).
             recentPlayedNotesRow
-            recentChordDegreesRow
             if let note = effectiveSelectedMelodicNote, let profile = analysis.notes.first(where: { $0.note == note }) {
                 MelodicResolutionsRowView(
                     profile: profile, language: session.currentLanguage,
@@ -984,42 +1008,107 @@ struct ModeLibraryView: View {
                 )
             }
         }
+        .frame(width: Self.melodicKeyboardSize.width, alignment: .leading)
     }
 
-    /// The one shared size for all 3 keyboards in row 3 — `height` alone wasn't enough to make
-    /// them look the same (see `melodicLeftColumn`'s own comment on why), so this is the single
-    /// source both columns pull from for `.frame(width:height:)`, not just `height:`.
+    /// The shared size for `accordColumn`/`melodieColumn`'s own mini keyboards — `height` alone
+    /// wasn't enough to make them look the same (differing outer column widths stretched them
+    /// unevenly), so this is the single source both pull from for `.frame(width:height:)`, not
+    /// just `height:`. NOT used by `extendedModeKeyboardRow`, which spans the full row width at
+    /// the default height instead — see that property's own doc comment.
     private static let melodicKeyboardSize = CGSize(width: 390, height: 115) // -20% off the shared 144 default, per explicit request.
 
-    /// Right half of row 3 — two small reference keyboards stacked: the mode's own notes
-    /// colored by melodic role against the current chord (top), and the current chord's own
-    /// notes alone (bottom, same convention `selectedChordKeyboard` already uses elsewhere).
-    private var melodicRightColumn: some View {
-        let analysis = melodicAnalysis
-        let chord = analysis.chord
-        let chordTones = Set(chord.pitchClasses.map(\.value))
-        let chordKeyboardPitches = (48...72).filter { chordTones.contains((($0 % 12) + 12) % 12) }
-        return VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(L10n.string(.appHeadingVocabulaireMelodique, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-                PitchKeyboardView(
-                    height: Self.melodicKeyboardSize.height, customFillColors: melodicRoleFillColors(for: analysis),
-                    resolutionArrows: resolutionArrowPitchClasses(for: analysis),
-                    modalCharacteristicPitchClasses: modalCharacteristicPitchClasses(for: analysis)
-                )
-                .frame(width: Self.melodicKeyboardSize.width)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(L10n.string(.appLabelAccordActuel, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-                PitchKeyboardView(
-                    chordRoot: chord.root.value, chordTones: chord.pitchClasses.map(\.value), alwaysShowChord: true,
-                    height: Self.melodicKeyboardSize.height,
-                    keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: chordKeyboardPitches, style: session.notationStyle)
-                )
-                .frame(width: Self.melodicKeyboardSize.width)
-            }
+    /// `extendedModeKeyboardRow`'s own range — 5 octaves (up from the 2 every other keyboard on
+    /// this screen uses) rather than 4: spanning the full row width means it also gets much
+    /// WIDER than a normal keyboard, which at the original 4-octave count made each key look
+    /// unnaturally tall/narrow once `extendedModeKeyboardHeight` was cut down — the extra octave
+    /// gives back enough keys for the width:height ratio to read as a normal keyboard again, per
+    /// explicit request. C3...C8, the same top note a standard 88-key piano ends on.
+    private static let extendedModeKeyboardRange = 48...108
+    /// Cut down from the shared 144 default (see `PitchKeyboardView.height`) — at full row width
+    /// that default made this keyboard needlessly tall next to `accordColumn`/`melodieColumn`'s
+    /// own much shorter minis, per explicit request; see `extendedModeKeyboardRange`'s own doc
+    /// comment for why that request also means one more octave, not just a smaller number here.
+    private static let extendedModeKeyboardHeight: CGFloat = 100
+
+    /// The mode's own scale-degree pitch classes across `extendedModeKeyboardRow`'s own range —
+    /// same idea as `modeTonePitchesInKeyboardRange` (the 2-octave range every other keyboard in
+    /// this screen still uses), kept as its own property rather than parameterizing that one so
+    /// existing call sites are unaffected.
+    private var modeTonePitchesInExtendedKeyboardRange: [Int] {
+        let tones = Set(mode.pitchClasses.map(\.value))
+        return Self.extendedModeKeyboardRange.filter { tones.contains((($0 % 12) + 12) % 12) }
+    }
+
+    /// The mode's own playable keyboard, spanning the FULL row width below `accordColumn`/
+    /// `melodieColumn` instead of sharing that row as a narrow 3rd column, per explicit request —
+    /// tapping it still drives `playMelodicNote`, so its selection still surfaces in
+    /// `melodieColumn`'s own detail card even though the two are no longer side by side.
+    private var extendedModeKeyboardRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(L10n.string(.appLabelNotesDuMode, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+            PitchKeyboardView(
+                minMidi: Self.extendedModeKeyboardRange.lowerBound, maxMidi: Self.extendedModeKeyboardRange.upperBound,
+                modeTones: mode.pitchClasses.map(\.value),
+                showModeColoring: true,
+                onNoteOn: { pitch in playMelodicNote(PitchClass(pitch), atPitch: pitch) },
+                height: Self.extendedModeKeyboardHeight,
+                keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: modeTonePitchesInExtendedKeyboardRange, style: session.notationStyle)
+            )
         }
-        .frame(width: Self.melodicKeyboardSize.width, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The current chord's own harmonic-role color (see `FunctionalRoleColors.fill(for:)`) — the
+    /// same color `progressionChipFill`/the orbit-attraction graphs already use for this chord,
+    /// reused here instead of `PitchKeyboardView`'s own generic red-root/yellow-tone chord
+    /// coloring, per explicit request.
+    private func currentChordFunctionalRole() -> ModalFunctionalRole? {
+        guard let degree = selectedFunctionalDegree else { return nil }
+        return functionalMap.chords.first { $0.degree == degree }?.role
+    }
+
+    /// Feeds the "Accord actuel" keyboard's own `customFillColors` — every chord tone gets the
+    /// chord's harmonic-role color, with the root reinforced (mixed toward black, so it stays
+    /// visibly darker/more saturated) and the rest of the triad a lighter tint of that same color
+    /// (mixed toward white instead), per explicit request. Both mixes use `Color.mixed(with:amount:)`
+    /// (real RGB blending) rather than `.opacity()` — a translucent fill on a BLACK key otherwise
+    /// lets the white keys' own separator line underneath bleed through, per explicit bug report;
+    /// solid blended colors also make root vs. rest easier to tell apart than opacity alone did.
+    private func currentChordFillColors(for analysis: MelodicVocabularyAnalysis) -> [Int: Color] {
+        guard let role = currentChordFunctionalRole() else { return [:] }
+        let base = FunctionalRoleColors.fill(for: role)
+        let rootColor = base.mixed(with: .black, amount: 0.25)
+        let otherColor = base.mixed(with: .white, amount: 0.55)
+        let root = ((analysis.chord.root.value % 12) + 12) % 12
+        var result: [Int: Color] = [:]
+        for tone in analysis.chord.pitchClasses.map(\.value) {
+            let pitchClass = ((tone % 12) + 12) % 12
+            result[pitchClass] = pitchClass == root ? rootColor : otherColor
+        }
+        return result
+    }
+
+    /// Feeds the "Vocabulaire mélodique" keyboard's own `noteBadges` — the same interval-from-
+    /// chord-root label and role color `MelodicNoteChipView`'s own row used to show underneath
+    /// the big playable keyboard, moved here (per explicit request) into small circles above the
+    /// keys themselves, the same style the mode's own scale-degree badge already uses elsewhere.
+    private func noteBadges(for analysis: MelodicVocabularyAnalysis) -> [Int: KeyBadge] {
+        Dictionary(uniqueKeysWithValues: analysis.notes.map { profile in
+            (profile.note.value, KeyBadge(
+                text: intervalLabel(for: profile),
+                fillColor: MelodicRoleColors.fill(for: profile.defaultRole),
+                textColor: MelodicRoleColors.textColor(for: profile.defaultRole)
+            ))
+        })
+    }
+
+    /// The role-color legend for `accordColumn`/`melodieColumn`'s own mini keyboards, as a 3rd
+    /// column to their right — a vertical list (see `MelodicMapLegendView.axis`) since this
+    /// column is narrow.
+    private var melodicLegendColumn: some View {
+        MelodicMapLegendView(language: session.currentLanguage, axis: .vertical)
+            .frame(maxWidth: 160, alignment: .leading)
     }
 
     private func melodicRoleFillColors(for analysis: MelodicVocabularyAnalysis) -> [Int: Color] {

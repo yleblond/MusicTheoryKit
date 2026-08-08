@@ -3,19 +3,21 @@ import AppCore
 import MusicTheoryKit
 import Localization
 
-/// Fixed fill colors per `MelodicRole` — deliberately a DIFFERENT palette from
-/// `FunctionalRoleColors` (this colors NOTES relative to a chord, not accords relative to the
-/// tonic) even where a hue is shared, per this feature's own spec: "les deux systèmes peuvent
-/// utiliser des couleurs visuellement apparentées, mais doivent avoir des légendes et des
-/// sémantiques distinctes."
+/// Fixed fill colors per `MelodicRole` — a hue set with NO overlap against
+/// `FunctionalRoleColors`' own 4 colors (this colors NOTES relative to a chord, not chords
+/// relative to the tonic), now that both palettes can appear side by side on
+/// `ModeLibraryView`'s "accord"/"mélodie" mini keyboards at once — the two used to literally
+/// share a hex value for `.stable`/`.home` (both `#2e7d32`) and `.contextual`/`.neutral` (both
+/// `#1565c0`), which read as "the same role" across the two keyboards despite meaning entirely
+/// different things, per explicit bug report.
 public enum MelodicRoleColors {
     public static func fill(for role: MelodicRole) -> Color {
         switch role {
-        case .stable: return Color(hex: "#2e7d32")
-        case .chordTone: return Color(hex: "#e8710a")
-        case .color: return Color(hex: "#f9d71c")
-        case .tension: return Color(hex: "#d32f2f")
-        case .contextual: return Color(hex: "#1565c0")
+        case .stable: return Color(hex: "#00897b")
+        case .chordTone: return Color(hex: "#3949ab")
+        case .color: return Color(hex: "#fdd835")
+        case .tension: return Color(hex: "#c62828")
+        case .contextual: return Color(hex: "#546e7a")
         }
     }
 
@@ -56,49 +58,6 @@ public func intervalLabel(for profile: MelodicNoteProfile) -> String {
     case .fifth: return profile.intervalFromChordRoot == 6 ? "b5" : (profile.intervalFromChordRoot == 8 ? "#5" : "5")
     case .seventh: return profile.intervalFromChordRoot == 11 ? "7" : "b7"
     case .other, nil: return "\(profile.intervalFromChordRoot)"
-    }
-}
-
-/// One note of `MelodicVocabularyAnalysis.notes`, as a tappable chip — plain SwiftUI (not
-/// `Canvas`, unlike the harmonic graphs): this is a simple linear row, so real `Button`s are both
-/// less code AND natively accessible to VoiceOver, unlike a hand-rolled hit-testing surface.
-public struct MelodicNoteChipView: View {
-    public let profile: MelodicNoteProfile
-    public let noteName: String
-    public let isSelected: Bool
-    public let onTap: () -> Void
-
-    public init(profile: MelodicNoteProfile, noteName: String, isSelected: Bool, onTap: @escaping () -> Void) {
-        self.profile = profile
-        self.noteName = noteName
-        self.isSelected = isSelected
-        self.onTap = onTap
-    }
-
-    public var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 2) {
-                Image(systemName: "diamond.fill")
-                    .font(.system(size: 8))
-                    .foregroundStyle(FunctionalRoleColors.modalCharacteristicAccent)
-                    .opacity((profile.modalIdentity >= 0.5) ? 1 : 0)
-                ZStack {
-                    Circle()
-                        .fill(MelodicRoleColors.fill(for: profile.defaultRole))
-                        .frame(width: 40, height: 40)
-                        .overlay(Circle().stroke(Color.white, lineWidth: isSelected ? 3 : 0))
-                        .overlay(
-                            Circle().stroke(FunctionalRoleColors.modalCharacteristicAccent, lineWidth: (profile.modalIdentity >= 0.5) ? 2 : 0)
-                                .padding(-3)
-                        )
-                    Text(intervalLabel(for: profile))
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(MelodicRoleColors.textColor(for: profile.defaultRole))
-                }
-                Text(noteName).font(.caption).bold()
-            }
-        }
-        .buttonStyle(.plain)
     }
 }
 
@@ -181,23 +140,36 @@ public struct MelodicResolutionsRowView: View {
 /// popover; see `TheoryLegendContent`'s own doc comment for where it lives now.
 public struct MelodicMapLegendView: View {
     public let language: AppLanguage
+    /// See `FunctionalMapLegendView.axis`'s own doc comment — same `.horizontal`/`.vertical`
+    /// choice, for the same reason (a narrow column needs one role per line).
+    public var axis: Axis
 
-    public init(language: AppLanguage) {
+    public init(language: AppLanguage, axis: Axis = .horizontal) {
         self.language = language
+        self.axis = axis
     }
 
     public var body: some View {
-        HStack(spacing: 12) {
-            ForEach(MelodicRole.allCases, id: \.self) { role in
-                HStack(spacing: 4) {
-                    Circle().fill(MelodicRoleColors.fill(for: role)).frame(width: 10, height: 10)
-                    Text(melodicRoleLabel(role, language: language)).font(.caption)
-                }
+        Group {
+            if axis == .horizontal {
+                HStack(spacing: 12) { legendRows }
+            } else {
+                VStack(alignment: .leading, spacing: 6) { legendRows }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var legendRows: some View {
+        ForEach(MelodicRole.allCases, id: \.self) { role in
             HStack(spacing: 4) {
-                Image(systemName: "diamond.fill").foregroundStyle(FunctionalRoleColors.modalCharacteristicAccent).font(.system(size: 9))
-                Text(L10n.string(.appLabelCaracteristiqueModale, language)).font(.caption)
+                Circle().fill(MelodicRoleColors.fill(for: role)).frame(width: 10, height: 10)
+                Text(melodicRoleLabel(role, language: language)).font(.caption)
             }
+        }
+        HStack(spacing: 4) {
+            Image(systemName: "diamond.fill").foregroundStyle(FunctionalRoleColors.modalCharacteristicAccent).font(.system(size: 9))
+            Text(L10n.string(.appLabelCaracteristiqueModale, language)).font(.caption)
         }
     }
 }

@@ -10,9 +10,14 @@ import Localization
 /// one place to look up either palette instead of two separate, easy-to-miss popovers.
 public struct FunctionalMapLegendView: View {
     public let language: AppLanguage
+    /// `.horizontal` (the original, still used wherever there's a full-width row to spare) or
+    /// `.vertical` (one role per line) — added so a narrow column (e.g. under the progression
+    /// preview) can show the same legend without it running off the side, per explicit request.
+    public var axis: Axis
 
-    public init(language: AppLanguage) {
+    public init(language: AppLanguage, axis: Axis = .horizontal) {
         self.language = language
+        self.axis = axis
     }
 
     private var roles: [(ModalFunctionalRoleForLegend)] {
@@ -20,19 +25,28 @@ public struct FunctionalMapLegendView: View {
     }
 
     public var body: some View {
-        HStack(spacing: 12) {
-            ForEach(roles, id: \.self) { role in
-                HStack(spacing: 4) {
-                    Circle().fill(role.color).frame(width: 10, height: 10)
-                    Text(role.label(language: language)).font(.caption)
-                }
+        Group {
+            if axis == .horizontal {
+                HStack(spacing: 12) { legendRows }
+            } else {
+                VStack(alignment: .leading, spacing: 6) { legendRows }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var legendRows: some View {
+        ForEach(roles, id: \.self) { role in
             HStack(spacing: 4) {
-                Image(systemName: "diamond.fill")
-                    .foregroundStyle(Color(hex: "#8e24aa"))
-                    .font(.system(size: 9))
-                Text(L10n.string(.appLabelCaracteristiqueModale, language)).font(.caption)
+                Circle().fill(role.color).frame(width: 10, height: 10)
+                Text(role.label(language: language)).font(.caption)
             }
+        }
+        HStack(spacing: 4) {
+            Image(systemName: "diamond.fill")
+                .foregroundStyle(Color(hex: "#8e24aa"))
+                .font(.system(size: 9))
+            Text(L10n.string(.appLabelCaracteristiqueModale, language)).font(.caption)
         }
     }
 }

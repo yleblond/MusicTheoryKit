@@ -7,14 +7,15 @@ import JamShackUI
 /// tracking which ones are currently open (`AppModel.openAuxiliaryWindows`), since SwiftUI has
 /// no built-in "is this WindowGroup open" query.
 ///
-/// `theorieLegende` is the one exception to "screen": it's a small read-only help window
-/// (`TheorieLegendWindow`, see `ModeLibraryView`'s own legend button), not a detached LIVE
+/// `contextualHelp` is the one exception to "screen": it's a small read-only help window
+/// (`ContextualHelpWindow`, showing whichever screen currently registered itself via
+/// `AppModel.setContextualHelp` — see that method's own doc comment), not a detached LIVE
 /// screen — it has no "réintégrer" placeholder counterpart and never calls
 /// `markWindowOpen`/`markWindowClosed`, since nothing needs to know it's open. Riding on this
 /// same enum/`WindowGroup(id:)` registration anyway rather than inventing a second, parallel
 /// one just for a single extra window id.
 enum AuxiliaryWindowID: String, CaseIterable {
-    case computerKeyboard, runScreen, guideLecture, microphone, sceneLayout, theorie, theorieLegende
+    case computerKeyboard, runScreen, guideLecture, microphone, sceneLayout, theorie, contextualHelp
     case theorieAccords, theorieExploration, theorieProgressions
 }
 
@@ -45,6 +46,32 @@ final class AppModel {
 
     func markWindowOpen(_ id: AuxiliaryWindowID) { openAuxiliaryWindows.insert(id) }
     func markWindowClosed(_ id: AuxiliaryWindowID) { openAuxiliaryWindows.remove(id) }
+
+    /// Whichever screen is currently active may register its own "?" help content here instead
+    /// of drawing its own per-screen help button — `ContentView`'s shared bottom bar shows ONE
+    /// generalized "?" whenever this is non-nil, opening `AuxiliaryWindowID.contextualHelp`
+    /// (macOS/visionOS) or a sheet (elsewhere) to show it. Per explicit request, to reclaim the
+    /// space every screen's own top-right "?" used to take. A content-producing CLOSURE, not a
+    /// pre-built `AnyView` — `ContextualHelpWindow`/the sheet re-invoke it on every render, so it
+    /// stays live against whatever the registering screen's own closure still reads fresh (e.g.
+    /// `session.currentLanguage`) rather than freezing a snapshot from whenever it registered.
+    /// Use `View.registerContextualHelp` rather than setting this directly.
+    private(set) var contextualHelpContent: (() -> AnyView)?
+    /// Guards `clearContextualHelp` against an outgoing screen's `false` transition clearing an
+    /// incoming screen's already-registered content when their firing order isn't guaranteed
+    /// (e.g. two screens both reacting to the same tab switch in the same view-update pass).
+    private var contextualHelpOwnerID: String?
+
+    func setContextualHelp(id: String, content: @escaping () -> some View) {
+        contextualHelpOwnerID = id
+        contextualHelpContent = { AnyView(content()) }
+    }
+
+    func clearContextualHelp(id: String) {
+        guard contextualHelpOwnerID == id else { return }
+        contextualHelpOwnerID = nil
+        contextualHelpContent = nil
+    }
 
     /// Identical body to `ContentView`'s old startup `.task { }` — moved here verbatim so
     /// behavior doesn't change, just ownership.

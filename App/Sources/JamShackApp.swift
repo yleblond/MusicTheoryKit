@@ -66,8 +66,8 @@ struct JamShackApp: App {
         .environment(appModel)
         .defaultSize(width: 1100, height: 800)
 
-        WindowGroup(id: AuxiliaryWindowID.theorieLegende.rawValue) {
-            TheorieLegendWindow()
+        WindowGroup(id: AuxiliaryWindowID.contextualHelp.rawValue) {
+            ContextualHelpWindow()
                 .preferredColorScheme(.dark)
         }
         .environment(appModel)

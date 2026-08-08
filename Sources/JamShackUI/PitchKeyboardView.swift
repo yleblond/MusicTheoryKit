@@ -49,6 +49,20 @@ public struct PitchKeyboardColorScheme: Sendable {
     }
 }
 
+/// A small labeled circle drawn above a key — see `PitchKeyboardView.noteBadges`'s own doc
+/// comment for what it's for and how it differs from the mode's own scale-degree badge.
+public struct KeyBadge: Sendable {
+    public let text: String
+    public let fillColor: Color
+    public let textColor: Color
+
+    public init(text: String, fillColor: Color, textColor: Color) {
+        self.text = text
+        self.fillColor = fillColor
+        self.textColor = textColor
+    }
+}
+
 /// One key's laid-out rectangle, shared between drawing and tap/drag hit-testing so the two
 /// can never disagree about where a key actually is. Internal (not `private`), same as
 /// `PitchKeyboardView.layout(for:)` below, purely so `PitchKeyboardViewLayoutTests` can call it
@@ -109,15 +123,28 @@ public struct PitchKeyboardView: View {
     /// no concept of). A pitch class with no entry here keeps its normal role-based fill —
     /// existing call sites are unaffected by the empty default.
     public let customFillColors: [Int: Color]
-    /// Keyed by PITCH CLASS — draws a small up/down arrow above that key (every octave), marking
+    /// Keyed by PITCH CLASS — draws a small up/down arrow BELOW that key (every octave), marking
     /// it as a resolution target the melodic-vocabulary panel already lists textually (see
-    /// `MelodicResolutionsRowView`). Empty by default; existing call sites are unaffected.
+    /// `MelodicResolutionsRowView`). Recolored purple instead of the default orange when that same
+    /// pitch class is ALSO in `modalCharacteristicPitchClasses` — rather than stacking a 2nd
+    /// indicator on the same key, the arrow itself carries both meanings, per explicit request.
+    /// Empty by default; existing call sites are unaffected.
     public let resolutionArrows: [Int: ResolutionDirection]
-    /// Keyed by PITCH CLASS — draws a small purple circle above that key (every octave), marking
+    /// Keyed by PITCH CLASS — draws a small purple circle BELOW that key (every octave), marking
     /// it as one of the current mode's own characteristic notes (`MelodicNoteProfile.modalIdentity
-    /// >= 0.5`), independent of whichever chord is currently selected. Empty by default; existing
-    /// call sites are unaffected.
+    /// >= 0.5`), independent of whichever chord is currently selected. Suppressed for any pitch
+    /// class that also has a `resolutionArrows` entry — see that property's own doc comment for
+    /// why the arrow absorbs this instead. Empty by default; existing call sites are unaffected.
     public let modalCharacteristicPitchClasses: Set<Int>
+    /// Keyed by PITCH CLASS — draws `KeyBadge.text` in a small colored circle ABOVE that key
+    /// (every octave), same slot/size/style as the mode's own scale-degree badge (see
+    /// `PitchDisplayState.degreeBadge`) but colored and labeled by the call site instead of
+    /// computed from `modeTones`/`palette` — e.g. the melodic-vocabulary keyboard's own
+    /// interval-from-chord-root labels ("1", "b3", "9"...), per explicit request. A pitch class
+    /// present in both this and `modeTones`' own degree badges shows both (unlikely in practice —
+    /// existing call sites only ever set one or the other). Empty by default; existing call sites
+    /// are unaffected.
+    public let noteBadges: [Int: KeyBadge]
 
     /// Same fallback arrays `StaticAssets.swift`'s `PITCH_CLASS_COLORS`/`_TEXT_COLORS` use
     /// before the first real palette is known — a reasonable default for any call site that
@@ -150,7 +177,8 @@ public struct PitchKeyboardView: View {
         highlightedPitches: ClosedRange<Int>? = nil,
         customFillColors: [Int: Color] = [:],
         resolutionArrows: [Int: ResolutionDirection] = [:],
-        modalCharacteristicPitchClasses: Set<Int> = []
+        modalCharacteristicPitchClasses: Set<Int> = [],
+        noteBadges: [Int: KeyBadge] = [:]
     ) {
         self.minMidi = minMidi
         self.maxMidi = maxMidi
@@ -171,6 +199,7 @@ public struct PitchKeyboardView: View {
         self.customFillColors = customFillColors
         self.resolutionArrows = resolutionArrows
         self.modalCharacteristicPitchClasses = modalCharacteristicPitchClasses
+        self.noteBadges = noteBadges
     }
 
     // White key slot (0...6) within its octave, for the 7 white pitch classes.
@@ -249,17 +278,17 @@ public struct PitchKeyboardView: View {
         return nil
     }
 
-    /// Height of the row drawn below the keys for `resolutionArrows` — kept separate from the
-    /// keys themselves (rather than drawn ON the key, the original design) so the arrows read
-    /// clearly against the page background instead of competing with whatever role/mode color
-    /// already fills that key, per explicit feedback.
-    private static let resolutionArrowRowHeight: CGFloat = 14
+    /// Height of the row drawn below the keys for `resolutionArrows`/`modalCharacteristicPitchClasses`
+    /// — kept separate from the keys themselves (rather than drawn ON the key, the original
+    /// design) so these read clearly against the page background instead of competing with
+    /// whatever role/mode color already fills that key, per explicit feedback.
+    private static let belowKeysIndicatorRowHeight: CGFloat = 14
 
     public var body: some View {
         VStack(spacing: 2) {
             keysCanvas
-            if !resolutionArrows.isEmpty {
-                resolutionArrowsRow
+            if !resolutionArrows.isEmpty || !modalCharacteristicPitchClasses.isEmpty {
+                belowKeysIndicatorRow
             }
         }
     }
@@ -324,14 +353,17 @@ public struct PitchKeyboardView: View {
                     context.draw(Text("\(badge.degree)").font(.system(size: 9, weight: .bold)).foregroundStyle(fg), at: center)
                 }
 
-                if !modalCharacteristicPitchClasses.isEmpty {
+                if !noteBadges.isEmpty {
                     for key in white + black {
                         let pitchClass = ((key.pitch % 12) + 12) % 12
-                        guard modalCharacteristicPitchClasses.contains(pitchClass) else { continue }
-                        let diameter: CGFloat = 8
+                        guard let badge = noteBadges[pitchClass] else { continue }
                         let center = CGPoint(x: key.rect.midX, y: Self.badgeTopInset / 2)
-                        let circleRect = CGRect(x: center.x - diameter / 2, y: center.y - diameter / 2, width: diameter, height: diameter)
-                        context.fill(Path(ellipseIn: circleRect), with: .color(.purple))
+                        let circleRect = CGRect(
+                            x: center.x - Self.badgeDiameter / 2, y: center.y - Self.badgeDiameter / 2,
+                            width: Self.badgeDiameter, height: Self.badgeDiameter
+                        )
+                        context.fill(Path(ellipseIn: circleRect), with: .color(badge.fillColor))
+                        context.draw(Text(badge.text).font(.system(size: 9, weight: .bold)).foregroundStyle(badge.textColor), at: center)
                     }
                 }
 
@@ -376,38 +408,47 @@ public struct PitchKeyboardView: View {
         .frame(height: height) // default 144 = +50% over 96 — explicit user request.
     }
 
-    /// One small arrow per `resolutionArrows` entry, positioned under its OWN key's x-center
+    /// One indicator per key below the keys themselves, positioned under its OWN key's x-center
     /// (via the same `layout(for:)` this view's keys use, just re-measured against this row's
     /// own width — only the x centers matter here, not the height that call is given) — a
-    /// dedicated strip below the keys rather than drawn over them, so an arrow never fights a
-    /// key's own role/mode fill color for legibility.
-    private var resolutionArrowsRow: some View {
+    /// dedicated strip below the keys rather than drawn over them, so it never fights a key's own
+    /// role/mode fill color for legibility. A key with a `resolutionArrows` entry gets its arrow;
+    /// a key with NO arrow but present in `modalCharacteristicPitchClasses` gets a plain purple
+    /// dot instead; a key with BOTH gets only the arrow, recolored purple — see
+    /// `resolutionArrows`'s own doc comment for why, per explicit request.
+    private var belowKeysIndicatorRow: some View {
         GeometryReader { proxy in
             Canvas { context, size in
                 let (white, black) = layout(for: CGSize(width: proxy.size.width, height: height))
                 for key in white + black {
                     let pitchClass = ((key.pitch % 12) + 12) % 12
-                    guard let direction = resolutionArrows[pitchClass] else { continue }
-                    let arrowSize: CGFloat = 8
+                    let isCharacteristic = modalCharacteristicPitchClasses.contains(pitchClass)
                     let centerX = key.rect.midX
                     let midY = size.height / 2
-                    var path = Path()
-                    switch direction {
-                    case .up:
-                        path.move(to: CGPoint(x: centerX, y: midY - arrowSize / 2))
-                        path.addLine(to: CGPoint(x: centerX - arrowSize / 2, y: midY + arrowSize / 2))
-                        path.addLine(to: CGPoint(x: centerX + arrowSize / 2, y: midY + arrowSize / 2))
-                    case .down:
-                        path.move(to: CGPoint(x: centerX, y: midY + arrowSize / 2))
-                        path.addLine(to: CGPoint(x: centerX - arrowSize / 2, y: midY - arrowSize / 2))
-                        path.addLine(to: CGPoint(x: centerX + arrowSize / 2, y: midY - arrowSize / 2))
+                    if let direction = resolutionArrows[pitchClass] {
+                        let arrowSize: CGFloat = 8
+                        var path = Path()
+                        switch direction {
+                        case .up:
+                            path.move(to: CGPoint(x: centerX, y: midY - arrowSize / 2))
+                            path.addLine(to: CGPoint(x: centerX - arrowSize / 2, y: midY + arrowSize / 2))
+                            path.addLine(to: CGPoint(x: centerX + arrowSize / 2, y: midY + arrowSize / 2))
+                        case .down:
+                            path.move(to: CGPoint(x: centerX, y: midY + arrowSize / 2))
+                            path.addLine(to: CGPoint(x: centerX - arrowSize / 2, y: midY - arrowSize / 2))
+                            path.addLine(to: CGPoint(x: centerX + arrowSize / 2, y: midY - arrowSize / 2))
+                        }
+                        path.closeSubpath()
+                        context.fill(path, with: .color(isCharacteristic ? .purple : .orange))
+                    } else if isCharacteristic {
+                        let diameter: CGFloat = 8
+                        let circleRect = CGRect(x: centerX - diameter / 2, y: midY - diameter / 2, width: diameter, height: diameter)
+                        context.fill(Path(ellipseIn: circleRect), with: .color(.purple))
                     }
-                    path.closeSubpath()
-                    context.fill(path, with: .color(.orange))
                 }
             }
         }
-        .frame(height: Self.resolutionArrowRowHeight)
+        .frame(height: Self.belowKeysIndicatorRowHeight)
     }
 }
 

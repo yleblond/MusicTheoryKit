@@ -407,7 +407,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHintExplorationFamilleUn
 
     // MARK: - App: Modes — melodic vocabulary panel
-    case appHeadingVocabulaireMelodique, appLabelAccordActuel
+    case appHeadingVocabulaireMelodique, appLabelAccordActuel, appLabelNotesDuMode
     case appMelodicRoleStable, appMelodicRoleChordTone, appMelodicRoleColor, appMelodicRoleTension, appMelodicRoleContextual
     case appQualifierEleve, appQualifierMoyen, appQualifierFaible
     case appFieldConsonance, appFieldCouleurMelodique, appFieldTensionMelodique, appLabelResolutionsPossibles

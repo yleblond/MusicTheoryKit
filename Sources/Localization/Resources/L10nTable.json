@@ -2972,6 +2972,17 @@
   "ru": "Громкая нота",
   "zhHans": "强音符"
  },
+ "appLabelNotesDuMode": {
+  "de": "Modus-Töne",
+  "en": "Mode notes",
+  "es": "Notas del modo",
+  "fr": "Notes du mode",
+  "it": "Note del modo",
+  "ja": "モードの音",
+  "pt": "Notas do modo",
+  "ru": "Ноты лада",
+  "zhHans": "调式音"
+ },
  "appLabelNotesJoueesRecemment": {
   "de": "Zuletzt gespielte Noten",
   "en": "Recently played notes",
@@ -4432,15 +4443,15 @@
   "zhHans": "工作室"
  },
  "appTabTheorie": {
-  "de": "Theorie",
-  "en": "Theory",
-  "es": "Teoría",
-  "fr": "Théorie",
-  "it": "Teoria",
-  "ja": "音楽理論",
-  "pt": "Teoria",
-  "ru": "Теория",
-  "zhHans": "乐理"
+  "de": "Music Lab",
+  "en": "Music Lab",
+  "es": "Music Lab",
+  "fr": "Music Lab",
+  "it": "Music Lab",
+  "ja": "Music Lab",
+  "pt": "Music Lab",
+  "ru": "Music Lab",
+  "zhHans": "Music Lab"
  },
  "appToggleActiverSpectrometre": {
   "de": "Spektrometer aktivieren",

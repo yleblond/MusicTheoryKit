@@ -17,7 +17,7 @@ struct ContentView: View {
         var systemImage: String {
             switch self {
             case .studio: return "pianokeys"
-            case .theorie: return "text.book.closed"
+            case .theorie: return "flask.fill"
             case .settings: return "gearshape"
             }
         }
@@ -158,6 +158,10 @@ struct ContentView: View {
     @State private var selectedStudioTab: StudioTab = .scene
     @State private var selectedTheorieTab: TheorieTab = .modes
     @State private var selectedSettingsTab: SettingsTab = .sons
+    /// iOS/iPadOS-only fallback for the generalized contextual-help button below — no
+    /// independent-window equivalent there, same convention `ModeLibraryView`'s own former
+    /// legend sheet already used.
+    @State private var showsContextualHelpSheet = false
 
     var body: some View {
         SessionGatedView { session, bridge in
@@ -204,7 +208,7 @@ struct ContentView: View {
                                     ProgressionTabContent(session: session)
                                 }
                                 Tab(TheorieTab.exploration.label(session.currentLanguage), systemImage: TheorieTab.exploration.systemImage, value: TheorieTab.exploration) {
-                                    ExplorationTabContent(session: session)
+                                    ExplorationTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .exploration)
                                 }
                             }
                         case .settings:
@@ -350,6 +354,13 @@ struct ContentView: View {
                             .labelsHidden()
                             .frame(maxWidth: 160)
                         }
+                        // Generalized "?" — whichever screen is currently active (per its own
+                        // `.registerContextualHelp`), regardless of `mode`, per explicit request
+                        // to reclaim the space every screen's own top-right "?" used to take.
+                        // Hidden entirely when nothing registered any (most screens today).
+                        if appModel.contextualHelpContent != nil {
+                            contextualHelpButton(session: session)
+                        }
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 8)
@@ -362,8 +373,42 @@ struct ContentView: View {
                     onNoteOff: { pitch in session.releaseKey(pitch: pitch) },
                     onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) }
                 )
+                #if !os(macOS) && !os(visionOS)
+                // No independent-window equivalent on iOS/iPadOS — a dismissible sheet instead,
+                // same convention `ModeLibraryView`'s own former legend sheet already used.
+                .sheet(isPresented: $showsContextualHelpSheet) {
+                    NavigationStack {
+                        ScrollView {
+                            if let content = appModel.contextualHelpContent { content().padding() }
+                        }
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button(L10n.string(.appButtonFermer, session.currentLanguage)) { showsContextualHelpSheet = false }
+                            }
+                        }
+                    }
+                }
+                #endif
         }
     }
+
+    /// The generalized contextual-help button — opens `AuxiliaryWindowID.contextualHelp`
+    /// (macOS/visionOS) or `showsContextualHelpSheet` (elsewhere) to show whichever screen is
+    /// currently active's own registered help (see `View.registerContextualHelp`). Only ever
+    /// shown by its own call site when `appModel.contextualHelpContent != nil`.
+    private func contextualHelpButton(session: ImprovSession) -> some View {
+        Button {
+            #if os(macOS) || os(visionOS)
+            openWindow(id: AuxiliaryWindowID.contextualHelp.rawValue)
+            #else
+            showsContextualHelpSheet = true
+            #endif
+        } label: {
+            Image(systemName: "questionmark.circle")
+        }
+        .buttonStyle(.plain)
+    }
+
     /// A dumb `Picker` over `session.theoryLiveInputSources`, same "`Text(...).tag(TrackID?...)`"
     /// shape `TestModeColumn`'s own test-source picker already uses — all the arm/disarm side
     /// effects (e.g. starting the microphone) live in `ImprovSession.setTheoryLiveInputSource`,
