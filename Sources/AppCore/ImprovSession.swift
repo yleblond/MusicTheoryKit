@@ -2797,6 +2797,13 @@ public final class ImprovSession: @unchecked Sendable {
             modelContext.insert(TheoryAuditionSoundSettingRecord(soundID))
         }
         try modelContext.save()
+        // The live-input source (if any) is already sounding through this same instrument (see
+        // `setTheoryLiveInputSource`) — re-applied immediately so changing the sound picker takes
+        // effect on it right away, not only the next time the source is re-picked.
+        if let id = theoryLiveInputSourceID, id != .microphone, let sound = theoryAuditionSound() {
+            try? setInstrument(named: sound.path, for: id, preset: sound.preset)
+            try? setSoundEnabled(true, for: id)
+        }
     }
 
     /// The actual `FavoriteSound` to use right now — whichever `favoriteSounds` entry matches
@@ -2806,6 +2813,70 @@ public final class ImprovSession: @unchecked Sendable {
     /// step, even if the user never opens Settings > Théorie at all.
     public func theoryAuditionSound() -> FavoriteSound? {
         favoriteSounds.first { $0.id == theoryAuditionSoundID } ?? favoriteSounds.first
+    }
+
+    /// Which single live track the Exploration screen currently reacts to — playing a note/chord
+    /// that matches the mode's own melodic note or one of its diatonic chords selects it exactly
+    /// as if it had been tapped. Purely a UI choice, never persisted (resets to `nil` each
+    /// launch) — Théorie's own restricted analog of Studio's "several tracks armed at once,"
+    /// deliberately limited to exactly one source at a time, per explicit request.
+    public private(set) var theoryLiveInputSourceID: TrackID?
+
+    /// Every track kind sensible as Exploration's own live-match source — the same kinds
+    /// `SoundTestModeController.testableSources` offers plus the microphone (excluded there only
+    /// because that picker is specifically about SOUND, which the microphone can never have).
+    public var theoryLiveInputSources: [TrackInfo] {
+        tracks.filter { track in
+            switch track.id {
+            case .computerKeyboard, .midiMerged, .midiSource, .microphone: return true
+            default: return false
+            }
+        }
+    }
+
+    /// Captured just before `setTheoryLiveInputSource` reassigns a track's instrument to the
+    /// current Théorie sound (see that function's own doc comment for why) — restored the moment
+    /// a different source (or `nil`) is picked, so arming e.g. the computer keyboard here never
+    /// permanently overwrites whatever instrument its Studio Scene role had already given it.
+    private var theoryLiveInputSourceOriginalInstrument: (id: TrackID, name: String?, preset: SoundFontPresetIdentity?, soundEnabled: Bool)?
+
+    /// Picks (or clears, via `nil`) Exploration's live-match source. The microphone is the only
+    /// one of `theoryLiveInputSources` that isn't already listening by default (computer
+    /// keyboard/MIDI are auto-started at launch) — so switching TO it arms it here, and switching
+    /// AWAY from it (including to `nil`) stops it again, rather than leaving it recording in the
+    /// background once the user has moved on to a different source or left this screen.
+    ///
+    /// Also gives the newly-picked track (any kind but the microphone, which can never have
+    /// sound) the current Théorie audition sound and turns its own sampler on — without this,
+    /// playing on e.g. the computer keyboard here was silent unless that same track happened to
+    /// already be wired to a Studio Scene role with its own instrument, which nothing about this
+    /// screen requires or even mentions. `theoryLiveInputSourceOriginalInstrument` remembers
+    /// whatever that track's instrument/sound-enabled state was before, so leaving this source
+    /// puts it back exactly as Studio had left it.
+    public func setTheoryLiveInputSource(_ id: TrackID?) {
+        if let previous = theoryLiveInputSourceOriginalInstrument {
+            if let name = previous.name {
+                try? setInstrument(named: name, for: previous.id, preset: previous.preset)
+            }
+            try? setSoundEnabled(previous.soundEnabled, for: previous.id)
+            theoryLiveInputSourceOriginalInstrument = nil
+        }
+        if theoryLiveInputSourceID == .microphone, id != .microphone {
+            stopTrack(.microphone)
+        }
+        theoryLiveInputSourceID = id
+        guard let id else { return }
+        if id == .microphone {
+            try? startTrack(.microphone)
+            return
+        }
+        if let index = tracks.firstIndex(where: { $0.id == id }) {
+            theoryLiveInputSourceOriginalInstrument = (id, tracks[index].instrumentName, tracks[index].instrumentPreset, tracks[index].soundEnabled)
+        }
+        if let sound = theoryAuditionSound() {
+            try? setInstrument(named: sound.path, for: id, preset: sound.preset)
+        }
+        try? setSoundEnabled(true, for: id)
     }
 
     // MARK: - Chord progression templates (roman-numeral libraries, see `RomanNumeralChord`)

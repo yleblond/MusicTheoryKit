@@ -109,6 +109,15 @@ public struct PitchKeyboardView: View {
     /// no concept of). A pitch class with no entry here keeps its normal role-based fill —
     /// existing call sites are unaffected by the empty default.
     public let customFillColors: [Int: Color]
+    /// Keyed by PITCH CLASS — draws a small up/down arrow above that key (every octave), marking
+    /// it as a resolution target the melodic-vocabulary panel already lists textually (see
+    /// `MelodicResolutionsRowView`). Empty by default; existing call sites are unaffected.
+    public let resolutionArrows: [Int: ResolutionDirection]
+    /// Keyed by PITCH CLASS — draws a small purple circle above that key (every octave), marking
+    /// it as one of the current mode's own characteristic notes (`MelodicNoteProfile.modalIdentity
+    /// >= 0.5`), independent of whichever chord is currently selected. Empty by default; existing
+    /// call sites are unaffected.
+    public let modalCharacteristicPitchClasses: Set<Int>
 
     /// Same fallback arrays `StaticAssets.swift`'s `PITCH_CLASS_COLORS`/`_TEXT_COLORS` use
     /// before the first real palette is known — a reasonable default for any call site that
@@ -139,7 +148,9 @@ public struct PitchKeyboardView: View {
         height: CGFloat = 144,
         keyLabels: [Int: String] = [:],
         highlightedPitches: ClosedRange<Int>? = nil,
-        customFillColors: [Int: Color] = [:]
+        customFillColors: [Int: Color] = [:],
+        resolutionArrows: [Int: ResolutionDirection] = [:],
+        modalCharacteristicPitchClasses: Set<Int> = []
     ) {
         self.minMidi = minMidi
         self.maxMidi = maxMidi
@@ -158,6 +169,8 @@ public struct PitchKeyboardView: View {
         self.keyLabels = keyLabels
         self.highlightedPitches = highlightedPitches
         self.customFillColors = customFillColors
+        self.resolutionArrows = resolutionArrows
+        self.modalCharacteristicPitchClasses = modalCharacteristicPitchClasses
     }
 
     // White key slot (0...6) within its octave, for the 7 white pitch classes.
@@ -236,7 +249,22 @@ public struct PitchKeyboardView: View {
         return nil
     }
 
+    /// Height of the row drawn below the keys for `resolutionArrows` — kept separate from the
+    /// keys themselves (rather than drawn ON the key, the original design) so the arrows read
+    /// clearly against the page background instead of competing with whatever role/mode color
+    /// already fills that key, per explicit feedback.
+    private static let resolutionArrowRowHeight: CGFloat = 14
+
     public var body: some View {
+        VStack(spacing: 2) {
+            keysCanvas
+            if !resolutionArrows.isEmpty {
+                resolutionArrowsRow
+            }
+        }
+    }
+
+    private var keysCanvas: some View {
         GeometryReader { proxy in
             Canvas { context, size in
                 let (white, black) = layout(for: size)
@@ -296,6 +324,17 @@ public struct PitchKeyboardView: View {
                     context.draw(Text("\(badge.degree)").font(.system(size: 9, weight: .bold)).foregroundStyle(fg), at: center)
                 }
 
+                if !modalCharacteristicPitchClasses.isEmpty {
+                    for key in white + black {
+                        let pitchClass = ((key.pitch % 12) + 12) % 12
+                        guard modalCharacteristicPitchClasses.contains(pitchClass) else { continue }
+                        let diameter: CGFloat = 8
+                        let center = CGPoint(x: key.rect.midX, y: Self.badgeTopInset / 2)
+                        let circleRect = CGRect(x: center.x - diameter / 2, y: center.y - diameter / 2, width: diameter, height: diameter)
+                        context.fill(Path(ellipseIn: circleRect), with: .color(.purple))
+                    }
+                }
+
                 if !keyLabels.isEmpty {
                     for key in white + black {
                         guard let label = keyLabels[key.pitch] else { continue }
@@ -335,6 +374,40 @@ public struct PitchKeyboardView: View {
             )
         }
         .frame(height: height) // default 144 = +50% over 96 — explicit user request.
+    }
+
+    /// One small arrow per `resolutionArrows` entry, positioned under its OWN key's x-center
+    /// (via the same `layout(for:)` this view's keys use, just re-measured against this row's
+    /// own width — only the x centers matter here, not the height that call is given) — a
+    /// dedicated strip below the keys rather than drawn over them, so an arrow never fights a
+    /// key's own role/mode fill color for legibility.
+    private var resolutionArrowsRow: some View {
+        GeometryReader { proxy in
+            Canvas { context, size in
+                let (white, black) = layout(for: CGSize(width: proxy.size.width, height: height))
+                for key in white + black {
+                    let pitchClass = ((key.pitch % 12) + 12) % 12
+                    guard let direction = resolutionArrows[pitchClass] else { continue }
+                    let arrowSize: CGFloat = 8
+                    let centerX = key.rect.midX
+                    let midY = size.height / 2
+                    var path = Path()
+                    switch direction {
+                    case .up:
+                        path.move(to: CGPoint(x: centerX, y: midY - arrowSize / 2))
+                        path.addLine(to: CGPoint(x: centerX - arrowSize / 2, y: midY + arrowSize / 2))
+                        path.addLine(to: CGPoint(x: centerX + arrowSize / 2, y: midY + arrowSize / 2))
+                    case .down:
+                        path.move(to: CGPoint(x: centerX, y: midY + arrowSize / 2))
+                        path.addLine(to: CGPoint(x: centerX - arrowSize / 2, y: midY - arrowSize / 2))
+                        path.addLine(to: CGPoint(x: centerX + arrowSize / 2, y: midY - arrowSize / 2))
+                    }
+                    path.closeSubpath()
+                    context.fill(path, with: .color(.orange))
+                }
+            }
+        }
+        .frame(height: Self.resolutionArrowRowHeight)
     }
 }
 

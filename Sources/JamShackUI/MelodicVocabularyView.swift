@@ -109,13 +109,11 @@ public struct MelodicNoteDetailView: View {
     public let profile: MelodicNoteProfile
     public let noteName: String
     public let language: AppLanguage
-    public let resolutionNoteName: (PitchClass) -> String
 
-    public init(profile: MelodicNoteProfile, noteName: String, language: AppLanguage, resolutionNoteName: @escaping (PitchClass) -> String) {
+    public init(profile: MelodicNoteProfile, noteName: String, language: AppLanguage) {
         self.profile = profile
         self.noteName = noteName
         self.language = language
-        self.resolutionNoteName = resolutionNoteName
     }
 
     public var body: some View {
@@ -138,23 +136,42 @@ public struct MelodicNoteDetailView: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
-            if !profile.resolutions.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L10n.string(.appLabelResolutionsPossibles, language)).font(.caption).bold()
-                    ForEach(Array(profile.resolutions.enumerated()), id: \.offset) { _, resolution in
-                        HStack(spacing: 4) {
-                            Image(systemName: resolution.direction == .up ? "arrow.up" : "arrow.down")
-                            Text(resolutionNoteName(resolution.targetNote))
-                        }
-                        .font(.caption)
-                    }
-                }
-            }
         }
     }
 
     private func labeledQualifier(_ key: L10nKey, value: Double) -> some View {
         Text("\(L10n.string(key, language)) : \(qualifierLabel(value, language: language))")
+    }
+}
+
+/// The resolution-candidates list, extracted out of `MelodicNoteDetailView` so it can sit
+/// elsewhere in a caller's own layout (e.g. after the "recently played" history, per explicit
+/// request) — laid out in one horizontal row (a `VStack` before) since there are never more than
+/// a couple of candidates and a row reads faster than a stack of one-per-line entries.
+public struct MelodicResolutionsRowView: View {
+    public let profile: MelodicNoteProfile
+    public let language: AppLanguage
+    public let resolutionNoteName: (PitchClass) -> String
+
+    public init(profile: MelodicNoteProfile, language: AppLanguage, resolutionNoteName: @escaping (PitchClass) -> String) {
+        self.profile = profile
+        self.language = language
+        self.resolutionNoteName = resolutionNoteName
+    }
+
+    public var body: some View {
+        if !profile.resolutions.isEmpty {
+            HStack(spacing: 12) {
+                Text(L10n.string(.appLabelResolutionsPossibles, language)).font(.caption).bold()
+                ForEach(Array(profile.resolutions.enumerated()), id: \.offset) { _, resolution in
+                    HStack(spacing: 4) {
+                        Image(systemName: resolution.direction == .up ? "arrow.up" : "arrow.down")
+                        Text(resolutionNoteName(resolution.targetNote))
+                    }
+                    .font(.caption)
+                }
+            }
+        }
     }
 }
 

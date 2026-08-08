@@ -702,23 +702,24 @@ struct ModeLibraryView: View {
         VStack(alignment: .leading, spacing: 16) {
             FunctionalMapLegendView(language: session.currentLanguage)
 
-            // Row 1: the two harmonic graphs + this mode's known progressions, side by side.
+            // Row 1: the two harmonic graphs + the functional-role-source toggle, side by side.
             if usesTwoColumns {
                 HStack(alignment: .top, spacing: 20) {
                     orbitGraphBlock
                     attractionGraphBlock
-                    progressionTypeBlock
+                    roleSourceBlock
                 }
             } else {
                 VStack(spacing: 20) {
                     orbitGraphBlock
                     attractionGraphBlock
-                    progressionTypeBlock
+                    roleSourceBlock
                 }
             }
             selectedFunctionalChordDetail
-            // Row 2: only appears once a progression is actually picked in row 1.
-            selectedProgressionChordListSection
+            // Row 2: the progression picker (a dropdown, not a list — per explicit request) next
+            // to whichever progression it currently has picked, previewed as a chip row.
+            progressionPreviewRow
 
             Divider()
             MelodicMapLegendView(language: session.currentLanguage)
@@ -736,56 +737,61 @@ struct ModeLibraryView: View {
                 }
             }
         }
+        .onChange(of: liveInputHeldPitchClasses) { _, newValue in
+            reactToLiveInputMatch(heldPitchClasses: newValue)
+        }
     }
 
     /// This mode's own known progressions (deduplicated by name, same rule
-    /// `ProgressionLibraryView.uniqueTemplates` already uses) — tapping one only PREVIEWS it in
-    /// `selectedProgressionChordListSection` below; there is no editing here, per explicit
+    /// `ProgressionLibraryView.uniqueTemplates` already uses) — picking one in `progressionPicker`
+    /// only PREVIEWS it in `progressionPreviewRow` below; there is no editing here, per explicit
     /// request (a progression BUILDER belongs to Composition/Guide, not Exploration).
     private var uniqueProgressionTemplates: [ChordProgressionTemplate] {
         var seen = Set<String>()
         return session.chordProgressionTemplates.filter { seen.insert($0.name).inserted }
     }
 
-    /// The role-source picker (unrelated to which progression is previewed below it — see
-    /// `FunctionalRoleSource`'s own doc comment) sits at the top of this same column purely to
-    /// save space elsewhere, not because the two are connected; the `Divider` keeps that
-    /// distinction visible rather than implying "this picker configures the progression list."
-    private var progressionTypeBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(L10n.string(.appFieldSourceFonctionnelle, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-                Picker("", selection: $functionalRoleSource) {
-                    Text(L10n.string(.appOptionFormuleCalculee, session.currentLanguage)).tag(FunctionalRoleSource.computed)
-                    Text(L10n.string(.appOptionTableStandard, session.currentLanguage)).tag(FunctionalRoleSource.standardTable)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+    /// The role-source toggle (unrelated to which progression is previewed in `progressionPreviewRow`
+    /// below — see `FunctionalRoleSource`'s own doc comment) — its own small block purely to save
+    /// space elsewhere, not because the two are connected.
+    private var roleSourceBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(L10n.string(.appFieldSourceFonctionnelle, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+            Picker("", selection: $functionalRoleSource) {
+                Text(L10n.string(.appOptionFormuleCalculee, session.currentLanguage)).tag(FunctionalRoleSource.computed)
+                Text(L10n.string(.appOptionTableStandard, session.currentLanguage)).tag(FunctionalRoleSource.standardTable)
             }
-            Divider()
-            Text(L10n.string(.appHeadingProgressionsTypeDuMode, session.currentLanguage)).font(.headline)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(uniqueProgressionTemplates, id: \.name) { template in
-                        Button {
-                            selectedProgressionName = template.name
-                            selectedProgressionChordIndex = nil
-                        } label: {
-                            Text(template.name)
-                                .foregroundStyle(template.name == selectedProgressionName ? Color.accentColor : .primary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .frame(maxHeight: 200)
+            .pickerStyle(.segmented)
+            .labelsHidden()
         }
         .frame(maxWidth: 260, alignment: .leading)
     }
 
-    /// Which chip of `selectedProgressionChordListSection` was tapped last — purely a highlight,
+    /// A dropdown (not a scrollable list, per explicit request) over this mode's own known
+    /// progressions, plus an explicit "Aucune" entry so a previewed progression can be
+    /// deselected again (per explicit request) — `nil` binds to that same entry.
+    private var progressionPicker: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(L10n.string(.appHeadingProgressionsTypeDuMode, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+            Picker("", selection: Binding(
+                get: { selectedProgressionName },
+                set: { newValue in
+                    selectedProgressionName = newValue
+                    selectedProgressionChordIndex = nil
+                }
+            )) {
+                Text(L10n.string(.appOptionAucuneFem, session.currentLanguage)).tag(String?.none)
+                ForEach(uniqueProgressionTemplates, id: \.name) { template in
+                    Text(template.name).tag(String?.some(template.name))
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+        }
+        .frame(maxWidth: 220, alignment: .leading)
+    }
+
+    /// Which chip of `progressionPreviewRow` was tapped last — purely a highlight,
     /// same "tap to scrub/audition" convention `ProgressionLibraryView.chordListSection` already
     /// uses for its own chip row (this is intentionally the same interaction, just recolored by
     /// harmonic role instead of a flat accent color — see `progressionChipFill(for:)`).
@@ -808,40 +814,49 @@ struct ModeLibraryView: View {
         matchingFunctionalChord(for: reference).map { FunctionalRoleColors.textColor(for: $0.role) } ?? .primary
     }
 
-    /// Same "tap to scrub/hear, current one highlighted" interaction as
-    /// `ProgressionLibraryView.chordListSection` — recolored per chord by its harmonic role in
-    /// THIS mode's own orbit/attraction graphs (see `progressionChipFill(for:)`), so a
-    /// progression's own functional shape (e.g. "away, away, tension, home") reads at a glance,
-    /// per explicit request.
-    @ViewBuilder
-    private var selectedProgressionChordListSection: some View {
-        if let name = selectedProgressionName, let template = uniqueProgressionTemplates.first(where: { $0.name == name }) {
-            let references = ChordProgressionResolver.resolveRich(template, in: mode)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(template.name).font(.subheadline).bold()
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(Array(references.enumerated()), id: \.offset) { index, reference in
-                            Button {
-                                selectedProgressionChordIndex = index
-                                playSingleChord(reference)
-                            } label: {
-                                Text(chordDisplayName(reference))
-                                    .fontWeight(index == selectedProgressionChordIndex ? .bold : .regular)
-                                    .padding(.horizontal, 10).padding(.vertical, 6)
-                                    .background(progressionChipFill(for: reference), in: RoundedRectangle(cornerRadius: 8))
-                                    .foregroundStyle(progressionChipTextColor(for: reference))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(.white, lineWidth: index == selectedProgressionChordIndex ? 2 : 0)
-                                    )
+    /// The progression dropdown (`progressionPicker`) next to its own preview — same "tap to
+    /// scrub/hear, current one highlighted" interaction as `ProgressionLibraryView.chordListSection`,
+    /// recolored per chord by its harmonic role in THIS mode's own orbit/attraction graphs (see
+    /// `progressionChipFill(for:)`), so a progression's own functional shape (e.g. "away, away,
+    /// tension, home") reads at a glance. Tapping a chip ALSO updates `selectedChordIndex` when
+    /// that chord matches one of this mode's own diatonic degrees (see `matchingFunctionalChord`),
+    /// so the functional-detail/melodic-vocabulary panels below react exactly as they already do
+    /// for a tap in the orbit/attraction graphs, instead of staying stuck on whatever was selected
+    /// before — per explicit bug report.
+    private var progressionPreviewRow: some View {
+        HStack(alignment: .top, spacing: 16) {
+            progressionPicker
+            if let name = selectedProgressionName, let template = uniqueProgressionTemplates.first(where: { $0.name == name }) {
+                let references = ChordProgressionResolver.resolveRich(template, in: mode)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(template.name).font(.subheadline).bold()
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(Array(references.enumerated()), id: \.offset) { index, reference in
+                                Button {
+                                    selectedProgressionChordIndex = index
+                                    if let matched = matchingFunctionalChord(for: reference) {
+                                        selectedChordIndex = matched.degree - 1
+                                    }
+                                    playSingleChord(reference)
+                                } label: {
+                                    Text(chordDisplayName(reference))
+                                        .fontWeight(index == selectedProgressionChordIndex ? .bold : .regular)
+                                        .padding(.horizontal, 10).padding(.vertical, 6)
+                                        .background(progressionChipFill(for: reference), in: RoundedRectangle(cornerRadius: 8))
+                                        .foregroundStyle(progressionChipTextColor(for: reference))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .stroke(.white, lineWidth: index == selectedProgressionChordIndex ? 2 : 0)
+                                        )
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
+                .font(.callout)
             }
-            .font(.callout)
         }
     }
 
@@ -908,12 +923,16 @@ struct ModeLibraryView: View {
 
     /// Plays the tapped note alone (short, like `playSingleNote`) and remembers it in
     /// `recentPlayedNotes` — the only input this panel's "recently played" history needs.
-    private func playMelodicNote(_ pitchClass: PitchClass) {
+    /// `atPitch`, when given, is the EXACT key that was tapped on the actual keyboard (so a C an
+    /// octave up sounds an octave up, not always the same canonical octave near middle C — see
+    /// this parameter's own call site for the bug that motivated it); left `nil` for taps that
+    /// only ever carry a pitch class to begin with (the note-chip row has no octave of its own).
+    private func playMelodicNote(_ pitchClass: PitchClass, atPitch pitch: Int? = nil) {
         selectedMelodicNote = pitchClass
         guard let sound = session.theoryAuditionSound() else { return }
         try? session.loadTheoryLibraryAuditionSample(sound)
         playbackGeneration += 1
-        let pitches = PitchSequencing.ascendingPitches(forPitchClasses: [pitchClass.value], startingAbove: 47)
+        let pitches = pitch.map { [$0] } ?? PitchSequencing.ascendingPitches(forPitchClasses: [pitchClass.value], startingAbove: 47)
         session.playTheoryLibraryAudition([ImprovSession.TheoryAuditionNote(pitches: pitches, startSeconds: 0, durationSeconds: 0.55)])
         recentPlayedNotes.append(pitchClass)
         if recentPlayedNotes.count > 4 { recentPlayedNotes.removeFirst() }
@@ -928,7 +947,7 @@ struct ModeLibraryView: View {
             PitchKeyboardView(
                 modeTones: mode.pitchClasses.map(\.value),
                 showModeColoring: true,
-                onNoteOn: { pitch in playMelodicNote(PitchClass(pitch)) },
+                onNoteOn: { pitch in playMelodicNote(PitchClass(pitch), atPitch: pitch) },
                 height: Self.melodicKeyboardSize.height,
                 keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: modeTonePitchesInKeyboardRange, style: session.notationStyle)
             )
@@ -950,18 +969,27 @@ struct ModeLibraryView: View {
             }
             if let note = effectiveSelectedMelodicNote, let profile = analysis.notes.first(where: { $0.note == note }) {
                 MelodicNoteDetailView(
-                    profile: profile, noteName: session.notationStyle.rootName(note, preferFlats: false), language: session.currentLanguage,
+                    profile: profile, noteName: session.notationStyle.rootName(note, preferFlats: false), language: session.currentLanguage
+                )
+            }
+            // Order per explicit request: notes played recently, chords explored recently, THEN
+            // the current note's own possible resolutions (moved out of `MelodicNoteDetailView`
+            // above, see `MelodicResolutionsRowView`'s own doc comment).
+            recentPlayedNotesRow
+            recentChordDegreesRow
+            if let note = effectiveSelectedMelodicNote, let profile = analysis.notes.first(where: { $0.note == note }) {
+                MelodicResolutionsRowView(
+                    profile: profile, language: session.currentLanguage,
                     resolutionNoteName: { session.notationStyle.rootName($0, preferFlats: false) }
                 )
             }
-            recentHistorySection
         }
     }
 
     /// The one shared size for all 3 keyboards in row 3 — `height` alone wasn't enough to make
     /// them look the same (see `melodicLeftColumn`'s own comment on why), so this is the single
     /// source both columns pull from for `.frame(width:height:)`, not just `height:`.
-    private static let melodicKeyboardSize = CGSize(width: 390, height: 144)
+    private static let melodicKeyboardSize = CGSize(width: 390, height: 115) // -20% off the shared 144 default, per explicit request.
 
     /// Right half of row 3 — two small reference keyboards stacked: the mode's own notes
     /// colored by melodic role against the current chord (top), and the current chord's own
@@ -974,8 +1002,12 @@ struct ModeLibraryView: View {
         return VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(L10n.string(.appHeadingVocabulaireMelodique, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-                PitchKeyboardView(height: Self.melodicKeyboardSize.height, customFillColors: melodicRoleFillColors(for: analysis))
-                    .frame(width: Self.melodicKeyboardSize.width)
+                PitchKeyboardView(
+                    height: Self.melodicKeyboardSize.height, customFillColors: melodicRoleFillColors(for: analysis),
+                    resolutionArrows: resolutionArrowPitchClasses(for: analysis),
+                    modalCharacteristicPitchClasses: modalCharacteristicPitchClasses(for: analysis)
+                )
+                .frame(width: Self.melodicKeyboardSize.width)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(L10n.string(.appLabelAccordActuel, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
@@ -994,31 +1026,87 @@ struct ModeLibraryView: View {
         Dictionary(uniqueKeysWithValues: analysis.notes.map { ($0.note.value, MelodicRoleColors.fill(for: $0.defaultRole)) })
     }
 
+    /// Every resolution TARGET across all of `analysis.notes`' own candidates, keyed by pitch
+    /// class — feeds `PitchKeyboardView.resolutionArrows` so the vocabulary keyboard marks each
+    /// candidate key directly, same information as `MelodicResolutionsRowView`'s list, per
+    /// explicit request.
+    private func resolutionArrowPitchClasses(for analysis: MelodicVocabularyAnalysis) -> [Int: ResolutionDirection] {
+        var result: [Int: ResolutionDirection] = [:]
+        for profile in analysis.notes {
+            for resolution in profile.resolutions {
+                result[resolution.targetNote.value] = resolution.direction
+            }
+        }
+        return result
+    }
+
+    /// This mode's own characteristic notes (independent of the current chord) — feeds
+    /// `PitchKeyboardView.modalCharacteristicPitchClasses` for the purple on-key marker, per
+    /// explicit request (same threshold `MelodicNoteChipView`'s own diamond badge already uses).
+    private func modalCharacteristicPitchClasses(for analysis: MelodicVocabularyAnalysis) -> Set<Int> {
+        Set(analysis.notes.filter { $0.modalIdentity >= 0.5 }.map { $0.note.value })
+    }
+
     @ViewBuilder
-    private var recentHistorySection: some View {
-        if !recentChordDegrees.isEmpty || !recentPlayedNotes.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                if !recentChordDegrees.isEmpty {
-                    HStack(spacing: 6) {
-                        Text(L10n.string(.appLabelAccordsExploresRecemment, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-                        ForEach(Array(recentChordDegrees.enumerated()), id: \.offset) { index, degree in
-                            if let chord = diatonicChordReferences.indices.contains(degree - 1) ? diatonicChordReferences[degree - 1].resolve() : nil {
-                                Text(session.notationStyle.displayName(for: chord))
-                                    .font(.caption).bold(index == recentChordDegrees.count - 1)
-                            }
-                        }
-                    }
+    private var recentPlayedNotesRow: some View {
+        if !recentPlayedNotes.isEmpty {
+            HStack(spacing: 6) {
+                Text(L10n.string(.appLabelNotesJoueesRecemment, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+                ForEach(Array(recentPlayedNotes.enumerated()), id: \.offset) { index, pitchClass in
+                    Text(session.notationStyle.rootName(pitchClass, preferFlats: false))
+                        .font(.caption).bold(index == recentPlayedNotes.count - 1)
                 }
-                if !recentPlayedNotes.isEmpty {
-                    HStack(spacing: 6) {
-                        Text(L10n.string(.appLabelNotesJoueesRecemment, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-                        ForEach(Array(recentPlayedNotes.enumerated()), id: \.offset) { index, pitchClass in
-                            Text(session.notationStyle.rootName(pitchClass, preferFlats: false))
-                                .font(.caption).bold(index == recentPlayedNotes.count - 1)
-                        }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var recentChordDegreesRow: some View {
+        if !recentChordDegrees.isEmpty {
+            HStack(spacing: 6) {
+                Text(L10n.string(.appLabelAccordsExploresRecemment, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+                ForEach(Array(recentChordDegrees.enumerated()), id: \.offset) { index, degree in
+                    if let chord = diatonicChordReferences.indices.contains(degree - 1) ? diatonicChordReferences[degree - 1].resolve() : nil {
+                        Text(session.notationStyle.displayName(for: chord))
+                            .font(.caption).bold(index == recentChordDegrees.count - 1)
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - Live-input matching
+
+    /// The pitch classes currently held on `session.theoryLiveInputSourceID`'s own track, if one
+    /// is picked — the single input this whole live-matching feature reacts to.
+    private var liveInputHeldPitchClasses: Set<Int> {
+        guard let sourceID = session.theoryLiveInputSourceID,
+              let heldPitches = session.tracks.first(where: { $0.id == sourceID })?.heldPitches else { return [] }
+        return Set(heldPitches.map { ((($0 % 12) + 12) % 12) })
+    }
+
+    /// Reacts to whatever is currently held on the chosen live-input track exactly as if the
+    /// matching thing had been tapped directly — a full triad matching one of this mode's own
+    /// diatonic chords selects that chord (and, if a progression is previewed and contains it,
+    /// scrubs to it there too); a single held note selects that melodic note — per explicit
+    /// request ("un grand saut technique"). Deliberately does NOT call `playSingleChord`/
+    /// `playMelodicNote`'s own audition playback: the live source is already sounding through its
+    /// own track, so re-triggering the audition sample here would double the audio.
+    private func reactToLiveInputMatch(heldPitchClasses: Set<Int>) {
+        guard !heldPitchClasses.isEmpty else { return }
+        if heldPitchClasses.count >= 2, let matched = functionalMap.chords.first(where: { chordFunction in
+            guard let chord = chordFunction.reference.resolve() else { return false }
+            return Set(chord.pitchClasses.map(\.value)) == heldPitchClasses
+        }) {
+            selectedChordIndex = matched.degree - 1
+            if let name = selectedProgressionName, let template = uniqueProgressionTemplates.first(where: { $0.name == name }) {
+                let references = ChordProgressionResolver.resolveRich(template, in: mode)
+                if let index = references.firstIndex(where: { matchingFunctionalChord(for: $0)?.degree == matched.degree }) {
+                    selectedProgressionChordIndex = index
+                }
+            }
+        } else if heldPitchClasses.count == 1, let pitchClass = heldPitchClasses.first {
+            selectedMelodicNote = PitchClass(pitchClass)
         }
     }
 

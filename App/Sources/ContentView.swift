@@ -329,6 +329,27 @@ struct ContentView: View {
                             #endif
                         }
                         Spacer()
+                        // Every Théorie tab (Accords/Modes/Progressions/Exploration alike, per
+                        // explicit request): the single live-input source (see
+                        // `ImprovSession.theoryLiveInputSourceID`'s own doc comment for why only
+                        // one, unlike Studio) and the shared audition sound, both right-aligned —
+                        // per explicit request ("dans la barre d'état du bas, aligné à droite").
+                        // Live-match REACTION (selecting a chord/note as if tapped) only actually
+                        // happens on Exploration, the one screen with anything to react on, but
+                        // every tab benefits from simply being able to hear what's played.
+                        if mode == .theorie {
+                            theorieLiveInputSourcePicker(session: session)
+                            FavoriteSoundPickerView(
+                                favoriteSounds: session.favoriteSounds,
+                                selectedID: Binding(
+                                    get: { session.theoryAuditionSoundID },
+                                    set: { try? session.setTheoryAuditionSoundID($0) }
+                                ),
+                                language: session.currentLanguage
+                            )
+                            .labelsHidden()
+                            .frame(maxWidth: 160)
+                        }
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 8)
@@ -342,6 +363,23 @@ struct ContentView: View {
                     onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) }
                 )
         }
+    }
+    /// A dumb `Picker` over `session.theoryLiveInputSources`, same "`Text(...).tag(TrackID?...)`"
+    /// shape `TestModeColumn`'s own test-source picker already uses — all the arm/disarm side
+    /// effects (e.g. starting the microphone) live in `ImprovSession.setTheoryLiveInputSource`,
+    /// not here.
+    private func theorieLiveInputSourcePicker(session: ImprovSession) -> some View {
+        Picker(L10n.string(.appFieldSourceTest, session.currentLanguage), selection: Binding(
+            get: { session.theoryLiveInputSourceID },
+            set: { session.setTheoryLiveInputSource($0) }
+        )) {
+            Text(L10n.string(.appOptionAucuneFem, session.currentLanguage)).tag(TrackID?.none)
+            ForEach(session.theoryLiveInputSources) { track in
+                Text(session.labelWithChannel(track)).tag(TrackID?.some(track.id))
+            }
+        }
+        .labelsHidden()
+        .frame(maxWidth: 180)
     }
 }
 
