@@ -32,10 +32,16 @@ public struct PitchDisplayState: Equatable, Sendable {
 ///   - chordTones: the recognized chord's pitch classes (0...11), including the root.
 ///   - modeTones: the current mode's pitch classes in scale-degree order (index 0 = degree 1,
 ///     the tonic) — empty if no mode is being shown.
-///   - alwaysShowChord: color the chord's root/tones even when not currently held (used by the
-///     Guide screen's reference keyboard).
+///   - alwaysShowChord: color the chord's root/tones even when not currently held, at EVERY
+///     octave the chord's own pitch classes occur in the keyboard's range (used by the Guide
+///     screen's reference keyboard).
 ///   - showModeColoring: fall back to mode-root/mode-tone coloring for keys not already colored
 ///     by the held/chord branch above (used by the Guide screen's mode keyboard).
+///   - referenceChordPitches: like `alwaysShowChord`, but keyed by EXACT absolute pitch instead
+///     of pitch class — colors root/tones only at these specific pitches (typically one close
+///     voicing) rather than repeating at every octave, so a mini keyboard can show "this one
+///     shape" without the same note lighting up twice. Composes with `heldPitches`: an actually
+///     held pitch outside this set still gets its own normal role (e.g. `.heldOutsideChord`).
 public func pitchDisplayState(
     pitch: Int,
     heldPitches: Set<Int>,
@@ -43,7 +49,8 @@ public func pitchDisplayState(
     chordTones: [Int],
     modeTones: [Int],
     alwaysShowChord: Bool = false,
-    showModeColoring: Bool = false
+    showModeColoring: Bool = false,
+    referenceChordPitches: Set<Int> = []
 ) -> PitchDisplayState {
     let pitchClass = ((pitch % 12) + 12) % 12
     let tones = Set(chordTones)
@@ -64,6 +71,12 @@ public func pitchDisplayState(
             role = .held
         }
     } else if alwaysShowChord {
+        if isChordRoot {
+            role = .chordRoot
+        } else if tones.contains(pitchClass) {
+            role = .chordTone
+        }
+    } else if referenceChordPitches.contains(pitch) {
         if isChordRoot {
             role = .chordRoot
         } else if tones.contains(pitchClass) {

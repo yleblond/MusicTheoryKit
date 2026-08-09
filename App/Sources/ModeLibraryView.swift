@@ -277,59 +277,95 @@ struct ModeLibraryView: View {
         }
     }
 
+    /// 3 columns, per explicit request (was a 2-column × 3-row `Grid`, paired by ROW instead —
+    /// the mode's own scale next to the mode's keyboard, the mode's chords next to whichever
+    /// chord was last tapped, the chord list next to the circle of fifths): now paired by
+    /// COLUMN instead — (1) the mode's own scale + its keyboard, (2) the mode's harmonized
+    /// chords + the diatonic chord list, (3) whichever chord is current + the circle of fifths.
+    /// A plain `HStack` of independent `VStack`s suffices now (unlike the old `Grid`, nothing
+    /// needs to align across columns the way row 1/2's two cells used to need to start at the
+    /// same y) — narrow widths fall back to stacking all 3 vertically, same breakpoint as
+    /// everywhere else in this screen.
+    @ViewBuilder
     private var overviewContent: some View {
-        // A true 2-column × 3-row grid (not two independently-stacked VStacks — those
-        // drift out of horizontal alignment as soon as either column's own content
-        // varies in height) — `Grid` sizes each row to its tallest cell and each column
-        // to its widest, so e.g. row 2's chords staff and its neighboring chord keyboard
-        // always start at the same y regardless of either one's own natural height.
-        Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 12) {
-                    // Row 1: the mode's own scale (+ Asc/Desc/Asc-et-Desc right under it) next
-                    // to the mode's keyboard.
-                    GridRow(alignment: .center) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ChordStaffView(
-                                events: staffEvents, heightScale: 0.8, widthScale: 0.56, highlightedIndex: playingNoteIndex, keySignature: modeKeySignature,
-                                minimumColumnCount: sharedStaffColumnCount, onColumnTap: playSingleNote(atColumnIndex:)
-                            )
-                            scalePlaybackControls
-                        }
-                        // No custom `height:` — `PitchKeyboardView`'s own default (144) is
-                        // already tuned to look natural; forcing it to match the staff's much
-                        // taller height (or an arbitrarily smaller one) either stretched or
-                        // squished it, per feedback.
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(mode.displayName).font(.headline)
-                            PitchKeyboardView(
-                                heldPitches: playingNotePitches,
-                                modeTones: mode.pitchClasses.map(\.value),
-                                showModeColoring: true,
-                                keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: modeTonePitchesInKeyboardRange, style: session.notationStyle)
-                            )
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    // Row 2: the mode's harmonized chords (+ a "play the sequence" button)
-                    // next to whichever chord was last tapped, on its own keyboard.
-                    GridRow(alignment: .center) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ChordStaffView(
-                                events: chordsStaffEvents, heightScale: 0.8, widthScale: 0.56, highlightedIndex: selectedChordIndex, keySignature: modeKeySignature,
-                                minimumColumnCount: sharedStaffColumnCount, onColumnTap: tapChordStaffColumn(at:)
-                            )
-                            playChordSequenceButton
-                        }
-                        selectedChordKeyboard
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    // Row 3: the chord list (tap one to hear it + update row 2's keyboard)
-                    // next to the circle of fifths.
-                    GridRow(alignment: .top) {
-                        diatonicChordsSection
-                        circleOfFifthsSection
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
+        // `.staffCenter` (not `.top`) — per explicit request, so the selected-chord keyboard in
+        // `circleColumn` lines up on the two staffs' own shared height instead of the top of
+        // whatever happens to sit above it (`selectedChordKeyboard`'s own title text).
+        if usesTwoColumns {
+            HStack(alignment: .staffCenter, spacing: 16) {
+                scaleColumn
+                chordsColumn
+                circleColumn
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 16) {
+                scaleColumn
+                chordsColumn
+                circleColumn
+            }
+        }
+    }
+
+    /// The mode keyboard's own mode-root/mode-tone colors (blue/cyan, `PitchKeyboardColorScheme`'s
+    /// own defaults) — reused for the scale staff's root/tone coloring instead of that view's own
+    /// default chord-root/chord-tone colors (red/yellow), so the two agree on what "this is the
+    /// tonic"/"this is a scale tone" looks like, per explicit request.
+    private var noteStaffColorScheme: PitchKeyboardColorScheme {
+        let defaults = PitchKeyboardColorScheme()
+        return PitchKeyboardColorScheme(chordRoot: defaults.modeRoot, chordTone: defaults.modeTone)
+    }
+
+    /// Column 1 — the mode's own scale (+ Asc/Desc/Asc-et-Desc right under it), then its own
+    /// keyboard directly below (used to sit beside it instead).
+    private var scaleColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ChordStaffView(
+                events: staffEvents, colorScheme: noteStaffColorScheme,
+                heightScale: 0.8, widthScale: 0.56, highlightedIndex: playingNoteIndex, keySignature: modeKeySignature,
+                minimumColumnCount: sharedStaffColumnCount, onColumnTap: playSingleNote(atColumnIndex:)
+            )
+            .alignmentGuide(.staffCenter) { $0[VerticalAlignment.center] }
+            scalePlaybackControls
+            VStack(alignment: .leading, spacing: 4) {
+                Text(mode.displayName).font(.headline)
+                PitchKeyboardView(
+                    heldPitches: playingNotePitches,
+                    modeTones: mode.pitchClasses.map(\.value),
+                    showModeColoring: true,
+                    height: Self.modeKeyboardHeight,
+                    keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: modeTonePitchesInKeyboardRange, style: session.notationStyle)
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// -20% off `PitchKeyboardView`'s own default height (144), per explicit request.
+    private static let modeKeyboardHeight: CGFloat = 115
+
+    /// Column 2 — the mode's harmonized chords (+ a "play the sequence" button), then the
+    /// diatonic chord list directly below (used to sit beside the circle of fifths instead).
+    private var chordsColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ChordStaffView(
+                events: chordsStaffEvents, heightScale: 0.8, widthScale: 0.56, highlightedIndex: selectedChordIndex, keySignature: modeKeySignature,
+                minimumColumnCount: sharedStaffColumnCount, onColumnTap: tapChordStaffColumn(at:)
+            )
+            .alignmentGuide(.staffCenter) { $0[VerticalAlignment.center] }
+            playChordSequenceButton
+            diatonicChordsSection
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Column 3 — whichever chord is current, on its own keyboard, then the circle of fifths
+    /// directly below (used to sit beside the mode's own chord staff instead).
+    private var circleColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            selectedChordKeyboard
+            circleOfFifthsSection
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// The mode's parent major key's conventional signature (e.g. D Dorian's parent is C
@@ -509,16 +545,20 @@ struct ModeLibraryView: View {
     @ViewBuilder
     private var selectedChordKeyboard: some View {
         if let reference = selectedChordReference, let chord = reference.resolve() {
-            let tones = Set(chord.pitchClasses.map(\.value))
-            let keyboardPitches = (48...72).filter { tones.contains((($0 % 12) + 12) % 12) }
+            // Root position (a diatonic-chord reference here has no inversion concept of its
+            // own, same as the Progression Library) — one occurrence of each tone instead of
+            // every octave in range, per explicit request.
+            let voicingPitches = PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47)
             VStack(alignment: .leading, spacing: 4) {
                 Text(chordDisplayName(reference)).font(.headline)
                 PitchKeyboardView(
                     chordRoot: chord.root.value,
                     chordTones: chord.pitchClasses.map(\.value),
-                    alwaysShowChord: true,
-                    keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: keyboardPitches, style: session.notationStyle)
+                    height: Self.modeKeyboardHeight,
+                    keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: voicingPitches, style: session.notationStyle),
+                    referenceChordPitches: Set(voicingPitches)
                 )
+                .alignmentGuide(.staffCenter) { $0[VerticalAlignment.center] }
             }
         }
     }

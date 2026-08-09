@@ -191,11 +191,19 @@ struct ProgressionLibraryView: View {
                 Text(selectedTemplate?.name ?? "").font(.largeTitle).bold()
                 commonNamesSection
 
-                ChordStaffView(events: progressionStaffEvents, highlightedIndex: currentChordIndex)
-
-                chordListSection
-
-                keyboardAndTablature
+                // Per explicit request: a wide column (staff + chord sequence) next to a
+                // narrower one (tablature + keyboard) — used to be one column, top to bottom.
+                if usesTwoColumns {
+                    HStack(alignment: .top, spacing: 16) {
+                        staffAndSequenceColumn
+                        tablatureAndKeyboardColumn
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 16) {
+                        staffAndSequenceColumn
+                        tablatureAndKeyboardColumn
+                    }
+                }
 
                 SequenceTransportView(
                     isPlaying: session.isAuditioningTheoryLibrary,
@@ -239,59 +247,117 @@ struct ProgressionLibraryView: View {
 
     private var currentChord: Chord? { currentReference?.resolve() }
 
-    private var currentChordKeyboardPitches: [Int] {
+    /// One ascending, root-position voicing (a progression chord has no inversion concept of its
+    /// own — see `keyboardAndTablature`'s former doc comment) — feeds `referenceChordPitches` so
+    /// the mini keyboard shows each tone exactly once instead of at every octave in range, per
+    /// explicit request.
+    private var currentChordVoicingPitches: [Int] {
         guard let currentChord else { return [] }
-        let tones = Set(currentChord.pitchClasses.map(\.value))
-        return (48...72).filter { tones.contains((($0 % 12) + 12) % 12) }
+        return PitchSequencing.ascendingPitches(forPitchClasses: currentChord.pitchClasses.map(\.value), startingAbove: 47)
     }
 
-    /// A row of compact tappable chips (not a vertical list — a progression's chords read
-    /// naturally left-to-right, and this is far more compact than one row per chord) — tap to
-    /// scrub/audition, or watch it highlight on its own during `playProgression()`.
+    /// -30% off `ChordStaffView`'s own default scale, per explicit request.
+    private static let progressionStaffScale: CGFloat = 0.7
+    /// Off `PitchKeyboardView`'s own default height (144) — was -50% (72pt); bumped back up a
+    /// bit per explicit follow-up request ("agrandir un peu le mini clavier"). Still narrow,
+    /// since it only ever shows one voicing (3-5 keys) instead of the same tones repeated across
+    /// 2 octaves.
+    private static let progressionKeyboardSize = CGSize(width: 320, height: 92)
+
+    /// Compact tappable chips (not a vertical list — a progression's chords read naturally
+    /// left-to-right, and this is far more compact than one row per chord) — tap to scrub/
+    /// audition, or watch it highlight on its own during `playProgression()`. Wraps onto further
+    /// lines via `FlowLayout` rather than scrolling horizontally once there are many chords, per
+    /// explicit request — same reasoning as `progressionStaffRows` above.
     @ViewBuilder
     private var chordListSection: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(Array(resolvedReferences.enumerated()), id: \.offset) { index, reference in
-                    Button {
-                        currentChordIndex = index
-                        playSingleChord(reference)
-                    } label: {
-                        VStack(spacing: 2) {
-                            Text("\(index + 1)").font(.caption2).foregroundStyle(.secondary)
-                            Text(chordDisplayName(reference)).fontWeight(index == currentChordIndex ? .bold : .regular)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(index == currentChordIndex ? Color.accentColor.opacity(0.2) : Color.clear)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                        )
+        FlowLayout(horizontalSpacing: 8, verticalSpacing: 8) {
+            ForEach(Array(resolvedReferences.enumerated()), id: \.offset) { index, reference in
+                Button {
+                    currentChordIndex = index
+                    playSingleChord(reference)
+                } label: {
+                    VStack(spacing: 2) {
+                        Text("\(index + 1)").font(.caption2).foregroundStyle(.secondary)
+                        Text(chordDisplayName(reference)).fontWeight(index == currentChordIndex ? .bold : .regular)
                     }
-                    .buttonStyle(.plain)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(index == currentChordIndex ? Color.accentColor.opacity(0.2) : Color.clear)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                    )
                 }
+                .buttonStyle(.plain)
             }
         }
     }
 
-    /// Keyboard + guitar tablature for whichever chord is current (root position — a
-    /// progression has no inversion concept of its own, unlike the Chord Library).
+    /// Column 1 — the progression's own staff (shrunk -30%, per explicit request), wrapped onto
+    /// several lines once there are more than `chordsPerStaffRow` chords (a single
+    /// `ChordStaffView` never wraps on its own — it's one wide `Canvas`, so a long progression
+    /// needs chunking into several stacked instances instead), directly above the chord-sequence
+    /// chips. Each chord column is now tappable, same "scrub/audition" behavior as the chip row
+    /// below it.
+    private var staffAndSequenceColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(progressionStaffRows.enumerated()), id: \.offset) { _, row in
+                    ChordStaffView(
+                        events: row.map(\.event), heightScale: Self.progressionStaffScale, widthScale: Self.progressionStaffScale,
+                        highlightedIndex: row.firstIndex(where: { $0.offset == currentChordIndex }),
+                        onColumnTap: { localIndex in
+                            guard row.indices.contains(localIndex) else { return }
+                            let globalIndex = row[localIndex].offset
+                            currentChordIndex = globalIndex
+                            playSingleChord(resolvedReferences[globalIndex])
+                        }
+                    )
+                }
+            }
+            chordListSection
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// How many chords each wrapped staff line holds before starting a new one — per explicit
+    /// request ("s'il y a beaucoup d'accords... passer sur plusieurs lignes").
+    private static let chordsPerStaffRow = 8
+
+    /// `progressionStaffEvents`, chunked into `chordsPerStaffRow`-sized rows, each entry keeping
+    /// its ORIGINAL index (`offset`) into the full progression — needed to translate a given
+    /// row's own local `onColumnTap`/`highlightedIndex` back to (and from) `currentChordIndex`,
+    /// which always refers to the whole progression, not any one row.
+    private var progressionStaffRows: [[(offset: Int, event: StaffEvent)]] {
+        let indexed = progressionStaffEvents.enumerated().map { (offset: $0.offset, event: $0.element) }
+        return stride(from: 0, to: indexed.count, by: Self.chordsPerStaffRow).map {
+            Array(indexed[$0..<min($0 + Self.chordsPerStaffRow, indexed.count)])
+        }
+    }
+
+    /// Column 2 — the guitar tablature for whichever chord is current, directly above its own
+    /// keyboard (root position — a progression has no inversion concept of its own, unlike the
+    /// Chord Library). The tablature is deliberately half the keyboard's own width, per explicit
+    /// request (anticipating a future 2-shape-wide tablature display fitting the same column).
     @ViewBuilder
-    private var keyboardAndTablature: some View {
-        HStack(alignment: .top, spacing: 16) {
+    private var tablatureAndKeyboardColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let currentReference {
+                GuitarChordDiagramView(root: currentReference.root, chordTemplateID: currentReference.chordTemplateID, language: session.currentLanguage)
+                    .frame(width: Self.progressionKeyboardSize.width / 2)
+            }
             PitchKeyboardView(
                 chordRoot: currentChord?.root.value,
                 chordTones: currentChord?.pitchClasses.map(\.value) ?? [],
-                alwaysShowChord: true,
-                keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: currentChordKeyboardPitches, style: session.notationStyle)
+                height: Self.progressionKeyboardSize.height,
+                keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: currentChordVoicingPitches, style: session.notationStyle),
+                referenceChordPitches: Set(currentChordVoicingPitches)
             )
-            if let currentReference {
-                GuitarChordDiagramView(root: currentReference.root, chordTemplateID: currentReference.chordTemplateID, language: session.currentLanguage)
-            }
+            .frame(width: Self.progressionKeyboardSize.width)
         }
     }
 

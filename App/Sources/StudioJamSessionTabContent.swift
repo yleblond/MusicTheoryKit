@@ -4,18 +4,21 @@ import NetEngine
 import GameKit
 import Localization
 
-/// Second sub-tab of the "JamShack" tab: the collaborative jam session — either over the
-/// local network (server/client, with Bonjour discovery for the client side — mirrors the
-/// terminal CLI's own "Jam Session" menu category) or over the internet via Game Center
-/// matchmaking (`GameCenterCoordinator`/`ImprovSession.startGameCenterServer`/
-/// `joinGameCenterSession`).
+/// Studio's own "Jam Session" tab: the collaborative jam session — either over the local network
+/// (server/client, with Bonjour discovery for the client side — mirrors the terminal CLI's own
+/// "Jam Session" menu category) or over the internet via Game Center matchmaking
+/// (`GameCenterCoordinator`/`ImprovSession.startGameCenterServer`/`joinGameCenterSession`), plus
+/// the "clavier virtuel" server a guest plays through once connected. Used to live in Settings
+/// (moved 2026-08-09, per explicit request) — inviting people to play is something you reach for
+/// while performing, not a one-time setup step; the web console server that stayed behind in
+/// Settings (`ConsoleSettingsView`) genuinely is the latter.
 ///
 /// Presented as an explicit 5-way choice — Isole / Jam locale-organisateur /
 /// Jam locale-participant / Jam Game Center-organisateur / Jam Game Center-participant —
 /// rather than showing every control at once. The mode picker only matters while
 /// `networkRole == .standalone`; once a server/client connection is actually live (either
 /// transport), the screen shows that connection's own status regardless of the picker.
-struct JamSessionView: View {
+struct StudioJamSessionTabContent: View {
     let session: ImprovSession
 
     private enum CollaborationMode: String, CaseIterable, Identifiable {
@@ -41,7 +44,6 @@ struct JamSessionView: View {
     @State private var discoveredServers: [DiscoveredServer] = []
     @State private var networkError: String?
     @State private var gameCenter = GameCenterCoordinator()
-    @State private var webConsolePortText = "8080"
     @State private var virtualKeyboardPortText = "8081"
 
     var body: some View {
@@ -81,33 +83,22 @@ struct JamSessionView: View {
         }
     }
 
-    /// The two HTTP servers (console web, clavier virtuel) side by side — merged into this same
-    /// sub-tab (2026-07-26, used to be its own "Serveurs" sub-tab) since both this block and the
-    /// collaborative session below are fundamentally the same idea: other devices reaching this
-    /// one. See `ServerCard`.
+    /// The "clavier virtuel" HTTP server — what a connected guest actually plays through once
+    /// invited (the read-only web console server lives in Settings > Console instead,
+    /// `ConsoleSettingsView` — see this file's own doc comment for why they split). See
+    /// `ServerCard`.
     @ViewBuilder
     private var ownDevicesSection: some View {
         Section {
-            HStack(alignment: .top, spacing: 12) {
-                ServerCard(
-                    session: session,
-                    title: L10n.string(.fieldConsoleWeb, session.currentLanguage),
-                    caption: L10n.string(.appHintConsoleWebCaption, session.currentLanguage),
-                    port: session.webConsolePort,
-                    portText: $webConsolePortText,
-                    start: { try session.startWebConsole(port: $0) },
-                    stop: { session.stopWebConsole() }
-                )
-                ServerCard(
-                    session: session,
-                    title: L10n.string(.fieldClavierVirtuel, session.currentLanguage),
-                    caption: L10n.string(.appHintClavierVirtuelCaption, session.currentLanguage),
-                    port: session.virtualKeyboardPort,
-                    portText: $virtualKeyboardPortText,
-                    start: { try session.startVirtualKeyboard(port: $0) },
-                    stop: { session.stopVirtualKeyboard() }
-                )
-            }
+            ServerCard(
+                session: session,
+                title: L10n.string(.fieldClavierVirtuel, session.currentLanguage),
+                caption: L10n.string(.appHintClavierVirtuelCaption, session.currentLanguage),
+                port: session.virtualKeyboardPort,
+                portText: $virtualKeyboardPortText,
+                start: { try session.startVirtualKeyboard(port: $0) },
+                stop: { session.stopVirtualKeyboard() }
+            )
         } header: {
             Text(L10n.string(.appHeadingCetAppareil, session.currentLanguage))
         }
@@ -364,5 +355,5 @@ struct JamSessionView: View {
 }
 
 #Preview {
-    JamSessionView(session: ImprovSession())
+    StudioJamSessionTabContent(session: ImprovSession())
 }

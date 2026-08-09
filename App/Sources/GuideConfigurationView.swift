@@ -7,8 +7,12 @@ import Localization
 /// Screen 2 of the Guide tab: mirrors `SceneLayoutView` — a title `TextField` (typing a name
 /// calls `renameCurrentGuide(to:)`, which both renames an already-saved guide in place and
 /// performs the FIRST save of a brand-new anonymous one), a back-to-list button, an "Enregistrer"
-/// button, and — the guide-specific addition — a segmented toggle between Edition and Lecture
-/// mode over that same active guide, replacing what used to be two separate sub-tabs.
+/// button, and the guide's own `GuideEditionView` (add/edit steps). Editing-only, per explicit
+/// request — this is Composition mode's own Guide screen now, and PLAYING a guide lives in
+/// Studio's own Guide tab (`StudioGuidePlayTabContent`) instead: `GuideEditionView`'s own "jouer
+/// le guide" button (`onRequestLecture`) requests that cross-mode jump
+/// (`AppModel.requestGuideNavigation(.playInStudio)`) rather than switching an internal Edition/
+/// Lecture mode the way this screen used to.
 ///
 /// Only ever reached once a guide is already active (by launch, or by a successful activate/
 /// create on `GuideFileView`, screen 1), so `session.currentGuide` is guaranteed non-nil here.
@@ -18,26 +22,10 @@ struct GuideConfigurationView: View {
     let onBackToList: () -> Void
 
     @Environment(AppModel.self) private var appModel
-    #if os(macOS) || os(visionOS)
-    @Environment(\.dismissWindow) private var dismissWindow
-    #endif
 
-    private enum Mode { case edition, lecture }
-
-    @State private var mode: Mode
     @State private var actionError: String?
     @State private var titleDraft = ""
     @FocusState private var titleFieldFocused: Bool
-
-    /// A freshly created (stepless) guide defaults to Edition, since there's nothing to run yet;
-    /// an already-populated guide (activated from the list) defaults to Lecture, preserving the
-    /// old "activating a guide jumps straight to playing it" behavior.
-    init(session: ImprovSession, bridge: SessionUIBridge, onBackToList: @escaping () -> Void) {
-        self.session = session
-        self.bridge = bridge
-        self.onBackToList = onBackToList
-        _mode = State(initialValue: (session.currentGuide?.steps.isEmpty ?? true) ? .edition : .lecture)
-    }
 
     private var guide: GuideSequence? { session.currentGuide }
 
@@ -87,33 +75,10 @@ struct GuideConfigurationView: View {
                     }
                 }
             }
-            Picker("", selection: $mode) {
-                Text(L10n.string(.appModeEdition, session.currentLanguage)).tag(Mode.edition)
-                Text(L10n.string(.appModeLecture, session.currentLanguage)).tag(Mode.lecture)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding()
-            Group {
-                switch mode {
-                case .edition:
-                    GuideEditionView(session: session, bridge: bridge, onRequestLecture: { mode = .lecture })
-                case .lecture:
-                    #if os(macOS) || os(visionOS)
-                    if appModel.openAuxiliaryWindows.contains(.guideLecture) {
-                        DetachedPlaceholderView(
-                            message: L10n.string(.appLabelOuvertDansFenetreSeparee, session.currentLanguage),
-                            language: session.currentLanguage,
-                            onReintegrate: { dismissWindow(id: AuxiliaryWindowID.guideLecture.rawValue) }
-                        )
-                    } else {
-                        GuideLectureView(session: session, bridge: bridge, onGuideStopped: { mode = .edition })
-                    }
-                    #else
-                    GuideLectureView(session: session, bridge: bridge, onGuideStopped: { mode = .edition })
-                    #endif
-                }
-            }
+            GuideEditionView(
+                session: session, bridge: bridge,
+                onRequestLecture: { appModel.requestGuideNavigation(.playInStudio) }
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -122,4 +87,5 @@ struct GuideConfigurationView: View {
 #Preview {
     let session = ImprovSession()
     return GuideConfigurationView(session: session, bridge: SessionUIBridge(session: session), onBackToList: {})
+        .environment(AppModel())
 }

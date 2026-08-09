@@ -5,20 +5,24 @@ import Localization
 import MusicTheoryKit
 
 struct ContentView: View {
-    /// Which of the 3 flat tab sets is showing — replaces the old first-level `AppTab` TabView
+    /// Which of the 4 flat tab sets is showing — replaces the old first-level `AppTab` TabView
     /// (2026-07-29), itself later a 2-state (studio/settings) toggle. Split into 3 (2026-08) once
     /// Théorie (see `TheorieTab`) had grown well past "a reference tool browsed while
     /// performing" — sharing Studio's own tab bar no longer matched what it had become, and
     /// deserved the same "top-level mode" standing as Studio/Settings rather than being folded
-    /// into either.
+    /// into either. Split into 4 (2026-08) the same way again for `.composition`, once Guide's
+    /// own edition/Composition/Morceaux stopped being "what you're actively performing," and
+    /// became "material you prepare before performing" instead — see `CompositionTab`'s own doc
+    /// comment.
     private enum AppMode: CaseIterable, Identifiable, Hashable {
-        case studio, theorie, settings
+        case studio, theorie, composition, settings
         var id: Self { self }
 
         var systemImage: String {
             switch self {
             case .studio: return "pianokeys"
             case .theorie: return "flask.fill"
+            case .composition: return "pencil.and.outline"
             case .settings: return "gearshape"
             }
         }
@@ -27,26 +31,59 @@ struct ContentView: View {
             switch self {
             case .studio: return L10n.string(.appTabStudio, language)
             case .theorie: return L10n.string(.appTabTheorie, language)
+            case .composition: return L10n.string(.catComposition, language)
             case .settings: return L10n.string(.appButtonReglages, language)
             }
         }
     }
 
-    /// The 6 studio-mode tabs — merges what used to be `StudioView`'s own 3 sub-tabs (Live,
-    /// Scene, Guide) with the 3 tabs that used to sit alongside the old "Studio" top-level tab
-    /// (Enregistrements, Composition, Morceaux): all 6 are "what you're actively performing
-    /// with right now," now flat at the same level instead of nested one level deeper.
+    /// Studio's own tabs — what you're actively PERFORMING right now, per explicit request
+    /// ("Scène, En Direct, Guide" order). `.guide` here is `StudioGuidePlayTabContent` — PLAYING
+    /// an already-authored guide — deliberately distinct from Composition mode's own `.guide`
+    /// (`GuideView`, editing) even though both act on the same `session.currentGuide`; see
+    /// `AppModel.GuideNavigationDestination`'s own doc comment for how the two cross-navigate.
+    /// `.recordings` stays here (not moved to Composition) since capturing a live take is still
+    /// squarely a Studio activity — Composition's own "IA" tab reads FROM a recording, but doesn't
+    /// make one. `.jamSession` (`StudioJamSessionTabContent`) moved here FROM Settings (2026-08-09,
+    /// per explicit request) — inviting others in is something you reach for while performing, not
+    /// a setting; see that view's own doc comment.
     private enum StudioTab: CaseIterable, Identifiable {
-        case live, scene, guide, recordings, composition, pieces
+        case scene, live, guide, recordings, jamSession
 
         var id: Self { self }
 
         var systemImage: String {
             switch self {
-            case .live: return "pianokeys"
             case .scene: return "theatermasks"
+            case .live: return "pianokeys"
             case .guide: return "map"
             case .recordings: return "record.circle"
+            case .jamSession: return "person.2.fill"
+            }
+        }
+
+        func label(_ language: AppLanguage) -> String {
+            switch self {
+            case .scene: return L10n.string(.tabScene, language)
+            case .live: return L10n.string(.appLabelEnDirect, language)
+            case .guide: return L10n.string(.headingGuide, language)
+            case .recordings: return L10n.string(.appTabEnregistrements, language)
+            case .jamSession: return L10n.string(.catJamSession, language)
+            }
+        }
+    }
+
+    /// Composition mode's own tabs — material you PREPARE before performing, moved out of Studio
+    /// (2026-08, see `AppMode`'s own doc comment): `.guide` here is `GuideView`, EDITING a guide
+    /// sequence (Studio's own `.guide` tab plays one instead — see `StudioTab`'s own doc comment).
+    private enum CompositionTab: CaseIterable, Identifiable {
+        case guide, composition, pieces
+
+        var id: Self { self }
+
+        var systemImage: String {
+            switch self {
+            case .guide: return "map"
             case .composition: return "wand.and.stars"
             case .pieces: return "music.note.list"
             }
@@ -54,10 +91,7 @@ struct ContentView: View {
 
         func label(_ language: AppLanguage) -> String {
             switch self {
-            case .live: return L10n.string(.appLabelEnDirect, language)
-            case .scene: return L10n.string(.tabScene, language)
             case .guide: return L10n.string(.headingGuide, language)
-            case .recordings: return L10n.string(.appTabEnregistrements, language)
             case .composition: return L10n.string(.catComposition, language)
             case .pieces: return L10n.string(.catMorceaux, language)
             }
@@ -107,14 +141,12 @@ struct ContentView: View {
     /// exposed via the quick-toggle button in the bottom bar below (Studio mode only) — keeping
     /// both was pure duplication with zero extra capability in the tab.
     private enum SettingsTab: CaseIterable, Identifiable {
-        case sons, midi, microphone, jamSession, couleurs, llm, langue, notation
-        // Which sound the Accords/Modes/Progressions tabs use for audition playback — moved
-        // here from a picker inside those screens' own header (per explicit request), plus
-        // (later) per-role color customization for those same screens (see
-        // `Docs/BACKLOG_BRUT.md`). Reuses `appTabTheorie`'s own text ("Théorie"), freed up by
-        // the Studio-tab split (see `StudioTab`'s own doc comment) rather than adding a
-        // near-duplicate string.
-        case theorie
+        // `.console` used to be `.jamSession`, hosting the web-console server card AND the
+        // collaborative jam-session flows (clavier virtuel + appareils connectés) together — the
+        // latter moved to Studio's own new "Jam Session" tab (`StudioTab.jamSession`), per
+        // explicit request (inviting others to play is a Studio activity, not a setting), leaving
+        // only the web console here.
+        case sons, midi, microphone, console, couleurs, llm, langue, notation
 
         var id: Self { self }
 
@@ -123,12 +155,11 @@ struct ContentView: View {
             case .sons: return "music.note.list"
             case .midi: return "pianokeys"
             case .microphone: return "mic"
-            case .jamSession: return "person.2.fill"
+            case .console: return "network"
             case .couleurs: return "paintpalette"
             case .llm: return "brain"
             case .langue: return "globe"
             case .notation: return "textformat.abc"
-            case .theorie: return "text.book.closed"
             }
         }
 
@@ -137,12 +168,11 @@ struct ContentView: View {
             case .sons: return L10n.string(.appTabSons, language)
             case .midi: return L10n.string(.appTabMIDI, language)
             case .microphone: return L10n.string(.appTabMicrophone, language)
-            case .jamSession: return L10n.string(.catJamSession, language)
+            case .console: return L10n.string(.appTabConsole, language)
             case .couleurs: return L10n.string(.appTabCouleurs, language)
             case .llm: return L10n.string(.appTabLLM, language)
             case .langue: return L10n.string(.appTabLangue, language)
             case .notation: return L10n.string(.appTabNotation, language)
-            case .theorie: return L10n.string(.appTabTheorie, language)
             }
         }
     }
@@ -158,11 +188,20 @@ struct ContentView: View {
     // through which role before playing, so it's the natural first screen.
     @State private var selectedStudioTab: StudioTab = .scene
     @State private var selectedTheorieTab: TheorieTab = .modes
+    @State private var selectedCompositionTab: CompositionTab = .guide
     @State private var selectedSettingsTab: SettingsTab = .sons
     /// iOS/iPadOS-only fallback for the generalized contextual-help button below — no
     /// independent-window equivalent there, same convention `ModeLibraryView`'s own former
     /// legend sheet already used.
     @State private var showsContextualHelpSheet = false
+
+    /// Studio/Théorie always show the main-keyboard bar's own controls (toggle, detach,
+    /// source picker); Settings only does while its own "Sons" sub-tab is active (testing a
+    /// soundfont there plays through the same "source principale" — see `SoundsView`), per
+    /// explicit request. Composition never does.
+    private var showsMainKeyboardControls: Bool {
+        mode == .studio || mode == .theorie || (mode == .settings && selectedSettingsTab == .sons)
+    }
 
     var body: some View {
         SessionGatedView { session, bridge in
@@ -178,29 +217,38 @@ struct ContentView: View {
                         switch mode {
                         case .studio:
                             TabView(selection: $selectedStudioTab) {
-                                Tab(StudioTab.live.label(session.currentLanguage), systemImage: StudioTab.live.systemImage, value: StudioTab.live) {
-                                    LiveTabContent(session: session, bridge: bridge)
-                                }
                                 Tab(StudioTab.scene.label(session.currentLanguage), systemImage: StudioTab.scene.systemImage, value: StudioTab.scene) {
                                     SceneManagementView(session: session)
                                 }
+                                Tab(StudioTab.live.label(session.currentLanguage), systemImage: StudioTab.live.systemImage, value: StudioTab.live) {
+                                    LiveTabContent(session: session, bridge: bridge)
+                                }
                                 Tab(StudioTab.guide.label(session.currentLanguage), systemImage: StudioTab.guide.systemImage, value: StudioTab.guide) {
-                                    GuideView(session: session, bridge: bridge)
+                                    StudioGuidePlayTabContent(session: session, bridge: bridge)
                                 }
                                 Tab(StudioTab.recordings.label(session.currentLanguage), systemImage: StudioTab.recordings.systemImage, value: StudioTab.recordings) {
                                     RecordingsView(session: session)
                                 }
-                                Tab(StudioTab.composition.label(session.currentLanguage), systemImage: StudioTab.composition.systemImage, value: StudioTab.composition) {
+                                Tab(StudioTab.jamSession.label(session.currentLanguage), systemImage: StudioTab.jamSession.systemImage, value: StudioTab.jamSession) {
+                                    StudioJamSessionTabContent(session: session)
+                                }
+                            }
+                        case .composition:
+                            TabView(selection: $selectedCompositionTab) {
+                                Tab(CompositionTab.guide.label(session.currentLanguage), systemImage: CompositionTab.guide.systemImage, value: CompositionTab.guide) {
+                                    GuideView(session: session, bridge: bridge)
+                                }
+                                Tab(CompositionTab.composition.label(session.currentLanguage), systemImage: CompositionTab.composition.systemImage, value: CompositionTab.composition) {
                                     CompositionView(session: session)
                                 }
-                                Tab(StudioTab.pieces.label(session.currentLanguage), systemImage: StudioTab.pieces.systemImage, value: StudioTab.pieces) {
+                                Tab(CompositionTab.pieces.label(session.currentLanguage), systemImage: CompositionTab.pieces.systemImage, value: CompositionTab.pieces) {
                                     PiecesView(session: session)
                                 }
                             }
                         case .theorie:
                             TabView(selection: $selectedTheorieTab) {
                                 Tab(TheorieTab.accords.label(session.currentLanguage), systemImage: TheorieTab.accords.systemImage, value: TheorieTab.accords) {
-                                    ChordTabContent(session: session)
+                                    ChordTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .accords)
                                 }
                                 Tab(TheorieTab.modes.label(session.currentLanguage), systemImage: TheorieTab.modes.systemImage, value: TheorieTab.modes) {
                                     TheoryTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .modes)
@@ -215,7 +263,7 @@ struct ContentView: View {
                         case .settings:
                             TabView(selection: $selectedSettingsTab) {
                                 Tab(SettingsTab.sons.label(session.currentLanguage), systemImage: SettingsTab.sons.systemImage, value: SettingsTab.sons) {
-                                    SoundsView(session: session, bridge: bridge, isActive: mode == .settings && selectedSettingsTab == .sons)
+                                    SoundsView(session: session, isActive: mode == .settings && selectedSettingsTab == .sons)
                                 }
                                 Tab(SettingsTab.midi.label(session.currentLanguage), systemImage: SettingsTab.midi.systemImage, value: SettingsTab.midi) {
                                     JamShackMIDIView(session: session, bridge: bridge)
@@ -223,8 +271,8 @@ struct ContentView: View {
                                 Tab(SettingsTab.microphone.label(session.currentLanguage), systemImage: SettingsTab.microphone.systemImage, value: SettingsTab.microphone) {
                                     MicrophoneTabContent(session: session, bridge: bridge)
                                 }
-                                Tab(SettingsTab.jamSession.label(session.currentLanguage), systemImage: SettingsTab.jamSession.systemImage, value: SettingsTab.jamSession) {
-                                    JamSessionView(session: session)
+                                Tab(SettingsTab.console.label(session.currentLanguage), systemImage: SettingsTab.console.systemImage, value: SettingsTab.console) {
+                                    ConsoleSettingsView(session: session)
                                 }
                                 Tab(SettingsTab.couleurs.label(session.currentLanguage), systemImage: SettingsTab.couleurs.systemImage, value: SettingsTab.couleurs) {
                                     JamShackColorsView(session: session)
@@ -237,9 +285,6 @@ struct ContentView: View {
                                 }
                                 Tab(SettingsTab.notation.label(session.currentLanguage), systemImage: SettingsTab.notation.systemImage, value: SettingsTab.notation) {
                                     NotationStyleSettingsView(session: session)
-                                }
-                                Tab(SettingsTab.theorie.label(session.currentLanguage), systemImage: SettingsTab.theorie.systemImage, value: SettingsTab.theorie) {
-                                    TheorieSettingsView(session: session)
                                 }
                             }
                         }
@@ -256,7 +301,7 @@ struct ContentView: View {
                     // the window and never shifts position when this keyboard appears/disappears,
                     // per explicit request ("stabilité de l'affichage").
                     let mainKeyboard = mainKeyboardPresentation(session: session)
-                    if (mode == .studio || mode == .theorie) && session.computerKeyboardInputEnabled && !mainKeyboard.isHidden {
+                    if showsMainKeyboardControls && session.computerKeyboardInputEnabled && !mainKeyboard.isHidden {
                         Divider()
                         #if os(macOS) || os(visionOS)
                         if appModel.openAuxiliaryWindows.contains(.computerKeyboard) {
@@ -276,7 +321,7 @@ struct ContentView: View {
                                 onNoteOff: { pitch in guard mainKeyboard.isClickable else { return }; session.releaseKey(pitch: pitch) },
                                 onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) },
                                 modeTones: mainKeyboard.modeTones, showModeColoring: mainKeyboard.showModeColoring,
-                                chordRoot: mainKeyboard.chordRoot, chordTones: mainKeyboard.chordTones,
+                                chordRoot: mainKeyboard.chordRoot, chordTones: mainKeyboard.chordTones, referenceChordPitches: mainKeyboard.referenceChordPitches,
                                 showsPhysicalKeyLabels: session.theoryLiveInputSourceID == .computerKeyboard
                             )
                             .opacity(mainKeyboard.isClickable ? 1 : 0.5)
@@ -291,7 +336,7 @@ struct ContentView: View {
                             onNoteOff: { pitch in guard mainKeyboard.isClickable else { return }; session.releaseKey(pitch: pitch) },
                             onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) },
                             modeTones: mainKeyboard.modeTones, showModeColoring: mainKeyboard.showModeColoring,
-                            chordRoot: mainKeyboard.chordRoot, chordTones: mainKeyboard.chordTones,
+                            chordRoot: mainKeyboard.chordRoot, chordTones: mainKeyboard.chordTones, referenceChordPitches: mainKeyboard.referenceChordPitches,
                             showsPhysicalKeyLabels: session.theoryLiveInputSourceID == .computerKeyboard
                         )
                         .opacity(mainKeyboard.isClickable ? 1 : 0.5)
@@ -326,7 +371,13 @@ struct ContentView: View {
                             .buttonStyle(.plain)
                             .foregroundStyle(mode == candidate ? Color.accentColor : Color.primary)
                         }
-                        if mode == .studio || mode == .theorie {
+                        if showsMainKeyboardControls {
+                            // Separates the mode selector from the main-keyboard controls, per
+                            // explicit request — and, with a `Spacer()` on BOTH sides, roughly
+                            // centers this group in the remaining space instead of it hugging
+                            // the divider, also per explicit request.
+                            Divider().frame(height: 20)
+                            Spacer()
                             Button {
                                 session.setComputerKeyboardInputEnabled(!session.computerKeyboardInputEnabled)
                             } label: {
@@ -356,7 +407,7 @@ struct ContentView: View {
                         // REACTION (selecting a chord/note as if tapped) only actually happens on
                         // Exploration, the one screen with anything to react on, but every other
                         // screen still benefits from simply being able to hear what's played.
-                        if mode == .studio || mode == .theorie {
+                        if showsMainKeyboardControls {
                             theorieLiveInputSourcePicker(session: session)
                             if mode == .theorie {
                                 FavoriteSoundPickerView(
@@ -368,15 +419,20 @@ struct ContentView: View {
                                     language: session.currentLanguage
                                 )
                                 .labelsHidden()
-                                .frame(maxWidth: 160)
-                            } else {
+                                .font(.caption)
+                                .frame(maxWidth: Self.bottomBarLabelMaxWidth)
+                            } else if mode == .studio {
                                 // Studio: read-only, per explicit request — see
                                 // `studioAssignedSoundLabel(session:)`'s own doc comment for why
                                 // this doesn't reuse Théorie's editable picker.
                                 Text(studioAssignedSoundLabel(session: session))
                                     .font(.caption).foregroundStyle(.secondary)
-                                    .frame(maxWidth: 160, alignment: .trailing)
+                                    .lineLimit(1)
+                                    .frame(maxWidth: Self.bottomBarLabelMaxWidth, alignment: .trailing)
                             }
+                            // Settings > Sons: no sound label here — the sound being tested is
+                            // whichever one is picked in the library screen itself, not a
+                            // dropdown, per explicit request ("pas de sens ici").
                         }
                         // Generalized "?" — whichever screen is currently active (per its own
                         // `.registerContextualHelp`), regardless of `mode`, per explicit request
@@ -401,6 +457,22 @@ struct ContentView: View {
                     onNoteOff: { pitch in session.releaseKey(pitch: pitch) },
                     onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) }
                 )
+                // "Jouer"/"éditer le guide" cross-mode navigation (see
+                // `AppModel.GuideNavigationDestination`'s own doc comment) — `GuideView`/
+                // `StudioGuidePlayTabContent` react to the SAME token to jump their own internal
+                // screen; this is the one place that actually switches `mode`/the relevant tab.
+                .onChange(of: appModel.guideNavigationRequestToken) { _, _ in
+                    switch appModel.guideNavigationRequest {
+                    case .playInStudio:
+                        mode = .studio
+                        selectedStudioTab = .guide
+                    case .editInComposition:
+                        mode = .composition
+                        selectedCompositionTab = .guide
+                    case nil:
+                        break
+                    }
+                }
                 #if !os(macOS) && !os(visionOS)
                 // No independent-window equivalent on iOS/iPadOS — a dismissible sheet instead,
                 // same convention `ModeLibraryView`'s own former legend sheet already used.
@@ -435,6 +507,10 @@ struct ContentView: View {
         var chordTones: [Int] = []
         var modeTones: [Int] = []
         var showModeColoring = false
+        /// Non-empty when the Accords screen wants this bar to show ITS OWN chord as a centered
+        /// reference voicing (one occurrence of each tone), per explicit request — see
+        /// `AppModel.mainKeyboardChord`/`PitchKeyboardView.referenceChordPitches`.
+        var referenceChordPitches: Set<Int> = []
         /// Whether tapping/clicking the bar's own on-screen keys should do anything — per
         /// explicit request, ONLY when the picked source really is `.computerKeyboard` (any other
         /// source is already played through its own real input — a MIDI keyboard, the
@@ -458,10 +534,18 @@ struct ContentView: View {
                 presentation.modeTones = theoryMode.pitchClasses.map(\.value)
                 presentation.showModeColoring = true
             }
+            // The Accords screen's own chord, centered (one voicing, not repeated every
+            // octave) — per explicit request. Mutually exclusive with `mainKeyboardMode` in
+            // practice (only one Théorie sub-tab is ever active at a time).
+            if let chordSpec = appModel.mainKeyboardChord {
+                presentation.chordRoot = chordSpec.root
+                presentation.chordTones = chordSpec.tones
+                presentation.referenceChordPitches = Set(PitchSequencing.ascendingPitches(forPitchClasses: chordSpec.tones, startingAbove: 47))
+            }
             presentation.isClickable = isComputerKeyboardSource
         case .studio:
             switch selectedStudioTab {
-            case .recordings, .composition, .pieces:
+            case .recordings, .jamSession:
                 presentation.isHidden = true
             case .live:
                 if let sourceID {
@@ -485,7 +569,18 @@ struct ContentView: View {
                 presentation.isClickable = isComputerKeyboardSource && studioSourceHasAssignedSound(session: session, sourceID: sourceID)
             }
         case .settings:
-            break
+            // Only "Sons" — the one Settings sub-tab that actually plays sound (testing a
+            // soundfont, see `SoundsView`/`SoundTestModeController`) — per explicit request;
+            // every other sub-tab hides the bar just like Composition does. Plain, no
+            // coloring: there's no chord/mode context to reflect here, just a way to hear what
+            // gets picked in the library.
+            if selectedSettingsTab == .sons {
+                presentation.isClickable = isComputerKeyboardSource
+            } else {
+                presentation.isHidden = true
+            }
+        case .composition:
+            presentation.isHidden = true
         }
         return presentation
     }
@@ -545,10 +640,13 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
 
-    /// A dumb `Picker` over `session.theoryLiveInputSources`, same "`Text(...).tag(TrackID?...)`"
-    /// shape `TestModeColumn`'s own test-source picker already uses — all the arm/disarm side
-    /// effects (e.g. starting the microphone) live in `ImprovSession.setTheoryLiveInputSource`,
-    /// not here.
+    /// A dumb `Picker` over `session.theoryLiveInputSources` — all the arm/disarm side effects
+    /// (e.g. starting the microphone) live in `ImprovSession.setTheoryLiveInputSource`, not here.
+    /// Shared width for the source/son labels in the bottom bar — wide enough that a longer MIDI
+    /// device name or sound title stays on one line instead of wrapping and stretching the bar's
+    /// own height, per explicit request.
+    private static let bottomBarLabelMaxWidth: CGFloat = 220
+
     private func theorieLiveInputSourcePicker(session: ImprovSession) -> some View {
         Picker(L10n.string(.appFieldSourceTest, session.currentLanguage), selection: Binding(
             get: { session.theoryLiveInputSourceID },
@@ -560,7 +658,8 @@ struct ContentView: View {
             }
         }
         .labelsHidden()
-        .frame(maxWidth: 180)
+        .font(.caption)
+        .frame(maxWidth: Self.bottomBarLabelMaxWidth)
     }
 }
 

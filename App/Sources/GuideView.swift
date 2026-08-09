@@ -20,6 +20,8 @@ struct GuideView: View {
 
     @State private var screen: Screen
 
+    @Environment(AppModel.self) private var appModel
+
     init(session: ImprovSession, bridge: SessionUIBridge) {
         self.session = session
         self.bridge = bridge
@@ -36,10 +38,18 @@ struct GuideView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // "Éditer le guide" from Studio's own Guide-play tab (`StudioGuidePlayTabContent`) lands
+        // here — jump straight to Configuration (a guide is already active, since we were just
+        // playing it) instead of making the user re-pick it from the list, per explicit request.
+        .onChange(of: appModel.guideNavigationRequestToken) { _, _ in
+            guard appModel.guideNavigationRequest == .editInComposition else { return }
+            screen = .configuration
+        }
     }
 }
 
 #Preview {
     let session = ImprovSession()
     return GuideView(session: session, bridge: SessionUIBridge(session: session))
+        .environment(AppModel())
 }

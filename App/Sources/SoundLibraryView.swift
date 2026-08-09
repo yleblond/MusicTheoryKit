@@ -29,12 +29,9 @@ import SoundFontModel
 /// browsing/importing/curating files.
 struct SoundLibraryView: View {
     let session: ImprovSession
-    let bridge: SessionUIBridge
     let controller: SoundTestModeController
 
-    private enum Screen { case list, detail }
-
-    @State private var screen: Screen = .list
+    @State private var screen: TheoryLibraryScreen = .list
     @State private var fileSearchText = ""
     @State private var actionError: String?
 
@@ -107,49 +104,19 @@ struct SoundLibraryView: View {
             if let controllerError = controller.actionError {
                 Text(controllerError).foregroundStyle(.red).font(.caption).padding(.horizontal).padding(.top, 4)
             }
-            switch screen {
-            case .list:
-                // Screen 1: pick a soundfont — a single, compact column instead of the old
-                // always-visible 3-column layout.
-                Form { filesColumnContent }
-                    #if os(macOS)
-                    .formStyle(.grouped)
-                    #endif
-                    // Drag & drop straight from Finder/Files — essential on macOS, appreciated
-                    // on iPad (see `KnowledgeBase/SoundfontMgt/soundfontmgt.txt`). Each dropped
-                    // item goes through the exact same `importFile(at:)` path as `.fileImporter`.
-                    .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-                        for provider in providers {
-                            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                                guard let url else { return }
-                                DispatchQueue.main.async { importFile(at: url) }
-                            }
-                        }
-                        return !providers.isEmpty
-                    }
-            case .detail:
-                // Screen 2: curate/test the selected file's sounds. Left: its sounds. Right:
-                // the shared test-mode column (see `TestModeColumn`).
-                VStack(spacing: 0) {
-                    HStack {
-                        Button {
-                            screen = .list
-                        } label: {
-                            Image(systemName: "chevron.left")
-                        }
-                        .accessibilityLabel(L10n.string(.appHeadingFichiersSoundfont, session.currentLanguage))
-                        Spacer()
-                    }
-                    .padding([.horizontal, .top])
-                    HStack(alignment: .top, spacing: 0) {
-                        Form { soundsColumnContent }
-                            #if os(macOS)
-                            .formStyle(.grouped)
-                            #endif
-                        Divider()
-                        TestModeColumn(session: session, bridge: bridge, controller: controller)
-                    }
-                }
+            // Left column picks the FILE, right column picks (and tests, via the persistent
+            // main-keyboard bar — see `controller`'s own doc comment) one of ITS sounds — side by
+            // side on macOS/visionOS/iPad-width iOS, push list→detail on iPhone-width iOS, per
+            // explicit request. Same shared layout as ChordLibraryView/ModeLibraryView/
+            // ProgressionLibraryView (see `TheoryLibraryLayout`).
+            // Wider than the other Library screens' default (320) — per explicit request: each
+            // file row packs a name+subtitle, a download button, an info button, a share toggle
+            // (with its own label), and a delete button, more controls than a chord/mode/
+            // progression name ever needs room for.
+            TheoryLibraryLayout(screen: $screen, sidebarWidth: 420) {
+                filesColumn
+            } detailContent: { showBackButton, onBack in
+                detailContent(showBackButton: showBackButton, onBack: onBack)
             }
         }
         .fileImporter(
@@ -217,7 +184,26 @@ struct SoundLibraryView: View {
         }
     }
 
-    // MARK: - Files column
+    // MARK: - Files column (left column / first screen)
+
+    private var filesColumn: some View {
+        Form { filesColumnContent }
+            #if os(macOS)
+            .formStyle(.grouped)
+            #endif
+            // Drag & drop straight from Finder/Files — essential on macOS, appreciated on
+            // iPad (see `KnowledgeBase/SoundfontMgt/soundfontmgt.txt`). Each dropped item goes
+            // through the exact same `importFile(at:)` path as `.fileImporter`.
+            .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                for provider in providers {
+                    _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                        guard let url else { return }
+                        DispatchQueue.main.async { importFile(at: url) }
+                    }
+                }
+                return !providers.isEmpty
+            }
+    }
 
     @ViewBuilder
     private var filesColumnContent: some View {
@@ -438,7 +424,26 @@ struct SoundLibraryView: View {
             : entry.presets.map { SoundRow(preset: $0.identity, originalName: $0.name) }
     }
 
-    // MARK: - Sounds column (the selected file's own sounds)
+    // MARK: - Sounds column (right column / second screen)
+
+    private func detailContent(showBackButton: Bool, onBack: @escaping () -> Void) -> some View {
+        VStack(spacing: 0) {
+            if showBackButton {
+                HStack {
+                    Button(action: onBack) {
+                        Image(systemName: "chevron.left")
+                    }
+                    .accessibilityLabel(L10n.string(.appHeadingFichiersSoundfont, session.currentLanguage))
+                    Spacer()
+                }
+                .padding([.horizontal, .top])
+            }
+            Form { soundsColumnContent }
+                #if os(macOS)
+                .formStyle(.grouped)
+                #endif
+        }
+    }
 
     @ViewBuilder
     private var soundsColumnContent: some View {
@@ -511,7 +516,7 @@ struct SoundLibraryView: View {
 
             Spacer()
 
-            if controller.isTestModeOn, controller.testSourceID != nil {
+            if controller.canPlayTest {
                 if !isDownloaded {
                     if downloadingHash == hash {
                         ProgressView().controlSize(.small)

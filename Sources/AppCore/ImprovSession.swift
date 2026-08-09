@@ -2773,11 +2773,12 @@ public final class ImprovSession: @unchecked Sendable {
         try modelContext.save()
     }
 
-    /// Which favorite sound the Théorie screens' audition playback uses — set from Settings >
-    /// Théorie (`TheorieSettingsView`), read (via `theoryAuditionSound()`, never this raw id
-    /// directly) by the Accords/Modes/Progressions screens themselves, which no longer own any
-    /// picker or state of their own for this — see that settings view's own doc comment for why
-    /// this moved out of the screens.
+    /// Which favorite sound the Théorie screens' audition playback uses — set from the persistent
+    /// main-keyboard bar's own sound picker while in Théorie mode (`ContentView`, its editable
+    /// `FavoriteSoundPickerView` bound to this same id), read (via `theoryAuditionSound()`, never
+    /// this raw id directly) by the Accords/Modes/Progressions screens themselves, which don't own
+    /// any picker or state of their own for this. Used to also be settable from its own dedicated
+    /// Settings tab (`TheorieSettingsView`) — removed once the bar's own picker made it redundant.
     public private(set) var theoryAuditionSoundID: String?
 
     private func loadTheoryAuditionSoundSetting() {

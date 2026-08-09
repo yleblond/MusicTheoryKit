@@ -139,6 +139,12 @@ public struct ComputerKeyboardInputBar: View {
     public let chordRoot: Int?
     public let chordTones: [Int]
     public let alwaysShowChord: Bool
+    /// Non-empty when the Accords screen wants this bar to show ITS OWN chord as a centered
+    /// reference voicing (one occurrence of each tone, not repeated at every octave) — see
+    /// `PitchKeyboardView.referenceChordPitches`/`AppModel.mainKeyboardChord`. Composes with
+    /// `heldPitches`: whatever's actually captured on the "source principale" track overlays on
+    /// top, live, per explicit request. Empty by default, so every other call site is unaffected.
+    public let referenceChordPitches: Set<Int>
     /// Whether the physical-key letters + the red "active zone" outline are drawn at all —
     /// `false` whenever this bar isn't actually what physical typing is feeding right now (i.e.
     /// the picked "source principale" isn't `.computerKeyboard`), per explicit request: showing
@@ -153,6 +159,7 @@ public struct ComputerKeyboardInputBar: View {
         onShiftOctave: @escaping (Int) -> Void,
         modeTones: [Int] = [], showModeColoring: Bool = false,
         chordRoot: Int? = nil, chordTones: [Int] = [], alwaysShowChord: Bool = false,
+        referenceChordPitches: Set<Int> = [],
         showsPhysicalKeyLabels: Bool = true
     ) {
         self.heldPitches = heldPitches
@@ -168,6 +175,7 @@ public struct ComputerKeyboardInputBar: View {
         self.chordRoot = chordRoot
         self.chordTones = chordTones
         self.alwaysShowChord = alwaysShowChord
+        self.referenceChordPitches = referenceChordPitches
         self.showsPhysicalKeyLabels = showsPhysicalKeyLabels
     }
 
@@ -209,7 +217,8 @@ public struct ComputerKeyboardInputBar: View {
                 modeTones: modeTones, alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring,
                 palette: palette, paletteTextColors: paletteTextColors,
                 onNoteOn: onNoteOn, onNoteOff: onNoteOff, height: 90,
-                keyLabels: shiftedKeyLabels, highlightedPitches: highlightedRange
+                keyLabels: shiftedKeyLabels, highlightedPitches: highlightedRange,
+                referenceChordPitches: referenceChordPitches
             )
         }
         .padding(.horizontal)

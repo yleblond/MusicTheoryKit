@@ -15,6 +15,9 @@ import Localization
 struct ChordLibraryView: View {
     let session: ImprovSession
     var isDetachedWindow: Bool = false
+    /// See `ModeLibraryView.isActive`'s own doc comment. Feeds `.registerMainKeyboardChord` in
+    /// `body` below.
+    var isActive: Bool = true
 
     #if os(macOS) || os(visionOS)
     @Environment(\.openWindow) private var openWindow
@@ -55,6 +58,13 @@ struct ChordLibraryView: View {
                 detailContent(showBackButton: showBackButton, onBack: onBack)
             }
         }
+        // Colors the persistent main-keyboard bar (`ContentView`) with this screen's own chord,
+        // centered, while this tab is active, per explicit request — same mechanism
+        // `ModeLibraryView`/`ProgressionLibraryView` use for their own mode.
+        .registerMainKeyboardChord(
+            id: "theorie.accords", isActive: isActive,
+            chord: MainKeyboardChordSpec(root: chord.root.value, tones: chord.pitchClasses.map(\.value))
+        )
     }
 
     #if os(macOS) || os(visionOS)
@@ -166,40 +176,23 @@ struct ChordLibraryView: View {
 
                 Text(session.notationStyle.displayName(for: chord)).font(.largeTitle).bold()
 
-                ChordStaffView(events: [staffEvent])
-
-                PitchKeyboardView(
-                    chordRoot: chord.root.value,
-                    chordTones: chord.pitchClasses.map(\.value),
-                    alwaysShowChord: true,
-                    keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: keyboardTonePitches, style: session.notationStyle)
-                )
-
-                if maxInversion > 0 {
-                    Stepper(value: $inversion, in: 0...maxInversion) {
-                        Text("\(L10n.string(.appFieldInversion, session.currentLanguage)) : \(inversion)")
+                // Staff / keyboard / tablature side by side, per explicit request (used to be
+                // stacked top to bottom) — narrow widths fall back to stacking, same breakpoint
+                // as everywhere else. `.staffCenter` (not `.top`) so the keyboard lines up on
+                // the staff itself, not the inversion stepper sitting above it — per explicit
+                // request.
+                if usesTwoColumns {
+                    HStack(alignment: .staffCenter, spacing: 16) {
+                        staffColumn
+                        keyboardColumn
+                        tablatureColumn
                     }
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    // Only offer positions that actually produce a distinct diagram (see
-                    // `GuitarChordShape.hasVerifiedInversionShape`) — most qualities beyond
-                    // "Ma"/"mi" have no curated inversion shape yet, so showing those options
-                    // here would look tappable but silently do nothing.
-                    if availableGuitarPositions.count > 1 {
-                        Text(L10n.string(.appFieldPosition, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-                        Picker(L10n.string(.appFieldPosition, session.currentLanguage), selection: $guitarPosition) {
-                            ForEach(availableGuitarPositions, id: \.self) { position in
-                                Text(guitarPositionLabel(position)).tag(position)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
+                } else {
+                    VStack(alignment: .leading, spacing: 16) {
+                        staffColumn
+                        keyboardColumn
+                        tablatureColumn
                     }
-                    GuitarChordDiagramView(
-                        root: selectedRoot, chordTemplateID: selectedTemplateID, inversion: guitarPosition,
-                        language: session.currentLanguage
-                    )
                 }
 
                 SequenceTransportView(
@@ -213,6 +206,75 @@ struct ChordLibraryView: View {
         }
     }
 
+    private var staffColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Above the staff, per explicit request (used to sit below it).
+            if maxInversion > 0 {
+                Stepper(value: $inversion, in: 0...maxInversion) {
+                    Text("\(L10n.string(.appFieldInversion, session.currentLanguage)) : \(inversion)")
+                }
+            }
+            // Widened (no `widthScale` reduction, plus a minimum column count) — a single-chord
+            // staff is normally just one narrow column, too cramped next to a 300pt keyboard and
+            // the played-notes label right under it, per explicit request ("est-elle assez
+            // large ?").
+            ChordStaffView(events: [staffEvent], heightScale: 0.85, minimumColumnCount: 3)
+                .alignmentGuide(.staffCenter) { $0[VerticalAlignment.center] }
+            // Directly under the staff, per explicit request: what's ACTUALLY being played right
+            // now on the "source principale" track, not just this chord's own reference notes.
+            livePlayedNotesLabel
+        }
+    }
+
+    /// Shows only this inversion's own specific voicing (see `voicingPitches`), not every
+    /// occurrence of each tone across 2 octaves — per explicit request — via
+    /// `referenceChordPitches` rather than `alwaysShowChord`. `heldPitches` overlays whatever's
+    /// actually captured on the "source principale" track live, per explicit request — a real
+    /// held note outside the chord still gets its own `.heldOutsideChord` role since `chordRoot`
+    /// is set, so a wrong note reads clearly as "not this chord" rather than being ignored.
+    private var keyboardColumn: some View {
+        PitchKeyboardView(
+            heldPitches: liveHeldPitches,
+            chordRoot: chord.root.value,
+            chordTones: chord.pitchClasses.map(\.value),
+            height: Self.chordKeyboardSize.height,
+            keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: voicingPitches, style: session.notationStyle),
+            referenceChordPitches: Set(voicingPitches)
+        )
+        .frame(width: Self.chordKeyboardSize.width)
+        .alignmentGuide(.staffCenter) { $0[VerticalAlignment.center] }
+    }
+
+    @ViewBuilder
+    private var tablatureColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Only offer positions that actually produce a distinct diagram (see
+            // `GuitarChordShape.hasVerifiedInversionShape`) — most qualities beyond
+            // "Ma"/"mi" have no curated inversion shape yet, so showing those options
+            // here would look tappable but silently do nothing.
+            if availableGuitarPositions.count > 1 {
+                Text(L10n.string(.appFieldPosition, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
+                Picker(L10n.string(.appFieldPosition, session.currentLanguage), selection: $guitarPosition) {
+                    ForEach(availableGuitarPositions, id: \.self) { position in
+                        Text(guitarPositionLabel(position)).tag(position)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            GuitarChordDiagramView(
+                root: selectedRoot, chordTemplateID: selectedTemplateID, inversion: guitarPosition,
+                language: session.currentLanguage
+            )
+        }
+    }
+
+    /// -50%-ish off `PitchKeyboardView`'s own default (144×fluid width) — now that the keyboard
+    /// only ever shows one voicing (3-5 keys) instead of the same tones repeated across 2
+    /// octaves, a compact fixed size reads better next to the staff/tablature, per explicit
+    /// request ("ajuster les tailles pour que ce soit proportionnellement agréable").
+    private static let chordKeyboardSize = CGSize(width: 300, height: 130)
+
     /// One close-position voicing of the current inversion, anchored just above middle C —
     /// each successive tone placed in the next octave up so the shape actually reflects which
     /// tone is the bass, unlike `ChordStaffView.chordEvent(root:tones:)` (root-position only).
@@ -223,18 +285,37 @@ struct ChordLibraryView: View {
         )
     }
 
-    private var keyboardTonePitches: [Int] {
-        let tones = Set(chord.pitchClasses.map(\.value))
-        return (48...72).filter { tones.contains((($0 % 12) + 12) % 12) }
+    /// The current inversion's own ascending voicing as absolute pitches — feeds both
+    /// `staffEvent` (already did) and `keyboardColumn`'s `referenceChordPitches`, so the staff
+    /// and the mini keyboard always agree on which exact notes represent "this inversion."
+    private var voicingPitches: [Int] {
+        PitchSequencing.ascendingPitches(
+            forPitchClasses: chord.voicing(inversion: inversion).orderedPitchClasses.map(\.value), startingAbove: 47
+        )
+    }
+
+    /// Whichever live track is the app's current "source principale" — read directly (not
+    /// cached in `@State`; `session.tracks` already triggers a SwiftUI refresh on change) so
+    /// `keyboardColumn`/`livePlayedNotesLabel` always reflect what's actually being played,
+    /// live, per explicit request.
+    private var liveHeldPitches: Set<Int> {
+        guard let sourceID = session.theoryLiveInputSourceID else { return [] }
+        return session.tracks.first { $0.id == sourceID }?.heldPitches ?? []
+    }
+
+    @ViewBuilder
+    private var livePlayedNotesLabel: some View {
+        if !liveHeldPitches.isEmpty {
+            let names = liveHeldPitches.sorted().map { session.notationStyle.rootName(PitchClass((($0 % 12) + 12) % 12), preferFlats: false) }
+            Text("\(L10n.string(.appLabelNotesJouees, session.currentLanguage)) : \(names.joined(separator: ", "))")
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 
     private func play() {
         guard let sound = session.theoryAuditionSound() else { return }
         try? session.loadTheoryLibraryAuditionSample(sound)
-        let pitches = PitchSequencing.ascendingPitches(
-            forPitchClasses: chord.voicing(inversion: inversion).orderedPitchClasses.map(\.value), startingAbove: 47
-        )
-        session.playTheoryLibraryAudition([ImprovSession.TheoryAuditionNote(pitches: pitches, startSeconds: 0, durationSeconds: 2)])
+        session.playTheoryLibraryAudition([ImprovSession.TheoryAuditionNote(pitches: voicingPitches, startSeconds: 0, durationSeconds: 2)])
     }
 }
 

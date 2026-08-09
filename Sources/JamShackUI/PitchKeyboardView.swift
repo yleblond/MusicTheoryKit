@@ -145,6 +145,13 @@ public struct PitchKeyboardView: View {
     /// existing call sites only ever set one or the other). Empty by default; existing call sites
     /// are unaffected.
     public let noteBadges: [Int: KeyBadge]
+    /// Keyed by EXACT absolute pitch (not pitch class) — colors `chordRoot`/`chordTones` at
+    /// these specific keys even when not held, like `alwaysShowChord` but WITHOUT repeating at
+    /// every octave the pitch class occurs in range — e.g. a mini keyboard showing one specific
+    /// close voicing (root position or a chosen inversion) rather than every occurrence of each
+    /// tone. See `pitchDisplayState(referenceChordPitches:)`'s own doc comment. Empty by default;
+    /// existing call sites are unaffected.
+    public let referenceChordPitches: Set<Int>
 
     /// Same fallback arrays `StaticAssets.swift`'s `PITCH_CLASS_COLORS`/`_TEXT_COLORS` use
     /// before the first real palette is known — a reasonable default for any call site that
@@ -178,7 +185,8 @@ public struct PitchKeyboardView: View {
         customFillColors: [Int: Color] = [:],
         resolutionArrows: [Int: ResolutionDirection] = [:],
         modalCharacteristicPitchClasses: Set<Int> = [],
-        noteBadges: [Int: KeyBadge] = [:]
+        noteBadges: [Int: KeyBadge] = [:],
+        referenceChordPitches: Set<Int> = []
     ) {
         self.minMidi = minMidi
         self.maxMidi = maxMidi
@@ -200,6 +208,7 @@ public struct PitchKeyboardView: View {
         self.resolutionArrows = resolutionArrows
         self.modalCharacteristicPitchClasses = modalCharacteristicPitchClasses
         self.noteBadges = noteBadges
+        self.referenceChordPitches = referenceChordPitches
     }
 
     // White key slot (0...6) within its octave, for the 7 white pitch classes.
@@ -309,7 +318,8 @@ public struct PitchKeyboardView: View {
                     let state = pitchDisplayState(
                         pitch: key.pitch, heldPitches: heldPitches, chordRoot: chordRoot,
                         chordTones: chordTones, modeTones: modeTones,
-                        alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring
+                        alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring,
+                        referenceChordPitches: referenceChordPitches
                     )
                     let path = Path(key.rect.insetBy(dx: 0.5, dy: 0.5))
                     let fill = customFillColors[((key.pitch % 12) + 12) % 12] ?? colorScheme.fillColor(for: state.role, isWhiteKey: true)
@@ -323,7 +333,8 @@ public struct PitchKeyboardView: View {
                     let state = pitchDisplayState(
                         pitch: key.pitch, heldPitches: heldPitches, chordRoot: chordRoot,
                         chordTones: chordTones, modeTones: modeTones,
-                        alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring
+                        alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring,
+                        referenceChordPitches: referenceChordPitches
                     )
                     let path = Path(key.rect)
                     let customFill = customFillColors[((key.pitch % 12) + 12) % 12]

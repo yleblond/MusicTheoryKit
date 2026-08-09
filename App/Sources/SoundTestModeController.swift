@@ -15,6 +15,11 @@ final class SoundTestModeController: @unchecked Sendable {
     let session: ImprovSession
 
     private(set) var isTestModeOn = false
+    /// Mirrors `session.theoryLiveInputSourceID` — the app's ONE "source principale," also what
+    /// the persistent main-keyboard bar (`ContentView`) plays through — rather than owning an
+    /// independent selection of its own, per explicit request. No longer settable from here
+    /// directly (there's no picker in this screen anymore, see `TestModeColumn`'s own removal);
+    /// call `syncTestSource()` whenever `theoryLiveInputSourceID` might have changed.
     private(set) var testSourceID: TrackID?
     private(set) var isChangingTestSource = false
     /// `"<hash>|<presetID>"` of the sound row currently loading via `testSound`, `nil`
@@ -74,6 +79,13 @@ final class SoundTestModeController: @unchecked Sendable {
     }
     var currentlyTestedPreset: SoundFontPresetIdentity? { testTrack?.instrumentPreset }
 
+    /// Whether tapping a sound's own speaker button would actually do anything right now — test
+    /// mode is on AND a testable source is attached. In practice `testSourceID` is basically
+    /// always non-nil once `isTestModeOn` is (the microphone/no-source fallbacks in
+    /// `setTestMode`/`syncTestSource` guarantee it), but the `attachTestInstrument` step is
+    /// asynchronous, so there's a brief window right after enabling where it's still catching up.
+    var canPlayTest: Bool { isTestModeOn && testSourceID != nil }
+
     /// Idempotent (a repeated call with the same value is a no-op) — callers can call this
     /// unconditionally on appear/disappear without tracking whether it already ran.
     func setTestMode(_ enabled: Bool) {
@@ -82,29 +94,53 @@ final class SoundTestModeController: @unchecked Sendable {
         if enabled {
             computerKeyboardWasEnabledBeforeTestMode = session.computerKeyboardInputEnabled
             if !session.computerKeyboardInputEnabled {
+                // Also defaults `theoryLiveInputSourceID` to `.computerKeyboard` when nothing was
+                // picked yet — see that method's own doc comment — which is also what makes the
+                // persistent keyboard bar appear (see `ContentView`).
                 session.setComputerKeyboardInputEnabled(true)
             }
-            // Computer keyboard as the default test source, per explicit user request — it's
-            // also what makes the persistent keyboard bar appear (see `ContentView`).
-            applyTestSource(.computerKeyboard)
+            // Sound-testing doesn't make sense through the microphone (nothing to attach an
+            // instrument to) — fall back to the computer keyboard, same reasoning as the
+            // no-source-picked-yet case just above.
+            if session.theoryLiveInputSourceID == .microphone {
+                session.setTheoryLiveInputSource(.computerKeyboard)
+            }
+            attachTestInstrument(to: session.theoryLiveInputSourceID)
         } else {
-            applyTestSource(nil)
+            attachTestInstrument(to: nil)
             if !computerKeyboardWasEnabledBeforeTestMode {
                 session.setComputerKeyboardInputEnabled(false)
             }
         }
     }
 
+    /// Call whenever `session.theoryLiveInputSourceID` might have changed while test mode is on
+    /// — the shared bottom-bar picker (`ContentView.theorieLiveInputSourcePicker`), not this
+    /// controller, is what actually changes it now, so the attached test instrument needs to
+    /// explicitly follow along instead of assuming it already does. A no-op if the source hasn't
+    /// actually changed (`attachTestInstrument` isn't cheap — it does real disk I/O).
+    func syncTestSource() {
+        guard isTestModeOn else { return }
+        if session.theoryLiveInputSourceID == .microphone {
+            // Same fallback `setTestMode` applies on entry — re-picking the source triggers
+            // another `syncTestSource` call (via the view's own `.onChange`), which is what
+            // actually attaches the instrument once this resolves to `.computerKeyboard`.
+            session.setTheoryLiveInputSource(.computerKeyboard)
+            return
+        }
+        guard session.theoryLiveInputSourceID != testSourceID else { return }
+        attachTestInstrument(to: session.theoryLiveInputSourceID)
+    }
+
     /// The one place `testSourceID` ever changes: restores the PREVIOUS source's own original
     /// sound and whatever else was listening, then — if a new source was picked — snapshots ITS
     /// current sound so it can be restored the same way later, pauses every other
     /// currently-listening track, and starts/enables the new one. Symmetric handling of `nil`
-    /// (test mode's own "Aucune" choice, and turning test mode off) is what makes leaving the
-    /// sound list exactly as it was found always safe, not just on the common "toggle off" path.
-    /// Restoring the previous test source's own instrument can load a sample-based instrument
-    /// via `setInstrument` — real disk I/O, so that step runs off the main thread
-    /// (`Task.detached`).
-    func applyTestSource(_ newSource: TrackID?) {
+    /// (turning test mode off) is what makes leaving the sound list exactly as it was found
+    /// always safe, not just on the common "toggle off" path. Restoring the previous test
+    /// source's own instrument can load a sample-based instrument via `setInstrument` — real
+    /// disk I/O, so that step runs off the main thread (`Task.detached`).
+    private func attachTestInstrument(to newSource: TrackID?) {
         isChangingTestSource = true
         let session = self.session
         Task {
@@ -164,7 +200,7 @@ final class SoundTestModeController: @unchecked Sendable {
 
     /// `setInstrument` (real disk I/O, and for a synced sample not yet downloaded, a real
     /// network wait) must not run on the main thread — same `Task.detached` bridge as
-    /// `applyTestSource`'s own instrument-restore step.
+    /// `attachTestInstrument`'s own instrument-restore step.
     func testSound(hash: String, preset: SoundFontPresetIdentity?, key: String) {
         guard testingSoundKey == nil, let testSourceID, let path = session.soundFontPath(forHash: hash) else { return }
         testingSoundKey = key

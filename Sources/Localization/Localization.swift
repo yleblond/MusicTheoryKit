@@ -231,7 +231,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
 
     // MARK: - App: main TabView + JamShack sidebar + sub-tab sidebars (accessibility labels)
     case appTabStudio, appTabEnregistrements, appStatusDemarrage
-    case appTabSons, appTabMIDI, appTabMicrophone, appTabCouleurs, appTabLangue, appTabLLM
+    case appTabSons, appTabMIDI, appTabMicrophone, appTabCouleurs, appTabLangue, appTabLLM, appTabConsole
     case appTabFichierMorceau, appTabFichierSoundtrack
     case appTabFichierComposition, appTabComposerCourt
 
@@ -274,7 +274,6 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appPlaceholderAucunDossierScenes, appHeadingDossierScenes
     case appButtonExporter, appButtonImporter
     case appButtonRenommer, appAlertRenommerScene, appAlertRenommerGuide, appPlaceholderSansNom
-    case appModeEdition, appModeLecture
     case appAlertNouveauRole, appPlaceholderNomExPiano1, appButtonAjouter
     case appPlaceholderTousInstrumentsAffectes, appHeadingInstrumentsNonAffectes
     case appButtonAjouterUnRole, appButtonAjouterUnRoleEllipsis, appButtonCreerEtAttacher
@@ -371,6 +370,10 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHeadingCetAppareil, appHeadingAppareilsConnectes
     case appButtonReorganiser, appButtonTerminerReorganisation
     case appButtonVoirLeGuide
+    /// Studio's own Guide-play tab (`StudioGuidePlayTabContent`) — jumps back to Composition
+    /// mode's Guide screen, editing the same `session.currentGuide` — see
+    /// `AppModel.GuideNavigationDestination`.
+    case appButtonEditerLeGuide
     case appHeadingEcouterLeGuide, appFieldVitesse
     case appSectionHebergerReseauLocal, appFormatServeurActifPort, appButtonArreterLeServeur
     case appSectionRejoindreReseauLocal, appFormatConnecteA, appButtonSeDeconnecter
@@ -419,6 +422,10 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHelpMelodicMapTitle, appHelpMelodicMapStable, appHelpMelodicMapChordTone, appHelpMelodicMapColor
     case appHelpMelodicMapTension, appHelpMelodicMapContextual, appHelpMelodicMapPrinciple
     case appLabelNotesJoueesRecemment, appLabelAccordsExploresRecemment, appHeadingProgressionsTypeDuMode
+    /// The Chord Library's own live-played overlay (Accords screen) — distinct from
+    /// `appLabelNotesJoueesRecemment`'s "history of the last few" — this is "what's held right
+    /// now."
+    case appLabelNotesJouees
 
     // MARK: - App: Progressions (Progression Library)
     case appHeadingBibliothequeProgressions, appFieldProgressionChoisie

@@ -12,7 +12,6 @@ import Localization
 /// conflicting, copy of that state.
 struct SoundsView: View {
     let session: ImprovSession
-    let bridge: SessionUIBridge
     /// Whether this screen is genuinely the one visible right now — driven by `JamShackView`
     /// (its own `subTab == .sons`) combined with `ContentView`'s own active-tab check, NOT by
     /// `.onAppear`/`.onDisappear`: those are unreliable here, since `TabView` on macOS
@@ -33,9 +32,8 @@ struct SoundsView: View {
     /// of silently constructing a fresh one (and losing whatever test was in progress) each time.
     @State private var controller: SoundTestModeController
 
-    init(session: ImprovSession, bridge: SessionUIBridge, isActive: Bool) {
+    init(session: ImprovSession, isActive: Bool) {
         self.session = session
-        self.bridge = bridge
         self.isActive = isActive
         _controller = State(initialValue: SoundTestModeController(session: session))
     }
@@ -53,9 +51,9 @@ struct SoundsView: View {
 
             switch subTab {
             case .library:
-                SoundLibraryView(session: session, bridge: bridge, controller: controller)
+                SoundLibraryView(session: session, controller: controller)
             case .favorites:
-                FavoriteSoundsView(session: session, bridge: bridge, controller: controller)
+                FavoriteSoundsView(session: session, controller: controller)
             case .storage:
                 SoundStorageView(session: session)
             }
@@ -67,10 +65,16 @@ struct SoundsView: View {
         .onChange(of: isActive, initial: true) { _, active in
             controller.setTestMode(active)
         }
+        // The shared bottom-bar picker (`ContentView.theorieLiveInputSourcePicker`), not a picker
+        // owned by this screen, is what changes the source now — keep the attached test
+        // instrument following it explicitly instead of assuming it already does.
+        .onChange(of: session.theoryLiveInputSourceID) { _, _ in
+            controller.syncTestSource()
+        }
     }
 }
 
 #Preview {
     let session = ImprovSession()
-    return SoundsView(session: session, bridge: SessionUIBridge(session: session), isActive: true)
+    return SoundsView(session: session, isActive: true)
 }

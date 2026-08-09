@@ -77,10 +77,12 @@ encore prise. Retiré d'ici.
     convention de couleurs par rôle existe déjà quelque part (théorie académique, logiciels de
     composition) avant d'en inventer une.
 
-25. **Réglages "Théorie" > couleurs** — `TheorieSettingsView` (Settings > Théorie) ne contient pour
-    l'instant que le son d'écoute (déplacé hors des écrans Accords/Modes/Progressions). Y ajouter
-    la personnalisation de toutes les couleurs de ces écrans : les 4 rôles harmoniques (accords —
-    `FunctionalRoleColors`), les 5 rôles mélodiques (notes — `MelodicRoleColors`), et l'accent
-    "caractéristique modale" (violet, partagé par les deux). Probablement un SwiftData singleton
-    du même genre que `NoteColorSettingsFile`, avec des valeurs par défaut = les couleurs actuelles
-    codées en dur.
+25. **Réglages > couleurs des écrans Théorie** — `TheorieSettingsView` (Settings > "Music Lab") a
+    été supprimé (2026-08-09) une fois son seul contenu (le son d'écoute) devenu redondant avec le
+    picker déjà présent sur la barre clavier principal en mode Théorie. Si la personnalisation de
+    couleurs ci-dessous est reprise, il lui faudra un nouvel emplacement — le tab Settings
+    "Couleurs" existant (`SettingsTab.couleurs`) est le candidat naturel. Idée d'origine, toujours
+    valable : personnaliser les 4 rôles harmoniques (accords — `FunctionalRoleColors`), les 5 rôles
+    mélodiques (notes — `MelodicRoleColors`), et l'accent "caractéristique modale" (violet, partagé
+    par les deux). Probablement un SwiftData singleton du même genre que `NoteColorSettingsFile`,
+    avec des valeurs par défaut = les couleurs actuelles codées en dur.

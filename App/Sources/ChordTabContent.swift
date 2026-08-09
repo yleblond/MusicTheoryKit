@@ -6,6 +6,8 @@ import Localization
 /// `MicrophoneTabContent` already do for their own screens.
 struct ChordTabContent: View {
     let session: ImprovSession
+    /// See `ExplorationTabContent.isActive`'s own doc comment.
+    let isActive: Bool
 
     @Environment(AppModel.self) private var appModel
     #if os(macOS) || os(visionOS)
@@ -21,10 +23,10 @@ struct ChordTabContent: View {
                 onReintegrate: { dismissWindow(id: AuxiliaryWindowID.theorieAccords.rawValue) }
             )
         } else {
-            ChordLibraryView(session: session)
+            ChordLibraryView(session: session, isActive: isActive)
         }
         #else
-        ChordLibraryView(session: session)
+        ChordLibraryView(session: session, isActive: isActive)
         #endif
     }
 }

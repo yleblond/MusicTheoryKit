@@ -17,7 +17,6 @@ import SoundFontModel
 /// something a favorite on one device and finding it again on another always works.
 struct FavoriteSoundsView: View {
     let session: ImprovSession
-    let bridge: SessionUIBridge
     let controller: SoundTestModeController
 
     @State private var searchText = ""
@@ -65,14 +64,10 @@ struct FavoriteSoundsView: View {
             if let controllerError = controller.actionError {
                 Text(controllerError).foregroundStyle(.red).font(.caption).padding(.horizontal).padding(.top, 4)
             }
-            HStack(alignment: .top, spacing: 0) {
-                Form { favoritesColumnContent }
-                    #if os(macOS)
-                    .formStyle(.grouped)
-                    #endif
-                Divider()
-                TestModeColumn(session: session, bridge: bridge, controller: controller)
-            }
+            Form { favoritesColumnContent }
+                #if os(macOS)
+                .formStyle(.grouped)
+                #endif
         }
     }
 
@@ -144,7 +139,7 @@ struct FavoriteSoundsView: View {
 
             Spacer()
 
-            if controller.isTestModeOn, controller.testSourceID != nil {
+            if controller.canPlayTest {
                 if !isDownloaded {
                     if downloadingHash == row.hash {
                         ProgressView().controlSize(.small)

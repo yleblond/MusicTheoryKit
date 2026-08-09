@@ -35,3 +35,47 @@ private struct MainKeyboardModeRegistration: ViewModifier {
             }
     }
 }
+
+/// See `AppModel.mainKeyboardChord`'s own doc comment — root pitch class + tones (pitch
+/// classes, including the root), the Chord Library's own equivalent of `Mode` for this purpose.
+public struct MainKeyboardChordSpec: Equatable {
+    public let root: Int
+    public let tones: [Int]
+
+    public init(root: Int, tones: [Int]) {
+        self.root = root
+        self.tones = tones
+    }
+}
+
+extension View {
+    /// Registers `chord` as driving the persistent main-keyboard bar's own centered reference
+    /// voicing (see `AppModel.mainKeyboardChord`'s own doc comment) whenever `isActive` is true —
+    /// the Chord Library's own counterpart to `registerMainKeyboardMode` above (same design,
+    /// same reasoning for why `isActive` rather than `.onAppear`/`.onDisappear`).
+    func registerMainKeyboardChord(id: String, isActive: Bool, chord: MainKeyboardChordSpec?) -> some View {
+        modifier(MainKeyboardChordRegistration(id: id, isActive: isActive, chord: chord))
+    }
+}
+
+private struct MainKeyboardChordRegistration: ViewModifier {
+    @Environment(AppModel.self) private var appModel
+    let id: String
+    let isActive: Bool
+    let chord: MainKeyboardChordSpec?
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: isActive, initial: true) { _, active in
+                if active {
+                    appModel.setMainKeyboardChord(id: id, chord: chord)
+                } else {
+                    appModel.clearMainKeyboardChord(id: id)
+                }
+            }
+            .onChange(of: chord) { _, newChord in
+                guard isActive else { return }
+                appModel.setMainKeyboardChord(id: id, chord: newChord)
+            }
+    }
+}

@@ -816,6 +816,17 @@
   "ru": "Открыть гид",
   "zhHans": "查看引导"
  },
+ "appButtonEditerLeGuide": {
+  "de": "Guide bearbeiten",
+  "en": "Edit the guide",
+  "es": "Editar la guía",
+  "fr": "Éditer le guide",
+  "it": "Modifica la guida",
+  "ja": "ガイドを編集",
+  "pt": "Editar o guia",
+  "ru": "Редактировать гид",
+  "zhHans": "编辑引导"
+ },
  "appChangerEllipsis": {
   "de": "Ändern...",
   "en": "Change...",
@@ -3005,6 +3016,17 @@
   "ru": "Недавно сыгранные ноты",
   "zhHans": "最近弹奏的音符"
  },
+ "appLabelNotesJouees": {
+  "de": "Gespielte Noten",
+  "en": "Notes played",
+  "es": "Notas tocadas",
+  "fr": "Notes jouées",
+  "it": "Note suonate",
+  "ja": "演奏中の音",
+  "pt": "Notas tocadas",
+  "ru": "Звучащие ноты",
+  "zhHans": "正在弹奏的音符"
+ },
  "appLabelNotesRecues": {
   "de": "Empfangene Noten",
   "en": "Notes received",
@@ -3265,17 +3287,6 @@
   "ru": "Прил.",
   "zhHans": "应用"
  },
- "appModeEdition": {
-  "de": "Bearbeiten",
-  "en": "Edit",
-  "es": "Edición",
-  "fr": "Edition",
-  "it": "Modifica",
-  "ja": "編集",
-  "pt": "Edição",
-  "ru": "Редактирование",
-  "zhHans": "编辑"
- },
  "appModeIsole": {
   "de": "Isoliert",
   "en": "Isolated",
@@ -3330,17 +3341,6 @@
   "pt": "Jam local - participante",
   "ru": "Локальный джем — участник",
   "zhHans": "本地Jam - 参与者"
- },
- "appModeLecture": {
-  "de": "Ausführen",
-  "en": "Run",
-  "es": "Ejecutar",
-  "fr": "Lecture",
-  "it": "Esegui",
-  "ja": "実行",
-  "pt": "Executar",
-  "ru": "Запуск",
-  "zhHans": "运行"
  },
  "appModeLumi": {
   "de": "Lumi",
@@ -4287,6 +4287,17 @@
   "pt": "Cores",
   "ru": "Цвета",
   "zhHans": "颜色"
+ },
+ "appTabConsole": {
+  "de": "Konsole",
+  "en": "Console",
+  "es": "Consola",
+  "fr": "Console",
+  "it": "Console",
+  "ja": "コンソール",
+  "pt": "Console",
+  "ru": "Консоль",
+  "zhHans": "控制台"
  },
  "appTabEnregistrements": {
   "de": "Aufnahmen",

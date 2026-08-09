@@ -96,6 +96,52 @@ final class AppModel {
         mainKeyboardMode = nil
     }
 
+    /// The chord (root pitch class + tones) the Accords screen wants the persistent main-keyboard
+    /// bar to show as a centered reference voicing — see `ContentView.mainKeyboardPresentation`'s
+    /// own use of `PitchKeyboardView.referenceChordPitches` for why this needs its own root+tones
+    /// pair rather than reusing `mainKeyboardMode`. Use `View.registerMainKeyboardChord` rather
+    /// than setting this directly; same owner-ID guard as `mainKeyboardModeOwnerID` above.
+    private(set) var mainKeyboardChord: MainKeyboardChordSpec?
+    private var mainKeyboardChordOwnerID: String?
+
+    func setMainKeyboardChord(id: String, chord: MainKeyboardChordSpec?) {
+        mainKeyboardChordOwnerID = id
+        mainKeyboardChord = chord
+    }
+
+    func clearMainKeyboardChord(id: String) {
+        guard mainKeyboardChordOwnerID == id else { return }
+        mainKeyboardChordOwnerID = nil
+        mainKeyboardChord = nil
+    }
+
+    /// Cross-mode navigation for the Guide screens — per explicit request: "jouer le guide" in
+    /// Composition mode's own Guide screen (editing) jumps to Studio's Guide tab (playing), and
+    /// "éditer le guide" there jumps back. Both screens act on the SAME `session.currentGuide` —
+    /// there's no separate "guide loaded for editing" vs "for playing" — so this only needs to
+    /// carry a destination, not a guide identity.
+    ///
+    /// A request/token pair rather than a single "pending request, cleared once consumed" value
+    /// — `ContentView` (switches `mode`/`selectedStudioTab`/`selectedCompositionTab`),
+    /// `GuideView` (jumps its own internal screen to `.configuration`), and
+    /// `StudioGuidePlayTabContent` (jumps its own internal screen to `.lecture`) all need to react
+    /// independently to the SAME request; a single "first reader clears it" value would race
+    /// between them. Each observer instead reacts to `guideNavigationRequestToken` changing (same
+    /// idiom as `computerKeyboardFocusRequestToken`) and reads `guideNavigationRequest` to decide
+    /// whether THIS particular request concerns it — the value is simply left in place rather
+    /// than cleared, since only the token transition (not presence/absence) ever matters.
+    enum GuideNavigationDestination: Equatable {
+        case playInStudio
+        case editInComposition
+    }
+    private(set) var guideNavigationRequest: GuideNavigationDestination?
+    private(set) var guideNavigationRequestToken = 0
+
+    func requestGuideNavigation(_ destination: GuideNavigationDestination) {
+        guideNavigationRequest = destination
+        guideNavigationRequestToken += 1
+    }
+
     /// Identical body to `ContentView`'s old startup `.task { }` — moved here verbatim so
     /// behavior doesn't change, just ownership.
     func start() async {
