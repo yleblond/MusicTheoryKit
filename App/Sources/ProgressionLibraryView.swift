@@ -5,18 +5,6 @@ import MusicTheoryKit
 import PieceModel
 import Localization
 
-/// Reports the width of the row holding both `staffAndSequenceColumn` and
-/// `tablatureAndKeyboardColumn`, via a zero-size `GeometryReader` background (measuring, not
-/// laying out) — see `columnsRowWidth`'s own doc comment for why this replaced a fixed
-/// chord-per-row count. Measuring the ROW rather than `staffAndSequenceColumn` itself sidesteps
-/// a chicken-and-egg problem: that column's own resolved width depends on how the HStack
-/// distributes space to its `.frame(maxWidth: .infinity)` flexible child, whereas the row's
-/// width is fixed by its (non-flexible) parent and known before any of that negotiation happens.
-private struct ColumnsRowWidthKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-
 /// "Progressions" tab — pick a tonic + mode (restricted to the 7 classic major-family modes,
 /// where `ChordProgressionResolver`'s rich diatonic resolution and `ProgressionNameAliases`'s
 /// common-name matching are both meaningful), then browse `session.chordProgressionTemplates`
@@ -45,10 +33,10 @@ struct ProgressionLibraryView: View {
     @State private var selectedScaleID: String = "ionian"
     @State private var selectedTemplateName: String?
     @State private var currentChordIndex: Int = 0
-    /// The width of the row holding both detail columns (measured via `ColumnsRowWidthKey`, not
-    /// a fixed constant) — see `staffAvailableWidth`, which derives the staff's own share of it.
+    /// The width of the row holding both detail columns (measured via `.onGeometryChange`, not a
+    /// fixed constant) — see `staffAvailableWidth`, which derives the staff's own share of it.
     /// Starts at 0 until the first layout pass reports the real value, same one-frame settling
-    /// any `GeometryReader`-fed layout has.
+    /// any geometry-fed layout has.
     @State private var columnsRowWidth: CGFloat = 0
     /// Bumped on every `playProgression()`/`stopProgression()` call — guards the scheduled
     /// `currentChordIndex` advances below so a Stop (or a fresh Play before the previous
@@ -207,8 +195,6 @@ struct ProgressionLibraryView: View {
 
                 Text(selectedTemplate?.name ?? "").font(.largeTitle).bold()
                 commonNamesSection
-                Text("DEBUG columnsRowWidth=\(columnsRowWidth) staffAvailableWidth=\(staffAvailableWidth) usesTwoColumns=\(usesTwoColumns)")
-                    .font(.caption).foregroundStyle(.red)
 
                 // Per explicit request: a wide column (staff + chord sequence) next to a
                 // narrower one (tablature + keyboard) — used to be one column, top to bottom.
@@ -225,12 +211,7 @@ struct ProgressionLibraryView: View {
                         }
                     }
                 }
-                .background(
-                    GeometryReader { geometry in
-                        Color.clear.preference(key: ColumnsRowWidthKey.self, value: geometry.size.width)
-                    }
-                )
-                .onPreferenceChange(ColumnsRowWidthKey.self) { columnsRowWidth = $0 }
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { columnsRowWidth = $0 }
 
                 SequenceTransportView(
                     isPlaying: session.isAuditioningTheoryLibrary,
@@ -357,7 +338,11 @@ struct ProgressionLibraryView: View {
     /// The staff's own share of `columnsRowWidth` — the full row's width when stacked (single
     /// column, no sibling), or that minus `tablatureAndKeyboardColumn`'s known fixed width (and
     /// the `HStack`'s own spacing) when side by side, since `columnsRowWidth` measures the WHOLE
-    /// row, not this column alone (see `ColumnsRowWidthKey`'s own doc comment for why).
+    /// row, not this column alone — measuring the row rather than `staffAndSequenceColumn`
+    /// itself sidesteps a chicken-and-egg problem: that column's own resolved width depends on
+    /// how the HStack distributes space to its `.frame(maxWidth: .infinity)` flexible child,
+    /// whereas the row's width is fixed by its (non-flexible) parent, known before any of that
+    /// negotiation happens.
     private var staffAvailableWidth: CGFloat {
         guard usesTwoColumns else { return columnsRowWidth }
         return max(0, columnsRowWidth - Self.progressionKeyboardSize.width - 16)
