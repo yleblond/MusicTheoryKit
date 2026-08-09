@@ -198,14 +198,33 @@ public struct ChordStaffView: View {
 
     /// Extra room reserved right after the clef for the key-signature glyphs — 0 when
     /// `keySignature` is `nil`, so every existing call site's layout is unaffected.
-    private var keySignatureWidth: CGFloat {
+    private static func keySignatureWidth(widthScale: CGFloat, keySignature: MajorKeySignature?) -> CGFloat {
         guard let keySignature, keySignature.accidentalCount > 0 else { return 0 }
-        return CGFloat(keySignature.accidentalCount) * keySignatureAccidentalWidth + keySignatureStartPadding
+        return CGFloat(keySignature.accidentalCount) * Self.baseKeySignatureAccidentalWidth * widthScale
+            + Self.baseKeySignatureStartPadding * widthScale
     }
+
+    private var keySignatureWidth: CGFloat { Self.keySignatureWidth(widthScale: widthScale, keySignature: keySignature) }
 
     private var firstColX: CGFloat { stavesX + Self.baseFirstColXOffset * widthScale + keySignatureWidth }
 
     private func y(_ row: Int) -> CGFloat { marginTop + CGFloat(row) * rowHeight }
+
+    /// How many columns fit within `width` at a given `widthScale`/`keySignature`, mirroring
+    /// `body`'s own `firstColX`/`colWidth`/`marginRight` math — lets a caller that needs to wrap
+    /// a long sequence across several stacked `ChordStaffView`s (the Progression Library's
+    /// staff, one wide `Canvas` never wraps on its own) size each row to the space it actually
+    /// has, instead of an arbitrary fixed column count that wraps far earlier than necessary.
+    public static func maxColumnCount(forWidth width: CGFloat, widthScale: CGFloat = 1, keySignature: MajorKeySignature? = nil) -> Int {
+        let firstColX = Self.baseStavesX * widthScale + Self.baseFirstColXOffset * widthScale
+            + keySignatureWidth(widthScale: widthScale, keySignature: keySignature)
+        let colWidth = Self.baseColWidth * widthScale
+        let marginRight = Self.baseMarginRight * widthScale
+        guard colWidth > 0 else { return 1 }
+        let available = width - firstColX - marginRight
+        guard available > 0 else { return 1 }
+        return max(1, Int(available / colWidth) + 1)
+    }
 
     public var body: some View {
         let filteredEvents = events.filter { !$0.pitches.isEmpty }

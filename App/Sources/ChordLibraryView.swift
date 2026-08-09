@@ -27,12 +27,13 @@ struct ChordLibraryView: View {
     @State private var screen: TheoryLibraryScreen = .list
     @State private var selectedRoot: Int = 0
     @State private var selectedTemplateID: String = "Ma"
-    /// Drives the staff/keyboard display — independent of `guitarPosition`, since the guitar
-    /// diagram only has verified shapes up to the 3rd inversion (see `GuitarChordShape`'s own
-    /// doc comment) while the staff/keyboard can show any inversion a chord's own tone count
-    /// allows.
+    /// Drives the staff, keyboard, AND guitar diagram together, via a single button bar above
+    /// all three (used to be two independent controls — a stepper above the staff, a segmented
+    /// picker above the tablature — merged per explicit request). The guitar diagram only has
+    /// verified shapes up to the 3rd inversion (see `GuitarChordShape`'s own doc comment) but
+    /// gracefully falls back to its root-position shape beyond that (`isBasePositionFallback`),
+    /// so sharing one control never leaves the tablature broken, only occasionally unchanged.
     @State private var inversion: Int = 0
-    @State private var guitarPosition: Int = 0
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -117,7 +118,6 @@ struct ChordLibraryView: View {
                     Button {
                         selectedTemplateID = id
                         inversion = 0
-                        guitarPosition = 0
                         screen = .detail
                     } label: {
                         HStack {
@@ -147,18 +147,16 @@ struct ChordLibraryView: View {
 
     private var maxInversion: Int { Chord.maxInversion(for: chord.template) }
 
-    /// Fondamentale (always available) plus every inversion `GuitarChordShape` actually has a
-    /// curated shape for, at the current quality — see `hasVerifiedInversionShape`'s doc comment.
-    private var availableGuitarPositions: [Int] {
-        [0] + [1, 2, 3].filter { GuitarChordShape.hasVerifiedInversionShape(chordTemplateID: selectedTemplateID, inversion: $0) }
-    }
-
-    private func guitarPositionLabel(_ position: Int) -> String {
+    /// Covers every inversion the chord's own tone count allows (not just the guitar diagram's
+    /// curated shapes — see `inversion`'s own doc comment) since this one bar now drives the
+    /// staff/keyboard too.
+    private func positionLabel(_ position: Int) -> String {
         switch position {
+        case 0: return L10n.string(.appOptionPositionFondamentale, session.currentLanguage)
         case 1: return L10n.string(.appOptionPosition1ereInversion, session.currentLanguage)
         case 2: return L10n.string(.appOptionPosition2emeInversion, session.currentLanguage)
         case 3: return L10n.string(.appOptionPosition3emeInversion, session.currentLanguage)
-        default: return L10n.string(.appOptionPositionFondamentale, session.currentLanguage)
+        default: return "\(L10n.string(.appFieldInversion, session.currentLanguage)) \(position)"
         }
     }
 
@@ -176,11 +174,22 @@ struct ChordLibraryView: View {
 
                 Text(session.notationStyle.displayName(for: chord)).font(.largeTitle).bold()
 
+                // One button bar for the whole ensemble (used to be a stepper above the staff
+                // plus a separate segmented picker above the tablature) — per explicit request.
+                if maxInversion > 0 {
+                    Picker(L10n.string(.appFieldPosition, session.currentLanguage), selection: $inversion) {
+                        ForEach(0...maxInversion, id: \.self) { position in
+                            Text(positionLabel(position)).tag(position)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+
                 // Staff / keyboard / tablature side by side, per explicit request (used to be
                 // stacked top to bottom) — narrow widths fall back to stacking, same breakpoint
                 // as everywhere else. `.staffCenter` (not `.top`) so the keyboard lines up on
-                // the staff itself, not the inversion stepper sitting above it — per explicit
-                // request.
+                // the staff itself, not the position bar sitting above the whole row.
                 if usesTwoColumns {
                     HStack(alignment: .staffCenter, spacing: 16) {
                         staffColumn
@@ -208,12 +217,6 @@ struct ChordLibraryView: View {
 
     private var staffColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Above the staff, per explicit request (used to sit below it).
-            if maxInversion > 0 {
-                Stepper(value: $inversion, in: 0...maxInversion) {
-                    Text("\(L10n.string(.appFieldInversion, session.currentLanguage)) : \(inversion)")
-                }
-            }
             // Widened (no `widthScale` reduction, plus a minimum column count) — a single-chord
             // staff is normally just one narrow column, too cramped next to a 300pt keyboard and
             // the played-notes label right under it, per explicit request ("est-elle assez
@@ -245,28 +248,11 @@ struct ChordLibraryView: View {
         .alignmentGuide(.staffCenter) { $0[VerticalAlignment.center] }
     }
 
-    @ViewBuilder
     private var tablatureColumn: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Only offer positions that actually produce a distinct diagram (see
-            // `GuitarChordShape.hasVerifiedInversionShape`) — most qualities beyond
-            // "Ma"/"mi" have no curated inversion shape yet, so showing those options
-            // here would look tappable but silently do nothing.
-            if availableGuitarPositions.count > 1 {
-                Text(L10n.string(.appFieldPosition, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
-                Picker(L10n.string(.appFieldPosition, session.currentLanguage), selection: $guitarPosition) {
-                    ForEach(availableGuitarPositions, id: \.self) { position in
-                        Text(guitarPositionLabel(position)).tag(position)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-            }
-            GuitarChordDiagramView(
-                root: selectedRoot, chordTemplateID: selectedTemplateID, inversion: guitarPosition,
-                language: session.currentLanguage
-            )
-        }
+        GuitarChordDiagramView(
+            root: selectedRoot, chordTemplateID: selectedTemplateID, inversion: inversion,
+            language: session.currentLanguage
+        )
     }
 
     /// -50%-ish off `PitchKeyboardView`'s own default (144×fluid width) — now that the keyboard

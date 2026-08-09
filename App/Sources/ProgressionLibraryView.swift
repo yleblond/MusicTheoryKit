@@ -5,6 +5,18 @@ import MusicTheoryKit
 import PieceModel
 import Localization
 
+/// Reports the width of the row holding both `staffAndSequenceColumn` and
+/// `tablatureAndKeyboardColumn`, via a zero-size `GeometryReader` background (measuring, not
+/// laying out) — see `columnsRowWidth`'s own doc comment for why this replaced a fixed
+/// chord-per-row count. Measuring the ROW rather than `staffAndSequenceColumn` itself sidesteps
+/// a chicken-and-egg problem: that column's own resolved width depends on how the HStack
+/// distributes space to its `.frame(maxWidth: .infinity)` flexible child, whereas the row's
+/// width is fixed by its (non-flexible) parent and known before any of that negotiation happens.
+private struct ColumnsRowWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
 /// "Progressions" tab — pick a tonic + mode (restricted to the 7 classic major-family modes,
 /// where `ChordProgressionResolver`'s rich diatonic resolution and `ProgressionNameAliases`'s
 /// common-name matching are both meaningful), then browse `session.chordProgressionTemplates`
@@ -33,6 +45,11 @@ struct ProgressionLibraryView: View {
     @State private var selectedScaleID: String = "ionian"
     @State private var selectedTemplateName: String?
     @State private var currentChordIndex: Int = 0
+    /// The width of the row holding both detail columns (measured via `ColumnsRowWidthKey`, not
+    /// a fixed constant) — see `staffAvailableWidth`, which derives the staff's own share of it.
+    /// Starts at 0 until the first layout pass reports the real value, same one-frame settling
+    /// any `GeometryReader`-fed layout has.
+    @State private var columnsRowWidth: CGFloat = 0
     /// Bumped on every `playProgression()`/`stopProgression()` call — guards the scheduled
     /// `currentChordIndex` advances below so a Stop (or a fresh Play before the previous
     /// sequence finished) invalidates any still-pending ones, same generation-counter idiom
@@ -190,20 +207,30 @@ struct ProgressionLibraryView: View {
 
                 Text(selectedTemplate?.name ?? "").font(.largeTitle).bold()
                 commonNamesSection
+                Text("DEBUG columnsRowWidth=\(columnsRowWidth) staffAvailableWidth=\(staffAvailableWidth) usesTwoColumns=\(usesTwoColumns)")
+                    .font(.caption).foregroundStyle(.red)
 
                 // Per explicit request: a wide column (staff + chord sequence) next to a
                 // narrower one (tablature + keyboard) — used to be one column, top to bottom.
-                if usesTwoColumns {
-                    HStack(alignment: .top, spacing: 16) {
-                        staffAndSequenceColumn
-                        tablatureAndKeyboardColumn
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: 16) {
-                        staffAndSequenceColumn
-                        tablatureAndKeyboardColumn
+                Group {
+                    if usesTwoColumns {
+                        HStack(alignment: .top, spacing: 16) {
+                            staffAndSequenceColumn
+                            tablatureAndKeyboardColumn
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 16) {
+                            staffAndSequenceColumn
+                            tablatureAndKeyboardColumn
+                        }
                     }
                 }
+                .background(
+                    GeometryReader { geometry in
+                        Color.clear.preference(key: ColumnsRowWidthKey.self, value: geometry.size.width)
+                    }
+                )
+                .onPreferenceChange(ColumnsRowWidthKey.self) { columnsRowWidth = $0 }
 
                 SequenceTransportView(
                     isPlaying: session.isAuditioningTheoryLibrary,
@@ -298,15 +325,18 @@ struct ProgressionLibraryView: View {
     }
 
     /// Column 1 — the progression's own staff (shrunk -30%, per explicit request), wrapped onto
-    /// several lines once there are more than `chordsPerStaffRow` chords (a single
-    /// `ChordStaffView` never wraps on its own — it's one wide `Canvas`, so a long progression
-    /// needs chunking into several stacked instances instead), directly above the chord-sequence
-    /// chips. Each chord column is now tappable, same "scrub/audition" behavior as the chip row
-    /// below it.
+    /// several lines once a row genuinely runs out of room (a single `ChordStaffView` never
+    /// wraps on its own — it's one wide `Canvas`, so a long progression needs chunking into
+    /// several stacked instances instead) — sized to `staffAvailableWidth`, NOT a fixed chord
+    /// count, since the staff's own columns are much narrower than the chord-name chips below
+    /// it (`chordListSection`, which already wraps need-based via `FlowLayout`) and so fit far
+    /// more chords per line before actually needing to wrap, per explicit request. Directly
+    /// above the chord-sequence chips. Each chord column is tappable, same "scrub/audition"
+    /// behavior as the chip row below it.
     private var staffAndSequenceColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(progressionStaffRows.enumerated()), id: \.offset) { _, row in
+                ForEach(Array(progressionStaffRows(forWidth: staffAvailableWidth).enumerated()), id: \.offset) { _, row in
                     ChordStaffView(
                         events: row.map(\.event), heightScale: Self.progressionStaffScale, widthScale: Self.progressionStaffScale,
                         highlightedIndex: row.firstIndex(where: { $0.offset == currentChordIndex }),
@@ -324,18 +354,25 @@ struct ProgressionLibraryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// How many chords each wrapped staff line holds before starting a new one — per explicit
-    /// request ("s'il y a beaucoup d'accords... passer sur plusieurs lignes").
-    private static let chordsPerStaffRow = 8
+    /// The staff's own share of `columnsRowWidth` — the full row's width when stacked (single
+    /// column, no sibling), or that minus `tablatureAndKeyboardColumn`'s known fixed width (and
+    /// the `HStack`'s own spacing) when side by side, since `columnsRowWidth` measures the WHOLE
+    /// row, not this column alone (see `ColumnsRowWidthKey`'s own doc comment for why).
+    private var staffAvailableWidth: CGFloat {
+        guard usesTwoColumns else { return columnsRowWidth }
+        return max(0, columnsRowWidth - Self.progressionKeyboardSize.width - 16)
+    }
 
-    /// `progressionStaffEvents`, chunked into `chordsPerStaffRow`-sized rows, each entry keeping
-    /// its ORIGINAL index (`offset`) into the full progression — needed to translate a given
-    /// row's own local `onColumnTap`/`highlightedIndex` back to (and from) `currentChordIndex`,
-    /// which always refers to the whole progression, not any one row.
-    private var progressionStaffRows: [[(offset: Int, event: StaffEvent)]] {
+    /// `progressionStaffEvents`, chunked into as many columns as `ChordStaffView` itself reports
+    /// fit `width` (see `ChordStaffView.maxColumnCount(forWidth:widthScale:keySignature:)`),
+    /// each entry keeping its ORIGINAL index (`offset`) into the full progression — needed to
+    /// translate a given row's own local `onColumnTap`/`highlightedIndex` back to (and from)
+    /// `currentChordIndex`, which always refers to the whole progression, not any one row.
+    private func progressionStaffRows(forWidth width: CGFloat) -> [[(offset: Int, event: StaffEvent)]] {
         let indexed = progressionStaffEvents.enumerated().map { (offset: $0.offset, event: $0.element) }
-        return stride(from: 0, to: indexed.count, by: Self.chordsPerStaffRow).map {
-            Array(indexed[$0..<min($0 + Self.chordsPerStaffRow, indexed.count)])
+        let perRow = ChordStaffView.maxColumnCount(forWidth: width, widthScale: Self.progressionStaffScale)
+        return stride(from: 0, to: indexed.count, by: perRow).map {
+            Array(indexed[$0..<min($0 + perRow, indexed.count)])
         }
     }
 
