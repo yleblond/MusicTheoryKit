@@ -1,7 +1,7 @@
 # Guide utilisateur — Music Improv Assistant
 
 Manuel d'utilisation de l'application en ligne de commande (`JamShack`), dans son état au
-2026-07-26. L'application dispose aussi d'une interface graphique SwiftUI (iOS + macOS,
+2026-08-08. L'application dispose aussi d'une interface graphique SwiftUI (iOS + macOS,
 aujourd'hui l'interface principale) — voir §20 pour son propre manuel, plus succinct : les deux
 pilotent la même logique applicative (`AppCore`), le CLI reste la référence la plus détaillée
 commande par commande. Un terme ambigu ou peu clair ? Voir `Docs/GLOSSAIRE.md`.
@@ -1145,23 +1145,28 @@ l'autre.
 
 Au premier lancement, l'app démarre directement sur l'onglet **Scène** — c'est là qu'on associe
 chaque instrument (clavier de l'ordinateur, port MIDI, microphone) à un rôle avant de commencer
-à jouer. Les dossiers de travail (morceaux, sons, guides, scènes, soundtracks, réglages,
-composition IA) se choisissent depuis l'onglet **JamShack > Dossiers** : sur iOS/macOS, l'app
-étant en bac à sable (sandbox), il faut passer par un vrai sélecteur de fichiers/dossiers plutôt
-que taper un chemin comme le fait la CLI — un bouton « Choisir/créer le dossier JamShack »
-propose de choisir un seul dossier racine (par exemple sur iCloud Drive, pour retrouver ses
-morceaux sur tous ses appareils), qui configure alors automatiquement les sept sous-dossiers
-nécessaires ; ce choix est mémorisé d'un lancement à l'autre.
+à jouer. Contrairement à la CLI (qui pointe des dossiers de travail sur le disque, voir en tête
+de ce guide), l'app ne demande aucun dossier à choisir : morceaux, guides, scènes, soundtracks et
+réglages (palettes, connexions LLM...) vivent dans un espace de données partagé (SwiftData +
+iCloud/CloudKit), synchronisé automatiquement entre les appareils du même compte iCloud — seuls
+les sons (SoundFonts) restent de vrais fichiers, résolus automatiquement dans le conteneur iCloud
+Drive de l'app plutôt que dans un dossier choisi à la main.
 
-### Les onglets principaux
+### Trois modes — Studio / Théorie / Réglages
+
+Une barre reste toujours affichée en bas de la fenêtre et bascule entre trois modes plats,
+chacun avec sa propre rangée d'onglets au-dessus (le mode actif est surligné dans la barre) :
+**Studio** — jouer, enregistrer, composer pour de vrai — **Théorie** — bibliothèques et
+exploration, consultées en même temps qu'on joue — et **Réglages**.
+
+#### Studio
 
 - **Scène** — deux sous-onglets : *Fichier* (créer/charger/exporter une scène) et *Disposition*
   (attacher chaque instrument à un rôle, choisir son son, l'activer/désactiver — un clic sur le
   menu d'un instrument non affecté ou d'un rôle libre suffit dans les deux sens).
-- **Live** — la roue des quintes à gauche et, à droite, chaque instrument en écoute avec ses
-  notes tenues et l'accord/mode reconnu en direct. Le clavier de l'ordinateur y est jouable
-  directement au clic/tactile (les autres claviers affichés — MIDI, micro — restent en lecture
-  seule, on ne peut pas y jouer en cliquant dessus).
+- **En Direct** — la roue des quintes à gauche et, à droite, chaque instrument en écoute avec ses
+  notes tenues et l'accord/mode reconnu en direct ; ces claviers-là restent en lecture seule
+  (pour jouer réellement depuis cet écran, voir « Le clavier principal » plus bas).
 - **Guide** — trois sous-onglets : *Fichier* (créer/charger un guide musical), *Edition*
   (ajouter une étape mode/gamme, éventuellement avec une progression d'accords, voir la liste
   des étapes) et *Lecture* (démarrer le guide, naviguer avec les flèches du clavier —
@@ -1173,44 +1178,133 @@ nécessaires ; ce choix est mémorisé d'un lancement à l'autre.
   *Record* (choisir quelles pistes enregistrer, démarrer/arrêter), *Play* (rejouer, choisir le
   son) et *IA* (proposer une composition à partir de l'enregistrement, via la connexion LLM
   active).
-- **Morceaux** — *Fichier* (charger la démo ou un morceau du dossier) et *Play* (jouer/arrêter,
-  choisir le son de lecture).
 - **Composition** — *Fichier* (charger/sauvegarder une description) et *Composer* (titre, texte
   libre décrivant le morceau souhaité, indications de style, puis composition via l'IA).
-- **JamShack** — un menu de réglages regroupé en neuf sous-onglets accessibles par une colonne
-  d'icônes à gauche de l'écran :
-  - **Sons** : la bibliothèque complète des sons trouvés (avec alias et favoris — seuls les
-    favoris apparaissent ensuite dans les autres écrans, pour ne pas noyer les listes dans une
-    grosse bibliothèque). Un mode « Tester le son » permet de brancher un son sur le clavier ou
-    une piste MIDI et de jouer directement dessus pour l'écouter, sans perturber ce qui est déjà
-    en écoute par ailleurs.
-  - **MIDI** : mode fusionné ou une piste par port MIDI, rafraîchir la liste des sources
-    visibles, voir les notes reçues en direct.
-  - **Microphone** : démarrer/arrêter l'écoute du micro, puis choisir entre quatre affichages :
-    *Calibration* (deux boutons « Capturer » pour un niveau faible et un niveau fort de
-    référence, avec une jauge de niveau), *Notes reçues* (le clavier live + l'accord/mode
-    reconnu + le choix du mode de reconnaissance), *Spectromètre* (le spectre de fréquences
-    instantané, avec un clavier aligné en dessous) et *Spectrogramme* (le même spectre, mais
-    déroulé dans le temps sous forme de « chute d'eau » colorée — trois palettes de couleur au
-    choix, un overlay optionnel superposant les notes reconnues sur le graphe). Les deux modes
-    spectre partagent un même bouton d'activation (« Activer le spectromètre ») — désactiver la
-    capture, ou simplement changer d'onglet, l'arrête.
-  - **Serveurs** : démarrer la console web et le clavier virtuel, avec l'adresse à taper depuis
-    un autre appareil du même réseau et un bouton de partage direct de cette adresse (utile pour
-    l'envoyer par message à quelqu'un). Fonctionne aussi sur iOS, tant que l'app reste au
-    premier plan.
-  - **Jam Session** : choisir entre rester isolé, héberger ou rejoindre une session sur le
-    réseau local (avec une recherche automatique des sessions à proximité), ou héberger/rejoindre
-    via Game Center (utile pour jouer avec quelqu'un qui n'est pas sur le même réseau — Game
-    Center s'occupe alors de la connexion).
-  - **Couleurs** : choisir/créer/modifier une palette de couleurs par note, régler le LUMI Keys
-    (couleurs racine/gamme, luminosité, suivi automatique du mode Live/Guide) et, en bas, un
-    testeur manuel du LUMI (utile si le clavier lumineux ne réagit plus après un débranchement).
-  - **LLM** : choisir la connexion IA active (voir chapitre dédié plus haut dans ce guide) et la
-    tester en un clic.
-  - **Dossiers** : tous les dossiers de travail au même endroit (voir plus haut).
-  - **Langue** : français/anglais/allemand — s'applique aussi à la console web et au clavier
-    virtuel.
+- **Morceaux** — *Fichier* (charger la démo ou un morceau du dossier) et *Play* (jouer/arrêter,
+  choisir le son de lecture).
+
+#### Théorie
+
+Quatre onglets de référence, chacun avec sa propre tonique/gamme choisie indépendamment des
+autres (changer de gamme dans « Modes » ne touche pas celle affichée dans « Exploration ») ; les
+quatre se détachent dans leur propre fenêtre sur macOS/visionOS.
+
+- **Accords** — la bibliothèque de tous les accords (triades, accords de 7e...) sur une tonique
+  choisie : nom, notes, clavier, portée, plus une tablature guitare quand une position barrée
+  standard existe pour cette qualité d'accord.
+- **Modes** — la bibliothèque des 33 gammes/modes des 7 familles (voir §8/**Guide Musicaux**) :
+  sur une tonique + gamme choisies, trois rangées — la gamme elle-même (+ lecture ascendante/
+  descendante/aller-retour) et son clavier ; les 7 accords harmonisés du mode (+ lecture de la
+  suite) et le clavier de l'accord sélectionné ; la liste des 7 accords diatoniques (rôle
+  harmonique inclus, voir plus bas) et la roue des quintes centrée sur ce mode.
+- **Progressions** — la bibliothèque de progressions-types (voir §14), chaque accord de la
+  progression jouable au clic.
+- **Exploration** — un terrain de jeu pour explorer un mode du point de vue d'un accord choisi,
+  disponible seulement pour les 7 modes majeurs usuels (les autres familles de gammes affichent
+  un simple message d'indication à la place). Deux blocs, séparés par un trait :
+  - **En haut** : à gauche, une colonne empilant le nom du mode, une bascule de la source de la
+    fonction harmonique (*formule calculée* / *table standard*), un sélecteur de progression
+    type de ce mode (ses accords affichés en puces cliquables, colorées par rôle harmonique) et
+    la légende des rôles harmoniques (en liste verticale) ; puis, à droite de cette colonne, les
+    deux graphes **orbite fonctionnelle** et **attractions** — cliquer un degré sur l'un des
+    deux graphes, ou une puce de progression, joue l'accord correspondant et met à jour le reste
+    de l'écran.
+  - **En bas** : la colonne « accord » (mini clavier de l'accord actuellement sélectionné, avec
+    son nom et son rôle harmonique en dessous), la colonne « mélodie » (mini clavier du
+    vocabulaire mélodique du mode — rôle de chaque note face à cet accord : tierce, tension,
+    note de passage... — avec le détail de la note sélectionnée : consonance, résolutions
+    possibles), puis la légende du rôle des notes, en liste verticale. Le clavier dédié aux
+    notes du mode qui existait ici auparavant a été retiré — le clavier principal persistant, en
+    bas de la fenêtre (voir plus bas), remplit maintenant ce rôle, étiqueté « Notes du mode ».
+
+  Un bouton **« ? »** apparaît dans la barre du bas (voir « Aide contextuelle » plus bas) tant
+  que cet onglet affiche vraiment ce contenu (un des 7 modes majeurs) — il explique les deux
+  graphes et les deux légendes.
+
+#### Réglages
+
+Neuf onglets de configuration, accessibles par une colonne d'icônes à gauche de l'écran :
+- **Sons** : la bibliothèque complète des sons trouvés (avec alias et favoris — seuls les
+  favoris apparaissent ensuite dans les autres écrans, pour ne pas noyer les listes dans une
+  grosse bibliothèque). Un mode « Tester le son » permet de brancher un son sur le clavier ou
+  une piste MIDI et de jouer directement dessus pour l'écouter, sans perturber ce qui est déjà
+  en écoute par ailleurs.
+- **MIDI** : mode fusionné ou une piste par port MIDI, rafraîchir la liste des sources
+  visibles, voir les notes reçues en direct.
+- **Microphone** : démarrer/arrêter l'écoute du micro, puis choisir entre quatre affichages :
+  *Calibration* (deux boutons « Capturer » pour un niveau faible et un niveau fort de
+  référence, avec une jauge de niveau), *Notes reçues* (le clavier live + l'accord/mode
+  reconnu + le choix du mode de reconnaissance), *Spectromètre* (le spectre de fréquences
+  instantané, avec un clavier aligné en dessous) et *Spectrogramme* (le même spectre, mais
+  déroulé dans le temps sous forme de « chute d'eau » colorée — trois palettes de couleur au
+  choix, un overlay optionnel superposant les notes reconnues sur le graphe). Les deux modes
+  spectre partagent un même bouton d'activation (« Activer le spectromètre ») — désactiver la
+  capture, ou simplement changer d'onglet, l'arrête.
+- **Jam Session** : tout en haut de cet onglet (« Cet appareil »), démarrer la console web et le
+  clavier virtuel, avec l'adresse à taper depuis un autre appareil du même réseau et un bouton
+  de partage direct de cette adresse (utile pour l'envoyer par message à quelqu'un — fonctionne
+  aussi sur iOS, tant que l'app reste au premier plan) ; puis choisir entre rester isolé,
+  héberger ou rejoindre une session sur le réseau local (avec une recherche automatique des
+  sessions à proximité), ou héberger/rejoindre via Game Center (utile pour jouer avec quelqu'un
+  qui n'est pas sur le même réseau — Game Center s'occupe alors de la connexion).
+- **Couleurs** : choisir/créer/modifier une palette de couleurs par note, régler le LUMI Keys
+  (couleurs racine/gamme, luminosité, suivi automatique du mode Live/Guide) et, en bas, un
+  testeur manuel du LUMI (utile si le clavier lumineux ne réagit plus après un débranchement).
+- **LLM** : choisir la connexion IA active (voir chapitre dédié plus haut dans ce guide) et la
+  tester en un clic.
+- **Langue** : français/anglais/allemand — s'applique aussi à la console web et au clavier
+  virtuel.
+- **Notation** : la convention de notation des accords utilisée dans les onglets Théorie
+  (Accords/Modes/Progressions/Exploration) — une seule disponible à ce jour.
+- **Théorie** : le son utilisé pour écouter les accords/gammes/progressions dans les onglets
+  Théorie — le même réglage que le picker « son » de la barre du bas en mode Théorie (voir
+  plus bas).
+
+### Le clavier principal — la barre persistante du bas
+
+Sous les onglets (en Studio et en Théorie seulement — pas en Réglages), une barre reste affichée
+en permanence tant qu'elle est activée : un clavier de piano, plus, à sa droite dans la barre
+tout en bas, un sélecteur de **source** et de **son**. Le bouton **« Clavier principal »**
+(anciennement « Clavier ordinateur »), dans cette même barre du bas, affiche/masque le clavier —
+indépendamment du sélecteur source/son à côté, qui lui reste toujours visible, même quand le
+clavier est masqué.
+
+- **Le sélecteur « source »** choisit quelle piste ce clavier reflète (le clavier de
+  l'ordinateur, un port MIDI, le micro...) — c'est aussi la piste dont le clavier principal peut
+  jouer les notes en cliquant dessus (voir plus bas).
+- **Le sélecteur « son »**, à côté : en Théorie, un vrai choix parmi les sons favoris (même
+  réglage que Réglages > Théorie) ; en Studio, un simple texte en lecture seule montrant le son
+  réellement assigné par la scène active à la piste choisie comme source (« Aucun son affecté »
+  si cette piste n'est reliée à aucun rôle de la scène).
+- **Ce que montre/colore le clavier** dépend de l'écran actif :
+  - **Théorie** (Accords/Modes/Progressions/Exploration) : coloré selon les notes du mode
+    actuellement choisi sur cet onglet (mêmes couleurs + pastilles numérotées de degré que
+    partout ailleurs dans l'app), étiqueté « Notes du mode ».
+  - **Studio > En Direct** : reflète les notes tenues et l'accord/mode reconnu de la piste
+    choisie comme source — exactement la même information que celle déjà affichée dans la liste
+    à droite de la roue des quintes sur cet écran.
+  - **Studio > Scène** : les mêmes notes tenues, mais sans coloration.
+  - **Studio > Guide** : coloré selon le mode de l'étape en cours, uniquement pendant qu'un
+    guide est réellement en train de jouer (pas seulement l'onglet ouvert).
+  - **Studio > Enregistrement/Composition/Morceaux** : le clavier est entièrement masqué (il ne
+    sert à rien sur ces écrans).
+- **Cliquer sur les touches** (souris/tactile — différent de taper au clavier physique) ne joue
+  quelque chose que si la source choisie est le « Clavier principal » (le clavier physique)
+  lui-même — pour toute autre source (MIDI, micro), impossible de jouer en cliquant ici, il faut
+  le vrai périphérique. En Studio, il faut en plus qu'un son soit réellement assigné à cette
+  source dans la scène active ; sinon le clavier reste affiché mais atténué (non cliquable).
+- **Les lettres du clavier physique** (a, s, d, f...) ne s'affichent sur les touches que
+  lorsque la source choisie est effectivement le « Clavier principal », et en minuscules
+  (auparavant en majuscules) — pour ne pas les confondre avec les noms de note/accord, qui
+  restent en majuscule.
+
+### Aide contextuelle
+
+Il n'y a plus de bouton « ? » propre à chaque écran : un seul bouton **« ? »** apparaît dans la
+barre du bas de la fenêtre principale (celle du réglage Studio/Théorie/Réglages), visible
+uniquement quand l'écran actif a quelque chose à expliquer — aujourd'hui, seulement l'onglet
+Théorie > Exploration (voir plus haut). Il ouvre une fenêtre séparée sur macOS/visionOS, ou une
+feuille modale sur iOS/iPadOS.
 
 ### Ce que l'app apporte en plus de la CLI
 
@@ -1218,8 +1312,10 @@ nécessaires ; ce choix est mémorisé d'un lancement à l'autre.
   « telle touche a été tapée », jamais de relâchement, et simule donc une note de durée fixe),
   l'app détecte le relâchement réel de la touche — une note tenue reste tenue tant que la touche
   est enfoncée.
-- **Des claviers tactiles/souris jouables** : sur l'écran Live, on peut jouer directement en
-  touchant/cliquant le clavier virtuel du clavier ordinateur, avec un vrai glissando au balayage.
+- **Un clavier principal tactile/souris jouable** : le clavier persistant du bas (voir plus haut)
+  se clique/touche directement — avec un vrai glissando au balayage — dès que sa source est le
+  Clavier principal lui-même ; les autres claviers affichés ailleurs dans l'app (En Direct, MIDI,
+  micro, pistes distantes...) restent toujours en lecture seule.
 - **Le spectromètre et le spectrogramme micro**, absents de la CLI et de la console web, pour
   visualiser précisément ce que le micro capte et affiner sa calibration.
 - **La session Game Center**, une alternative à l'hébergement réseau local pour jouer avec
@@ -1227,9 +1323,9 @@ nécessaires ; ce choix est mémorisé d'un lancement à l'autre.
 - **Le partage direct** des adresses de serveur (console web/clavier virtuel) par un bouton de
   partage système.
 
-Un point de vigilance propre à l'app : la clef API d'une connexion LLM, bien que saisie dans un
-champ masqué, est enregistrée en clair sur le disque (même limitation que côté CLI) — à
-réserver à un usage personnel, pas à partager l'appareil.
+Contrairement à une version antérieure de ce guide, la clef API d'une connexion LLM n'est plus
+enregistrée en clair sur le disque : elle est stockée dans le Trousseau (Keychain) du système dès
+la saisie, et restaurée automatiquement aux lancements suivants.
 
 ## Liste complète des commandes
 

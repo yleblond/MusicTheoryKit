@@ -1,6 +1,6 @@
 # Documentation technique — Music Improv Assistant
 
-Documentation du code généré dans ce package Swift. Reflète l'état du code au 2026-07-26. Pour
+Documentation du code généré dans ce package Swift. Reflète l'état du code au 2026-08-08. Pour
 l'historique détaillé des décisions/itérations, voir la mémoire `project_improv_app_roadmap.md` ;
 pour la définition des termes ambigus/récurrents (« piste », « prompt de composition », les
 trois écrans...), voir `Docs/GLOSSAIRE.md`.
@@ -1562,6 +1562,20 @@ l'utilisateur — la couverture de test ci-dessus a été jugée suffisante à l
     (`@testable import`) ; `simulateMicrophoneDetection(_:level:track:)` est le point
     d'entrée `public` équivalent pour `SanityChecks`, qui n'a pas `@testable import` — même
     principe que `pressKey`/`releaseKey` pour simuler des notes sans matériel réel.
+- **Clavier principal / source live partagée Studio+Théorie** : `theoryLiveInputSourceID` (déjà
+  existant — choix de la « source principale » à jouer/écouter en direct) sert maintenant aussi
+  de source pour le clavier persistant Studio, pas seulement Théorie — le nom garde le préfixe
+  « theory » pour l'instant (dette technique documentée dans son propre commentaire, à renommer
+  une fois le rôle de scène de Studio branché sur ce même concept).
+  `setComputerKeyboardInputEnabled(_:)` choisit maintenant automatiquement `.computerKeyboard`
+  comme `theoryLiveInputSourceID` quand on active le clavier ET qu'aucune source n'est encore
+  choisie (jamais à la désactivation, jamais en écrasant un choix explicite existant) — pour que
+  le simple interrupteur « Clavier principal » suffise à faire jouer les touches sans forcer à
+  aussi ouvrir le picker de source. `recognizedChordAndModeTones(for trackID:) -> (chordRoot:
+  Int?, chordTones: [Int], modeTones: [Int])` expose (réutilise la logique interne déjà
+  existante, `pitchClassSets`) l'accord/mode reconnu d'une piste donnée, pour que `ContentView`
+  (hors du module `AppCore`) puisse refléter n'importe quelle piste sur le clavier persistant
+  sans dépendre de `WebConsoleTrackState` (indexé par `String`, pas par `TrackID`).
 - **Instruments (son par défaut de la lecture du morceau)** : `listSampleFiles`/`loadSample`.
 - **Instruments par piste/accord d'un `Piece`** : `setPieceTrackInstrument(sectionIndex:trackIndex:instrumentName:)`
   et `setPieceChordInstrument(sectionIndex:instrumentName:)` modifient `piece` en mémoire
@@ -2096,6 +2110,92 @@ l'écran de départ naturel. `computerKeyboardInput(...)` (voir plus bas) est at
 `ContentView` tout entier, pas par écran — le clavier de l'ordinateur joue depuis n'importe quel
 onglet.
 
+### `AppModel` — aide contextuelle et coloration du clavier persistant, généralisées
+
+`App/Sources/AppModel.swift` — la classe `@MainActor @Observable` unique pour toute la durée de
+vie du process, injectée dans chaque fenêtre via `.environment(_:)`, qui possède l'unique
+`ImprovSession`/`SessionUIBridge` et le suivi des fenêtres auxiliaires ouvertes
+(`openAuxiliaryWindows: Set<AuxiliaryWindowID>`). Gagne cette session deux mécanismes
+généralisés, tous deux sur le même schéma « l'écran actif s'enregistre/se désenregistre auprès
+d'`AppModel` via un id, jamais via `.onAppear`/`.onDisappear` » — nécessaire parce que les
+onglets restent montés en mémoire au changement d'onglet dans cette app, donc ces callbacks ne
+se déclenchent pas de façon fiable :
+
+- **Aide contextuelle généralisée** — `contextualHelpContent: (() -> AnyView)?` +
+  `setContextualHelp(id:content:)`/`clearContextualHelp(id:)`, pilotés par
+  `View.registerContextualHelp(id:isActive:content:)` (`App/Sources/ContextualHelp.swift`).
+  N'importe quel écran peut maintenant fournir le contenu du bouton « ? » unique de la barre du
+  bas (`ContentView`) au lieu d'un bouton « ? » par écran, pour reprendre l'espace que chacun
+  prenait dans son propre coin. La fermeture n'est pas un `AnyView` figé mais ré-invoquée à
+  chaque affichage, donc elle reste vivante (relit p. ex. `session.currentLanguage`) plutôt que
+  de figer un instantané pris à l'enregistrement. Le cas d'énumération
+  `AuxiliaryWindowID.theorieLegende` a été renommé `AuxiliaryWindowID.contextualHelp` en
+  conséquence (généralisé, ce n'est plus une fenêtre dédiée à Modes/Exploration).
+- **Mode du clavier persistant** — `mainKeyboardMode: Mode?` +
+  `setMainKeyboardMode(id:mode:)`/`clearMainKeyboardMode(id:)`, pilotés par
+  `View.registerMainKeyboardMode(id:isActive:mode:)` (`App/Sources/MainKeyboardMode.swift`) —
+  permet à un écran Théorie (Modes/Progressions/Exploration) d'annoncer quel mode (tonique +
+  gamme) le clavier persistant `ComputerKeyboardInputBar` doit colorer (notes du mode + pastilles
+  de degré) tant qu'il est l'onglet actif. Contrairement à l'aide contextuelle, réagit aussi à un
+  changement de `mode` pendant que l'écran reste actif (changer de tonique/gamme sans changer
+  d'onglet).
+
+Chaque registration garde un « owner id » (`contextualHelpOwnerID`/`mainKeyboardModeOwnerID`)
+pour qu'une transition `false` d'un écran sortant ne puisse jamais effacer ce qu'un écran entrant
+vient juste d'enregistrer, l'ordre des deux n'étant pas garanti lors d'un même changement
+d'onglet. Côté appelants : `ModeLibraryView` (onglets « Modes » et « Exploration », un id
+distinct par `contentFocus`) et `ProgressionLibraryView` (onglet « Progressions ») ont chacun
+gagné un paramètre `isActive: Bool` (défaut `true`, pour rester inchangés en fenêtre détachée),
+propagé depuis `ContentView` via `TheoryTabContent`/`ExplorationTabContent`/
+`ProgressionTabContent` (`isActive: mode == .theorie && selectedTheorieTab == .modes`, etc.).
+
+`App/Sources/Windows/ContextualHelpWindow.swift` remplace l'ancien `TheorieLegendWindow.swift`
+(supprimé) : la fenêtre auxiliaire macOS/visionOS affiche maintenant
+`appModel.contextualHelpContent` (dynamique, n'importe quel écran) au lieu d'un contenu figé
+(`TheoryLegendContent`, qui reste un type public existant — c'est l'écran Exploration lui-même
+qui l'enregistre via `registerContextualHelp`, plutôt que la fenêtre ne le connaisse en dur). Sur
+iOS/iPadOS (pas de fenêtre indépendante), un `.sheet` dans `ContentView` joue le même rôle.
+
+### Le clavier persistant multi-écrans (`ComputerKeyboardInputBar` + `MainKeyboardPresentation`)
+
+`ContentView` centralise, dans une struct privée `MainKeyboardPresentation` + la fonction
+`mainKeyboardPresentation(session:)`, tout ce que la barre persistante en bas de fenêtre doit
+afficher pour l'écran actif — une seule valeur calculée par rendu, plutôt que la logique éclatée
+au fil du texte que ça remplace :
+
+- **Théorie** (Modes/Progressions/Exploration) : colore par `appModel.mainKeyboardMode` (voir
+  §`AppModel` ci-dessus) — notes du mode + pastilles de degré.
+- **Studio « En Direct »** : reflète l'accord/mode reconnu de la piste choisie comme « source
+  principale » (`session.theoryLiveInputSourceID`) via la nouvelle
+  `ImprovSession.recognizedChordAndModeTones(for:)`, exactement comme cette même piste l'affiche
+  déjà dans sa propre carte de la roue des quintes.
+- **Studio « Scène »** : reflète la même piste, sans coloration (demande explicite, « sans
+  coloration »).
+- **Studio « Guide »** : colore par le mode de l'étape en cours, mais SEULEMENT si le guide joue
+  réellement (`session.currentGuideStepIndex != nil`) — pas de coloration tant que rien n'est
+  démarré.
+- **Studio « Enregistrements »/« Composition »/« Morceaux »** : `isHidden = true` — la barre ne
+  sert à rien sur ces écrans.
+
+`isClickable` conditionne maintenant si cliquer/taper sur les touches de la barre agit réellement
+(`onNoteOn`/`onNoteOff` passés à `ComputerKeyboardInputBar`) : seulement quand la source choisie
+est bien `.computerKeyboard` et — en Studio — que cette source est attachée à un rôle de la scène
+active qui a un son (`studioSourceHasAssignedSound(session:sourceID:)`) ; sinon la barre reste
+visible mais grisée (`.opacity(mainKeyboard.isClickable ? 1 : 0.5)`), le clic restant sans effet.
+
+Le picker source+son (`theorieLiveInputSourcePicker`, `FavoriteSoundPickerView`) n'est plus
+limité à l'onglet Théorie : visible aussi en Studio, indépendamment de la visibilité de la barre
+persistante elle-même (masquer le clavier ne doit pas faire oublier la source choisie). En
+Studio, le picker « son » devient un texte en lecture seule (`studioAssignedSoundLabel(session:)`)
+reflétant le son que la scène active a déjà assigné au rôle de la piste source, plutôt que le
+picker libre `FavoriteSoundPickerView` utilisé en Théorie — éditer ce son reste la responsabilité
+de l'écran Scène (« aucun son affecté » si la source n'est attachée à aucun rôle sonnant).
+
+Le bouton « Clavier ordinateur » est renommé « Clavier principal » (clés `appTabClavierPrincipal`/
+`appLabelClavierPrincipalActif`, remplaçant `appTabClavierOrdinateur`/
+`appLabelClavierOrdinateurActif`), cohérent avec le fait que la barre reflète maintenant
+n'importe quelle piste, pas seulement le clavier de l'ordinateur.
+
 ### Inventaire des écrans
 
 Chaque onglet complexe suit le même patron : une bande verticale d'icônes (pas un contrôle
@@ -2312,7 +2412,16 @@ la main depuis ce même `StaticAssets.swift`.
   trois surfaces s'accordent sur ce que signifient racine/tonalité/hors-accord/tenue/mode.
   Jouable (tap/clic, glissando au drag — chaque touche nouvellement entrée déclenche son propre
   note-on, la précédente son note-off) quand `onNoteOn`/`onNoteOff` sont fournis ; en lecture
-  seule sinon.
+  seule sinon. Nouveau type public `KeyBadge` (texte + couleur de fond + couleur de texte) et
+  nouveau paramètre `noteBadges: [Int: KeyBadge]` (indexé par CLASSE de hauteur) — pastilles
+  personnalisées au-dessus des touches, même emplacement/taille que les pastilles de degré de
+  mode, mais colorées/étiquetées par l'appelant (ex. les labels d'intervalle « 1 »/« b3 »/« 9 »
+  du clavier de `MelodicVocabularyView`) plutôt que calculées depuis `modeTones`/`palette`.
+  `modalCharacteristicPitchClasses` (pastille violette « note caractéristique du mode ») est
+  maintenant dessinée SOUS les touches (`belowKeysIndicatorRow`), au même endroit que
+  `resolutionArrows`, au lieu de dessus — et quand une même classe de hauteur porte à la fois une
+  flèche de résolution ET est caractéristique du mode, seule la flèche s'affiche (recolorée en
+  violet plutôt qu'orange) au lieu d'empiler deux indicateurs sur la même touche.
 - **`AutoCenteredKeyboardView`** — extrait 3 octaves auto-centré sur la note tenue la plus
   basse (son do-ou-en-dessous le plus proche), réutilisé tel quel (chord/mode vides) par les
   écrans qui veulent juste montrer les notes entrantes sans overlay de reconnaissance
@@ -2343,6 +2452,41 @@ la main depuis ce même `StaticAssets.swift`.
   donc un vrai sustain-tant-que-tenu, plutôt qu'un « pluck » de durée fixe simulé (la CLI n'a
   que « ce caractère a été tapé », jamais de key-up). Ignore explicitement la répétition auto de
   touche (le système d'exploitation ré-émettrait sinon un keyDown à chaque tick d'auto-repeat).
+- **`ComputerKeyboardInputBar`** — la barre persistante, toujours visible en bas de fenêtre
+  tant que `session.computerKeyboardInputEnabled` est actif (voir §« Le clavier persistant
+  multi-écrans » plus haut pour ce qui pilote son contenu écran par écran) ; distincte de
+  `ComputerKeyboardInput` ci-dessus (qui ne fait qu'écouter les touches), elle EST un
+  `PitchKeyboardView` (88 touches, A0...C8) qui affiche ce que le clavier physique joue. Gagne
+  cette session : `modeTones`/`showModeColoring` (coloration par les notes d'un mode),
+  `chordRoot`/`chordTones`/`alwaysShowChord` (coloration par un accord reconnu d'une piste live),
+  et `showsPhysicalKeyLabels` — les lettres du clavier physique (désormais en minuscules, pas
+  majuscules, pour lire clairement comme des touches et non des noms de note) et le contour rouge
+  de la zone active ne sont dessinés QUE quand la source choisie est réellement
+  `.computerKeyboard` ; sinon les afficher suggérerait à tort que taper au clavier physique va
+  jouer quelque chose.
+- **`FlowLayout`** (nouveau fichier, `Sources/JamShackUI/FlowLayout.swift`) — seule exception à
+  « port de la console web » de cette liste : un `Layout` SwiftUI générique, sans rapport avec
+  le clavier/la portée/la roue, qui fait passer son contenu à la ligne (gauche à droite, puis
+  ligne suivante) une fois la largeur disponible dépassée, au lieu du défilement horizontal/de la
+  troncature qu'un `HStack` simple subit — utilisé par ex. par les chips d'accords de
+  `ModeLibraryView` dans une colonne étroite.
+
+### Palettes de rôle de l'écran Exploration (`MelodicVocabularyView`/`FunctionalMapLegendView`)
+
+`MelodicRoleColors` (couleurs des 5 `MelodicRole` — stable/ton de l'accord/couleur/tension/
+contextuelle, dans `MelodicVocabularyView.swift`) a été entièrement recolorée pour ne plus
+partager AUCUNE couleur avec `FunctionalRoleColors` (les 4 rôles fonctionnels — home/away/
+tension/neutral, dans `FunctionalMapLegendView.swift`) : les deux palettes partageaient
+auparavant le même vert (`.stable`/`.home`, `#2e7d32`) et le même bleu (`.contextual`/
+`.neutral`, `#1565c0`), ce qui se lisait comme « le même rôle » sur les deux claviers miniatures
+que `ModeLibraryView` affiche maintenant côte à côte (accord/mélodie), alors qu'ils signifient
+des choses entièrement différentes — corrigé sur un rapport de bug explicite. `MelodicNoteChipView`
+(type devenu inutilisé après la restructuration de l'écran Exploration) a été supprimé.
+
+`FunctionalMapLegendView` et `MelodicMapLegendView` ont chacune gagné un paramètre `axis: Axis`
+(`.horizontal`, le défaut historique, ou `.vertical`) pour s'afficher en liste verticale (une
+ligne par rôle) dans une colonne étroite plutôt qu'en ligne — même besoin que `FlowLayout`
+ci-dessus : ces légendes doivent maintenant tenir dans des colonnes plus étroites qu'avant.
 
 ### Sandbox et accès fichiers
 
