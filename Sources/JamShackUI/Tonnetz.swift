@@ -39,23 +39,65 @@ enum TonnetzGeometry {
     }
 }
 
-/// `(root, quality)` as a lookup key — used to test "is this rendered triangle one of the
-/// current selection's P/L/R neighbors" without caring which specific lattice coordinate it
+extension Color {
+    /// A lightened ("pastel") version of a `Color(hex:)`-style hex string, mixed toward white by
+    /// `fraction` (0 = unchanged, 1 = white) — computed directly from the hex components (not by
+    /// resolving a `Color` back to RGB, which needs an environment context), so it works
+    /// anywhere `Color(hex:)` already does, including inside a `Canvas` draw closure.
+    static func pastel(hex: String, fraction: Double = 0.55) -> Color {
+        var text = hex
+        if text.hasPrefix("#") { text.removeFirst() }
+        guard text.count == 6, let value = UInt32(text, radix: 16) else { return .white }
+        let r = Double((value >> 16) & 0xFF) / 255
+        let g = Double((value >> 8) & 0xFF) / 255
+        let b = Double(value & 0xFF) / 255
+        return Color(red: r + (1 - r) * fraction, green: g + (1 - g) * fraction, blue: b + (1 - b) * fraction)
+    }
+}
+
+/// What's currently selected/played on either Tonnetz view — a single note, a lattice-adjacent
+/// dyad (an edge), or a full triad. Unifies the 3 tappable primitives into one selection/audition
+/// model so `TonnetzScreen` has a single `play(_:)` instead of 3 near-duplicate ones.
+///
+/// `.note`/`.edge` carry an OPTIONAL real absolute pitch alongside the abstract pitch-class
+/// identity: `PitchClassTonnetzView` only ever knows a pitch class (register-independent by
+/// design), so it leaves the real-pitch field `nil`; `RegisteredTonnetzView` always knows the
+/// exact key that was tapped, so it fills it in — without this, a Performance-mode tap on, say,
+/// G4 would collapse to the bare pitch class G and forget which octave was actually meant.
+public enum TonnetzSelection: Equatable {
+    case note(PitchClass, realPitch: Int?)
+    case edge(TonnetzEdge, realPitches: [Int]?)
+    case triad(TonnetzTriad)
+}
+
+public extension TonnetzSelection {
+    var root: PitchClass {
+        switch self {
+        case .note(let pitchClass, _): return pitchClass
+        case .edge(let edge, _): return edge.root
+        case .triad(let triad): return triad.root
+        }
+    }
+
+    /// The plain major/minor `Chord` this selection represents — only ever non-`nil` for
+    /// `.triad` (a single note or a dyad isn't a chord in `ChordVocabulary`'s own sense).
+    var chord: Chord? {
+        guard case .triad(let triad) = self else { return nil }
+        return ChordVocabulary.byID(triad.quality == .major ? "Ma" : "mi").map { Chord(root: triad.root, template: $0) }
+    }
+}
+
+/// `(root, quality)` as a lookup key — used to test "is this rendered triangle the current
+/// selection, or one of its P/L/R neighbors" without caring which specific lattice coordinate it
 /// renders at (the same neighbor can legitimately appear at more than one coordinate in a
 /// periodic tile).
-private struct TonnetzKey: Hashable {
+private struct TonnetzTriadKey: Hashable {
     let root: PitchClass
     let quality: TonnetzTriadQuality
 }
 
 private extension TonnetzTriad {
-    var key: TonnetzKey { TonnetzKey(root: root, quality: quality) }
-
-    /// The plain major/minor `Chord` this triad represents — `nil` only if `ChordVocabulary`
-    /// somehow lost its built-in "Ma"/"mi" templates (never happens in practice).
-    var chord: Chord? {
-        ChordVocabulary.byID(quality == .major ? "Ma" : "mi").map { Chord(root: root, template: $0) }
-    }
+    var key: TonnetzTriadKey { TonnetzTriadKey(root: root, quality: quality) }
 }
 
 private func pointInTriangle(_ point: CGPoint, _ a: CGPoint, _ b: CGPoint, _ c: CGPoint) -> Bool {
@@ -72,6 +114,16 @@ private func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
     hypot(a.x - b.x, a.y - b.y)
 }
 
+private func distanceToSegment(_ point: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+    let abx = b.x - a.x, aby = b.y - a.y
+    let apx = point.x - a.x, apy = point.y - a.y
+    let lengthSquared = abx * abx + aby * aby
+    guard lengthSquared > 0 else { return distance(point, a) }
+    let t = max(0, min(1, (apx * abx + apy * aby) / lengthSquared))
+    let projection = CGPoint(x: a.x + t * abx, y: a.y + t * aby)
+    return distance(point, projection)
+}
+
 private func trianglePath(_ vertices: [CGPoint]) -> Path {
     var path = Path()
     guard vertices.count == 3 else { return path }
@@ -82,13 +134,56 @@ private func trianglePath(_ vertices: [CGPoint]) -> Path {
     return path
 }
 
+/// Fill/stroke for one rendered triangle, shared by both views. `colorByIdentity` (per explicit
+/// request) aligns a triad's fill with the SAME per-pitch-class palette the circle-of-fifths
+/// wheel already uses (a pastel tint of the root's own color) instead of a generic
+/// selection-only accent; the non-identity mode keeps the original generic scheme as a fallback.
+/// Diminished/augmented triads never reach this function in Phase 1 — the Tonnetz has no
+/// triangle for them at all (no perfect fifth to anchor one), so the question of how to color
+/// them doesn't arise yet (see the plan's Phase 2 backlog).
+@MainActor
+private func triangleAppearance(root: PitchClass, isSelected: Bool, isNeighbor: Bool, colorByIdentity: Bool, palette: [String]) -> (fill: Color, stroke: Color, lineWidth: CGFloat, dash: [CGFloat]) {
+    let hex = palette.indices.contains(root.value) ? palette[root.value] : PitchKeyboardView.defaultPalette[root.value]
+    if colorByIdentity {
+        let base = Color.pastel(hex: hex, fraction: 0.55)
+        if isSelected { return (base, .accentColor, 3, []) }
+        if isNeighbor { return (base.opacity(0.85), .orange, 2, [4, 3]) }
+        return (base.opacity(0.4), Color.secondary.opacity(0.3), 1, [])
+    }
+    if isSelected { return (Color.accentColor.opacity(0.4), .accentColor, 3, []) }
+    if isNeighbor { return (Color.orange.opacity(0.2), .orange, 2, [4, 3]) }
+    return (Color.secondary.opacity(0.05), Color.secondary.opacity(0.35), 1, [])
+}
+
+/// Fill/text/stroke for one rendered node. `colorByIdentity` colors a note by its OWN
+/// pitch-class identity (full saturation — the same 12-color palette the triangles use pastel
+/// tints of), reserving the stroke ring for "is this actually held" instead of changing the fill
+/// hue; the non-identity mode keeps the original role-based `PitchDisplayState` coloring
+/// (root/tone/held/mode, via `colorScheme`).
+@MainActor
+private func nodeAppearance(paletteIndex: Int, role: PitchDisplayRole, colorByIdentity: Bool, palette: [String], paletteTextColors: [String], colorScheme: PitchKeyboardColorScheme) -> (fill: Color, textColor: Color, strokeColor: Color, strokeWidth: CGFloat) {
+    let isHeld: Bool
+    switch role {
+    case .chordRoot, .chordTone, .heldOutsideChord, .held: isHeld = true
+    default: isHeld = false
+    }
+    if colorByIdentity {
+        let hex = palette.indices.contains(paletteIndex) ? palette[paletteIndex] : PitchKeyboardView.defaultPalette[paletteIndex]
+        let textHex = paletteTextColors.indices.contains(paletteIndex) ? paletteTextColors[paletteIndex] : PitchKeyboardView.defaultPaletteTextColors[paletteIndex]
+        return (Color(hex: hex), Color(hex: textHex), isHeld ? .white : .black.opacity(0.35), isHeld ? 3 : 1)
+    }
+    let fill = colorScheme.fillColor(for: role, isWhiteKey: true)
+    let isLight = fill == colorScheme.whiteKey || role == .chordTone || role == .modeTone
+    return (fill, isLight ? .black : .white, .black.opacity(0.35), 1)
+}
+
 /// Phase 1's simple voice-leading heuristic: a handful of candidate inversions/octaves for
 /// `chord`, scored by total semitone movement from `previousPitches` (paired position-by-
 /// position after sorting both), cheapest wins. Deliberately NOT the weighted-penalty optimizer
 /// from the full Tonnetz spec (voice crossing / out-of-scale / register penalties) — that's
 /// backlogged for Phase 2.
-enum TonnetzVoicing {
-    static func nearestVoicing(forChord chord: Chord, previousPitches: [Int]) -> [Int] {
+public enum TonnetzVoicing {
+    public static func nearestVoicing(forChord chord: Chord, previousPitches: [Int]) -> [Int] {
         let anchor = previousPitches.isEmpty ? 60 : previousPitches.reduce(0, +) / previousPitches.count
         let toneCount = max(chord.pitchClasses.count, 1)
         var best: (pitches: [Int], cost: Int)?
@@ -110,40 +205,57 @@ enum TonnetzVoicing {
         }
         return best?.pitches ?? PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47)
     }
+
+    /// Where to place a 2nd note a fixed interval away from `anchor`, taking whichever direction
+    /// (up or down) is the shorter interval — the dyad counterpart to `nearestVoicing`, used when
+    /// an edge is played without a concrete registered position of its own (a Harmonic-mode tap).
+    public static func nearestOtherPitch(anchor: Int, otherPitchClass: PitchClass) -> Int {
+        let anchorPitchClass = ((anchor % 12) + 12) % 12
+        let forward = ((otherPitchClass.value - anchorPitchClass) % 12 + 12) % 12
+        let delta = forward <= 6 ? forward : forward - 12
+        return anchor + delta
+    }
 }
 
 /// The "Pitch Class Tonnetz" (mode Harmonique) — the 12-pitch-class lattice, chromatic and
-/// register-independent. Tapping a node plays that pitch class (`onTapNote`); tapping a triangle
-/// selects AND plays its triad (`onSelectTriad`, fused the same way every other Théorie screen's
-/// tap-to-select already fuses selection with audition). The current selection's P/L/R neighbors
-/// are outlined directly on the grid (dashed amber) rather than offered as separate buttons —
-/// they're already visible, adjacent triangles.
+/// register-independent. Tapping a node/edge/triangle selects AND plays a note/dyad/triad (fused
+/// the same way every other Théorie screen's tap-to-select already fuses selection with
+/// audition). The current selection's P/L/R neighbors (triads only) are outlined directly on the
+/// grid (dashed amber) rather than offered as separate buttons — they're already visible,
+/// adjacent triangles.
 public struct PitchClassTonnetzView: View {
     public let heldPitchClasses: Set<PitchClass>
-    public let selectedTriad: TonnetzTriad?
+    public let selection: TonnetzSelection?
+    public let colorByIdentity: Bool
+    public let palette: [String]
+    public let paletteTextColors: [String]
     public let colorScheme: PitchKeyboardColorScheme
     public let notationStyle: any NotationStyle
-    public let onTapNote: (PitchClass) -> Void
-    public let onSelectTriad: (TonnetzTriad) -> Void
+    public let onSelect: (TonnetzSelection) -> Void
 
     public init(
         heldPitchClasses: Set<PitchClass>,
-        selectedTriad: TonnetzTriad?,
+        selection: TonnetzSelection?,
+        colorByIdentity: Bool,
+        palette: [String] = PitchKeyboardView.defaultPalette,
+        paletteTextColors: [String] = PitchKeyboardView.defaultPaletteTextColors,
         colorScheme: PitchKeyboardColorScheme = PitchKeyboardColorScheme(),
         notationStyle: any NotationStyle,
-        onTapNote: @escaping (PitchClass) -> Void,
-        onSelectTriad: @escaping (TonnetzTriad) -> Void
+        onSelect: @escaping (TonnetzSelection) -> Void
     ) {
         self.heldPitchClasses = heldPitchClasses
-        self.selectedTriad = selectedTriad
+        self.selection = selection
+        self.colorByIdentity = colorByIdentity
+        self.palette = palette
+        self.paletteTextColors = paletteTextColors
         self.colorScheme = colorScheme
         self.notationStyle = notationStyle
-        self.onTapNote = onTapNote
-        self.onSelectTriad = onSelectTriad
+        self.onSelect = onSelect
     }
 
     private static let edgeLength: CGFloat = 60
     private static let nodeRadius: CGFloat = 22
+    private static let edgeHitDistance: CGFloat = 12
 
     public var body: some View {
         GeometryReader { proxy in
@@ -163,6 +275,14 @@ public struct PitchClassTonnetzView: View {
         let isPrimary: Bool
     }
 
+    private struct LayoutEdge {
+        let kind: TonnetzEdgeKind
+        let root: PitchClass
+        let other: PitchClass
+        let a: CGPoint
+        let b: CGPoint
+    }
+
     private struct LayoutTriangle {
         let anchor: TonnetzCoordinate
         let quality: TonnetzTriadQuality
@@ -172,6 +292,7 @@ public struct PitchClassTonnetzView: View {
 
     private struct LayoutInfo {
         let nodes: [LayoutNode]
+        let edges: [LayoutEdge]
         let triangles: [LayoutTriangle]
     }
 
@@ -181,7 +302,7 @@ public struct PitchClassTonnetzView: View {
         let rawPoints = entries.map { TonnetzGeometry.point(for: $0.0, edgeLength: Self.edgeLength) }
         guard let minX = rawPoints.map(\.x).min(), let maxX = rawPoints.map(\.x).max(),
               let minY = rawPoints.map(\.y).min(), let maxY = rawPoints.map(\.y).max() else {
-            return LayoutInfo(nodes: [], triangles: [])
+            return LayoutInfo(nodes: [], edges: [], triangles: [])
         }
         let offset = CGPoint(x: size.width / 2 - (minX + maxX) / 2, y: size.height / 2 - (minY + maxY) / 2)
 
@@ -194,6 +315,16 @@ public struct PitchClassTonnetzView: View {
         }
 
         let allCoordinates = Set(entries.map(\.0))
+        var edges: [LayoutEdge] = []
+        for coordinate in allCoordinates {
+            for kind in [TonnetzEdgeKind.fifth, .majorThird, .minorThird] {
+                let otherCoordinate = Self.otherCoordinate(from: coordinate, kind: kind)
+                guard allCoordinates.contains(otherCoordinate), let a = pointsByCoordinate[coordinate], let b = pointsByCoordinate[otherCoordinate] else { continue }
+                let edge = Tonnetz.edge(kind: kind, anchoredAt: coordinate)
+                edges.append(LayoutEdge(kind: kind, root: edge.root, other: edge.other, a: a, b: b))
+            }
+        }
+
         var triangles: [LayoutTriangle] = []
         for coordinate in allCoordinates {
             for quality in [TonnetzTriadQuality.major, .minor] {
@@ -204,23 +335,36 @@ public struct PitchClassTonnetzView: View {
                 triangles.append(LayoutTriangle(anchor: coordinate, quality: quality, root: Tonnetz.pitchClass(at: coordinate), vertices: vertices))
             }
         }
-        return LayoutInfo(nodes: nodes, triangles: triangles)
+        return LayoutInfo(nodes: nodes, edges: edges, triangles: triangles)
     }
 
-    private func plrNeighborKeys() -> Set<TonnetzKey> {
-        guard let selectedTriad else { return [] }
-        let neighbors = [Tonnetz.parallel(of: selectedTriad), Tonnetz.relative(of: selectedTriad), Tonnetz.leadingToneExchange(of: selectedTriad)]
+    private static func otherCoordinate(from coordinate: TonnetzCoordinate, kind: TonnetzEdgeKind) -> TonnetzCoordinate {
+        switch kind {
+        case .fifth: return TonnetzCoordinate(q: coordinate.q + 1, r: coordinate.r)
+        case .majorThird: return TonnetzCoordinate(q: coordinate.q, r: coordinate.r + 1)
+        case .minorThird: return TonnetzCoordinate(q: coordinate.q + 1, r: coordinate.r - 1)
+        }
+    }
+
+    private func plrNeighborKeys() -> Set<TonnetzTriadKey> {
+        guard case .triad(let triad) = selection else { return [] }
+        let neighbors = [Tonnetz.parallel(of: triad), Tonnetz.relative(of: triad), Tonnetz.leadingToneExchange(of: triad)]
         return Set(neighbors.map(\.key))
     }
 
     private func handleTap(at location: CGPoint, layout: LayoutInfo) {
         if let nearestNode = layout.nodes.min(by: { distance($0.point, location) < distance($1.point, location) }),
            distance(nearestNode.point, location) <= Self.nodeRadius {
-            onTapNote(nearestNode.pitchClass)
+            onSelect(.note(nearestNode.pitchClass, realPitch: nil))
+            return
+        }
+        if let nearestEdge = layout.edges.min(by: { distanceToSegment(location, $0.a, $0.b) < distanceToSegment(location, $1.a, $1.b) }),
+           distanceToSegment(location, nearestEdge.a, nearestEdge.b) <= Self.edgeHitDistance {
+            onSelect(.edge(TonnetzEdge(coordinate: TonnetzCoordinate(q: 0, r: 0), kind: nearestEdge.kind, root: nearestEdge.root, other: nearestEdge.other), realPitches: nil))
             return
         }
         if let triangle = layout.triangles.first(where: { pointInTriangle(location, $0.vertices[0], $0.vertices[1], $0.vertices[2]) }) {
-            onSelectTriad(TonnetzTriad(coordinate: triangle.anchor, quality: triangle.quality, root: triangle.root))
+            onSelect(.triad(TonnetzTriad(coordinate: triangle.anchor, quality: triangle.quality, root: triangle.root)))
         }
     }
 
@@ -228,41 +372,57 @@ public struct PitchClassTonnetzView: View {
 
     private func draw(in context: GraphicsContext, layout: LayoutInfo) {
         let neighborKeys = plrNeighborKeys()
+        let selectedEdgePitchClasses: Set<PitchClass>? = {
+            guard case .edge(let edge, _) = selection else { return nil }
+            return [edge.root, edge.other]
+        }()
+
+        for edge in layout.edges {
+            let isSelected = selectedEdgePitchClasses == Set([edge.root, edge.other])
+            var path = Path()
+            path.move(to: edge.a)
+            path.addLine(to: edge.b)
+            context.stroke(path, with: .color(isSelected ? .accentColor : Color.secondary.opacity(0.25)), lineWidth: isSelected ? 4 : 1)
+        }
+
         for triangle in layout.triangles {
-            let key = TonnetzKey(root: triangle.root, quality: triangle.quality)
-            let isSelected = selectedTriad?.key == key
+            let key = TonnetzTriadKey(root: triangle.root, quality: triangle.quality)
+            let isSelected: Bool = {
+                if case .triad(let triad) = selection { return triad.key == key }
+                return false
+            }()
             let isNeighbor = !isSelected && neighborKeys.contains(key)
+            let appearance = triangleAppearance(root: triangle.root, isSelected: isSelected, isNeighbor: isNeighbor, colorByIdentity: colorByIdentity, palette: palette)
             let path = trianglePath(triangle.vertices)
-            let fill: Color = isSelected ? Color.accentColor.opacity(0.4) : (isNeighbor ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.05))
-            context.fill(path, with: .color(fill))
-            if isNeighbor {
-                context.stroke(path, with: .color(.orange), style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
+            context.fill(path, with: .color(appearance.fill))
+            if appearance.dash.isEmpty {
+                context.stroke(path, with: .color(appearance.stroke), lineWidth: appearance.lineWidth)
             } else {
-                context.stroke(path, with: .color(isSelected ? Color.accentColor : Color.secondary.opacity(0.35)), lineWidth: isSelected ? 3 : 1)
+                context.stroke(path, with: .color(appearance.stroke), style: StrokeStyle(lineWidth: appearance.lineWidth, dash: appearance.dash))
             }
         }
 
-        let chordTones = selectedTriad?.chord?.pitchClasses.map(\.value) ?? []
+        let chordTones = selection?.chord?.pitchClasses.map(\.value) ?? []
+        let chordRoot = selection?.chord != nil ? selection?.root.value : nil
         let heldAtSyntheticOctave = Set(heldPitchClasses.map { 60 + $0.value })
         for node in layout.nodes {
             let state = pitchDisplayState(
                 pitch: 60 + node.pitchClass.value,
                 heldPitches: heldAtSyntheticOctave,
-                chordRoot: selectedTriad?.root.value,
+                chordRoot: chordRoot,
                 chordTones: chordTones,
                 modeTones: [],
                 alwaysShowChord: true
             )
+            let appearance = nodeAppearance(paletteIndex: node.pitchClass.value, role: state.role, colorByIdentity: colorByIdentity, palette: palette, paletteTextColors: paletteTextColors, colorScheme: colorScheme)
             context.drawLayer { layer in
                 layer.opacity = node.isPrimary ? 1 : 0.55
-                let fill = colorScheme.fillColor(for: state.role, isWhiteKey: true)
                 let rect = CGRect(x: node.point.x - Self.nodeRadius, y: node.point.y - Self.nodeRadius, width: Self.nodeRadius * 2, height: Self.nodeRadius * 2)
                 let circle = Path(ellipseIn: rect)
-                layer.fill(circle, with: .color(fill))
-                layer.stroke(circle, with: .color(.black.opacity(0.35)), lineWidth: 1)
-                let isLightFill = fill == colorScheme.whiteKey || state.role == .chordTone || state.role == .modeTone
+                layer.fill(circle, with: .color(appearance.fill))
+                layer.stroke(circle, with: .color(appearance.strokeColor), lineWidth: appearance.strokeWidth)
                 layer.draw(
-                    Text(notationStyle.rootName(node.pitchClass, preferFlats: false)).font(.system(size: 13, weight: .semibold)).foregroundStyle(isLightFill ? Color.black : Color.white),
+                    Text(notationStyle.rootName(node.pitchClass, preferFlats: false)).font(.system(size: 13, weight: .semibold)).foregroundStyle(appearance.textColor),
                     at: node.point
                 )
             }
@@ -271,39 +431,54 @@ public struct PitchClassTonnetzView: View {
 }
 
 /// The "Registered Tonnetz" (mode Performance) — real, absolute-MIDI notes, windowed locally
-/// around whatever's currently held (see `TonnetzGeometry.nearestCoordinate`), never the full
-/// 88-key lattice at once. Same tap-a-node/tap-a-triangle interaction as
-/// `PitchClassTonnetzView`, just over real pitches instead of pitch classes.
+/// around whatever's currently held. The window only re-anchors once the held notes get close to
+/// its own edge (per explicit request — a small window that recenters on every note read as
+/// constant, hard-to-follow jumping); it never snaps away during silence.
 public struct RegisteredTonnetzView: View {
     public let heldPitches: Set<Int>
-    public let selectedTriad: TonnetzTriad?
+    public let selection: TonnetzSelection?
+    public let colorByIdentity: Bool
+    public let palette: [String]
+    public let paletteTextColors: [String]
     public let colorScheme: PitchKeyboardColorScheme
     public let notationStyle: any NotationStyle
-    public let onTapNote: (Int) -> Void
-    public let onSelectTriad: (TonnetzTriad) -> Void
+    public let onSelect: (TonnetzSelection) -> Void
 
     public init(
         heldPitches: Set<Int>,
-        selectedTriad: TonnetzTriad?,
+        selection: TonnetzSelection?,
+        colorByIdentity: Bool,
+        palette: [String] = PitchKeyboardView.defaultPalette,
+        paletteTextColors: [String] = PitchKeyboardView.defaultPaletteTextColors,
         colorScheme: PitchKeyboardColorScheme = PitchKeyboardColorScheme(),
         notationStyle: any NotationStyle,
-        onTapNote: @escaping (Int) -> Void,
-        onSelectTriad: @escaping (TonnetzTriad) -> Void
+        onSelect: @escaping (TonnetzSelection) -> Void
     ) {
         self.heldPitches = heldPitches
-        self.selectedTriad = selectedTriad
+        self.selection = selection
+        self.colorByIdentity = colorByIdentity
+        self.palette = palette
+        self.paletteTextColors = paletteTextColors
         self.colorScheme = colorScheme
         self.notationStyle = notationStyle
-        self.onTapNote = onTapNote
-        self.onSelectTriad = onSelectTriad
+        self.onSelect = onSelect
     }
 
     @State private var windowCenter = TonnetzCoordinate(q: 0, r: 0)
 
-    private static let edgeLength: CGFloat = 56
-    private static let nodeRadius: CGFloat = 20
-    private static let qSpan = 3
-    private static let rSpan = 2
+    private static let edgeLength: CGFloat = 52
+    private static let nodeRadius: CGFloat = 19
+    private static let edgeHitDistance: CGFloat = 10
+    /// Wider than the harmonic tile's own fixed 12-cell footprint — per explicit request, a
+    /// bigger window so playing near the middle of the keyboard rarely nears its edge. Widened
+    /// more along `q` (fifths, 7 semitones/step) than `r` (thirds, 3-4 semitones/step): covering
+    /// the same real pitch range takes fewer fifth-steps than third-steps, so a wider `q` span
+    /// buys more actual keyboard coverage per extra rendered column.
+    private static let qSpan = 6
+    private static let rSpan = 4
+    /// Only recenter once the held notes' resolved coordinate is within this many steps of the
+    /// window's own edge — the "don't jump on every note near the middle" ask.
+    private static let recenterMargin = 1
     private static let midiRange = 21...108
 
     public var body: some View {
@@ -313,14 +488,16 @@ public struct RegisteredTonnetzView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { location in handleTap(at: location, layout: layout) }
         }
-        .aspectRatio(1.3, contentMode: .fit)
-        // Recenters only when something is actually held — never snaps away during silence,
-        // same "don't move the view out from under a still moment" convention
-        // `AutoCenteredKeyboardView` already follows for its own window.
+        .aspectRatio(1.6, contentMode: .fit)
         .task(id: heldPitches) {
             guard !heldPitches.isEmpty else { return }
             let target = heldPitches.reduce(0, +) / heldPitches.count
-            windowCenter = TonnetzGeometry.nearestCoordinate(toMidiPitch: target, near: windowCenter)
+            let candidate = TonnetzGeometry.nearestCoordinate(toMidiPitch: target, near: windowCenter)
+            let dq = abs(candidate.q - windowCenter.q)
+            let dr = abs(candidate.r - windowCenter.r)
+            if dq >= Self.qSpan - Self.recenterMargin || dr >= Self.rSpan - Self.recenterMargin {
+                windowCenter = candidate
+            }
         }
     }
 
@@ -331,17 +508,33 @@ public struct RegisteredTonnetzView: View {
         let point: CGPoint
     }
 
+    private struct LayoutEdge {
+        let kind: TonnetzEdgeKind
+        let rootPitch: Int
+        let otherPitch: Int
+        let a: CGPoint
+        let b: CGPoint
+    }
+
     private struct LayoutTriangle {
         let anchor: TonnetzCoordinate
         let quality: TonnetzTriadQuality
         let root: PitchClass
-        let pitches: [Int]
         let vertices: [CGPoint]
     }
 
     private struct LayoutInfo {
         let nodes: [LayoutNode]
+        let edges: [LayoutEdge]
         let triangles: [LayoutTriangle]
+    }
+
+    private static func otherCoordinate(from coordinate: TonnetzCoordinate, kind: TonnetzEdgeKind) -> TonnetzCoordinate {
+        switch kind {
+        case .fifth: return TonnetzCoordinate(q: coordinate.q + 1, r: coordinate.r)
+        case .majorThird: return TonnetzCoordinate(q: coordinate.q, r: coordinate.r + 1)
+        case .minorThird: return TonnetzCoordinate(q: coordinate.q + 1, r: coordinate.r - 1)
+        }
     }
 
     private func layoutInfo(for size: CGSize) -> LayoutInfo {
@@ -355,7 +548,7 @@ public struct RegisteredTonnetzView: View {
         let rawPoints = validCoordinates.map { TonnetzGeometry.point(for: $0, edgeLength: Self.edgeLength) }
         guard let minX = rawPoints.map(\.x).min(), let maxX = rawPoints.map(\.x).max(),
               let minY = rawPoints.map(\.y).min(), let maxY = rawPoints.map(\.y).max() else {
-            return LayoutInfo(nodes: [], triangles: [])
+            return LayoutInfo(nodes: [], edges: [], triangles: [])
         }
         let offset = CGPoint(x: size.width / 2 - (minX + maxX) / 2, y: size.height / 2 - (minY + maxY) / 2)
 
@@ -368,218 +561,107 @@ public struct RegisteredTonnetzView: View {
         }
 
         let validSet = Set(validCoordinates)
+        var edges: [LayoutEdge] = []
+        for coordinate in validCoordinates {
+            for kind in [TonnetzEdgeKind.fifth, .majorThird, .minorThird] {
+                let otherCoordinate = Self.otherCoordinate(from: coordinate, kind: kind)
+                guard validSet.contains(otherCoordinate), let a = pointsByCoordinate[coordinate], let b = pointsByCoordinate[otherCoordinate] else { continue }
+                edges.append(LayoutEdge(kind: kind, rootPitch: Tonnetz.midiPitch(at: coordinate), otherPitch: Tonnetz.midiPitch(at: otherCoordinate), a: a, b: b))
+            }
+        }
+
         var triangles: [LayoutTriangle] = []
         for coordinate in validCoordinates {
             for quality in [TonnetzTriadQuality.major, .minor] {
                 let vertexCoordinates = Tonnetz.nodes(ofQuality: quality, anchoredAt: coordinate)
                 guard vertexCoordinates.allSatisfy({ validSet.contains($0) }) else { continue }
                 let vertices = vertexCoordinates.compactMap { pointsByCoordinate[$0] }
-                let pitches = vertexCoordinates.compactMap { coordinate in pointsByCoordinate[coordinate] != nil ? Tonnetz.midiPitch(at: coordinate) : nil }
-                guard vertices.count == 3, pitches.count == 3 else { continue }
-                triangles.append(LayoutTriangle(anchor: coordinate, quality: quality, root: Tonnetz.pitchClass(at: coordinate), pitches: pitches, vertices: vertices))
+                guard vertices.count == 3 else { continue }
+                triangles.append(LayoutTriangle(anchor: coordinate, quality: quality, root: Tonnetz.pitchClass(at: coordinate), vertices: vertices))
             }
         }
-        return LayoutInfo(nodes: nodes, triangles: triangles)
+        return LayoutInfo(nodes: nodes, edges: edges, triangles: triangles)
     }
 
     private func handleTap(at location: CGPoint, layout: LayoutInfo) {
         if let nearestNode = layout.nodes.min(by: { distance($0.point, location) < distance($1.point, location) }),
            distance(nearestNode.point, location) <= Self.nodeRadius {
-            onTapNote(nearestNode.midiPitch)
+            onSelect(.note(PitchClass(nearestNode.midiPitch), realPitch: nearestNode.midiPitch))
+            return
+        }
+        if let nearestEdge = layout.edges.min(by: { distanceToSegment(location, $0.a, $0.b) < distanceToSegment(location, $1.a, $1.b) }),
+           distanceToSegment(location, nearestEdge.a, nearestEdge.b) <= Self.edgeHitDistance {
+            let edge = TonnetzEdge(coordinate: TonnetzCoordinate(q: 0, r: 0), kind: nearestEdge.kind, root: PitchClass(nearestEdge.rootPitch), other: PitchClass(nearestEdge.otherPitch))
+            onSelect(.edge(edge, realPitches: [nearestEdge.rootPitch, nearestEdge.otherPitch]))
             return
         }
         if let triangle = layout.triangles.first(where: { pointInTriangle(location, $0.vertices[0], $0.vertices[1], $0.vertices[2]) }) {
-            onSelectTriad(TonnetzTriad(coordinate: triangle.anchor, quality: triangle.quality, root: triangle.root))
+            onSelect(.triad(TonnetzTriad(coordinate: triangle.anchor, quality: triangle.quality, root: triangle.root)))
         }
     }
 
     // MARK: - Drawing
 
     private func draw(in context: GraphicsContext, layout: LayoutInfo) {
-        for triangle in layout.triangles {
-            let isSelected = selectedTriad?.key == TonnetzKey(root: triangle.root, quality: triangle.quality)
-            let path = trianglePath(triangle.vertices)
-            context.fill(path, with: .color(isSelected ? Color.accentColor.opacity(0.4) : Color.secondary.opacity(0.05)))
-            context.stroke(path, with: .color(isSelected ? Color.accentColor : Color.secondary.opacity(0.35)), lineWidth: isSelected ? 3 : 1)
+        let selectedRealPitches: Set<Int>? = {
+            guard case .edge(_, let realPitches) = selection, let realPitches, realPitches.count == 2 else { return nil }
+            return Set(realPitches)
+        }()
+        let selectedEdgePitchClasses: Set<PitchClass>? = {
+            guard case .edge(let edge, let realPitches) = selection, realPitches == nil else { return nil }
+            return [edge.root, edge.other]
+        }()
+
+        for edge in layout.edges {
+            let isSelected: Bool
+            if let selectedRealPitches {
+                isSelected = selectedRealPitches == Set([edge.rootPitch, edge.otherPitch])
+            } else if let selectedEdgePitchClasses {
+                isSelected = selectedEdgePitchClasses == Set([PitchClass(edge.rootPitch), PitchClass(edge.otherPitch)])
+            } else {
+                isSelected = false
+            }
+            var path = Path()
+            path.move(to: edge.a)
+            path.addLine(to: edge.b)
+            context.stroke(path, with: .color(isSelected ? .accentColor : Color.secondary.opacity(0.25)), lineWidth: isSelected ? 4 : 1)
         }
 
-        let chordTones = selectedTriad?.chord?.pitchClasses.map(\.value) ?? []
+        for triangle in layout.triangles {
+            let isSelected: Bool = {
+                if case .triad(let triad) = selection { return triad.key == TonnetzTriadKey(root: triangle.root, quality: triangle.quality) }
+                return false
+            }()
+            let appearance = triangleAppearance(root: triangle.root, isSelected: isSelected, isNeighbor: false, colorByIdentity: colorByIdentity, palette: palette)
+            let path = trianglePath(triangle.vertices)
+            context.fill(path, with: .color(appearance.fill))
+            context.stroke(path, with: .color(appearance.stroke), lineWidth: appearance.lineWidth)
+        }
+
+        let chordTones = selection?.chord?.pitchClasses.map(\.value) ?? []
+        let chordRoot = selection?.chord != nil ? selection?.root.value : nil
         for node in layout.nodes {
             let state = pitchDisplayState(
                 pitch: node.midiPitch,
                 heldPitches: heldPitches,
-                chordRoot: selectedTriad?.root.value,
+                chordRoot: chordRoot,
                 chordTones: chordTones,
                 modeTones: [],
                 alwaysShowChord: true
             )
+            let paletteIndex = ((node.midiPitch % 12) + 12) % 12
+            let appearance = nodeAppearance(paletteIndex: paletteIndex, role: state.role, colorByIdentity: colorByIdentity, palette: palette, paletteTextColors: paletteTextColors, colorScheme: colorScheme)
             context.drawLayer { layer in
-                let fill = colorScheme.fillColor(for: state.role, isWhiteKey: true)
                 let rect = CGRect(x: node.point.x - Self.nodeRadius, y: node.point.y - Self.nodeRadius, width: Self.nodeRadius * 2, height: Self.nodeRadius * 2)
                 let circle = Path(ellipseIn: rect)
-                layer.fill(circle, with: .color(fill))
-                layer.stroke(circle, with: .color(.black.opacity(0.35)), lineWidth: 1)
-                let isLightFill = fill == colorScheme.whiteKey || state.role == .chordTone || state.role == .modeTone
+                layer.fill(circle, with: .color(appearance.fill))
+                layer.stroke(circle, with: .color(appearance.strokeColor), lineWidth: appearance.strokeWidth)
                 let octave = node.midiPitch / 12 - 1
                 let label = "\(notationStyle.rootName(PitchClass(node.midiPitch), preferFlats: false))\(octave)"
                 layer.draw(
-                    Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(isLightFill ? Color.black : Color.white),
+                    Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(appearance.textColor),
                     at: node.point
                 )
-            }
-        }
-    }
-}
-
-/// Studio's Tonnetz screen — the mode toggle (Harmonique/Performance) plus whichever grid is
-/// active, both coupled to the app's single "clavier principal" (`session.theoryLiveInputSourceID`)
-/// and the Studio scene's own assigned sound (mirrors `ContentView.studioSourceHasAssignedSound`'s
-/// gate — a note only actually sounds when the live source is wired to a scene role with a sound).
-/// Tapping a node or triangle here always plays through that same live track (`pressKey`/
-/// `releaseKey`), so a tap-triggered chord becomes real, recognized `heldPitches` exactly like any
-/// other played chord — closing the harmonic/performance loop the same way a real instrument would.
-public struct TonnetzScreen: View {
-    public let session: ImprovSession
-
-    public init(session: ImprovSession) {
-        self.session = session
-    }
-
-    private enum DisplayMode: String, CaseIterable, Identifiable {
-        case harmonic, performance
-        var id: Self { self }
-        func label(_ language: AppLanguage) -> String {
-            switch self {
-            case .harmonic: return L10n.string(.appModeTonnetzHarmonique, language)
-            case .performance: return L10n.string(.appModeTonnetzPerformance, language)
-            }
-        }
-    }
-
-    @State private var displayMode: DisplayMode = .harmonic
-    @State private var selectedTriad: TonnetzTriad? = Tonnetz.triad(quality: .major, anchoredAt: TonnetzCoordinate(q: 0, r: 0))
-    @State private var auditionGeneration = 0
-
-    private var sourceID: TrackID? { session.theoryLiveInputSourceID }
-
-    private var heldPitches: Set<Int> {
-        guard let sourceID else { return [] }
-        return session.tracks.first { $0.id == sourceID }?.heldPitches ?? []
-    }
-
-    private var heldPitchClasses: Set<PitchClass> { Set(heldPitches.map { PitchClass($0) }) }
-
-    /// Mirrors `ContentView.studioSourceHasAssignedSound` — a tap here should never fire notes
-    /// into a track with no instrument to sound them.
-    private var canPlay: Bool {
-        guard let sourceID else { return false }
-        return session.currentScene?.roles.contains { $0.attachedTrackID == sourceID && $0.soundName != nil } ?? false
-    }
-
-    public var body: some View {
-        VStack(spacing: 12) {
-            Picker("", selection: $displayMode) {
-                ForEach(DisplayMode.allCases) { mode in
-                    Text(mode.label(session.currentLanguage)).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 360)
-
-            selectedChordSummary
-
-            Group {
-                switch displayMode {
-                case .harmonic:
-                    PitchClassTonnetzView(
-                        heldPitchClasses: heldPitchClasses,
-                        selectedTriad: selectedTriad,
-                        notationStyle: session.notationStyle,
-                        onTapNote: { pitchClass in
-                            guard canPlay else { return }
-                            playSingleNote(nearestRealPitch(forPitchClass: pitchClass))
-                        },
-                        onSelectTriad: { triad in
-                            selectedTriad = triad
-                            guard canPlay else { return }
-                            playTriad(triad)
-                        }
-                    )
-                case .performance:
-                    RegisteredTonnetzView(
-                        heldPitches: heldPitches,
-                        selectedTriad: selectedTriad,
-                        notationStyle: session.notationStyle,
-                        onTapNote: { pitch in
-                            guard canPlay else { return }
-                            playSingleNote(pitch)
-                        },
-                        onSelectTriad: { triad in
-                            selectedTriad = triad
-                            guard canPlay else { return }
-                            playTriad(triad)
-                        }
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .padding()
-        .onChange(of: session.theoryLiveInputRecognizedChord) { _, newChord in
-            reactToLiveRecognition(newChord)
-        }
-    }
-
-    @ViewBuilder
-    private var selectedChordSummary: some View {
-        if let chord = selectedTriad?.chord {
-            Text(session.notationStyle.displayName(for: chord)).font(.title2).bold()
-        }
-    }
-
-    /// Directly follows a recognized major/minor triad exactly as if it had been tapped — same
-    /// "live overrides the browsed selection" convention every other Théorie screen's live-match
-    /// reaction already follows. Recognized chords of any other quality (7ths, etc.) are ignored
-    /// for now — Phase 1 only models plain triads on the lattice (see the plan's Phase 2 backlog).
-    private func reactToLiveRecognition(_ chord: RecognizedChord?) {
-        guard let chord, chord.chordTemplateID == "Ma" || chord.chordTemplateID == "mi" else { return }
-        let quality: TonnetzTriadQuality = chord.chordTemplateID == "Ma" ? .major : .minor
-        let tile = Tonnetz.paddedTile()
-        guard let coordinate = Tonnetz.coordinate(forRoot: chord.root, in: tile.primary + tile.halo) else { return }
-        selectedTriad = Tonnetz.triad(quality: quality, anchoredAt: coordinate)
-    }
-
-    private func nearestRealPitch(forPitchClass pitchClass: PitchClass) -> Int {
-        let anchor = heldPitches.isEmpty ? 60 : heldPitches.reduce(0, +) / heldPitches.count
-        let candidates = stride(from: pitchClass.value, through: 120, by: 12).map { $0 }
-        let best = candidates.min(by: { abs($0 - anchor) < abs($1 - anchor) }) ?? (pitchClass.value + 60)
-        return min(max(best, 21), 108)
-    }
-
-    private func playSingleNote(_ pitch: Int) {
-        guard let sourceID else { return }
-        session.pressKey(pitch: pitch, track: sourceID)
-        auditionGeneration += 1
-        let generation = auditionGeneration
-        Task {
-            try? await Task.sleep(nanoseconds: 700_000_000)
-            if generation == auditionGeneration {
-                session.releaseKey(pitch: pitch, track: sourceID)
-            }
-        }
-    }
-
-    private func playTriad(_ triad: TonnetzTriad) {
-        guard let sourceID, let chord = triad.chord else { return }
-        let targetPitches = TonnetzVoicing.nearestVoicing(forChord: chord, previousPitches: Array(heldPitches))
-        session.releaseAllKeys(track: sourceID)
-        for pitch in targetPitches { session.pressKey(pitch: pitch, track: sourceID) }
-        auditionGeneration += 1
-        let generation = auditionGeneration
-        Task {
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
-            if generation == auditionGeneration {
-                session.releaseAllKeys(track: sourceID)
             }
         }
     }

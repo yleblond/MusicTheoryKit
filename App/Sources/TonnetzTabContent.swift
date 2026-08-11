@@ -1,15 +1,18 @@
 import SwiftUI
 import AppCore
-import JamShackUI
 
-/// Studio's own "Tonnetz" tab: `TonnetzScreen` from `JamShackUI`, coupled to the app's single
-/// "clavier principal" (`session.theoryLiveInputSourceID`) exactly like every other Studio tab.
-/// No detach-into-its-own-window support yet (unlike `LiveTabContent`/`RunScreen`) — deferred to
-/// a later pass, same simplicity as `StudioJamSessionTabContent`.
+/// Théorie's own "Tonnetz" tab — wraps `TonnetzLibraryView`, coupled to the same "clavier
+/// principal" (`session.theoryLiveInputSourceID`) every other Théorie screen shares.
+/// No detach-into-its-own-window support yet (unlike `ChordTabContent`/`TheoryTabContent`) —
+/// deferred to a later pass.
 struct TonnetzTabContent: View {
     let session: ImprovSession
+    /// See `ExplorationTabContent.isActive`'s own doc comment — feeds `TonnetzLibraryView`'s own
+    /// `.registerMainKeyboardChord` so the persistent bar only reflects this screen's selection
+    /// while it's actually the one on screen.
+    let isActive: Bool
 
     var body: some View {
-        TonnetzScreen(session: session)
+        TonnetzLibraryView(session: session, isActive: isActive)
     }
 }

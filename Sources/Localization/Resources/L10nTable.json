@@ -4497,6 +4497,17 @@
   "ru": "Music Lab",
   "zhHans": "Music Lab"
  },
+ "appToggleTonnetzCouleursIdentite": {
+  "de": "Farben nach Identität",
+  "en": "Colors by identity",
+  "es": "Colores por identidad",
+  "fr": "Couleurs par identité",
+  "it": "Colori per identità",
+  "ja": "音名で色分け",
+  "pt": "Cores por identidade",
+  "ru": "Цвета по идентичности",
+  "zhHans": "按音级着色"
+ },
  "appTabTonnetz": {
   "de": "Tonnetz",
   "en": "Tonnetz",

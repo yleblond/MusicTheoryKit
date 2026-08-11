@@ -34,6 +34,31 @@ public struct TonnetzTriad: Equatable, Sendable {
     }
 }
 
+/// Which of the 3 lattice-adjacency relations a `TonnetzEdge` is — the 3 sides of every
+/// triangle. Only these 3 intervals (and their inversions, 5/8/9 semitones) connect two pitch
+/// classes directly on the lattice; any other interval (a second, a tritone...) has no edge.
+public enum TonnetzEdgeKind: String, Codable, Sendable {
+    case fifth, majorThird, minorThird
+}
+
+/// Two lattice-adjacent notes — both by musical identity (`root`/`other`) and by where the edge
+/// sits (`coordinate`, the anchor whose `root` end it is). `root` is whichever end the edge
+/// steps AWAY FROM (e.g. a fifth edge root→root+7, a major-third edge root→root+4) — not a
+/// judgment about which note is more "fundamental," just the lattice's own directionality.
+public struct TonnetzEdge: Equatable, Sendable {
+    public let coordinate: TonnetzCoordinate
+    public let kind: TonnetzEdgeKind
+    public let root: PitchClass
+    public let other: PitchClass
+
+    public init(coordinate: TonnetzCoordinate, kind: TonnetzEdgeKind, root: PitchClass, other: PitchClass) {
+        self.coordinate = coordinate
+        self.kind = kind
+        self.root = root
+        self.other = other
+    }
+}
+
 /// The Tonnetz (harmonic lattice): triangular tiling where fifths run along one axis, major
 /// thirds along another, and every triangle is a triad. Two callers read this same geometry two
 /// ways — `pitchClass(at:origin:)` collapses it to the 12 pitch classes (mod 12, for the
@@ -144,5 +169,49 @@ public enum Tonnetz {
     /// ones (e.g. `primary + halo`) so a primary node is preferred when both exist.
     public static func coordinate(forRoot root: PitchClass, in coordinates: [TonnetzCoordinate], origin: PitchClass = PitchClass(0)) -> TonnetzCoordinate? {
         coordinates.first { pitchClass(at: $0, origin: origin) == root }
+    }
+
+    /// The edge of `kind` anchored at `coordinate` — `root` is `coordinate`'s own pitch class,
+    /// `other` is the neighbor it steps to (`+7`/`+4`/`+3` for fifth/majorThird/minorThird
+    /// respectively, per `TonnetzEdgeKind`'s own doc comment).
+    public static func edge(kind: TonnetzEdgeKind, anchoredAt coordinate: TonnetzCoordinate, origin: PitchClass = PitchClass(0)) -> TonnetzEdge {
+        let otherCoordinate: TonnetzCoordinate
+        switch kind {
+        case .fifth: otherCoordinate = TonnetzCoordinate(q: coordinate.q + 1, r: coordinate.r)
+        case .majorThird: otherCoordinate = TonnetzCoordinate(q: coordinate.q, r: coordinate.r + 1)
+        case .minorThird: otherCoordinate = TonnetzCoordinate(q: coordinate.q + 1, r: coordinate.r - 1)
+        }
+        return TonnetzEdge(coordinate: coordinate, kind: kind, root: pitchClass(at: coordinate, origin: origin), other: pitchClass(at: otherCoordinate, origin: origin))
+    }
+
+    /// Which `TonnetzEdgeKind` (if any) directly connects `a` and `b` on the lattice, and in
+    /// which direction (the returned `root`/`other` follow the SAME lattice-step directionality
+    /// `edge(kind:anchoredAt:)` uses — e.g. a fifth edge is always `root → root+7`, never
+    /// `root+7 → root`). `nil` for any interval other than a fifth/major-third/minor-third (in
+    /// either direction) — a second or a tritone, for instance, has no direct lattice edge.
+    public static func edgeKind(between a: PitchClass, and b: PitchClass) -> (root: PitchClass, other: PitchClass, kind: TonnetzEdgeKind)? {
+        let forward = ((b.value - a.value) % 12 + 12) % 12
+        switch forward {
+        case 7: return (a, b, .fifth)
+        case 4: return (a, b, .majorThird)
+        case 3: return (a, b, .minorThird)
+        default: break
+        }
+        let backward = ((a.value - b.value) % 12 + 12) % 12
+        switch backward {
+        case 7: return (b, a, .fifth)
+        case 4: return (b, a, .majorThird)
+        case 3: return (b, a, .minorThird)
+        default: return nil
+        }
+    }
+
+    /// The lattice edge directly connecting the exactly-2 `heldPitchClasses`, if one exists —
+    /// the dyad counterpart to `matchingTriads(forHeldPitchClasses:)`. `nil` when the two notes
+    /// aren't lattice-adjacent (e.g. a second or a tritone apart) or when the count isn't
+    /// exactly 2.
+    public static func matchingEdge(forHeldPitchClasses heldPitchClasses: Set<PitchClass>) -> (root: PitchClass, other: PitchClass, kind: TonnetzEdgeKind)? {
+        guard heldPitchClasses.count == 2, let a = heldPitchClasses.first, let b = heldPitchClasses.dropFirst().first else { return nil }
+        return edgeKind(between: a, and: b)
     }
 }

@@ -48,7 +48,7 @@ struct ContentView: View {
     /// per explicit request) — inviting others in is something you reach for while performing, not
     /// a setting; see that view's own doc comment.
     private enum StudioTab: CaseIterable, Identifiable {
-        case scene, live, tonnetz, guide, recordings, jamSession
+        case scene, live, guide, recordings, jamSession
 
         var id: Self { self }
 
@@ -56,7 +56,6 @@ struct ContentView: View {
             switch self {
             case .scene: return "theatermasks"
             case .live: return "pianokeys"
-            case .tonnetz: return "triangle.fill"
             case .guide: return "map"
             case .recordings: return "record.circle"
             case .jamSession: return "person.2.fill"
@@ -67,7 +66,6 @@ struct ContentView: View {
             switch self {
             case .scene: return L10n.string(.tabScene, language)
             case .live: return L10n.string(.appLabelEnDirect, language)
-            case .tonnetz: return L10n.string(.appTabTonnetz, language)
             case .guide: return L10n.string(.headingGuide, language)
             case .recordings: return L10n.string(.appTabEnregistrements, language)
             case .jamSession: return L10n.string(.catJamSession, language)
@@ -112,7 +110,7 @@ struct ContentView: View {
     /// visionOS (`ChordTabContent`/`TheoryTabContent`/`ProgressionTabContent`/
     /// `ExplorationTabContent`, each its own `AuxiliaryWindowID`).
     private enum TheorieTab: CaseIterable, Identifiable {
-        case accords, modes, progressions, exploration
+        case accords, modes, progressions, exploration, tonnetz
 
         var id: Self { self }
 
@@ -122,6 +120,7 @@ struct ContentView: View {
             case .modes: return "text.book.closed"
             case .exploration: return "atom"
             case .progressions: return "list.number"
+            case .tonnetz: return "triangle.fill"
             }
         }
 
@@ -131,6 +130,7 @@ struct ContentView: View {
             case .modes: return L10n.string(.appTabModes, language)
             case .exploration: return L10n.string(.appHeadingExplorationFonctionnelle, language)
             case .progressions: return L10n.string(.appTabProgressions, language)
+            case .tonnetz: return L10n.string(.appTabTonnetz, language)
             }
         }
     }
@@ -225,9 +225,6 @@ struct ContentView: View {
                                 Tab(StudioTab.live.label(session.currentLanguage), systemImage: StudioTab.live.systemImage, value: StudioTab.live) {
                                     LiveTabContent(session: session, bridge: bridge)
                                 }
-                                Tab(StudioTab.tonnetz.label(session.currentLanguage), systemImage: StudioTab.tonnetz.systemImage, value: StudioTab.tonnetz) {
-                                    TonnetzTabContent(session: session)
-                                }
                                 Tab(StudioTab.guide.label(session.currentLanguage), systemImage: StudioTab.guide.systemImage, value: StudioTab.guide) {
                                     StudioGuidePlayTabContent(session: session, bridge: bridge)
                                 }
@@ -263,6 +260,9 @@ struct ContentView: View {
                                 }
                                 Tab(TheorieTab.exploration.label(session.currentLanguage), systemImage: TheorieTab.exploration.systemImage, value: TheorieTab.exploration) {
                                     ExplorationTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .exploration)
+                                }
+                                Tab(TheorieTab.tonnetz.label(session.currentLanguage), systemImage: TheorieTab.tonnetz.systemImage, value: TheorieTab.tonnetz) {
+                                    TonnetzTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .tonnetz)
                                 }
                             }
                         case .settings:
@@ -553,15 +553,6 @@ struct ContentView: View {
             case .recordings, .jamSession:
                 presentation.isHidden = true
             case .live:
-                if let sourceID {
-                    let recognized = session.recognizedChordAndModeTones(for: sourceID)
-                    presentation.chordRoot = recognized.chordRoot
-                    presentation.chordTones = recognized.chordTones
-                    presentation.modeTones = recognized.modeTones
-                    presentation.showModeColoring = !recognized.modeTones.isEmpty
-                }
-                presentation.isClickable = isComputerKeyboardSource && studioSourceHasAssignedSound(session: session, sourceID: sourceID)
-            case .tonnetz:
                 if let sourceID {
                     let recognized = session.recognizedChordAndModeTones(for: sourceID)
                     presentation.chordRoot = recognized.chordRoot

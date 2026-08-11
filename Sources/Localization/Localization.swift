@@ -438,8 +438,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appFunctionalTonique, appFunctionalSusTonique, appFunctionalMediante, appFunctionalSousDominante
     case appFunctionalDominante, appFunctionalSusDominante, appFunctionalSensible
 
-    // MARK: - App: Studio > Tonnetz
-    case appTabTonnetz, appModeTonnetzHarmonique, appModeTonnetzPerformance
+    // MARK: - App: Théorie > Tonnetz
+    case appTabTonnetz, appModeTonnetzHarmonique, appModeTonnetzPerformance, appToggleTonnetzCouleursIdentite
 }
 
 public enum L10n {

@@ -111,6 +111,46 @@ final class TonnetzTests: XCTestCase {
         XCTAssertTrue(tile.primary.contains(coordinate!))
     }
 
+    func testEdgeAnchoredAtOriginGivesExpectedOtherPitchClass() {
+        XCTAssertEqual(Tonnetz.edge(kind: .fifth, anchoredAt: TonnetzCoordinate(q: 0, r: 0)).other.value, 7)
+        XCTAssertEqual(Tonnetz.edge(kind: .majorThird, anchoredAt: TonnetzCoordinate(q: 0, r: 0)).other.value, 4)
+        XCTAssertEqual(Tonnetz.edge(kind: .minorThird, anchoredAt: TonnetzCoordinate(q: 0, r: 0)).other.value, 3)
+    }
+
+    func testEdgeKindBetweenRecognizesAllThreeIntervalsInEitherDirection() {
+        let fifthForward = Tonnetz.edgeKind(between: PitchClass(0), and: PitchClass(7))
+        XCTAssertEqual(fifthForward?.kind, .fifth)
+        XCTAssertEqual(fifthForward?.root.value, 0)
+        XCTAssertEqual(fifthForward?.other.value, 7)
+
+        let fifthBackward = Tonnetz.edgeKind(between: PitchClass(7), and: PitchClass(0))
+        XCTAssertEqual(fifthBackward?.kind, .fifth)
+        XCTAssertEqual(fifthBackward?.root.value, 0)
+        XCTAssertEqual(fifthBackward?.other.value, 7)
+
+        XCTAssertEqual(Tonnetz.edgeKind(between: PitchClass(0), and: PitchClass(4))?.kind, .majorThird)
+        XCTAssertEqual(Tonnetz.edgeKind(between: PitchClass(0), and: PitchClass(3))?.kind, .minorThird)
+    }
+
+    func testEdgeKindBetweenIsNilForNonAdjacentIntervals() {
+        XCTAssertNil(Tonnetz.edgeKind(between: PitchClass(0), and: PitchClass(1)))
+        XCTAssertNil(Tonnetz.edgeKind(between: PitchClass(0), and: PitchClass(6)))
+        XCTAssertNil(Tonnetz.edgeKind(between: PitchClass(0), and: PitchClass(2)))
+    }
+
+    func testMatchingEdgeFindsTheFifthBetweenTwoHeldNotes() {
+        let match = Tonnetz.matchingEdge(forHeldPitchClasses: [PitchClass(0), PitchClass(7)])
+        XCTAssertEqual(match?.kind, .fifth)
+        XCTAssertEqual(match?.root.value, 0)
+        XCTAssertEqual(match?.other.value, 7)
+    }
+
+    func testMatchingEdgeIsNilForNonAdjacentDyadOrWrongCount() {
+        XCTAssertNil(Tonnetz.matchingEdge(forHeldPitchClasses: [PitchClass(0), PitchClass(1)]))
+        XCTAssertNil(Tonnetz.matchingEdge(forHeldPitchClasses: [PitchClass(0)]))
+        XCTAssertNil(Tonnetz.matchingEdge(forHeldPitchClasses: [PitchClass(0), PitchClass(4), PitchClass(7)]))
+    }
+
     func testMidiPitchMatchesPitchClassModulo12() {
         let coordinate = TonnetzCoordinate(q: 2, r: 1)
         let midi = Tonnetz.midiPitch(at: coordinate)
