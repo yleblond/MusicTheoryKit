@@ -2888,7 +2888,9 @@ public final class ImprovSession: @unchecked Sendable {
 
     /// The best-matching chord currently held on `theoryLiveInputSourceID`'s own track, if one is
     /// picked — the single input every Théorie screen's live-recognition reaction observes (see
-    /// `ChordLibraryView`/`ModeLibraryView`/`ProgressionLibraryView`'s own `reactToLiveChordMatch`).
+    /// `ChordLibraryView`/`ModeLibraryView`/`ProgressionLibraryView`'s own `reactToLiveChordMatch`),
+    /// also reused by Studio's `TonnetzScreen` (`JamShackUI/Tonnetz.swift`) to follow live playing
+    /// on the same "clavier principal" source.
     public var theoryLiveInputRecognizedChord: RecognizedChord? {
         tracks.first { $0.id == theoryLiveInputSourceID }?.recognizedChord
     }

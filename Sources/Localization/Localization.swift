@@ -437,6 +437,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     // MARK: - App: Noms fonctionnels des accords (harmonie fonctionnelle)
     case appFunctionalTonique, appFunctionalSusTonique, appFunctionalMediante, appFunctionalSousDominante
     case appFunctionalDominante, appFunctionalSusDominante, appFunctionalSensible
+
+    // MARK: - App: Studio > Tonnetz
+    case appTabTonnetz, appModeTonnetzHarmonique, appModeTonnetzPerformance
 }
 
 public enum L10n {

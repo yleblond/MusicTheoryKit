@@ -104,7 +104,7 @@ let package = Package(
         // and testable without opening Xcode. Named JamShackUI rather than "JamShack" since
         // that name is already taken by the CLI executableTarget above (SPM target names must
         // be unique) — same disambiguation-by-suffix convention as MusicTheoryKit itself.
-        .target(name: "JamShackUI", dependencies: ["AppCore", "Localization"]),
+        .target(name: "JamShackUI", dependencies: ["AppCore", "Localization", "RecognitionEngine"]),
         .testTarget(name: "JamShackUITests", dependencies: ["JamShackUI"]),
     ]
 )

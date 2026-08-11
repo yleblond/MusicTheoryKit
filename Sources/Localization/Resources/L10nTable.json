@@ -3342,6 +3342,28 @@
   "ru": "Локальный джем — участник",
   "zhHans": "本地Jam - 参与者"
  },
+ "appModeTonnetzHarmonique": {
+  "de": "Harmonisch",
+  "en": "Harmonic",
+  "es": "Armónico",
+  "fr": "Harmonique",
+  "it": "Armonico",
+  "ja": "ハーモニック",
+  "pt": "Harmônico",
+  "ru": "Гармонический",
+  "zhHans": "和声"
+ },
+ "appModeTonnetzPerformance": {
+  "de": "Performance",
+  "en": "Performance",
+  "es": "Interpretación",
+  "fr": "Performance",
+  "it": "Performance",
+  "ja": "パフォーマンス",
+  "pt": "Performance",
+  "ru": "Исполнение",
+  "zhHans": "演奏"
+ },
  "appModeLumi": {
   "de": "Lumi",
   "en": "Lumi",
@@ -4474,6 +4496,17 @@
   "pt": "Music Lab",
   "ru": "Music Lab",
   "zhHans": "Music Lab"
+ },
+ "appTabTonnetz": {
+  "de": "Tonnetz",
+  "en": "Tonnetz",
+  "es": "Tonnetz",
+  "fr": "Tonnetz",
+  "it": "Tonnetz",
+  "ja": "トンネッツ",
+  "pt": "Tonnetz",
+  "ru": "Тоннетц",
+  "zhHans": "音网"
  },
  "appToggleActiverSpectrometre": {
   "de": "Spektrometer aktivieren",

@@ -48,7 +48,7 @@ struct ContentView: View {
     /// per explicit request) — inviting others in is something you reach for while performing, not
     /// a setting; see that view's own doc comment.
     private enum StudioTab: CaseIterable, Identifiable {
-        case scene, live, guide, recordings, jamSession
+        case scene, live, tonnetz, guide, recordings, jamSession
 
         var id: Self { self }
 
@@ -56,6 +56,7 @@ struct ContentView: View {
             switch self {
             case .scene: return "theatermasks"
             case .live: return "pianokeys"
+            case .tonnetz: return "triangle.fill"
             case .guide: return "map"
             case .recordings: return "record.circle"
             case .jamSession: return "person.2.fill"
@@ -66,6 +67,7 @@ struct ContentView: View {
             switch self {
             case .scene: return L10n.string(.tabScene, language)
             case .live: return L10n.string(.appLabelEnDirect, language)
+            case .tonnetz: return L10n.string(.appTabTonnetz, language)
             case .guide: return L10n.string(.headingGuide, language)
             case .recordings: return L10n.string(.appTabEnregistrements, language)
             case .jamSession: return L10n.string(.catJamSession, language)
@@ -222,6 +224,9 @@ struct ContentView: View {
                                 }
                                 Tab(StudioTab.live.label(session.currentLanguage), systemImage: StudioTab.live.systemImage, value: StudioTab.live) {
                                     LiveTabContent(session: session, bridge: bridge)
+                                }
+                                Tab(StudioTab.tonnetz.label(session.currentLanguage), systemImage: StudioTab.tonnetz.systemImage, value: StudioTab.tonnetz) {
+                                    TonnetzTabContent(session: session)
                                 }
                                 Tab(StudioTab.guide.label(session.currentLanguage), systemImage: StudioTab.guide.systemImage, value: StudioTab.guide) {
                                     StudioGuidePlayTabContent(session: session, bridge: bridge)
@@ -548,6 +553,15 @@ struct ContentView: View {
             case .recordings, .jamSession:
                 presentation.isHidden = true
             case .live:
+                if let sourceID {
+                    let recognized = session.recognizedChordAndModeTones(for: sourceID)
+                    presentation.chordRoot = recognized.chordRoot
+                    presentation.chordTones = recognized.chordTones
+                    presentation.modeTones = recognized.modeTones
+                    presentation.showModeColoring = !recognized.modeTones.isEmpty
+                }
+                presentation.isClickable = isComputerKeyboardSource && studioSourceHasAssignedSound(session: session, sourceID: sourceID)
+            case .tonnetz:
                 if let sourceID {
                     let recognized = session.recognizedChordAndModeTones(for: sourceID)
                     presentation.chordRoot = recognized.chordRoot
