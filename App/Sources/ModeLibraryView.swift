@@ -3,6 +3,7 @@ import AppCore
 import JamShackUI
 import MusicTheoryKit
 import PieceModel
+import RecognitionEngine
 import Localization
 
 /// Which of the two peer Théorie tabs this instance is — see `ContentView.TheorieTab`. Both
@@ -272,6 +273,9 @@ struct ModeLibraryView: View {
                 guard let newDegree, recentChordDegrees.last != newDegree else { return }
                 recentChordDegrees.append(newDegree)
                 if recentChordDegrees.count > 4 { recentChordDegrees.removeFirst() }
+            }
+            .onChange(of: session.theoryLiveInputRecognizedChord) { _, newChord in
+                reactToLiveChordMatch(newChord)
             }
             .padding()
         }
@@ -1180,28 +1184,33 @@ struct ModeLibraryView: View {
         return Set(heldPitches.map { ((($0 % 12) + 12) % 12) })
     }
 
-    /// Reacts to whatever is currently held on the chosen live-input track exactly as if the
-    /// matching thing had been tapped directly — a full triad matching one of this mode's own
-    /// diatonic chords selects that chord (and, if a progression is previewed and contains it,
-    /// scrubs to it there too); a single held note selects that melodic note — per explicit
-    /// request ("un grand saut technique"). Deliberately does NOT call `playSingleChord`/
-    /// `playMelodicNote`'s own audition playback: the live source is already sounding through its
-    /// own track, so re-triggering the audition sample here would double the audio.
+    /// Reacts to a single held note exactly as if it had been tapped directly, selecting it as
+    /// the melodic-vocabulary panel's current note — per explicit request ("un grand saut
+    /// technique"). Chord recognition needs at least 2 held notes (see `RecognitionEngine
+    /// .recognizeChord()`'s own guard), so it's handled separately by `reactToLiveChordMatch(_:)`
+    /// below rather than here.
     private func reactToLiveInputMatch(heldPitchClasses: Set<Int>) {
-        guard !heldPitchClasses.isEmpty else { return }
-        if heldPitchClasses.count >= 2, let matched = functionalMap.chords.first(where: { chordFunction in
-            guard let chord = chordFunction.reference.resolve() else { return false }
-            return Set(chord.pitchClasses.map(\.value)) == heldPitchClasses
-        }) {
-            selectedChordIndex = matched.degree - 1
-            if let name = selectedProgressionName, let template = uniqueProgressionTemplates.first(where: { $0.name == name }) {
-                let references = ChordProgressionResolver.resolveRich(template, in: mode)
-                if let index = references.firstIndex(where: { matchingFunctionalChord(for: $0)?.degree == matched.degree }) {
-                    selectedProgressionChordIndex = index
-                }
-            }
-        } else if heldPitchClasses.count == 1, let pitchClass = heldPitchClasses.first {
-            selectedMelodicNote = PitchClass(pitchClass)
+        guard heldPitchClasses.count == 1, let pitchClass = heldPitchClasses.first else { return }
+        selectedMelodicNote = PitchClass(pitchClass)
+    }
+
+    /// Reacts to whatever chord `RecognitionEngine` recognizes live on the chosen live-input
+    /// track exactly as if the matching diatonic chord had been tapped directly (and, in
+    /// `.exploration` with a progression previewed and containing it, scrubs to it there too) —
+    /// shared by both `.overview` ("Modes") and `.exploration`, since both key their own chord
+    /// display off the same `selectedChordIndex`/`diatonicChordReferences`. Deliberately does NOT
+    /// call `playSingleChord`'s own audition playback: the live source is already sounding
+    /// through its own track, so re-triggering the audition sample here would double the audio.
+    private func reactToLiveChordMatch(_ chord: RecognizedChord?) {
+        guard let chord else { return }
+        guard let index = ImprovSession.matchingChordIndex(chord, in: diatonicChordReferences, reference: { $0 }) else { return }
+        selectedChordIndex = index
+        guard contentFocus == .exploration,
+              let name = selectedProgressionName,
+              let template = uniqueProgressionTemplates.first(where: { $0.name == name }) else { return }
+        let references = ChordProgressionResolver.resolveRich(template, in: mode)
+        if let progressionIndex = references.firstIndex(where: { matchingFunctionalChord(for: $0)?.degree == index + 1 }) {
+            selectedProgressionChordIndex = progressionIndex
         }
     }
 

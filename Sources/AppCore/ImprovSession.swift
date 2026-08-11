@@ -2882,7 +2882,24 @@ public final class ImprovSession: @unchecked Sendable {
         if let sound = theoryAuditionSound() {
             try? setInstrument(named: sound.path, for: id, preset: sound.preset)
         }
+        try? startTrack(id)
         try? setSoundEnabled(true, for: id)
+    }
+
+    /// The best-matching chord currently held on `theoryLiveInputSourceID`'s own track, if one is
+    /// picked — the single input every Théorie screen's live-recognition reaction observes (see
+    /// `ChordLibraryView`/`ModeLibraryView`/`ProgressionLibraryView`'s own `reactToLiveChordMatch`).
+    public var theoryLiveInputRecognizedChord: RecognizedChord? {
+        tracks.first { $0.id == theoryLiveInputSourceID }?.recognizedChord
+    }
+
+    /// Finds the element among `elements` whose `ChordReference` (via `reference`) has the same
+    /// root and chord-template ID as `chord` — the shared "is this recognized chord one of the
+    /// ones already on screen" lookup Théorie's Modes/Progressions/Exploration screens each need
+    /// against their own already-displayed chord list (diatonic chords, a progression's resolved
+    /// steps), so none of them has to hand-roll the same comparison.
+    public static func matchingChordIndex<T>(_ chord: RecognizedChord, in elements: [T], reference: (T) -> ChordReference) -> Int? {
+        elements.firstIndex { let r = reference($0); return r.root == chord.root.value && r.chordTemplateID == chord.chordTemplateID }
     }
 
     // MARK: - Chord progression templates (roman-numeral libraries, see `RomanNumeralChord`)

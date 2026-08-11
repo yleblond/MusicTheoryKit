@@ -2,6 +2,7 @@ import SwiftUI
 import AppCore
 import JamShackUI
 import MusicTheoryKit
+import RecognitionEngine
 import Localization
 
 /// "Accords" tab — pick a root + quality, then see its name (via the active `NotationStyle`, see
@@ -66,6 +67,9 @@ struct ChordLibraryView: View {
             id: "theorie.accords", isActive: isActive,
             chord: MainKeyboardChordSpec(root: chord.root.value, tones: chord.pitchClasses.map(\.value))
         )
+        .onChange(of: session.theoryLiveInputRecognizedChord) { _, newChord in
+            reactToLiveChordMatch(newChord)
+        }
     }
 
     #if os(macOS) || os(visionOS)
@@ -287,6 +291,18 @@ struct ChordLibraryView: View {
     private var liveHeldPitches: Set<Int> {
         guard let sourceID = session.theoryLiveInputSourceID else { return [] }
         return session.tracks.first { $0.id == sourceID }?.heldPitches ?? []
+    }
+
+    /// Reacts to whatever chord is recognized live on the "source principale" track exactly as if
+    /// it had been picked directly — root/quality/inversion all follow what's actually being
+    /// played, per explicit request. Inversion falls back to root position when the played bass
+    /// isn't one of the chord's own tones (see `Chord.voicing(bassOverride:)`'s own doc comment).
+    private func reactToLiveChordMatch(_ chord: RecognizedChord?) {
+        guard let chord, let template = ChordVocabulary.byID(chord.chordTemplateID) else { return }
+        selectedRoot = chord.root.value
+        selectedTemplateID = chord.chordTemplateID
+        let liveChord = Chord(root: chord.root, template: template)
+        inversion = liveChord.voicing(bassOverride: chord.bass)?.inversion ?? 0
     }
 
     @ViewBuilder

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import JamShackUI
+import MusicTheoryKit
 import Localization
 
 /// Detached-window counterpart of `ContentView`'s always-visible bottom keyboard bar (see
@@ -25,6 +26,9 @@ struct ComputerKeyboardWindow: View {
                 onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) },
                 modeTones: appModel.mainKeyboardMode?.pitchClasses.map(\.value) ?? [],
                 showModeColoring: appModel.mainKeyboardMode != nil,
+                chordRoot: appModel.mainKeyboardChord?.root,
+                chordTones: appModel.mainKeyboardChord?.tones ?? [],
+                referenceChordPitches: Set(PitchSequencing.ascendingPitches(forPitchClasses: appModel.mainKeyboardChord?.tones ?? [], startingAbove: 47)),
                 showsPhysicalKeyLabels: session.theoryLiveInputSourceID == .computerKeyboard
             )
             .computerKeyboardInput(

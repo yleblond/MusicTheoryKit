@@ -3,6 +3,7 @@ import AppCore
 import JamShackUI
 import MusicTheoryKit
 import PieceModel
+import RecognitionEngine
 import Localization
 
 /// "Progressions" tab — pick a tonic + mode (restricted to the 7 classic major-family modes,
@@ -101,6 +102,9 @@ struct ProgressionLibraryView: View {
         // mode while it's the active tab, per explicit request — same mechanism `ModeLibraryView`
         // uses for its own "Modes"/"Exploration" tabs.
         .registerMainKeyboardMode(id: "theorie.progressions", isActive: isActive, mode: mode)
+        .onChange(of: session.theoryLiveInputRecognizedChord) { _, newChord in
+            reactToLiveChordMatch(newChord)
+        }
     }
 
     #if os(macOS) || os(visionOS)
@@ -264,6 +268,26 @@ struct ProgressionLibraryView: View {
         return PitchSequencing.ascendingPitches(forPitchClasses: currentChord.pitchClasses.map(\.value), startingAbove: 47)
     }
 
+    /// Whichever live track is the app's current "source principale" — read directly (not cached
+    /// in `@State`; `session.tracks` already triggers a SwiftUI refresh on change), same
+    /// convention `ChordLibraryView.liveHeldPitches` already uses, so this screen's own keyboard
+    /// overlays what's actually being played too.
+    private var liveHeldPitches: Set<Int> {
+        guard let sourceID = session.theoryLiveInputSourceID else { return [] }
+        return session.tracks.first { $0.id == sourceID }?.heldPitches ?? []
+    }
+
+    /// Reacts to whatever chord is recognized live on the "source principale" track exactly as if
+    /// it had been picked directly — only matches within the CURRENTLY selected progression's own
+    /// resolved chords, never switching `selectedTemplateName`/tonic/scale, per explicit request
+    /// (the progression being viewed stays a manual choice; only which step within it is current
+    /// reacts live).
+    private func reactToLiveChordMatch(_ chord: RecognizedChord?) {
+        guard let chord else { return }
+        guard let index = ImprovSession.matchingChordIndex(chord, in: resolvedReferences, reference: { $0 }) else { return }
+        currentChordIndex = index
+    }
+
     /// -30% off `ChordStaffView`'s own default scale, per explicit request.
     private static let progressionStaffScale: CGFloat = 0.7
     /// Off `PitchKeyboardView`'s own default height (144) — was -50% (72pt); bumped back up a
@@ -373,6 +397,7 @@ struct ProgressionLibraryView: View {
                     .frame(width: Self.progressionKeyboardSize.width / 2)
             }
             PitchKeyboardView(
+                heldPitches: liveHeldPitches,
                 chordRoot: currentChord?.root.value,
                 chordTones: currentChord?.pitchClasses.map(\.value) ?? [],
                 height: Self.progressionKeyboardSize.height,
