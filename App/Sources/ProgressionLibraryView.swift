@@ -307,7 +307,11 @@ struct ProgressionLibraryView: View {
     }
 
     /// -30% off `ChordStaffView`'s own default scale, per explicit request.
-    private static let progressionStaffScale: CGFloat = 0.7
+    private static let progressionStaffHeightScale: CGFloat = 0.7
+    /// Widened from the same 0.7 as `progressionStaffHeightScale` (used for both until now) —
+    /// more room between chords, per explicit request ("plus de place entre les accords");
+    /// height stays compact since only the horizontal spacing was cramped.
+    private static let progressionStaffWidthScale: CGFloat = 1.1
     /// Off `PitchKeyboardView`'s own default height (144) — was -50% (72pt); bumped back up a
     /// bit per explicit follow-up request ("agrandir un peu le mini clavier"). Still narrow,
     /// since it only ever shows one voicing (3-5 keys) instead of the same tones repeated across
@@ -367,7 +371,7 @@ struct ProgressionLibraryView: View {
                 ForEach(Array(progressionStaffRows(forWidth: staffAvailableWidth).enumerated()), id: \.offset) { _, row in
                     ChordStaffView(
                         events: row.map(\.event), notePalette: session.activeColorPalette.colors,
-                        heightScale: Self.progressionStaffScale, widthScale: Self.progressionStaffScale,
+                        heightScale: Self.progressionStaffHeightScale, widthScale: Self.progressionStaffWidthScale,
                         highlightedIndex: row.firstIndex(where: { $0.offset == currentChordIndex }),
                         keySignature: modeKeySignature,
                         onColumnTap: { localIndex in
@@ -404,7 +408,7 @@ struct ProgressionLibraryView: View {
     /// `currentChordIndex`, which always refers to the whole progression, not any one row.
     private func progressionStaffRows(forWidth width: CGFloat) -> [[(offset: Int, event: StaffEvent)]] {
         let indexed = progressionStaffEvents.enumerated().map { (offset: $0.offset, event: $0.element) }
-        let perRow = ChordStaffView.maxColumnCount(forWidth: width, widthScale: Self.progressionStaffScale)
+        let perRow = ChordStaffView.maxColumnCount(forWidth: width, widthScale: Self.progressionStaffWidthScale)
         return stride(from: 0, to: indexed.count, by: perRow).map {
             Array(indexed[$0..<min($0 + perRow, indexed.count)])
         }
