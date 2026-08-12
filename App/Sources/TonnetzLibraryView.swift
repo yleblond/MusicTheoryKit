@@ -233,9 +233,9 @@ struct TonnetzLibraryView: View {
         }
     }
 
-    /// Enlarged (300 → 450) now that it's a full column rather than competing for space as a
-    /// floating card, and centered within its own column width (matching `circleOfFifthsGroup`'s
-    /// own centering) rather than leading-aligned.
+    /// Enlarged again (450 → 540, +20%) now that it's a full column rather than competing for
+    /// space as a floating card, and centered within its own column width (matching
+    /// `circleOfFifthsGroup`'s own centering) rather than leading-aligned.
     private var harmonicGroup: some View {
         PitchClassTonnetzView(
             heldPitchClasses: heldPitchClasses,
@@ -252,13 +252,13 @@ struct TonnetzLibraryView: View {
                 play(newSelection)
             }
         )
-        .frame(width: 450)
+        .frame(width: 540)
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
     /// The mode's Circle-of-fifths, when there is one — see `circleOfFifthsWheel`'s own doc
-    /// comment. No label (per explicit request — the wheel itself is unambiguous), enlarged again
-    /// (250 → 300, +20%), and centered within its own column width rather than leading-aligned.
+    /// comment. No label (per explicit request — the wheel itself is unambiguous), shrunk back
+    /// down proportionally (300 → 240, -20%) as the Harmonic group grows.
     /// Tapping a major/minor cell plays it and selects the matching triad on the Tonnetz too —
     /// per explicit request; a diminished cell has no lattice triangle to select (see
     /// `diatonicTriads`'s own doc comment), so taps there are silently ignored rather than
@@ -270,7 +270,7 @@ struct TonnetzLibraryView: View {
                 wheel: wheel, palette: session.activeColorPalette.colors, paletteTextColors: session.activeColorPalette.textColors,
                 onSelectCell: { pitchClass, quality in playCircleOfFifthsCell(pitchClass: pitchClass, quality: quality) }
             )
-            .frame(width: 300, height: 300)
+            .frame(width: 240, height: 240)
             .frame(maxWidth: .infinity, alignment: .center)
             .accessibilityLabel(L10n.string(.appLabelCercleDesQuintes, session.currentLanguage))
         }
