@@ -181,20 +181,40 @@ public final class FFTPitchAnalyzer {
         maxPeaks: Int = 6,
         minSemitoneSeparation: Double = 0.5
     ) -> [Double] {
+        dominantPartials(in: samples, sampleRate: sampleRate, minHz: minHz, maxHz: maxHz, maxPeaks: maxPeaks, minSemitoneSeparation: minSemitoneSeparation).map(\.frequencyHz)
+    }
+
+    /// Same peak-picking as `dominantFrequencies`, but also returns each peak's own amplitude
+    /// (the square root of `vDSP_zvmags`'s power/magnitude-squared reading at that bin — see
+    /// `approximatePeakPowerPerSquaredRMS`'s own doc comment for why that's power, not
+    /// amplitude) instead of discarding it — needed wherever a caller has to weigh partials
+    /// against each other, not just locate them (e.g. `SensoryDissonance`'s `l1*l2` loudness
+    /// term for a real instrument's own captured spectrum, not an idealized harmonic series).
+    /// Defaults widened versus `dominantFrequencies`' own musical-note-detection defaults
+    /// (`maxHz`/`maxPeaks`) — a single note's actual timbre routinely carries meaningful
+    /// partials well above 2kHz and in far more than 6 of them.
+    public func dominantPartials(
+        in samples: [Float],
+        sampleRate: Double,
+        minHz: Double = 60,
+        maxHz: Double = 8000,
+        maxPeaks: Int = 16,
+        minSemitoneSeparation: Double = 0.3
+    ) -> [(frequencyHz: Double, amplitude: Double)] {
         guard let magnitudes = magnitudeSpectrum(of: samples) else { return [] }
         let binHz = sampleRate / Double(size)
         let candidates = candidatePeaks(magnitudes: magnitudes, binHz: binHz, minHz: minHz, maxHz: maxHz)
 
         let separationRatio = pow(2.0, minSemitoneSeparation / 12.0)
-        var accepted: [Double] = []
+        var accepted: [(frequencyHz: Double, amplitude: Double)] = []
         for candidate in candidates {
             guard accepted.count < maxPeaks else { break }
             let frequency = interpolatedFrequency(forPeakBin: candidate.bin, magnitudes: magnitudes, binHz: binHz)
             let tooCloseToAnAlreadyAcceptedPeak = accepted.contains { existing in
-                max(frequency, existing) / min(frequency, existing) < separationRatio
+                max(frequency, existing.frequencyHz) / min(frequency, existing.frequencyHz) < separationRatio
             }
             guard !tooCloseToAnAlreadyAcceptedPeak else { continue }
-            accepted.append(frequency)
+            accepted.append((frequencyHz: frequency, amplitude: Double(candidate.magnitude).squareRoot()))
         }
         return accepted
     }

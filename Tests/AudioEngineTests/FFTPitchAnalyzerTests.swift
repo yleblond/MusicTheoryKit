@@ -117,6 +117,37 @@ final class FFTPitchAnalyzerTests: XCTestCase {
         XCTAssertEqual(detected.count, 1)
     }
 
+    func testDominantPartialsReturnsBothFrequencyAndAmplitudePerPeak() {
+        let analyzer = FFTPitchAnalyzer(size: 4096)
+        // Two widely-separated tones at different amplitudes — the louder one should be
+        // reported with the larger amplitude, regardless of which order they're detected in.
+        let samples = mixedSineWaves(frequenciesHz: [220], sampleRate: 44100, count: 4096, amplitude: 0.8)
+        let quietSamples = mixedSineWaves(frequenciesHz: [880], sampleRate: 44100, count: 4096, amplitude: 0.2)
+        var mixed = samples
+        for i in 0..<mixed.count { mixed[i] += quietSamples[i] }
+
+        let partials = analyzer.dominantPartials(in: mixed, sampleRate: 44100)
+        XCTAssertEqual(partials.count, 2)
+        let loud = partials.min { abs($0.frequencyHz - 220) < abs($1.frequencyHz - 220) }!
+        let quiet = partials.min { abs($0.frequencyHz - 880) < abs($1.frequencyHz - 880) }!
+        XCTAssertEqual(loud.frequencyHz, 220, accuracy: 2.0)
+        XCTAssertEqual(quiet.frequencyHz, 880, accuracy: 2.0)
+        XCTAssertGreaterThan(loud.amplitude, quiet.amplitude)
+    }
+
+    func testDominantPartialsMatchesDominantFrequenciesFrequencyList() {
+        let analyzer = FFTPitchAnalyzer(size: 4096)
+        let samples = mixedSineWaves(frequenciesHz: [261.63, 329.63, 392.00], sampleRate: 44100, count: 4096, amplitude: 0.3)
+        let frequencies = analyzer.dominantFrequencies(in: samples, sampleRate: 44100)
+        let partials = analyzer.dominantPartials(in: samples, sampleRate: 44100, maxHz: 2000, maxPeaks: 6, minSemitoneSeparation: 0.5)
+        XCTAssertEqual(frequencies, partials.map(\.frequencyHz))
+    }
+
+    func testDominantPartialsReturnsEmptyForSilence() {
+        let analyzer = FFTPitchAnalyzer(size: 4096)
+        XCTAssertTrue(analyzer.dominantPartials(in: [Float](repeating: 0, count: 4096), sampleRate: 44100).isEmpty)
+    }
+
     func testDominantFrequencyMatchesFirstOfDominantFrequencies() {
         let analyzer = FFTPitchAnalyzer(size: 4096)
         let samples = mixedSineWaves(frequenciesHz: [261.63, 392.00], sampleRate: 44100, count: 4096, amplitude: 0.4)

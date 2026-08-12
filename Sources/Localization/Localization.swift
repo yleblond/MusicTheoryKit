@@ -456,6 +456,10 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appLabelToniqueActuelle, appHintAucunModeActifIntonations, appHeadingNotesTenuesEtCorrection
     case appHeadingNotesDeLaGamme
     case appButtonJouerNonTempere, appButtonJouerTempere
+
+    // MARK: - App: Théorie > Dissonances
+    case appTabDissonances
+    case appFieldNoteDeBase, appButtonAnalyserOctave, appLabelAnalyseEnCours
 }
 
 public enum L10n {

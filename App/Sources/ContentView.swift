@@ -111,7 +111,7 @@ struct ContentView: View {
     /// (`ChordTabContent`/`TheoryTabContent`/`ProgressionTabContent`/`ExplorationTabContent`/
     /// `TonnetzTabContent`, each its own `AuxiliaryWindowID`) — `.intonations` doesn't yet.
     private enum TheorieTab: CaseIterable, Identifiable {
-        case accords, modes, progressions, exploration, tonnetz, intonations
+        case accords, modes, progressions, exploration, tonnetz, intonations, dissonances
 
         var id: Self { self }
 
@@ -123,6 +123,7 @@ struct ContentView: View {
             case .progressions: return "list.number"
             case .tonnetz: return "triangle.fill"
             case .intonations: return "tuningfork"
+            case .dissonances: return "waveform"
             }
         }
 
@@ -134,6 +135,7 @@ struct ContentView: View {
             case .progressions: return L10n.string(.appTabProgressions, language)
             case .tonnetz: return L10n.string(.appTabTonnetz, language)
             case .intonations: return L10n.string(.appTabIntonations, language)
+            case .dissonances: return L10n.string(.appTabDissonances, language)
             }
         }
     }
@@ -277,6 +279,9 @@ struct ContentView: View {
                                 }
                                 Tab(TheorieTab.intonations.label(session.currentLanguage), systemImage: TheorieTab.intonations.systemImage, value: TheorieTab.intonations) {
                                     TuningTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .intonations)
+                                }
+                                Tab(TheorieTab.dissonances.label(session.currentLanguage), systemImage: TheorieTab.dissonances.systemImage, value: TheorieTab.dissonances) {
+                                    DissonancesTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .dissonances)
                                 }
                             }
                         case .settings:

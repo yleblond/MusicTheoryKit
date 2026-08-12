@@ -4827,6 +4827,50 @@
   "ru": "Воспроизвести в темперации",
   "zhHans": "播放调律后的音"
  },
+ "appTabDissonances": {
+  "de": "Dissonanzen",
+  "en": "Dissonances",
+  "es": "Disonancias",
+  "fr": "Dissonances",
+  "it": "Dissonanze",
+  "ja": "不協和音",
+  "pt": "Dissonâncias",
+  "ru": "Диссонансы",
+  "zhHans": "不协和音"
+ },
+ "appFieldNoteDeBase": {
+  "de": "Grundton",
+  "en": "Base note",
+  "es": "Nota base",
+  "fr": "Note de base",
+  "it": "Nota base",
+  "ja": "基準音",
+  "pt": "Nota base",
+  "ru": "Базовая нота",
+  "zhHans": "基准音"
+ },
+ "appButtonAnalyserOctave": {
+  "de": "Diese Oktave analysieren",
+  "en": "Analyze this octave",
+  "es": "Analizar esta octava",
+  "fr": "Analyser cette octave",
+  "it": "Analizza questa ottava",
+  "ja": "このオクターブを解析",
+  "pt": "Analisar esta oitava",
+  "ru": "Анализировать эту октаву",
+  "zhHans": "分析此八度"
+ },
+ "appLabelAnalyseEnCours": {
+  "de": "Analyse läuft…",
+  "en": "Analyzing…",
+  "es": "Analizando…",
+  "fr": "Analyse en cours…",
+  "it": "Analisi in corso…",
+  "ja": "解析中…",
+  "pt": "Analisando…",
+  "ru": "Анализ…",
+  "zhHans": "正在分析…"
+ },
  "appTabTonnetz": {
   "de": "Tonnetz",
   "en": "Tonnetz",

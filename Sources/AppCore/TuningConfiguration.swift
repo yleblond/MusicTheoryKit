@@ -65,3 +65,14 @@ public func temperamentCents(forPitch pitch: Int, mode: Mode, configuration: Tun
     }
     return fixedTemperamentCents(forPitchClass: pitchClass, tonic: mode.tonic, configuration: configuration)
 }
+
+/// Absolute frequency in Hz for `midiPitch` (A4 = MIDI 69 = 440Hz), plus a `cents` correction —
+/// typically the output of `fixedTemperamentCents`/`temperamentCents`, which already folds in
+/// both the temperament's own deviation AND the reference-pitch offset (`referenceA4` vs. the
+/// standard 440 baked in here), so this function itself never needs its own `referenceA4`
+/// parameter. Unlike `SpectrogramView`'s own private MIDI→Hz helper (fixed to 440Hz, no cents),
+/// this is the actual sounding frequency a pitch resolves to under a specific
+/// `TuningConfiguration` — what `OctaveSpectrumGrid`'s dissonance landscape is built from.
+public func hz(forMidiPitch midiPitch: Int, cents: Double = 0) -> Double {
+    440.0 * pow(2.0, (Double(midiPitch) - 69.0) / 12.0) * pow(2.0, cents / 1200.0)
+}

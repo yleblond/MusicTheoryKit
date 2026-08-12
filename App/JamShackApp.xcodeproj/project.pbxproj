@@ -178,6 +178,8 @@
 		55AD1B60FB9AF8071BCF75CD /* TuningTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B492402ACB3F90D0CA7DBD61 /* TuningTabContent.swift */; };
 		E1D768529EDE818CD1E0BFFF /* TuningLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C16F93B1AE6EEC7FEC841F02 /* TuningLibraryView.swift */; };
 		6786437B716EFA48304A2266 /* TuningQuickPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27D4D6DA33FA152FEE1E6E22 /* TuningQuickPickerView.swift */; };
+		B54E66979E8B5ACB936AC260 /* DissonancesLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91705D465E007EBC80E65D1D /* DissonancesLibraryView.swift */; };
+		2B12872BAFC3C413FD8376E6 /* DissonancesTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 665B065D211073F3F5444336 /* DissonancesTabContent.swift */; };
 		A7CF018813E7ECCD396A5717 /* JamShackColorsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C99CBF1FBD1605E7FEA1F5C3 /* JamShackColorsView.swift */; };
 		A94AED495616EC3882EFCB7C /* ChordTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 752FD326924ED57FF5B8904E /* ChordTabContent.swift */; };
 		AC446451DBEB1E333A3C0E82 /* TheoryWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 644B983658E125A8D42F09FD /* TheoryWindow.swift */; };
@@ -250,6 +252,8 @@
 		5075E1E4DCB78659250A7D90 /* TuningTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B492402ACB3F90D0CA7DBD61 /* TuningTabContent.swift */; };
 		771FFAE02BB30381740C3463 /* TuningLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C16F93B1AE6EEC7FEC841F02 /* TuningLibraryView.swift */; };
 		D5369611D11BE568FF45DE55 /* TuningQuickPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27D4D6DA33FA152FEE1E6E22 /* TuningQuickPickerView.swift */; };
+		CB30B4916559F6F334D87D24 /* DissonancesLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91705D465E007EBC80E65D1D /* DissonancesLibraryView.swift */; };
+		0458E91AABC6D3A33CF8B6B6 /* DissonancesTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 665B065D211073F3F5444336 /* DissonancesTabContent.swift */; };
 		F4AF6C0D9D4B12C51E57ADDC /* ModeLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92D0CCE52D97231126907127 /* ModeLibraryView.swift */; };
 		F4BCA1022A45EB2F0AA5D13D /* SoundFontCatalogCreditsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42415FE3529106E7F227E1AF /* SoundFontCatalogCreditsView.swift */; };
 		F6A508097CA52946658B6950 /* SceneManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */; };
@@ -263,6 +267,8 @@
 		39F5FC3ED3316DD4CAEB37ED /* TuningTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B492402ACB3F90D0CA7DBD61 /* TuningTabContent.swift */; };
 		3B386F1F861660761257B87F /* TuningLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C16F93B1AE6EEC7FEC841F02 /* TuningLibraryView.swift */; };
 		F3DC923E739D46116D866E62 /* TuningQuickPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27D4D6DA33FA152FEE1E6E22 /* TuningQuickPickerView.swift */; };
+		D99BD804346E701112162FF4 /* DissonancesLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91705D465E007EBC80E65D1D /* DissonancesLibraryView.swift */; };
+		BBE9830D3738A476333DB562 /* DissonancesTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 665B065D211073F3F5444336 /* DissonancesTabContent.swift */; };
 		FF9D4A6D4F4DE2A8249C1F5E /* IconAssignmentButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DF506E12A5E6829884DCE65 /* IconAssignmentButton.swift */; };
 		FFE1363E4282F31709E33482 /* ColorHex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80BD5958DD843BF49738DE9 /* ColorHex.swift */; };
 /* End PBXBuildFile section */
@@ -353,6 +359,8 @@
 		B492402ACB3F90D0CA7DBD61 /* TuningTabContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TuningTabContent.swift; sourceTree = "<group>"; };
 		C16F93B1AE6EEC7FEC841F02 /* TuningLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TuningLibraryView.swift; sourceTree = "<group>"; };
 		27D4D6DA33FA152FEE1E6E22 /* TuningQuickPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TuningQuickPickerView.swift; sourceTree = "<group>"; };
+		91705D465E007EBC80E65D1D /* DissonancesLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DissonancesLibraryView.swift; sourceTree = "<group>"; };
+		665B065D211073F3F5444336 /* DissonancesTabContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DissonancesTabContent.swift; sourceTree = "<group>"; };
 		FA393FDD6590DDE0D1E4FAEF /* PlaybackControlButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackControlButton.swift; sourceTree = "<group>"; };
 		FC0DA62416ED6B405EBDF8DF /* PiecesFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiecesFileView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -434,6 +442,8 @@
 				B492402ACB3F90D0CA7DBD61 /* TuningTabContent.swift */,
 				C16F93B1AE6EEC7FEC841F02 /* TuningLibraryView.swift */,
 				27D4D6DA33FA152FEE1E6E22 /* TuningQuickPickerView.swift */,
+				91705D465E007EBC80E65D1D /* DissonancesLibraryView.swift */,
+				665B065D211073F3F5444336 /* DissonancesTabContent.swift */,
 				6FD0936121A15D50918BF0E1 /* TonnetzLibraryView.swift */,
 				752FD326924ED57FF5B8904E /* ChordTabContent.swift */,
 				A80BD5958DD843BF49738DE9 /* ColorHex.swift */,
@@ -674,6 +684,8 @@
 				5075E1E4DCB78659250A7D90 /* TuningTabContent.swift in Sources */,
 				771FFAE02BB30381740C3463 /* TuningLibraryView.swift in Sources */,
 				D5369611D11BE568FF45DE55 /* TuningQuickPickerView.swift in Sources */,
+				CB30B4916559F6F334D87D24 /* DissonancesLibraryView.swift in Sources */,
+				0458E91AABC6D3A33CF8B6B6 /* DissonancesTabContent.swift in Sources */,
 				F9281B4ED89BC0E4877FC764 /* ChordTabContent.swift in Sources */,
 				2647C2C6831C10B6FAD6AA7E /* ChordWindow.swift in Sources */,
 				5C3ECEF82339417B8B99725D /* TonnetzWindow.swift in Sources */,
@@ -763,6 +775,8 @@
 				39F5FC3ED3316DD4CAEB37ED /* TuningTabContent.swift in Sources */,
 				3B386F1F861660761257B87F /* TuningLibraryView.swift in Sources */,
 				F3DC923E739D46116D866E62 /* TuningQuickPickerView.swift in Sources */,
+				D99BD804346E701112162FF4 /* DissonancesLibraryView.swift in Sources */,
+				BBE9830D3738A476333DB562 /* DissonancesTabContent.swift in Sources */,
 				A94AED495616EC3882EFCB7C /* ChordTabContent.swift in Sources */,
 				AD203EC0C9BB23E7571242CB /* ChordWindow.swift in Sources */,
 				5B86AEF104814C4E87D215C6 /* TonnetzWindow.swift in Sources */,
@@ -852,6 +866,8 @@
 				55AD1B60FB9AF8071BCF75CD /* TuningTabContent.swift in Sources */,
 				E1D768529EDE818CD1E0BFFF /* TuningLibraryView.swift in Sources */,
 				6786437B716EFA48304A2266 /* TuningQuickPickerView.swift in Sources */,
+				B54E66979E8B5ACB936AC260 /* DissonancesLibraryView.swift in Sources */,
+				2B12872BAFC3C413FD8376E6 /* DissonancesTabContent.swift in Sources */,
 				EE74146CF858E157BDDE67BD /* ChordTabContent.swift in Sources */,
 				6192E206F66E7C2984D235E0 /* ChordWindow.swift in Sources */,
 				F1082C125D284EA19144431F /* TonnetzWindow.swift in Sources */,
