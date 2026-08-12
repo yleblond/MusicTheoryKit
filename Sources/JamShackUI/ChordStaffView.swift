@@ -338,15 +338,21 @@ public struct ChordStaffView: View {
                 // A note whose own name has an accidental gets it drawn inline, UNLESS the key
                 // signature already implies it (that pitch class is one of its own
                 // `affectedPitchClasses`) — same as before. A NATURAL note (no accidental of
-                // its own) whose LETTER the signature nonetheless alters (e.g. a plain F in a
-                // 1-sharp key, where the signature implies every F is F#) needs a natural sign
-                // instead — the signature's own sharp/flat doesn't apply to THIS occurrence.
+                // its own) whose LETTER the signature alters (e.g. a plain F in a 1-sharp key,
+                // where the signature implies every F is F#) needs a natural sign instead — but
+                // only when this pitch class ISN'T ALREADY one of the signature's own sharped/
+                // flatted pitch classes under a DIFFERENT letter: `noteNames` is a fixed,
+                // context-blind spelling table, so e.g. in F# major (6 sharps) it still calls
+                // pitch class 5 "F" even though that pitch class IS exactly this key's own
+                // E#(4+1=5) — not a real natural F at all, just an enharmonic coincidence — so
+                // it needs no accidental of any kind, same as any other note the signature
+                // already accounts for.
                 var glyph: String?
                 if name.count > 1 {
                     if !(keySignature?.affectedPitchClasses.contains(pc) ?? false) {
                         glyph = name.contains("#") ? "\u{266F}" : "\u{266D}"
                     }
-                } else if let keySignature, keySignature.affectedLetters.contains(Self.lettersByPitchClass[pc]) {
+                } else if let keySignature, !keySignature.affectedPitchClasses.contains(pc), keySignature.affectedLetters.contains(Self.lettersByPitchClass[pc]) {
                     glyph = "\u{266E}"
                 }
                 if let glyph {
