@@ -86,3 +86,41 @@ encore prise. Retiré d'ici.
     mélodiques (notes — `MelodicRoleColors`), et l'accent "caractéristique modale" (violet, partagé
     par les deux). Probablement un SwiftData singleton du même genre que `NoteColorSettingsFile`,
     avec des valeurs par défaut = les couleurs actuelles codées en dur.
+
+26. **Accordage/tempérament — mode A2 (intonation adaptative théorique)** — une fois l'onglet
+    Music Lab "Intonations" (A1, théorique + fixe) livré, ajouter le mode dynamique : recalcule la
+    correction de chaque voix en fonction de l'accord détecté en direct (`RecognizedChord`), via
+    les rapports harmoniques théoriques (juste intonation ciblée sur l'accord courant, pas juste la
+    tonique). Nécessite : une fonction de coût (dissonance + pénalité d'éloignement + pénalité de
+    mouvement pour les notes déjà tenues), un mapping note tenue → rôle dans l'accord (tierce/
+    quinte/etc. — n'existe pas encore, voir `PitchDisplayState`), et un lissage/glide pour les notes
+    tenues lors d'un changement d'accord (`TuningTransition` dans la spec d'origine).
+
+27. **Accordage/tempérament — mode B1 (spectre SF2 réel + fixe)** — analyser le spectre réel des
+    samples d'un SoundFont (FFT sur les données PCM réelles, pas seulement les métadonnées lues par
+    `SoundFontPresetReader` aujourd'hui — lire `sdta`/`shdr`/`ibag`/`igen` est un travail neuf,
+    seule la marche RIFF bas niveau est réutilisable) pour proposer une disposition fixe des 12
+    notes optimisée pour les résonances réelles de cet instrument précis (pas un tempérament
+    historique). Presque gratuit une fois le mode B2 construit (réutilise son moteur spectral).
+
+28. **Accordage/tempérament — mode B2 (spectre SF2 réel + adaptatif)** — le mode le plus avancé de
+    la spec d'origine : optimisation en temps réel de chaque accord détecté à partir des partiels
+    réellement mesurés dans les samples actifs (pas des partiels harmoniques idéaux). Inclut le
+    graphe de dissonance 2D (surface/carte de contours pour un accord à 3 notes, axes = offset en
+    cents des 2 notes non-fondamentales) — techniquement, réutiliser la technique de rendu bitmap/
+    `CGImage` de `SpectrogramView.makeWaterfallImage` plutôt que des remplissages `Canvas` par
+    cellule (bien trop lent pour une grille 2D, cf. commentaire de ce fichier).
+
+29. **Accordage/tempérament — optimisation de trajectoire sur une progression (Guide)** — une fois
+    A2/B2 en place, le Guide musical connaît potentiellement l'accord suivant d'une progression ;
+    il pourrait optimiser non seulement l'accord courant mais la meilleure trajectoire d'accordage
+    sur toute la progression (minimiser les sauts de hauteur des notes communes entre accords
+    successifs).
+
+30. **Accordage/tempérament — Studio** — envisageable uniquement pour le sous-ensemble purement
+    théorique fixe (A1), jamais le mode spectral (B1/B2) : en Studio plusieurs instruments jouent en
+    parallèle, et l'analyse spectrale est intrinsèquement par-instrument (l'appliquer à plusieurs
+    instruments simultanés ferait exploser la complexité). Même en A1, vérifier la pression sur les
+    16 canaux MIDI disponibles par piste avant d'activer (un accord de 7e + une mélodie sur un seul
+    instrument utilise déjà ~5-6 canaux ; avec 2-3 instruments actifs en Studio, la marge devient
+    vite serrée).
