@@ -4508,6 +4508,127 @@
   "ru": "Цвета по идентичности",
   "zhHans": "按音级着色"
  },
+ "appTabIntonations": {
+  "de": "Intonationen",
+  "en": "Intonations",
+  "es": "Entonaciones",
+  "fr": "Intonations",
+  "it": "Intonazioni",
+  "ja": "イントネーション",
+  "pt": "Entoações",
+  "ru": "Интонации",
+  "zhHans": "音律调整"
+ },
+ "appTemperamentEqual": {
+  "de": "Gleichstufig",
+  "en": "Equal",
+  "es": "Igual",
+  "fr": "Égal",
+  "it": "Equabile",
+  "ja": "平均律",
+  "pt": "Igual",
+  "ru": "Равномерный",
+  "zhHans": "十二平均律"
+ },
+ "appTemperamentPythagorean": {
+  "de": "Pythagoreisch",
+  "en": "Pythagorean",
+  "es": "Pitagórico",
+  "fr": "Pythagoricien",
+  "it": "Pitagorico",
+  "ja": "ピタゴラス音律",
+  "pt": "Pitagórico",
+  "ru": "Пифагорейский",
+  "zhHans": "毕达哥拉斯律"
+ },
+ "appTemperamentJustIntonation": {
+  "de": "Reine Stimmung",
+  "en": "Just intonation",
+  "es": "Entonación justa",
+  "fr": "Intonation juste",
+  "it": "Intonazione giusta",
+  "ja": "純正律",
+  "pt": "Entoação justa",
+  "ru": "Чистый строй",
+  "zhHans": "纯律"
+ },
+ "appTemperamentWerckmeisterIII": {
+  "de": "Werckmeister III",
+  "en": "Werckmeister III",
+  "es": "Werckmeister III",
+  "fr": "Werckmeister III",
+  "it": "Werckmeister III",
+  "ja": "Werckmeister III",
+  "pt": "Werckmeister III",
+  "ru": "Веркмейстер III",
+  "zhHans": "维克迈斯特 III"
+ },
+ "appFieldTemperament": {
+  "de": "Temperament",
+  "en": "Temperament",
+  "es": "Temperamento",
+  "fr": "Tempérament",
+  "it": "Temperamento",
+  "ja": "音律",
+  "pt": "Temperamento",
+  "ru": "Строй",
+  "zhHans": "律制"
+ },
+ "appFieldReferenceA4": {
+  "de": "Referenz A4 (Hz)",
+  "en": "Reference A4 (Hz)",
+  "es": "Referencia A4 (Hz)",
+  "fr": "Référence A4 (Hz)",
+  "it": "Riferimento A4 (Hz)",
+  "ja": "基準A4 (Hz)",
+  "pt": "Referência A4 (Hz)",
+  "ru": "Эталон A4 (Гц)",
+  "zhHans": "参考A4 (Hz)"
+ },
+ "appLabelToniqueActuelle": {
+  "de": "Aktuelle Tonika",
+  "en": "Current tonic",
+  "es": "Tónica actual",
+  "fr": "Tonique actuelle",
+  "it": "Tonica attuale",
+  "ja": "現在のトニック",
+  "pt": "Tônica atual",
+  "ru": "Текущая тоника",
+  "zhHans": "当前主音"
+ },
+ "appHintAucunModeActifIntonations": {
+  "de": "Kein aktiver Modus – öffnen Sie Modi, Progressionen oder Exploration, um dieses Temperament auf eine Tonika zu verankern. Akkorde und Tonnetz haben noch keine eigene Tonika.",
+  "en": "No active mode — open Modes, Progressions or Exploration to anchor this temperament on a tonic. Accords and Tonnetz don't have their own tonic yet.",
+  "es": "Ningún modo activo: abre Modos, Progresiones o Exploración para anclar este temperamento a una tónica. Acordes y Tonnetz aún no tienen tónica propia.",
+  "fr": "Aucun mode actif — ouvrez Modes, Progressions ou Exploration pour ancrer ce tempérament sur une tonique. Accords et Tonnetz n'ont pas de tonique propre pour l'instant.",
+  "it": "Nessuna modalità attiva — apri Modi, Progressioni o Esplorazione per ancorare questo temperamento a una tonica. Accordi e Tonnetz non hanno ancora una propria tonica.",
+  "ja": "アクティブなモードがありません。この音律を主音に固定するには、モード、進行、探求のいずれかを開いてください。コードとトンネッツにはまだ独自の主音がありません。",
+  "pt": "Nenhum modo ativo — abra Modos, Progressões ou Exploração para ancorar este temperamento numa tônica. Acordes e Tonnetz ainda não têm tônica própria.",
+  "ru": "Нет активного лада — откройте Лады, Прогрессии или Исследование, чтобы привязать этот строй к тонике. У Аккордов и Тоннеца пока нет собственной тоники.",
+  "zhHans": "当前没有激活的调式 — 请打开调式、进行或探索页面，将此律制锚定到某个主音。和弦与音网目前还没有自己的主音。"
+ },
+ "appHeadingNotesTenuesEtCorrection": {
+  "de": "Gehaltene Noten und Korrektur",
+  "en": "Held notes and correction",
+  "es": "Notas mantenidas y corrección",
+  "fr": "Notes tenues et correction",
+  "it": "Note tenute e correzione",
+  "ja": "保持している音と補正",
+  "pt": "Notas mantidas e correção",
+  "ru": "Удерживаемые ноты и коррекция",
+  "zhHans": "按住的音符与修正"
+ },
+ "appLabelTemperamentActifBarre": {
+  "de": "Temperament: %@",
+  "en": "Temperament: %@",
+  "es": "Temperamento: %@",
+  "fr": "Tempérament : %@",
+  "it": "Temperamento: %@",
+  "ja": "音律: %@",
+  "pt": "Temperamento: %@",
+  "ru": "Строй: %@",
+  "zhHans": "律制：%@"
+ },
  "appTabTonnetz": {
   "de": "Tonnetz",
   "en": "Tonnetz",

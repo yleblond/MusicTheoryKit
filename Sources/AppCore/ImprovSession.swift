@@ -275,6 +275,19 @@ public final class ImprovSession: @unchecked Sendable {
     /// One independent sampler per track with sound enabled — see `setSoundEnabled`. Never
     /// present for `.microphone` (enforced there, not here).
     private var samplers: [TrackID: SamplerUnit] = [:]
+    /// One per track that has ever needed per-voice tuning (see `fixedTemperamentCents`/
+    /// `contextualTonic`) — created lazily, only actually populated while `contextualTonic` is
+    /// non-`nil` and a non-zero correction is being applied. Kept per-track (not just for
+    /// `theoryLiveInputSourceID`) so the underlying mechanism isn't artificially tied to Théorie
+    /// even though only Théorie invokes it today.
+    private var tuningVoiceChannels: [TrackID: VoiceChannelAllocator] = [:]
+
+    private func tuningVoiceChannelAllocator(for track: TrackID) -> VoiceChannelAllocator {
+        if let existing = tuningVoiceChannels[track] { return existing }
+        let allocator = VoiceChannelAllocator()
+        tuningVoiceChannels[track] = allocator
+        return allocator
+    }
 
     /// Test-only peek at whether a track's own sampler is actually running (see
     /// `SamplerUnit.isRunning`'s doc comment for why this matters) — `samplers` itself stays
@@ -524,6 +537,7 @@ public final class ImprovSession: @unchecked Sendable {
             ChordProgressionTemplateRecord.self,
             LanguageSettingRecord.self,
             NotationStyleSettingRecord.self,
+            TuningConfigurationRecord.self,
             TheoryAuditionSoundSettingRecord.self,
             ChordTemplateRecord.self,
             ScaleDefinitionRecord.self,
@@ -1050,6 +1064,7 @@ public final class ImprovSession: @unchecked Sendable {
     public func loadPersistedAppSettings() {
         migrateLanguageSettingFromJSONIfNeeded(fromJSONFile: "")
         loadNotationStyleSetting()
+        loadTuningConfigurationSetting()
         loadTheoryAuditionSoundSetting()
     }
 
@@ -1062,6 +1077,7 @@ public final class ImprovSession: @unchecked Sendable {
         migrateChordProgressionTemplatesFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("chordprogressions.json"))
         migrateLanguageSettingFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("language.json"))
         loadNotationStyleSetting()
+        loadTuningConfigurationSetting()
         loadTheoryAuditionSoundSetting()
         migrateChordTemplatesFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("chords.json"))
         migrateScaleDefinitionsFromJSONIfNeeded(fromJSONFile: (folderPath as NSString).appendingPathComponent("scales.json"))
@@ -2889,10 +2905,56 @@ public final class ImprovSession: @unchecked Sendable {
     /// The best-matching chord currently held on `theoryLiveInputSourceID`'s own track, if one is
     /// picked — the single input every Théorie screen's live-recognition reaction observes (see
     /// `ChordLibraryView`/`ModeLibraryView`/`ProgressionLibraryView`'s own `reactToLiveChordMatch`),
-    /// also reused by Studio's `TonnetzScreen` (`JamShackUI/Tonnetz.swift`) to follow live playing
-    /// on the same "clavier principal" source.
+    /// also reused by `TonnetzLibraryView` (`App/Sources/TonnetzLibraryView.swift`) to follow live
+    /// playing on the same "clavier principal" source.
     public var theoryLiveInputRecognizedChord: RecognizedChord? {
         tracks.first { $0.id == theoryLiveInputSourceID }?.recognizedChord
+    }
+
+    /// The tonic Intonations' fixed temperament should anchor on right now — derived from
+    /// whichever Théorie screen currently has its own tonic/mode selected (Modes/Progressions/
+    /// Exploration, via `.registerMainKeyboardMode`'s own `mode.tonic`), NOT an independent
+    /// setting of its own. `nil` on Accords/Tonnetz (a bare chord/note has no tonic to anchor a
+    /// fixed temperament on — see the Intonations feature's own plan for why only a dynamic,
+    /// per-chord tuning would make sense there, which is future work) and `nil` at launch until
+    /// one of those screens becomes active. Never persisted, exactly like `theoryLiveInputSourceID`.
+    public private(set) var contextualTonic: PitchClass?
+
+    /// The only place `contextualTonic` changes — called by Modes/Progressions/Exploration
+    /// whenever their own tonic changes or they become in/active (mirrors
+    /// `MainKeyboardModeRegistration`'s own `isActive`-driven clear/set), and never called by
+    /// Accords/Tonnetz at all (so `contextualTonic` simply stays/reverts to whatever the last
+    /// active mode-bearing screen left it as — `nil` if none has been visited yet).
+    public func setContextualTonic(_ tonic: PitchClass?) {
+        contextualTonic = tonic
+    }
+
+    /// Which Intonations temperament is active, plus its A4 reference — mirrors `notationStyle`'s
+    /// own "persisted singleton" shape exactly (see `TuningConfigurationRecord`). Defaults to
+    /// `.equal`/440, acoustically a no-op identical to the app's behavior before this setting
+    /// existed.
+    public private(set) var tuningConfiguration = TuningConfiguration()
+
+    private func loadTuningConfigurationSetting() {
+        if let existing = try? modelContext.fetch(FetchDescriptor<TuningConfigurationRecord>()).first {
+            tuningConfiguration = TuningConfiguration(temperamentID: existing.temperamentID, referenceA4: existing.referenceA4)
+        } else {
+            modelContext.insert(TuningConfigurationRecord(temperamentID: tuningConfiguration.temperamentID, referenceA4: tuningConfiguration.referenceA4))
+            try? modelContext.save()
+        }
+    }
+
+    /// The one place `tuningConfiguration` actually changes at runtime — persists immediately,
+    /// same as `setNotationStyle`.
+    public func setTuningConfiguration(_ configuration: TuningConfiguration) throws {
+        tuningConfiguration = configuration
+        if let existing = try? modelContext.fetch(FetchDescriptor<TuningConfigurationRecord>()).first {
+            existing.temperamentID = configuration.temperamentID
+            existing.referenceA4 = configuration.referenceA4
+        } else {
+            modelContext.insert(TuningConfigurationRecord(temperamentID: configuration.temperamentID, referenceA4: configuration.referenceA4))
+        }
+        try modelContext.save()
     }
 
     /// Finds the element among `elements` whose `ChordReference` (via `reference`) has the same
@@ -4213,9 +4275,23 @@ public final class ImprovSession: @unchecked Sendable {
 
         guard tracks[index].soundEnabled, let sampler = samplers[track] else { return }
         if isNoteOn {
-            sampler.startNote(pitch: pitch, velocity: velocity, channel: channel)
+            if track == theoryLiveInputSourceID, let contextualTonic {
+                let cents = fixedTemperamentCents(forPitchClass: PitchClass(pitch), tonic: contextualTonic, configuration: tuningConfiguration)
+                if cents != 0 {
+                    let tunedChannel = tuningVoiceChannelAllocator(for: track).channel(forPitch: pitch)
+                    sampler.startNote(pitch: pitch, velocity: velocity, channel: tunedChannel, cents: cents)
+                } else {
+                    sampler.startNote(pitch: pitch, velocity: velocity, channel: channel)
+                }
+            } else {
+                sampler.startNote(pitch: pitch, velocity: velocity, channel: channel)
+            }
         } else {
-            sampler.stopNote(pitch: pitch, channel: channel)
+            if let tunedChannel = tuningVoiceChannels[track]?.release(pitch: pitch) {
+                sampler.stopNote(pitch: pitch, channel: tunedChannel)
+            } else {
+                sampler.stopNote(pitch: pitch, channel: channel)
+            }
         }
     }
 

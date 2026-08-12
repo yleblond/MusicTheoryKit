@@ -39,6 +39,31 @@ public final class SamplerUnit: @unchecked Sendable {
         sampler.startNote(Self.clampedByte(pitch), withVelocity: Self.clampedByte(velocity), onChannel: Self.clampedByte(channel))
     }
 
+    /// Same as `startNote(pitch:velocity:channel:)`, plus a small pitch correction (a fraction of
+    /// a semitone) sent as a MIDI pitch bend on `channel` right before the note-on — the closest
+    /// thing to "per-voice fine tuning" `AVAudioUnitSampler` allows, since its pitch bend is
+    /// per-CHANNEL, never per-note (see `VoiceChannelAllocator`, which is what makes giving each
+    /// simultaneously-held note its own channel here actually work for a whole chord at once).
+    /// Distinct name/signature from the 3-argument overload above rather than a default
+    /// parameter, so every existing call site is untouched — this is purely additive.
+    public func startNote(pitch: Int, velocity: Int, channel: Int, cents: Double) {
+        sampler.sendPitchBend(Self.pitchBendValue(forCents: cents), onChannel: Self.clampedByte(channel))
+        sampler.startNote(Self.clampedByte(pitch), withVelocity: Self.clampedByte(velocity), onChannel: Self.clampedByte(channel))
+    }
+
+    /// Converts a cents offset into a 14-bit MIDI pitch bend value (0...16383, 8192 = center/no
+    /// bend), assuming `AVAudioUnitSampler`'s default pitch-bend sensitivity of ±2 semitones (the
+    /// General MIDI default — this wrapper never sends an RPN 0/0 message to change it, so the
+    /// default is what's actually in effect). Clamped to ±200 cents (1 semitone) well inside that
+    /// ±2-semitone range, more than enough for any historical temperament's largest deviation.
+    static func pitchBendValue(forCents cents: Double) -> UInt16 {
+        let clampedCents = max(-200, min(200, cents))
+        let bendRangeSemitones = 2.0
+        let fraction = (clampedCents / 100) / bendRangeSemitones
+        let value = 8192 + Int((fraction * 8191).rounded())
+        return UInt16(max(0, min(16383, value)))
+    }
+
     public func stopNote(pitch: Int, channel: Int = 0) {
         sampler.stopNote(Self.clampedByte(pitch), onChannel: Self.clampedByte(channel))
     }

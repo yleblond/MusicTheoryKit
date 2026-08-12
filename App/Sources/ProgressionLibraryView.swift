@@ -102,6 +102,15 @@ struct ProgressionLibraryView: View {
         // mode while it's the active tab, per explicit request — same mechanism `ModeLibraryView`
         // uses for its own "Modes"/"Exploration" tabs.
         .registerMainKeyboardMode(id: "theorie.progressions", isActive: isActive, mode: mode)
+        // Feeds Intonations' fixed-temperament tuning its tonic — see `ModeLibraryView`'s own
+        // identical pair of `.onChange`s for why leaving this screen clears it back to `nil`.
+        .onChange(of: isActive, initial: true) { _, active in
+            session.setContextualTonic(active ? mode.tonic : nil)
+        }
+        .onChange(of: mode) { _, newMode in
+            guard isActive else { return }
+            session.setContextualTonic(newMode.tonic)
+        }
         .onChange(of: session.theoryLiveInputRecognizedChord) { _, newChord in
             reactToLiveChordMatch(newChord)
         }

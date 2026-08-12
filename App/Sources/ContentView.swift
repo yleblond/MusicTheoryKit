@@ -110,7 +110,7 @@ struct ContentView: View {
     /// visionOS (`ChordTabContent`/`TheoryTabContent`/`ProgressionTabContent`/
     /// `ExplorationTabContent`, each its own `AuxiliaryWindowID`).
     private enum TheorieTab: CaseIterable, Identifiable {
-        case accords, modes, progressions, exploration, tonnetz
+        case accords, modes, progressions, exploration, tonnetz, intonations
 
         var id: Self { self }
 
@@ -121,6 +121,7 @@ struct ContentView: View {
             case .exploration: return "atom"
             case .progressions: return "list.number"
             case .tonnetz: return "triangle.fill"
+            case .intonations: return "tuningfork"
             }
         }
 
@@ -131,6 +132,7 @@ struct ContentView: View {
             case .exploration: return L10n.string(.appHeadingExplorationFonctionnelle, language)
             case .progressions: return L10n.string(.appTabProgressions, language)
             case .tonnetz: return L10n.string(.appTabTonnetz, language)
+            case .intonations: return L10n.string(.appTabIntonations, language)
             }
         }
     }
@@ -263,6 +265,9 @@ struct ContentView: View {
                                 }
                                 Tab(TheorieTab.tonnetz.label(session.currentLanguage), systemImage: TheorieTab.tonnetz.systemImage, value: TheorieTab.tonnetz) {
                                     TonnetzTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .tonnetz)
+                                }
+                                Tab(TheorieTab.intonations.label(session.currentLanguage), systemImage: TheorieTab.intonations.systemImage, value: TheorieTab.intonations) {
+                                    TuningTabContent(session: session)
                                 }
                             }
                         case .settings:
@@ -426,6 +431,16 @@ struct ContentView: View {
                                 .labelsHidden()
                                 .font(.caption)
                                 .frame(maxWidth: Self.bottomBarLabelMaxWidth)
+                                // Passive reminder of the active Intonations temperament while
+                                // browsing any Théorie tab — per explicit request, non-interactive
+                                // (the actual picker lives in the Intonations tab itself). Hidden
+                                // for "Égal" since that's acoustically a no-op, same as never
+                                // having touched the setting.
+                                if session.tuningConfiguration.temperamentID != "equal" {
+                                    Text(L10n.string(.appLabelTemperamentActifBarre, session.currentLanguage, temperamentLabel(forID: session.tuningConfiguration.temperamentID, language: session.currentLanguage)))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
                             } else if mode == .studio {
                                 // Studio: read-only, per explicit request — see
                                 // `studioAssignedSoundLabel(session:)`'s own doc comment for why
@@ -613,6 +628,19 @@ struct ContentView: View {
             return L10n.string(.appLabelAucunSonAffecte, session.currentLanguage)
         }
         return session.displayName(forSamplePath: soundName, preset: role.soundPreset)
+    }
+
+    /// Same id → display-name mapping `TuningLibraryView.label(forTemperamentID:)` uses for its
+    /// own picker — duplicated rather than shared since one is a `View` method and this is a
+    /// free-standing label used inline in a string format, not worth a new shared type for 4 ids.
+    private func temperamentLabel(forID id: String, language: AppLanguage) -> String {
+        switch id {
+        case "equal": return L10n.string(.appTemperamentEqual, language)
+        case "pythagorean": return L10n.string(.appTemperamentPythagorean, language)
+        case "justIntonation": return L10n.string(.appTemperamentJustIntonation, language)
+        case "werckmeisterIII": return L10n.string(.appTemperamentWerckmeisterIII, language)
+        default: return id
+        }
     }
 
     /// "Notes du mode" whenever a Théorie screen has registered one for the persistent

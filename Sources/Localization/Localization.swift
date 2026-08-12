@@ -440,6 +440,13 @@ public enum L10nKey: String, CaseIterable, Sendable {
 
     // MARK: - App: Théorie > Tonnetz
     case appTabTonnetz, appModeTonnetzHarmonique, appModeTonnetzPerformance, appToggleTonnetzCouleursIdentite
+
+    // MARK: - App: Théorie > Intonations
+    case appTabIntonations
+    case appTemperamentEqual, appTemperamentPythagorean, appTemperamentJustIntonation, appTemperamentWerckmeisterIII
+    case appFieldTemperament, appFieldReferenceA4
+    case appLabelToniqueActuelle, appHintAucunModeActifIntonations, appHeadingNotesTenuesEtCorrection
+    case appLabelTemperamentActifBarre
 }
 
 public enum L10n {

@@ -125,6 +125,17 @@ struct ModeLibraryView: View {
             id: contentFocus == .overview ? "theorie.modes" : "theorie.exploration",
             isActive: isActive, mode: mode
         )
+        // Feeds Intonations' fixed-temperament tuning its tonic — same isActive-driven
+        // set/clear as `.registerMainKeyboardMode` just above, so leaving this screen (e.g. for
+        // Accords/Tonnetz, neither of which has a tonic of its own) reverts to no correction
+        // rather than leaving a stale tonic behind.
+        .onChange(of: isActive, initial: true) { _, active in
+            session.setContextualTonic(active ? mode.tonic : nil)
+        }
+        .onChange(of: mode) { _, newMode in
+            guard isActive else { return }
+            session.setContextualTonic(newMode.tonic)
+        }
     }
 
     #if os(macOS) || os(visionOS)
