@@ -38,6 +38,14 @@ struct TuningLibraryView: View {
         Mode(tonic: PitchClass(selectedTonic), scale: ScaleLibrary.byID(selectedScaleID) ?? ScaleLibrary.scales(inFamily: 1)[0])
     }
 
+    /// The mode's parent major key's conventional signature — same derivation as
+    /// `ModeLibraryView.modeKeySignature` (see there for why `CircleOfFifths.parentTonic`, not
+    /// `MajorKeySignature.forMajorTonic(mode.tonic.value)` directly), shared by both staves
+    /// below so accidentals show at the clef instead of on every affected note.
+    private var modeKeySignature: MajorKeySignature? {
+        CircleOfFifths.parentTonic(for: mode).map { MajorKeySignature.forMajorTonic($0.value) }
+    }
+
     private var scaleDegreesWithOctave: [Int] {
         mode.pitchClasses.map(\.value) + [mode.tonic.value]
     }
@@ -156,7 +164,15 @@ struct TuningLibraryView: View {
     private var notesColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.string(.appHeadingNotesDeLaGamme, session.currentLanguage)).font(.headline)
-            ChordStaffView(events: noteStaffEvents, heightScale: 0.8, widthScale: 0.7, highlightedIndex: playingIndex)
+            ChordStaffView(
+                events: noteStaffEvents,
+                colorScheme: .noteBased(rootPitchClass: mode.tonic, palette: session.activeColorPalette.colors),
+                heightScale: 0.8, widthScale: 0.7, highlightedIndex: playingIndex, keySignature: modeKeySignature,
+                onColumnTap: { index in
+                    guard scaleDegreesWithOctave.indices.contains(index) else { return }
+                    playSingleNote(pitchClass: scaleDegreesWithOctave[index], tempered: true)
+                }
+            )
             HStack {
                 Button(L10n.string(.appButtonJouerNonTempere, session.currentLanguage)) { playScale(tempered: false) }
                 Button(L10n.string(.appButtonJouerTempere, session.currentLanguage)) { playScale(tempered: true) }
@@ -182,7 +198,14 @@ struct TuningLibraryView: View {
     private var chordsColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.string(.appHeadingAccordsDuMode, session.currentLanguage)).font(.headline)
-            ChordStaffView(events: chordStaffEvents, heightScale: 0.8, widthScale: 0.7, highlightedIndex: playingIndex)
+            ChordStaffView(
+                events: chordStaffEvents, notePalette: session.activeColorPalette.colors,
+                heightScale: 0.8, widthScale: 0.7, highlightedIndex: playingIndex, keySignature: modeKeySignature,
+                onColumnTap: { index in
+                    guard diatonicChordReferences.indices.contains(index) else { return }
+                    playSingleChord(diatonicChordReferences[index], tempered: true)
+                }
+            )
             HStack {
                 Button(L10n.string(.appButtonJouerNonTempere, session.currentLanguage)) { playChordSequence(tempered: false) }
                 Button(L10n.string(.appButtonJouerTempere, session.currentLanguage)) { playChordSequence(tempered: true) }

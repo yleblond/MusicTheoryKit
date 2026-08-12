@@ -95,8 +95,13 @@ public let virtualKeyboardIndexHTML = """
   :root {
     --mode-root-color: #ff9800;
     --mode-tone-color: #00bcd4;
-    --chord-root-color: #e91e63;
-    --chord-tone-color: #fdd835;
+    /* A chord's root/tone keys, staff notes, and guitar strings are colored per-render (inline
+       style) by the note's own identity in the active palette instead of one fixed color
+       shared by every chord — see `keyClasses`/`updateKeyVisuals`, `renderStaffSVG`,
+       `guitarChordDiagramHTML`, same as `StaticAssets.swift`'s own copy. Only the guitar
+       diagram's barre/finger-position dots (a fingering indicator, independent of which note
+       they land on) still use one fixed color. */
+    --chord-position-color: #0a84ff;
     --held-outside-color: #4caf50;
     --held-no-chord-color: #ffffff;
   }
@@ -210,8 +215,9 @@ public let virtualKeyboardIndexHTML = """
   .pkey { position: absolute; top: 0; box-sizing: border-box; border: 1px solid #333; border-radius: 0 0 4px 4px; cursor: pointer; }
   .pkey.white { background: #f5f5f5; z-index: 1; }
   .pkey.black { background: #1a1a1a; z-index: 2; box-shadow: 0 2px 3px rgba(0,0,0,0.5); }
-  .pkey.root { background: var(--chord-root-color) !important; }
-  .pkey.tone { background: var(--chord-tone-color) !important; }
+  /* .pkey.root/.pkey.tone have no CSS rule here — colored with an inline `style` instead (see
+     `keyClasses`/`updateKeyVisuals`, `guideReferenceKeyboardHTML`), since the right color now
+     depends on which chord is shown. */
   .pkey.outside { background: var(--held-outside-color) !important; }
   .pkey.held { background: var(--held-no-chord-color) !important; }
   /* The default held/outside colors (white/green) barely show up on a WHITE key that's already
@@ -228,7 +234,9 @@ public let virtualKeyboardIndexHTML = """
   .pkey.mode-root { background: var(--mode-root-color) !important; }
   .pkey.mode-tone { background: var(--mode-tone-color) !important; }
   .guide-keyboard-small .pkey { cursor: default; }
-  /* Guide panel's guitar-tab diagram — same rules/colors as StaticAssets.swift's own copy. */
+  /* Guide panel's guitar-tab diagram — same rules/colors as StaticAssets.swift's own copy:
+     barre/dots mark a fingering position (one fixed color), each string is colored inline by
+     the note it actually sounds (see `guitarChordDiagramHTML`). */
   .guitar-diagram { display: block; margin: 0.3rem 0 0.6rem; }
   /* Doubled from `StaticAssets.swift`'s own 1.5rem/-8px — matches the tab diagram's own
      doubled display size on this page (see `guitarChordDiagramHTML`'s comment). */
@@ -239,10 +247,11 @@ public let virtualKeyboardIndexHTML = """
   .guitar-string { stroke: #666; stroke-width: 1.5; }
   .guitar-fret { stroke: #666; stroke-width: 1.5; }
   .guitar-fret-label { font-size: 11px; fill: #888; }
-  .guitar-barre { stroke: var(--chord-root-color); stroke-width: 9; stroke-linecap: round; }
-  .guitar-dot { fill: var(--chord-tone-color); }
+  .guitar-barre { stroke: var(--chord-position-color); stroke-width: 9; stroke-linecap: round; }
+  .guitar-dot { fill: var(--chord-position-color); }
   .guitar-finger { font-size: 10px; fill: #111; text-anchor: middle; }
   .guitar-muted { font-size: 13px; fill: #e57373; text-anchor: middle; }
+  .guitar-string-label { font-size: 10px; fill: #888; text-anchor: middle; }
   /* Guide panel's own inner layout — ported from `StaticAssets.swift`'s own copy (see there for
      the full reasoning): notation (left) — the two stacked keyboards (middle) — guitar tab
      (right), all 3 columns `flex: 0 0 auto` (natural content width, no grow) sharing one `gap`
@@ -613,6 +622,14 @@ function renderStaffSVG(history, minWidthPx, firstColOffset, displayHeightPx) {
       if (ev.chordRoot !== null && ev.chordRoot !== undefined && pc === ev.chordRoot) cls = 'root';
       else if (tones.has(pc)) cls = 'tone';
       else if (ev.chordRoot !== null && ev.chordRoot !== undefined) cls = 'outside';
+      // root/tone are colored by THIS EVENT's own chord root — see `StaticAssets.swift`'s own
+      // copy for why (a multi-chord sequence needs each column colored by its own chord).
+      let noteStyle = '';
+      if (cls === 'root') noteStyle = `fill:${PITCH_CLASS_COLORS[ev.chordRoot]};stroke:${PITCH_CLASS_COLORS[ev.chordRoot]};`;
+      else if (cls === 'tone') {
+        const toneColor = pastel(PITCH_CLASS_COLORS[ev.chordRoot], CHORD_TONE_FRACTION);
+        noteStyle = `fill:${toneColor};stroke:${toneColor};`;
+      }
       const cx = colX + (shiftByRow.get(n.row) ? 20 : 0);
       staffLedgerRows(n.row).forEach(li => {
         svg += `<line class="staff-ledger" x1="${cx - 12}" y1="${y(li)}" x2="${cx + 12}" y2="${y(li)}" />`;
@@ -624,9 +641,9 @@ function renderStaffSVG(history, minWidthPx, firstColOffset, displayHeightPx) {
         // centered on this x, so -15 left almost no gap before the notehead's own left edge
         // once the guide's own single-chord staff got rendered much larger than the shared
         // default — visually cramped/overlapping per feedback.
-        svg += `<text class="staff-accidental staff-note-${cls}" x="${cx - 18}" y="${y(n.row) + 4}">${glyph}</text>`;
+        svg += `<text class="staff-accidental staff-note-${cls}" x="${cx - 18}" y="${y(n.row) + 4}" style="${noteStyle}">${glyph}</text>`;
       }
-      svg += `<ellipse class="staff-note staff-note-${cls}" cx="${cx}" cy="${y(n.row)}" rx="${STAFF_NOTE_RX}" ry="${STAFF_NOTE_RY}" />`;
+      svg += `<ellipse class="staff-note staff-note-${cls}" cx="${cx}" cy="${y(n.row)}" rx="${STAFF_NOTE_RX}" ry="${STAFF_NOTE_RY}" style="${noteStyle}" />`;
     });
   });
 
@@ -828,6 +845,20 @@ let PITCH_CLASS_TEXT_COLORS = [
   '#ffffff', '#ffffff', '#ffffff', '#111111', '#ffffff', '#111111',
 ];
 
+// Same helper as `StaticAssets.swift`'s own copy (see there for the full doc comment) — kept
+// as a duplicate rather than shared, like every other function in this file.
+function pastel(hex, fraction) {
+  const value = parseInt(hex.replace('#', ''), 16);
+  const r = (value >> 16) & 0xff, g = (value >> 8) & 0xff, b = value & 0xff;
+  const mix = (c) => Math.round(c + (255 - c) * fraction);
+  return `#${[mix(r), mix(g), mix(b)].map(c => c.toString(16).padStart(2, '0')).join('')}`;
+}
+const CHORD_TONE_FRACTION = 0.45;
+// Standard tuning, low to high, index 0 = string 6 (low E) ... index 5 = string 1 (high e) —
+// same table as `StaticAssets.swift`'s own copy / the native `GuitarChordShape.Diagram
+// .soundedPitchClass(atStringIndex:)`.
+const OPEN_STRING_PITCH_CLASSES = [4, 9, 2, 7, 11, 4];
+
 // Real-piano geometry, matching `StaticAssets.swift`'s own `keyboardHTML` (see there for the
 // white/black-slot reasoning) — kept in sync by hand since the two pages are otherwise
 // independent (this one is interactive, that one is read-only). Twice the read-only page's
@@ -861,14 +892,20 @@ function guideReferenceKeyboardHTML(minMidi, maxMidi, rootPC, tonesPCs, rootClas
     let cls = '';
     if (rootPC !== null && rootPC !== undefined && pc === rootPC) cls = rootClass;
     else if (tones.has(pc)) cls = toneClass;
+    // `.root`/`.tone` (the CHORD keyboard) are colored inline by the chord's own root note
+    // identity — `.mode-root`/`.mode-tone` (the mode keyboard) are untouched, still CSS-var
+    // driven, a different concept (scale role, not chord-note identity).
+    let noteStyle = '';
+    if (cls === 'root') noteStyle = `background:${PITCH_CLASS_COLORS[rootPC]};`;
+    else if (cls === 'tone') noteStyle = `background:${pastel(PITCH_CLASS_COLORS[rootPC], CHORD_TONE_FRACTION)};`;
     if (WHITE_SLOT_BY_SEMITONE[pc] !== undefined) {
       const slot = octave * 7 + WHITE_SLOT_BY_SEMITONE[pc];
       const x = slot * GUIDE_WHITE_KEY_WIDTH;
-      whiteHTML += `<div class="pkey white ${cls}" style="left:${x}px; width:${GUIDE_WHITE_KEY_WIDTH}px; height:${GUIDE_WHITE_KEY_HEIGHT}px;"></div>`;
+      whiteHTML += `<div class="pkey white ${cls}" style="left:${x}px; width:${GUIDE_WHITE_KEY_WIDTH}px; height:${GUIDE_WHITE_KEY_HEIGHT}px; ${noteStyle}"></div>`;
     } else {
       const slot = octave * 7 + BLACK_AFTER_WHITE_SLOT[pc] + 1;
       const x = slot * GUIDE_WHITE_KEY_WIDTH - GUIDE_BLACK_KEY_WIDTH / 2;
-      blackHTML += `<div class="pkey black ${cls}" style="left:${x}px; width:${GUIDE_BLACK_KEY_WIDTH}px; height:${GUIDE_BLACK_KEY_HEIGHT}px;"></div>`;
+      blackHTML += `<div class="pkey black ${cls}" style="left:${x}px; width:${GUIDE_BLACK_KEY_WIDTH}px; height:${GUIDE_BLACK_KEY_HEIGHT}px; ${noteStyle}"></div>`;
     }
   }
   return `<div class="keyboard-scroll guide-keyboard-small"><div class="keyboard" style="width:${totalWidth}px; height:${GUIDE_WHITE_KEY_HEIGHT}px;">${whiteHTML}${blackHTML}</div></div>`;
@@ -877,7 +914,7 @@ function guideReferenceKeyboardHTML(minMidi, maxMidi, rootPC, tonesPCs, rootClas
 // Same rendering as `StaticAssets.swift`'s own `guitarChordDiagramHTML` — see that copy's
 // doc comment for the data shape/orientation. Kept as a duplicate rather than shared: these
 // two pages are otherwise independent JS bundles (see this file's own header comment).
-function guitarChordDiagramHTML(diagram) {
+function guitarChordDiagramHTML(diagram, rootPitchClass) {
   if (!diagram) return `<div class="field empty">${t('placeholderPasDePositionGuitareStandard')}</div>`;
   const frets = diagram.frets || [];
   const fingers = diagram.fingers || [];
@@ -891,14 +928,31 @@ function guitarChordDiagramHTML(diagram) {
   // this the tab diagram (a fixed absolute size, unlike the mode/chord keyboards or the notation
   // staff, both of which size themselves relative to the row) would look mismatched next to them.
   const SCALE = GUIDE_WHITE_KEY_WIDTH / 22;
-  const width = 150, height = 172, marginLeft = 24, marginTop = 22, marginBottom = 16;
+  // height/marginBottom +12 off their own original 172/16 (same delta on both, so `fretSpacing`
+  // below is unaffected) — just enough extra room for each string's own note-name label below
+  // the grid, per explicit request, same as `StaticAssets.swift`'s own copy.
+  const width = 150, height = 184, marginLeft = 24, marginTop = 22, marginBottom = 28;
   const displayWidth = width * SCALE, displayHeight = height * SCALE;
   const stringSpacing = (width - marginLeft * 2) / (stringCount - 1);
   const fretSpacing = (height - marginTop - marginBottom) / shownFrets;
+  const gridBottom = marginTop + shownFrets * fretSpacing;
   let svg = `<svg width="${displayWidth}" height="${displayHeight}" viewBox="0 0 ${width} ${height}" class="guitar-diagram">`;
+  // Each string colored by the note it actually sounds (root vs. any other chord tone), not
+  // by its position in the shape — see `StaticAssets.swift`'s own copy for why.
   for (let s = 0; s < stringCount; s++) {
     const x = marginLeft + s * stringSpacing;
-    svg += `<line x1="${x}" y1="${marginTop}" x2="${x}" y2="${marginTop + shownFrets * fretSpacing}" class="guitar-string" />`;
+    const relativeFret = frets[s];
+    let stringStyle = '';
+    if ((rootPitchClass !== null && rootPitchClass !== undefined) && relativeFret !== null && relativeFret !== undefined) {
+      const sounded = ((OPEN_STRING_PITCH_CLASSES[s] + diagram.barreFret + relativeFret) % 12 + 12) % 12;
+      const color = sounded === rootPitchClass ? PITCH_CLASS_COLORS[rootPitchClass] : pastel(PITCH_CLASS_COLORS[rootPitchClass], CHORD_TONE_FRACTION);
+      stringStyle = ` style="stroke:${color};"`;
+    }
+    svg += `<line x1="${x}" y1="${marginTop}" x2="${x}" y2="${marginTop + shownFrets * fretSpacing}" class="guitar-string"${stringStyle} />`;
+    if (relativeFret !== null && relativeFret !== undefined) {
+      const sounded = ((OPEN_STRING_PITCH_CLASSES[s] + diagram.barreFret + relativeFret) % 12 + 12) % 12;
+      svg += `<text x="${x}" y="${gridBottom + 14}" class="guitar-string-label">${NOTE_NAMES[sounded]}</text>`;
+    }
   }
   for (let f = 0; f <= shownFrets; f++) {
     const y = marginTop + f * fretSpacing;
@@ -1346,7 +1400,14 @@ function updateKeyVisuals() {
   document.querySelectorAll('#keyboard-container .pkey').forEach(el => {
     const pitch = parseInt(el.dataset.pitch, 10);
     const pc = ((pitch % 12) + 12) % 12;
-    el.className = keyClasses(pitch, pc);
+    const classList = keyClasses(pitch, pc).split(' ');
+    el.className = classList.join(' ');
+    // root/tone are colored inline by the chord's own root note identity (no CSS rule for
+    // them, see `.pkey.root`/`.pkey.tone`'s own comment) — every other role keeps its plain
+    // CSS-var-driven background, so clear any leftover inline background from a previous tick.
+    if (classList.includes('root')) el.style.background = PITCH_CLASS_COLORS[chordRoot];
+    else if (classList.includes('tone')) el.style.background = pastel(PITCH_CLASS_COLORS[chordRoot], CHORD_TONE_FRACTION);
+    else el.style.background = '';
     const badge = el.querySelector('.degree-badge');
     const role = roles[pc];
     if (role) {
@@ -1593,8 +1654,6 @@ function applyNoteColors(noteColors) {
   const style = document.documentElement.style;
   style.setProperty('--mode-root-color', noteColors.modeRootHex);
   style.setProperty('--mode-tone-color', noteColors.modeOtherHex);
-  style.setProperty('--chord-root-color', noteColors.chordRootHex);
-  style.setProperty('--chord-tone-color', noteColors.chordToneHex);
   style.setProperty('--held-outside-color', noteColors.heldOutsideChordHex);
   style.setProperty('--held-no-chord-color', noteColors.heldNoChordHex);
 }
@@ -1683,7 +1742,7 @@ async function refresh() {
           + renderStaffSVG([chordStaffEvent(state.guide.currentChordRoot, state.guide.currentChordTones)], 115, -14, 270) + `</div>`
         : '';
       const tabHTML = hasChord
-        ? `<h3>${t('headingTablatureGuideWeb')}</h3><div class="guide-col-fill">${guitarChordDiagramHTML(state.guide.currentChordGuitarDiagram)}</div>`
+        ? `<h3>${t('headingTablatureGuideWeb')}</h3><div class="guide-col-fill">${guitarChordDiagramHTML(state.guide.currentChordGuitarDiagram, state.guide.currentChordRoot)}</div>`
         : '';
       const guideLayoutHTML = `<div class="guide-layout">`
         + `<div class="guide-col-notation">${notationHTML}</div>`

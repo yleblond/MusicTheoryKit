@@ -44,6 +44,12 @@ struct ChordLibraryView: View {
         Chord(root: PitchClass(selectedRoot), template: ChordVocabulary.byID(selectedTemplateID) ?? ChordVocabulary.seed[0])
     }
 
+    /// The displayed chord's own root note color (from the active palette) for its root/tones,
+    /// shared by the staff, keyboard, and guitar diagram below.
+    private var noteColorScheme: PitchKeyboardColorScheme {
+        .noteBased(rootPitchClass: chord.root, palette: session.activeColorPalette.colors)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             #if os(macOS) || os(visionOS)
@@ -225,7 +231,7 @@ struct ChordLibraryView: View {
             // staff is normally just one narrow column, too cramped next to a 300pt keyboard and
             // the played-notes label right under it, per explicit request ("est-elle assez
             // large ?").
-            ChordStaffView(events: [staffEvent], heightScale: 0.85, minimumColumnCount: 3)
+            ChordStaffView(events: [staffEvent], colorScheme: noteColorScheme, heightScale: 0.85, minimumColumnCount: 3)
                 .alignmentGuide(.staffCenter) { $0[VerticalAlignment.center] }
             // Directly under the staff, per explicit request: what's ACTUALLY being played right
             // now on the "source principale" track, not just this chord's own reference notes.
@@ -244,6 +250,7 @@ struct ChordLibraryView: View {
             heldPitches: liveHeldPitches,
             chordRoot: chord.root.value,
             chordTones: chord.pitchClasses.map(\.value),
+            colorScheme: noteColorScheme,
             height: Self.chordKeyboardSize.height,
             keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: voicingPitches, style: session.notationStyle),
             referenceChordPitches: Set(voicingPitches)
@@ -255,6 +262,8 @@ struct ChordLibraryView: View {
     private var tablatureColumn: some View {
         GuitarChordDiagramView(
             root: selectedRoot, chordTemplateID: selectedTemplateID, inversion: inversion,
+            colorScheme: noteColorScheme,
+            notationStyle: session.notationStyle,
             language: session.currentLanguage
         )
     }

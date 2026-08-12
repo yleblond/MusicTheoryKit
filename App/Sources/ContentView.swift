@@ -201,6 +201,10 @@ struct ContentView: View {
     @State private var selectedTheorieTab: TheorieTab = .modes
     @State private var selectedCompositionTab: CompositionTab = .guide
     @State private var selectedSettingsTab: SettingsTab = .sons
+    /// Drives the bottom bar's tuning-fork button (see `temperamentQuickPickerButton`) — lets
+    /// the temperament/A4 reference be changed from any Théorie tab without navigating to
+    /// Intonations, per explicit request.
+    @State private var showsTuningQuickPicker = false
 
     /// Studio/Théorie always show the main-keyboard bar's own controls (toggle, detach,
     /// source picker); Settings only does while its own "Sons" sub-tab is active (testing a
@@ -450,22 +454,35 @@ struct ContentView: View {
                                 .labelsHidden()
                                 .font(.caption)
                                 .frame(maxWidth: Self.bottomBarLabelMaxWidth)
-                                // Passive reminder of the active Intonations temperament (line 1)
-                                // and the tonic+mode it's anchored to right now (line 2) while
-                                // browsing any Théorie tab — per explicit request, non-interactive
-                                // (the actual picker lives in the Intonations tab itself). Hidden
-                                // for "Égal" since that's acoustically a no-op, same as never
-                                // having touched the setting.
-                                if session.tuningConfiguration.temperamentID != "equal" {
-                                    VStack(alignment: .trailing, spacing: 0) {
-                                        Text(temperamentLabel(forID: session.tuningConfiguration.temperamentID, language: session.currentLanguage))
-                                            .font(.caption).foregroundStyle(.secondary)
-                                        if let contextualMode = session.contextualMode {
-                                            Text(contextualMode.displayName)
-                                                .font(.caption2).foregroundStyle(.secondary)
+                                // Quick access to the active temperament/A4 reference
+                                // (`session.tuningConfiguration`) from any Théorie tab, without
+                                // navigating to Intonations — per explicit request. Used to be a
+                                // passive reminder, hidden for "Égal"; now always shown (it's a
+                                // real control, not just a readout) — the tonic+mode line stays
+                                // passive (Intonations' own tonic/scale picker is still the only
+                                // place that changes it) and still hides for "Égal" alone, same
+                                // as before, since a mode reminder next to the no-op default
+                                // reads as noise.
+                                Button {
+                                    showsTuningQuickPicker = true
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "tuningfork")
+                                        VStack(alignment: .trailing, spacing: 0) {
+                                            Text(temperamentLabel(forID: session.tuningConfiguration.temperamentID, language: session.currentLanguage))
+                                                .font(.caption)
+                                            if session.tuningConfiguration.temperamentID != "equal", let contextualMode = session.contextualMode {
+                                                Text(contextualMode.displayName)
+                                                    .font(.caption2).foregroundStyle(.secondary)
+                                            }
                                         }
                                     }
                                     .lineLimit(1)
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(session.tuningConfiguration.temperamentID != "equal" ? Color.accentColor : Color.secondary)
+                                .popover(isPresented: $showsTuningQuickPicker) {
+                                    TuningQuickPickerView(session: session)
                                 }
                             } else if mode == .studio {
                                 // Studio: read-only, per explicit request — see

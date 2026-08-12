@@ -321,21 +321,17 @@ struct ModeLibraryView: View {
         }
     }
 
-    /// The mode keyboard's own mode-root/mode-tone colors (blue/cyan, `PitchKeyboardColorScheme`'s
-    /// own defaults) — reused for the scale staff's root/tone coloring instead of that view's own
-    /// default chord-root/chord-tone colors (red/yellow), so the two agree on what "this is the
-    /// tonic"/"this is a scale tone" looks like, per explicit request.
-    private var noteStaffColorScheme: PitchKeyboardColorScheme {
-        let defaults = PitchKeyboardColorScheme()
-        return PitchKeyboardColorScheme(chordRoot: defaults.modeRoot, chordTone: defaults.modeTone)
-    }
-
     /// Column 1 — the mode's own scale (+ Asc/Desc/Asc-et-Desc right under it), then its own
     /// keyboard directly below (used to sit beside it instead).
     private var scaleColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Each scale degree gets its OWN note color on the staff (active palette,
+            // `perPitchClassColors`) — unlike a chord's root/tones, no single degree should
+            // visually dominate the others here, per explicit request. The keyboard right below
+            // deliberately keeps its plain mode-role coloring (blue/cyan `showModeColoring`)
+            // instead, per explicit request — only the staff changed.
             ChordStaffView(
-                events: staffEvents, colorScheme: noteStaffColorScheme,
+                events: staffEvents, perPitchClassColors: session.activeColorPalette.colors,
                 heightScale: 0.8, widthScale: 0.56, highlightedIndex: playingNoteIndex, keySignature: modeKeySignature,
                 minimumColumnCount: sharedStaffColumnCount, onColumnTap: playSingleNote(atColumnIndex:)
             )
@@ -363,7 +359,8 @@ struct ModeLibraryView: View {
     private var chordsColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
             ChordStaffView(
-                events: chordsStaffEvents, heightScale: 0.8, widthScale: 0.56, highlightedIndex: selectedChordIndex, keySignature: modeKeySignature,
+                events: chordsStaffEvents, notePalette: session.activeColorPalette.colors,
+                heightScale: 0.8, widthScale: 0.56, highlightedIndex: selectedChordIndex, keySignature: modeKeySignature,
                 minimumColumnCount: sharedStaffColumnCount, onColumnTap: tapChordStaffColumn(at:)
             )
             .alignmentGuide(.staffCenter) { $0[VerticalAlignment.center] }
@@ -569,6 +566,7 @@ struct ModeLibraryView: View {
                 PitchKeyboardView(
                     chordRoot: chord.root.value,
                     chordTones: chord.pitchClasses.map(\.value),
+                    colorScheme: .noteBased(rootPitchClass: chord.root, palette: session.activeColorPalette.colors),
                     height: Self.modeKeyboardHeight,
                     keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: voicingPitches, style: session.notationStyle),
                     referenceChordPitches: Set(voicingPitches)

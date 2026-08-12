@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import MusicTheoryKit
 
 /// A 3-octave `PitchKeyboardView` excerpt, auto-centered on wherever `heldPitches` actually
 /// are (see `MiniPianoOverviewView.bestWindow`), with the full-range mini overview above it —
@@ -66,6 +67,7 @@ public struct AutoCenteredKeyboardView: View {
                 chordRoot: chordRoot,
                 chordTones: chordTones,
                 modeTones: modeTones,
+                colorScheme: chordRoot.map { .noteBased(rootPitchClass: PitchClass($0), palette: palette) } ?? PitchKeyboardColorScheme(),
                 palette: palette,
                 paletteTextColors: paletteTextColors,
                 onNoteOn: onNoteOn,

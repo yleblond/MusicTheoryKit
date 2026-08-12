@@ -25,6 +25,23 @@ public struct StaffEvent {
 public struct ChordStaffView: View {
     public let events: [StaffEvent]
     public let colorScheme: PitchKeyboardColorScheme
+    /// When set, overrides `colorScheme.chordRoot`/`chordTone` PER EVENT, derived from THAT
+    /// event's own `chordRoot` via `PitchKeyboardColorScheme.noteBased(rootPitchClass:palette:)`
+    /// — lets a multi-chord sequence (e.g. a progression, or a mode's own diatonic chords) color
+    /// each column by its own chord's root note identity instead of all columns sharing
+    /// whichever single color `colorScheme` was built with. An event with no `chordRoot` falls
+    /// back to `colorScheme` unchanged. `nil` (the default) leaves every existing call site's
+    /// single fixed `colorScheme` exactly as it was.
+    public let notePalette: [String]?
+    /// When set, every note is colored by its OWN pitch class's color in this palette (index =
+    /// pitch class, 0 = C ... 11 = B) — no root/tone/held-outside role, no attenuation, just
+    /// "this note's own fixed identity color," same idea as `PitchKeyboardView.customFillColors`.
+    /// For a scale/mode's own notes, where each degree should read by its own note color rather
+    /// than by "how it relates to the tonic" — unlike a chord's root/tones (`notePalette` above),
+    /// there's no single note here that should visually dominate the others. Takes priority over
+    /// both `colorScheme` and `notePalette` when set. `nil` (the default) leaves every existing
+    /// call site unaffected.
+    public let perPitchClassColors: [String]?
     /// Scales every HEIGHT-affecting dimension (row spacing, margins, clef size) uniformly —
     /// e.g. the Guide screen's own notation is 0.9 (10% shorter than the shared default),
     /// per explicit user request.
@@ -59,11 +76,14 @@ public struct ChordStaffView: View {
 
     public init(
         events: [StaffEvent], colorScheme: PitchKeyboardColorScheme = PitchKeyboardColorScheme(),
+        notePalette: [String]? = nil, perPitchClassColors: [String]? = nil,
         heightScale: CGFloat = 1, widthScale: CGFloat = 1, highlightedIndex: Int? = nil, keySignature: MajorKeySignature? = nil,
         minimumColumnCount: Int = 0, onColumnTap: ((Int) -> Void)? = nil
     ) {
         self.events = events
         self.colorScheme = colorScheme
+        self.notePalette = notePalette
+        self.perPitchClassColors = perPitchClassColors
         self.heightScale = heightScale
         self.widthScale = widthScale
         self.highlightedIndex = highlightedIndex
@@ -102,6 +122,10 @@ public struct ChordStaffView: View {
     private static let f3Row = rows.firstIndex { $0.midi == 53 }! // F3 — bass clef's two dots straddle this line
 
     private static let noteNames = ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"]
+    /// Same indexing as `noteNames` — each entry's own letter (e.g. "Db"/"F#" both keep their
+    /// own letter, D/F), used to check a note against `keySignature.affectedLetters` (a
+    /// letter-based question, not a pitch-class one — see the natural-sign logic below).
+    private static let lettersByPitchClass: [NoteLetter] = [.C, .D, .D, .E, .E, .F, .F, .G, .A, .A, .B, .B]
 
     private static func rowIndex(forPitch pitch: Int) -> Int? {
         let pc = ((pitch % 12) + 12) % 12
@@ -270,6 +294,14 @@ public struct ChordStaffView: View {
         }
 
         for (colIndex, event) in events.enumerated() {
+            // Per-EVENT override — see `notePalette`'s own doc comment. Falls back to the
+            // view's single `colorScheme` for an event with no `chordRoot` of its own.
+            let eventScheme: PitchKeyboardColorScheme
+            if let notePalette, let root = event.chordRoot {
+                eventScheme = .noteBased(rootPitchClass: PitchClass(root), palette: notePalette, base: colorScheme)
+            } else {
+                eventScheme = colorScheme
+            }
             let tones = Set(event.chordTones)
             let held = event.pitches.compactMap { pitch -> (pitch: Int, row: Int)? in
                 guard let row = Self.rowIndex(forPitch: pitch) else { return nil }
@@ -292,17 +324,32 @@ public struct ChordStaffView: View {
             for n in held {
                 let pc = ((n.pitch % 12) + 12) % 12
                 let color: Color
-                if let root = event.chordRoot, pc == root { color = colorScheme.chordRoot }
-                else if tones.contains(pc) { color = colorScheme.chordTone }
-                else if event.chordRoot != nil { color = colorScheme.heldOutsideChord }
+                if let perPitchClassColors {
+                    color = Color(hex: perPitchClassColors[pc])
+                } else if let root = event.chordRoot, pc == root { color = eventScheme.chordRoot }
+                else if tones.contains(pc) { color = eventScheme.chordTone }
+                else if event.chordRoot != nil { color = eventScheme.heldOutsideChord }
                 else { color = .primary }
                 let cx = colX + (shiftByRow[n.row] == true ? zigzagShift : 0)
                 for li in Self.ledgerRows(for: n.row) {
                     drawLine(context: context, y: y(li), x1: cx - ledgerHalfWidth, x2: cx + ledgerHalfWidth)
                 }
                 let name = Self.noteNames[pc]
-                if name.count > 1 && !(keySignature?.affectedPitchClasses.contains(pc) ?? false) {
-                    let glyph = name.contains("#") ? "\u{266F}" : "\u{266D}"
+                // A note whose own name has an accidental gets it drawn inline, UNLESS the key
+                // signature already implies it (that pitch class is one of its own
+                // `affectedPitchClasses`) — same as before. A NATURAL note (no accidental of
+                // its own) whose LETTER the signature nonetheless alters (e.g. a plain F in a
+                // 1-sharp key, where the signature implies every F is F#) needs a natural sign
+                // instead — the signature's own sharp/flat doesn't apply to THIS occurrence.
+                var glyph: String?
+                if name.count > 1 {
+                    if !(keySignature?.affectedPitchClasses.contains(pc) ?? false) {
+                        glyph = name.contains("#") ? "\u{266F}" : "\u{266D}"
+                    }
+                } else if let keySignature, keySignature.affectedLetters.contains(Self.lettersByPitchClass[pc]) {
+                    glyph = "\u{266E}"
+                }
+                if let glyph {
                     context.draw(
                         Text(glyph).font(.system(size: 19)).foregroundStyle(color),
                         at: CGPoint(x: cx - accidentalOffset, y: y(n.row)), anchor: .center

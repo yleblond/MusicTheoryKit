@@ -92,8 +92,13 @@ public let webConsoleIndexHTML = """
   :root {
     --mode-root-color: #ff9800;
     --mode-tone-color: #00bcd4;
-    --chord-root-color: #e91e63;
-    --chord-tone-color: #fdd835;
+    /* A chord's root/tone keys, staff notes, mini-piano dots, and guitar strings are colored
+       per-render (inline style) by the note's own identity in the active palette (see
+       `PITCH_CLASS_COLORS`/`pastel()`) instead of one fixed color shared by every chord — see
+       `keyboardHTML`/`renderStaffSVG`/`renderObserverMiniPianoOverview`/`guitarChordDiagramHTML`.
+       Only the guitar diagram's barre/finger-position dots (a fingering indicator, independent
+       of which note they land on) still use one fixed color. */
+    --chord-position-color: #0a84ff;
     --held-outside-color: #4caf50;
     --held-no-chord-color: #ffffff;
   }
@@ -107,8 +112,10 @@ public let webConsoleIndexHTML = """
   .pkey { position: absolute; top: 0; box-sizing: border-box; border: 1px solid #333; border-radius: 0 0 4px 4px; }
   .pkey.white { background: #f5f5f5; z-index: 1; }
   .pkey.black { background: #1a1a1a; z-index: 2; box-shadow: 0 2px 3px rgba(0,0,0,0.5); }
-  .pkey.root { background: var(--chord-root-color) !important; }
-  .pkey.tone { background: var(--chord-tone-color) !important; }
+  /* .pkey.root/.pkey.tone have no CSS rule here — `keyboardHTML` colors them with an inline
+     `style` instead, since the right color for "root"/"tone" now depends on which chord is
+     shown (the root note's own color in the active palette), not one fixed color for every
+     chord. */
   .pkey.outside { background: var(--held-outside-color) !important; }
   .pkey.held { background: var(--held-no-chord-color) !important; }
   /* The default held/outside colors (white/green) barely show up on a WHITE key that's
@@ -126,18 +133,21 @@ public let webConsoleIndexHTML = """
      terminal's KeyboardColor.modeRoot/modeOther. */
   .pkey.mode-root { background: var(--mode-root-color) !important; }
   .pkey.mode-tone { background: var(--mode-tone-color) !important; }
-  /* Guide panel's guitar-tab diagram (see guitarChordDiagramHTML) — root color for the
-     barre/dots, deliberately reusing --chord-root-color/--chord-tone-color so a fingered
-     note's color is consistent with the chord keyboard right above it. */
+  /* Guide panel's guitar-tab diagram (see guitarChordDiagramHTML) — barre/dots mark a
+     FINGERING position, independent of which note that string actually sounds (the barre
+     isn't always on the root string, e.g. a D-G-B triad inversion), so they get one fixed
+     "position" color rather than a note color. Each string's own color (root vs. any other
+     chord tone vs. muted) is set inline instead — see `guitarChordDiagramHTML`. */
   .guitar-diagram { display: block; margin: 0.3rem 0 0.6rem; }
   .guitar-diagram-label { font-size: 1.5rem; font-weight: bold; color: #ddd; margin: 0 0 -8px; line-height: 1.1; text-align: center; }
   .guitar-string { stroke: #666; stroke-width: 1.5; }
   .guitar-fret { stroke: #666; stroke-width: 1.5; }
   .guitar-fret-label { font-size: 11px; fill: #888; }
-  .guitar-barre { stroke: var(--chord-root-color); stroke-width: 9; stroke-linecap: round; }
-  .guitar-dot { fill: var(--chord-tone-color); }
+  .guitar-barre { stroke: var(--chord-position-color); stroke-width: 9; stroke-linecap: round; }
+  .guitar-dot { fill: var(--chord-position-color); }
   .guitar-finger { font-size: 10px; fill: #111; text-anchor: middle; }
   .guitar-muted { font-size: 13px; fill: #e57373; text-anchor: middle; }
+  .guitar-string-label { font-size: 10px; fill: #888; text-anchor: middle; }
   .staff-scroll { overflow-x: auto; max-width: 100%; }
   /* width: auto (not a fixed px) — the SVG's viewBox now grows with history length, so its
      natural aspect ratio (preserved by leaving width unset) is what should scale, not a fixed
@@ -194,11 +204,10 @@ public let webConsoleIndexHTML = """
   .mini-key-black { fill: #1a1a1a; }
   .mini-piano-active { fill: none; stroke: #e91e63; stroke-width: 1.5; }
   /* Small dots marking exactly where the observed track's currently-held notes are, same
-     colors as the big keyboard's own `.pkey.*` (root/tone use the user's configurable note
-     colors; held/outside use the same fixed dark gray as the big keyboard's own held/outside
-     keys — see that rule's own comment for why it's not a `--held-*-color` custom property). */
-  .mini-note-root { fill: var(--chord-root-color); }
-  .mini-note-tone { fill: var(--chord-tone-color); }
+     colors as the big keyboard's own `.pkey.*` (root/tone are colored inline by note identity,
+     same as `keyboardHTML`; held/outside use the same fixed dark gray as the big keyboard's
+     own held/outside keys — see that rule's own comment for why it's not a `--held-*-color`
+     custom property). */
   .mini-note-held, .mini-note-outside { fill: #555; }
   /* Guide panel's own inner layout: notation (left) — the two stacked keyboards (middle) —
      guitar tab (right). A distinct set of classes from `.layout-columns` above (that one is
@@ -294,6 +303,21 @@ let PITCH_CLASS_TEXT_COLORS = [
   '#ffffff', '#ffffff', '#ffffff', '#111111', '#ffffff', '#111111',
 ];
 
+// A chord tone's own color is the same as its root's, just lightened — mirrors the native
+// app's `Color.pastel(hex:fraction:)` (`Sources/JamShackUI/Tonnetz.swift`): blends "#RRGGBB"
+// toward white by `fraction` (0 = unchanged, 1 = white), computed directly on the hex
+// components so it works the same everywhere a plain hex string is already used (inline
+// `style` attributes, SVG fills), no DOM/CSS resolution needed.
+function pastel(hex, fraction) {
+  const value = parseInt(hex.replace('#', ''), 16);
+  const r = (value >> 16) & 0xff, g = (value >> 8) & 0xff, b = value & 0xff;
+  const mix = (c) => Math.round(c + (255 - c) * fraction);
+  return `#${[mix(r), mix(g), mix(b)].map(c => c.toString(16).padStart(2, '0')).join('')}`;
+}
+// Same attenuation every note-based coloring below uses for a chord's non-root tones — one
+// shared constant so the keyboard/staff/mini-piano/tablature all read consistently.
+const CHORD_TONE_FRACTION = 0.45;
+
 // One accent color per track, assigned by its position in `state.tracks` (not by anything
 // about the track itself, so it's stable across a session but says nothing musical) — lets
 // a multi-instrument setup tell "who's playing this" apart at a glance, both next to each
@@ -378,15 +402,21 @@ function keyboardHTML(heldPitches, chordRoot, chordTones, modeTones, alwaysShowC
       if (pc === modeRootPC) cls = 'mode-root';
       else if (role) cls = 'mode-tone';
     }
+    // root/tone have no CSS background rule (see `.pkey.root`/`.pkey.tone`'s own comment) —
+    // colored here instead, by the CHORD's root note (not this key's own pitch class), so
+    // every key sharing that root's identity (all its tones) reads consistently.
+    let noteStyle = '';
+    if (cls === 'root') noteStyle = `background:${PITCH_CLASS_COLORS[chordRoot]};`;
+    else if (cls === 'tone') noteStyle = `background:${pastel(PITCH_CLASS_COLORS[chordRoot], CHORD_TONE_FRACTION)};`;
     if (WHITE_SLOT_BY_SEMITONE[pc] !== undefined) {
       const slot = octave * 7 + WHITE_SLOT_BY_SEMITONE[pc];
       const x = slot * whiteW;
-      whiteHTML += `<div class="pkey white ${cls}" style="left:${x}px; width:${whiteW}px; height:${whiteH}px;">${badge}</div>`;
+      whiteHTML += `<div class="pkey white ${cls}" style="left:${x}px; width:${whiteW}px; height:${whiteH}px; ${noteStyle}">${badge}</div>`;
     } else {
       const whiteSlotBefore = BLACK_AFTER_WHITE_SLOT[pc];
       const slot = octave * 7 + whiteSlotBefore + 1;
       const x = slot * whiteW - blackW / 2;
-      blackHTML += `<div class="pkey black ${cls}" style="left:${x}px; width:${blackW}px; height:${blackH}px;">${badge}</div>`;
+      blackHTML += `<div class="pkey black ${cls}" style="left:${x}px; width:${blackW}px; height:${blackH}px; ${noteStyle}">${badge}</div>`;
     }
   }
   // The keyboard itself is necessarily a fixed pixel width (`.pkey` children are absolutely
@@ -571,6 +601,15 @@ function renderStaffSVG(history, minWidthPx, firstColOffset, displayHeightPx) {
       if (ev.chordRoot !== null && ev.chordRoot !== undefined && pc === ev.chordRoot) cls = 'root';
       else if (tones.has(pc)) cls = 'tone';
       else if (ev.chordRoot !== null && ev.chordRoot !== undefined) cls = 'outside';
+      // root/tone are colored by THIS EVENT's own chord root (not a single fixed color) —
+      // each column in a multi-chord sequence (e.g. a progression) reads by its own chord's
+      // note identity, not whichever chord happens to be first.
+      let noteStyle = '';
+      if (cls === 'root') noteStyle = `fill:${PITCH_CLASS_COLORS[ev.chordRoot]};stroke:${PITCH_CLASS_COLORS[ev.chordRoot]};`;
+      else if (cls === 'tone') {
+        const toneColor = pastel(PITCH_CLASS_COLORS[ev.chordRoot], CHORD_TONE_FRACTION);
+        noteStyle = `fill:${toneColor};stroke:${toneColor};`;
+      }
       const cx = colX + (shiftByRow.get(n.row) ? 20 : 0);
       staffLedgerRows(n.row).forEach(li => {
         svg += `<line class="staff-ledger" x1="${cx - 12}" y1="${y(li)}" x2="${cx + 12}" y2="${y(li)}" />`;
@@ -582,9 +621,9 @@ function renderStaffSVG(history, minWidthPx, firstColOffset, displayHeightPx) {
         // centered on this x, so -15 left almost no gap before the notehead's own left edge
         // (`cx - STAFF_NOTE_RX`) once the guide's own single-chord staff got rendered much
         // larger than the shared default — visually cramped/overlapping per feedback.
-        svg += `<text class="staff-accidental staff-note-${cls}" x="${cx - 18}" y="${y(n.row) + 4}">${glyph}</text>`;
+        svg += `<text class="staff-accidental staff-note-${cls}" x="${cx - 18}" y="${y(n.row) + 4}" style="${noteStyle}">${glyph}</text>`;
       }
-      svg += `<ellipse class="staff-note staff-note-${cls}" cx="${cx}" cy="${y(n.row)}" rx="${STAFF_NOTE_RX}" ry="${STAFF_NOTE_RY}" />`;
+      svg += `<ellipse class="staff-note staff-note-${cls}" cx="${cx}" cy="${y(n.row)}" rx="${STAFF_NOTE_RX}" ry="${STAFF_NOTE_RY}" style="${noteStyle}" />`;
     });
   });
 
@@ -813,7 +852,13 @@ function renderWheel(wheel, tracks, progressionChords) {
 // String order left-to-right matches `diagram.frets`/`fingers`: index 0 = string 6 (low E)
 // on the left, index 5 = string 1 (high e) on the right — the same orientation as looking at
 // a right-handed guitar's fretboard face-on.
-function guitarChordDiagramHTML(diagram) {
+// Standard tuning, low to high, index 0 = string 6 (low E) ... index 5 = string 1 (high e) —
+// same table/derivation as the native `GuitarChordShape.Diagram.soundedPitchClass(atStringIndex:)`
+// (`Sources/AppCore/GuitarChordShapes.swift`), ported here since WebConsole has no dependency on
+// MusicTheoryKit/AppCore by design.
+const OPEN_STRING_PITCH_CLASSES = [4, 9, 2, 7, 11, 4];
+
+function guitarChordDiagramHTML(diagram, rootPitchClass) {
   if (!diagram) return `<div class="field empty">${t('placeholderPasDePositionGuitareStandard')}</div>`;
   const frets = diagram.frets || [];
   const fingers = diagram.fingers || [];
@@ -821,14 +866,33 @@ function guitarChordDiagramHTML(diagram) {
   const shownFrets = 4; // barre fret + 3 more — enough for every covered shape's highest offset (+3)
   // marginTop reduced from its original 28 — just enough room left for the muted-string "×"
   // markers/fret-number label above the first fret line, per feedback that the gap between the
-  // chord-name label above and the grid itself read as too tall.
-  const width = 150, height = 172, marginLeft = 24, marginTop = 22, marginBottom = 16;
+  // chord-name label above and the grid itself read as too tall. height/marginBottom +12 off
+  // their own original 172/16 (same delta on both, so `fretSpacing` below is unaffected) — just
+  // enough extra room for each string's own note-name label below the grid, per explicit request.
+  const width = 150, height = 184, marginLeft = 24, marginTop = 22, marginBottom = 28;
   const stringSpacing = (width - marginLeft * 2) / (stringCount - 1);
   const fretSpacing = (height - marginTop - marginBottom) / shownFrets;
+  const gridBottom = marginTop + shownFrets * fretSpacing;
   let svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" class="guitar-diagram">`;
+  // Each string is colored by the note it actually sounds (root vs. any other chord tone),
+  // not by its position in the shape — the root doesn't always fall on string 6 (e.g. a D-G-B
+  // triad inversion). A muted string, or no known chord root, stays the plain neutral color.
   for (let s = 0; s < stringCount; s++) {
     const x = marginLeft + s * stringSpacing;
-    svg += `<line x1="${x}" y1="${marginTop}" x2="${x}" y2="${marginTop + shownFrets * fretSpacing}" class="guitar-string" />`;
+    const relativeFret = frets[s];
+    let stringStyle = '';
+    if ((rootPitchClass !== null && rootPitchClass !== undefined) && relativeFret !== null && relativeFret !== undefined) {
+      const sounded = ((OPEN_STRING_PITCH_CLASSES[s] + diagram.barreFret + relativeFret) % 12 + 12) % 12;
+      const color = sounded === rootPitchClass ? PITCH_CLASS_COLORS[rootPitchClass] : pastel(PITCH_CLASS_COLORS[rootPitchClass], CHORD_TONE_FRACTION);
+      stringStyle = ` style="stroke:${color};"`;
+    }
+    svg += `<line x1="${x}" y1="${marginTop}" x2="${x}" y2="${marginTop + shownFrets * fretSpacing}" class="guitar-string"${stringStyle} />`;
+    // Which note this string actually sounds, labeled right below the grid — a muted string
+    // gets no label, per explicit request.
+    if (relativeFret !== null && relativeFret !== undefined) {
+      const sounded = ((OPEN_STRING_PITCH_CLASSES[s] + diagram.barreFret + relativeFret) % 12 + 12) % 12;
+      svg += `<text x="${x}" y="${gridBottom + 14}" class="guitar-string-label">${NOTE_NAMES[sounded]}</text>`;
+    }
   }
   for (let f = 0; f <= shownFrets; f++) {
     const y = marginTop + f * fretSpacing;
@@ -925,7 +989,7 @@ function renderGuide(guide) {
       + renderStaffSVG([chordStaffEvent(guide.currentChordRoot, guide.currentChordTones)], 84, -10, 380) + `</div>`
     : '';
   const tabHTML = hasChord
-    ? `<h3>${t('headingTablatureGuideWeb')}</h3><div class="guide-col-fill">${guitarChordDiagramHTML(guide.currentChordGuitarDiagram)}</div>`
+    ? `<h3>${t('headingTablatureGuideWeb')}</h3><div class="guide-col-fill">${guitarChordDiagramHTML(guide.currentChordGuitarDiagram, guide.currentChordRoot)}</div>`
     : '';
 
   html += `<div class="guide-layout">`
@@ -1042,7 +1106,12 @@ function renderObserverMiniPianoOverview(svgTargetWidth, highlightMinMidi, highl
   (heldPitches || []).forEach(pitch => {
     if (pitch < MINI_PIANO_MIN || pitch > MINI_PIANO_MAX) return;
     const cls = heldNoteClass(pitch, chordRoot, chordTones);
-    svg += `<circle class="mini-note mini-note-${cls}" cx="${miniNoteX(pitch)}" cy="${MINI_WHITE_HEIGHT / 2}" r="2.2" />`;
+    // root/tone are colored inline by the chord's own root note identity (same as the big
+    // keyboard's `.pkey.root`/`.pkey.tone`, see `keyboardHTML`) — no CSS rule for them here.
+    let noteStyle = '';
+    if (cls === 'root') noteStyle = ` style="fill:${PITCH_CLASS_COLORS[chordRoot]};"`;
+    else if (cls === 'tone') noteStyle = ` style="fill:${pastel(PITCH_CLASS_COLORS[chordRoot], CHORD_TONE_FRACTION)};"`;
+    svg += `<circle class="mini-note mini-note-${cls}" cx="${miniNoteX(pitch)}" cy="${MINI_WHITE_HEIGHT / 2}" r="2.2"${noteStyle} />`;
   });
   svg += '</svg>';
   return svg;
@@ -1624,8 +1693,6 @@ function applyNoteColors(noteColors) {
   const style = document.documentElement.style;
   style.setProperty('--mode-root-color', noteColors.modeRootHex);
   style.setProperty('--mode-tone-color', noteColors.modeOtherHex);
-  style.setProperty('--chord-root-color', noteColors.chordRootHex);
-  style.setProperty('--chord-tone-color', noteColors.chordToneHex);
   style.setProperty('--held-outside-color', noteColors.heldOutsideChordHex);
   style.setProperty('--held-no-chord-color', noteColors.heldNoChordHex);
 }

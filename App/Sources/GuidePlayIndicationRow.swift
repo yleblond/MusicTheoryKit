@@ -35,6 +35,13 @@ struct GuidePlayIndicationRow: View {
 
     private var hasChord: Bool { guide.currentChordIndex != nil }
 
+    /// The current chord's own root note color (from the active palette) — `nil` when no
+    /// chord is selected, in which case the keyboard/staff/tablature below fall back to their
+    /// own plain defaults.
+    private var noteColorScheme: PitchKeyboardColorScheme? {
+        guide.currentChordRoot.map { .noteBased(rootPitchClass: PitchClass($0), palette: palette) }
+    }
+
     var body: some View {
         if hasChord {
             HStack(alignment: .top, spacing: 8) {
@@ -53,6 +60,7 @@ struct GuidePlayIndicationRow: View {
             Text(L10n.string(.headingPartitionGuideWeb, language)).font(.caption).foregroundStyle(.secondary)
             ChordStaffView(
                 events: [ChordStaffView.chordEvent(root: guide.currentChordRoot ?? 0, tones: guide.currentChordTones)],
+                colorScheme: noteColorScheme ?? PitchKeyboardColorScheme(),
                 heightScale: Self.staffHeightScale
             )
         }
@@ -73,6 +81,7 @@ struct GuidePlayIndicationRow: View {
                 PitchKeyboardView(
                     minMidi: Self.keyboardMinMidi, maxMidi: Self.keyboardMaxMidi,
                     chordRoot: guide.currentChordRoot, chordTones: guide.currentChordTones, alwaysShowChord: true,
+                    colorScheme: noteColorScheme ?? PitchKeyboardColorScheme(),
                     palette: palette, paletteTextColors: paletteTextColors,
                     height: Self.keyboardHeight
                 )
@@ -86,7 +95,9 @@ struct GuidePlayIndicationRow: View {
             Text(L10n.string(.headingTablatureGuideWeb, language)).font(.caption).foregroundStyle(.secondary)
             GuitarChordDiagramView(
                 webDiagram: guide.currentChordGuitarDiagram,
-                fallbackLabel: guide.currentChordProgression[safe: guide.currentChordIndex ?? -1]?.label ?? ""
+                fallbackLabel: guide.currentChordProgression[safe: guide.currentChordIndex ?? -1]?.label ?? "",
+                root: guide.currentChordRoot,
+                colorScheme: noteColorScheme ?? PitchKeyboardColorScheme()
             )
         }
     }

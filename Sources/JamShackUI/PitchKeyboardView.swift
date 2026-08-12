@@ -49,6 +49,34 @@ public struct PitchKeyboardColorScheme: Sendable {
     }
 }
 
+public extension PitchKeyboardColorScheme {
+    /// `chordRoot`/`chordTone` derived from the root note's own color in `palette` (index =
+    /// pitch class, 0 = C ... 11 = B, same indexing as `ColorPalette.colors`/
+    /// `ImprovSession.activeColorPalette`) instead of the fixed red/yellow defaults — so a
+    /// displayed chord reads by the identity of its root note, not by a role shared by every
+    /// chord. Every other role (`held`/`heldOutsideChord`/`modeRoot`/`modeTone`) is left as
+    /// `base` leaves it — this only changes how the chord's OWN notes are colored.
+    static func noteBased(rootPitchClass: PitchClass, palette: [String], base: PitchKeyboardColorScheme = PitchKeyboardColorScheme()) -> PitchKeyboardColorScheme {
+        var scheme = base
+        let rootHex = palette[rootPitchClass.value]
+        scheme.chordRoot = Color(hex: rootHex)
+        scheme.chordTone = Color.pastel(hex: rootHex, fraction: 0.45)
+        return scheme
+    }
+
+    /// Same derivation as `noteBased(rootPitchClass:palette:base:)`, but for `modeRoot`/
+    /// `modeTone` instead of `chordRoot`/`chordTone` — a mode/scale display's own tonic and
+    /// other scale degrees, same "root gets the full note color, everything else gets it
+    /// attenuated" idea, just for the mode role rather than the chord role.
+    static func noteBasedMode(rootPitchClass: PitchClass, palette: [String], base: PitchKeyboardColorScheme = PitchKeyboardColorScheme()) -> PitchKeyboardColorScheme {
+        var scheme = base
+        let rootHex = palette[rootPitchClass.value]
+        scheme.modeRoot = Color(hex: rootHex)
+        scheme.modeTone = Color.pastel(hex: rootHex, fraction: 0.45)
+        return scheme
+    }
+}
+
 /// A small labeled circle drawn above a key — see `PitchKeyboardView.noteBadges`'s own doc
 /// comment for what it's for and how it differs from the mode's own scale-degree badge.
 public struct KeyBadge: Sendable {

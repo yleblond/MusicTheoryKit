@@ -1,4 +1,5 @@
 import SwiftUI
+import MusicTheoryKit
 
 /// Maps a typed character to a MIDI pitch, mirroring GarageBand's "Musical Typing" layout —
 /// same mapping `Sources/JamShack/main.swift`'s own `computerKeyboardNoteMap` uses (kept as a
@@ -215,6 +216,7 @@ public struct ComputerKeyboardInputBar: View {
                 minMidi: 21, maxMidi: 108, heldPitches: heldPitches,
                 chordRoot: chordRoot, chordTones: chordTones,
                 modeTones: modeTones, alwaysShowChord: alwaysShowChord, showModeColoring: showModeColoring,
+                colorScheme: chordRoot.map { .noteBased(rootPitchClass: PitchClass($0), palette: palette) } ?? PitchKeyboardColorScheme(),
                 palette: palette, paletteTextColors: paletteTextColors,
                 onNoteOn: onNoteOn, onNoteOff: onNoteOff, height: 90,
                 keyLabels: shiftedKeyLabels, highlightedPitches: highlightedRange,

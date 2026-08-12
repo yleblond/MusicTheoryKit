@@ -53,6 +53,15 @@ struct ProgressionLibraryView: View {
         Mode(tonic: PitchClass(selectedTonic), scale: ScaleLibrary.byID(selectedScaleID) ?? ScaleLibrary.byID("ionian")!)
     }
 
+    /// The mode's parent major key's conventional signature — same derivation as
+    /// `ModeLibraryView.modeKeySignature` (see there for why `CircleOfFifths.parentTonic`, not
+    /// `MajorKeySignature.forMajorTonic(mode.tonic.value)` directly); `nil` for any scale
+    /// outside the 7 classic modes, same restriction `parentTonic` itself already has — the
+    /// staff below just falls back to its original per-note accidentals in that case.
+    private var modeKeySignature: MajorKeySignature? {
+        CircleOfFifths.parentTonic(for: mode).map { MajorKeySignature.forMajorTonic($0.value) }
+    }
+
     /// `session.chordProgressionTemplates` de-duplicated by name, first occurrence wins,
     /// order preserved — the underlying store can (and, on at least one real device, does)
     /// end up with more than one record sharing the same name (e.g. after a CloudKit/local
@@ -314,23 +323,28 @@ struct ProgressionLibraryView: View {
     private var chordListSection: some View {
         FlowLayout(horizontalSpacing: 8, verticalSpacing: 8) {
             ForEach(Array(resolvedReferences.enumerated()), id: \.offset) { index, reference in
+                // Filled with this chord's own root note color (active palette) instead of a
+                // plain accent tint — "which chord is current" now reads from the border/bold
+                // text alone, since the fill is spoken for by note identity. The text color is
+                // the palette's own precomputed legible pairing for that root (`ColorPalette
+                // .textColors`), not a fixed `.secondary`/`.primary`, since a saturated fill can
+                // need either black or white to stay readable depending on the note.
+                let rootHex = session.activeColorPalette.colors[reference.root]
+                let textColor = Color(hex: session.activeColorPalette.textColors[reference.root])
                 Button {
                     currentChordIndex = index
                     playSingleChord(reference)
                 } label: {
                     VStack(spacing: 2) {
-                        Text("\(index + 1)").font(.caption2).foregroundStyle(.secondary)
-                        Text(chordDisplayName(reference)).fontWeight(index == currentChordIndex ? .bold : .regular)
+                        Text("\(index + 1)").font(.caption2).foregroundStyle(textColor.opacity(0.75))
+                        Text(chordDisplayName(reference)).fontWeight(index == currentChordIndex ? .bold : .regular).foregroundStyle(textColor)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(index == currentChordIndex ? Color.accentColor.opacity(0.2) : Color.clear)
-                    )
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color(hex: rootHex)))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                            .stroke(index == currentChordIndex ? Color.accentColor : Color.black.opacity(0.15), lineWidth: index == currentChordIndex ? 2 : 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -352,8 +366,10 @@ struct ProgressionLibraryView: View {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(progressionStaffRows(forWidth: staffAvailableWidth).enumerated()), id: \.offset) { _, row in
                     ChordStaffView(
-                        events: row.map(\.event), heightScale: Self.progressionStaffScale, widthScale: Self.progressionStaffScale,
+                        events: row.map(\.event), notePalette: session.activeColorPalette.colors,
+                        heightScale: Self.progressionStaffScale, widthScale: Self.progressionStaffScale,
                         highlightedIndex: row.firstIndex(where: { $0.offset == currentChordIndex }),
+                        keySignature: modeKeySignature,
                         onColumnTap: { localIndex in
                             guard row.indices.contains(localIndex) else { return }
                             let globalIndex = row[localIndex].offset
@@ -402,13 +418,19 @@ struct ProgressionLibraryView: View {
     private var tablatureAndKeyboardColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let currentReference {
-                GuitarChordDiagramView(root: currentReference.root, chordTemplateID: currentReference.chordTemplateID, language: session.currentLanguage)
+                GuitarChordDiagramView(
+                    root: currentReference.root, chordTemplateID: currentReference.chordTemplateID,
+                    colorScheme: .noteBased(rootPitchClass: PitchClass(currentReference.root), palette: session.activeColorPalette.colors),
+                    notationStyle: session.notationStyle,
+                    language: session.currentLanguage
+                )
                     .frame(width: Self.progressionKeyboardSize.width / 2)
             }
             PitchKeyboardView(
                 heldPitches: liveHeldPitches,
                 chordRoot: currentChord?.root.value,
                 chordTones: currentChord?.pitchClasses.map(\.value) ?? [],
+                colorScheme: currentChord.map { .noteBased(rootPitchClass: $0.root, palette: session.activeColorPalette.colors) } ?? PitchKeyboardColorScheme(),
                 height: Self.progressionKeyboardSize.height,
                 keyLabels: PitchKeyboardView.noteNameKeyLabels(forPitches: currentChordVoicingPitches, style: session.notationStyle),
                 referenceChordPitches: Set(currentChordVoicingPitches)

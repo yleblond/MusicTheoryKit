@@ -184,3 +184,20 @@ public enum GuitarChordShape {
         "\(PitchClass(root).name())\(chordTemplateID)"
     }
 }
+
+public extension GuitarChordShape.Diagram {
+    /// Standard tuning, low to high, index 0 = string 6 (low E) ... index 5 = string 1 (high e)
+    /// — same string ordering as `positions`.
+    private static let openStringPitchClasses = [4, 9, 2, 7, 11, 4]
+
+    /// The actual note this string sounds once fretted (`nil` for a muted string) — NOT the
+    /// same thing as "is this string index 0", since the root doesn't always fall there: true
+    /// for the 6-string E-shape barre table (`shapesByTemplateID`), but not for the D-G-B triad
+    /// inversion shapes (`triadInversionShapesByTemplateID`), where the root can land on any of
+    /// the 3 active strings depending on which inversion. Used to color each string by which
+    /// chord tone it plays (root vs. any other tone) rather than by its position in the shape.
+    func soundedPitchClass(atStringIndex index: Int) -> PitchClass? {
+        guard let relativeFret = positions[index].relativeFret else { return nil }
+        return PitchClass(Self.openStringPitchClasses[index] + barreFret + relativeFret)
+    }
+}
