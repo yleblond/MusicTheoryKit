@@ -440,6 +440,13 @@ public enum L10nKey: String, CaseIterable, Sendable {
 
     // MARK: - App: Théorie > Tonnetz
     case appTabTonnetz, appModeTonnetzHarmonique, appModeTonnetzPerformance, appToggleTonnetzCouleursIdentite
+    case appTonnetzLegendFifth, appTonnetzLegendMajorThird, appTonnetzLegendMinorThird
+    case appTonnetzLegendMajorTriad, appTonnetzLegendMinorTriad
+    case appLabelModeOptionnel, appLabelCercleDesQuintes
+    case appHelpTonnetzTitle, appHelpTonnetzAxes, appHelpTonnetzTriangles, appHelpTonnetzGraphs, appHelpTonnetzDiatonic
+
+    // MARK: - App: Théorie — bouton d'aide générique par écran
+    case appButtonTheorie
 
     // MARK: - App: Théorie > Intonations
     case appTabIntonations

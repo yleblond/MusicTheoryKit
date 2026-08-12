@@ -93,6 +93,15 @@ struct JamShackApp: App {
         }
         .environment(appModel)
         .defaultSize(width: 1100, height: 800)
+
+        // Larger than the other Théorie windows — its 3-graph band layout (Performance on top,
+        // Harmonic+Circle-of-fifths below) needs more room to avoid feeling cramped.
+        WindowGroup(id: AuxiliaryWindowID.theorieTonnetz.rawValue) {
+            TonnetzWindow()
+                .preferredColorScheme(.dark)
+        }
+        .environment(appModel)
+        .defaultSize(width: 1200, height: 900)
         #endif
     }
 }

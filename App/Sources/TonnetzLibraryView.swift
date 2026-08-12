@@ -2,41 +2,53 @@ import SwiftUI
 import AppCore
 import JamShackUI
 import MusicTheoryKit
+import PieceModel
 import RecognitionEngine
 import Localization
 
-/// Théorie's Tonnetz screen — the mode toggle (Harmonique/Performance) plus whichever grid is
-/// active, coupled to the app's single "clavier principal" (`session.theoryLiveInputSourceID`,
-/// the same source picker every other Théorie screen shares — see `ChordLibraryView`'s own
-/// analogous `liveHeldPitches`). Tapping a node/edge/triangle here always plays through that same
-/// live track (`pressKey`/`releaseKey`), so a tap-triggered note/dyad/chord becomes real,
-/// recognized `heldPitches` exactly like any other played note — closing the harmonic/performance
-/// loop the same way a real instrument would. Unlike Studio's tabs, Théorie's own
-/// `setTheoryLiveInputSource` already turns the picked track's sound on, so playing here needs no
-/// extra "is this wired to a scene role with a sound" gate — just a source being picked at all.
-/// Lives in the App target (not `JamShackUI`, unlike `PitchClassTonnetzView`/`RegisteredTonnetzView`
-/// themselves) because `.registerMainKeyboardChord`/`MainKeyboardChordSpec` — the persistent
-/// bottom-bar coupling every other Théorie screen already uses — are App-target-only types.
+/// Théorie's Tonnetz screen — three graphs, coupled to the app's single "clavier principal"
+/// (`session.theoryLiveInputSourceID`, the same source picker every other Théorie screen shares —
+/// see `ChordLibraryView`'s own analogous `liveHeldPitches`). Layout: a top row (mode/color
+/// controls, with the current selection's name centered over the whole row), then two columns —
+/// the full Performance lattice on the left (all the available height/most of the width), and the
+/// Harmonic condensation stacked above the Circle-of-fifths (when a family-1 mode is active — the
+/// one place a diminished chord renders properly) on the right. `RegisteredTonnetzView` bands its
+/// narrow axis on major thirds rather than fifths (fifths matter more musically, so they're the
+/// axis that gets to range freely) — see that type's own doc comment — which is what lets it
+/// deploy itself wide/short and work well as a column rather than needing a full-width band. The
+/// legend (`TonnetzLegendView`) isn't shown inline — it's embedded in the "Théorie" pop-up
+/// (`TonnetzHelpContent`, via `TheoryHelpButton`) instead. Tapping a node/edge/triangle here always plays
+/// through that same live track (`pressKey`/`releaseKey`), so a tap-triggered note/dyad/chord
+/// becomes real, recognized `heldPitches` exactly like any other played note — closing the
+/// harmonic/performance loop the same way a real instrument would. Unlike Studio's tabs, Théorie's
+/// own `setTheoryLiveInputSource` already turns the picked track's sound on, so playing here needs
+/// no extra "is this wired to a scene role with a sound" gate — just a source being picked at all.
+/// Lives in the App target (not `JamShackUI`, unlike `PitchClassTonnetzView`/
+/// `RegisteredTonnetzView`/`CircleOfFifthsWheelView` themselves) because
+/// `.registerMainKeyboardChord`/`MainKeyboardChordSpec`/the detach-window plumbing — conventions
+/// every other Théorie screen already uses — are App-target-only.
 struct TonnetzLibraryView: View {
     let session: ImprovSession
-    /// See `ChordLibraryView.isActive`'s own doc comment — feeds `.registerMainKeyboardChord`.
-    let isActive: Bool
+    /// See `ChordLibraryView.isActive`'s own doc comment — feeds `.registerMainKeyboardChord`,
+    /// `.registerContextualHelp`, and `session.setContextualMode`.
+    var isActive: Bool = true
+    /// See `ChordLibraryView.isDetachedWindow`'s own doc comment — self-adapts `detachButton`.
+    var isDetachedWindow: Bool = false
 
-    private enum DisplayMode: String, CaseIterable, Identifiable {
-        case harmonic, performance
-        var id: Self { self }
-        func label(_ language: AppLanguage) -> String {
-            switch self {
-            case .harmonic: return L10n.string(.appModeTonnetzHarmonique, language)
-            case .performance: return L10n.string(.appModeTonnetzPerformance, language)
-            }
-        }
-    }
-
-    @State private var displayMode: DisplayMode = .harmonic
     @State private var selection: TonnetzSelection? = .triad(Tonnetz.triad(quality: .major, anchoredAt: TonnetzCoordinate(q: 0, r: 0)))
     @State private var colorByIdentity = true
     @State private var auditionGeneration = 0
+
+    /// Optional, unlike Modes/Progressions/Intonations — Tonnetz has always worked fine with just
+    /// a bare chord/note (like Accords), so a tonic/mode here is opt-in rather than mandatory.
+    @State private var isModeEnabled = false
+    @State private var selectedTonic: Int = 0
+    @State private var selectedScaleID: String = "ionian"
+
+    #if os(macOS) || os(visionOS)
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    #endif
 
     private var sourceID: TrackID? { session.theoryLiveInputSourceID }
 
@@ -53,6 +65,49 @@ struct TonnetzLibraryView: View {
     /// on whichever track is picked, so simply having a source picked is enough.
     private var canPlay: Bool { sourceID != nil }
 
+    private var selectedMode: Mode? {
+        guard isModeEnabled else { return nil }
+        return Mode(tonic: PitchClass(selectedTonic), scale: ScaleLibrary.byID(selectedScaleID) ?? ScaleLibrary.scales(inFamily: 1)[0])
+    }
+
+    /// Its own toggle is only shown once a mode is active (see `controlsRow`) — per explicit
+    /// request/verification: with no mode, the Tonnetz always shows the standard per-pitch-class
+    /// palette (the same one the Circle-of-fifths uses), i.e. exactly what `colorByIdentity: true`
+    /// already produces — so this forces `true` rather than `false` whenever no mode is active,
+    /// the opposite of an earlier (wrong) version of this property. Once a mode IS active, the
+    /// checked (default) state keeps that same palette coloring plus a contrast highlight for the
+    /// mode's own notes/chords (`nodeAppearance`/`triangleAppearance`'s own `role`/`isDiatonic`
+    /// handling); unchecking it switches to the role-based blue scheme (mode root/tone notes,
+    /// light-sky-blue diatonic triangles) instead.
+    private var effectiveColorByIdentity: Bool { !isModeEnabled || colorByIdentity }
+
+    /// The mode's own diatonic major/minor triads, outlined on both lattices — `"dim"` (the vii°)
+    /// is excluded, since no lattice triangle can represent a diminished triad (no perfect fifth
+    /// to anchor one); `circleOfFifthsWheel` below is where that one gets shown properly instead.
+    private var diatonicTriads: Set<TonnetzTriadKey> {
+        guard let mode = selectedMode, mode.scale.familyID == 1 else { return [] }
+        return Set(ChordProgressionResolver.diatonicChordReferences(in: mode).compactMap { ref in
+            switch ref.chordTemplateID {
+            case "Ma": return TonnetzTriadKey(root: PitchClass(ref.root), quality: .major)
+            case "mi": return TonnetzTriadKey(root: PitchClass(ref.root), quality: .minor)
+            default: return nil
+            }
+        })
+    }
+
+    /// The mode's parent-key wheel — `nil` unless a family-1 mode is active, the same restriction
+    /// as `diatonicTriads` (both derive from "does this scale have a well-defined parent key
+    /// signature"). Where the diminished vii° actually gets shown properly (outer ring, "°"
+    /// suffix) — see `MusicTheoryKit/CircleOfFifths.swift`. `listeningTracks` feeds whichever
+    /// chord is actually being played right now on the live source into the wheel's own
+    /// per-track outline ring (`CircleOfFifthsWheelView`'s `cell.trackLabels`), so a played chord
+    /// that's on the wheel shows up there as "selected" too — per explicit request.
+    private var circleOfFifthsWheel: WebConsoleWheelState? {
+        guard let mode = selectedMode, mode.scale.familyID == 1, let parentTonic = CircleOfFifths.parentTonic(for: mode) else { return nil }
+        let liveTrack = sourceID.flatMap { id in session.tracks.first { $0.id == id } }
+        return ImprovSession.wheelState(forTonic: parentTonic, activeTonic: mode.tonic, activeModeName: mode.scale.systematicName, listeningTracks: liveTrack.map { [$0] } ?? [])
+    }
+
     private struct RecognitionSnapshot: Equatable {
         let heldPitchClasses: Set<PitchClass>
         let recognizedChord: RecognizedChord?
@@ -63,58 +118,21 @@ struct TonnetzLibraryView: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Picker("", selection: $displayMode) {
-                    ForEach(DisplayMode.allCases) { mode in
-                        Text(mode.label(session.currentLanguage)).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 320)
-                Spacer()
-                Toggle(L10n.string(.appToggleTonnetzCouleursIdentite, session.currentLanguage), isOn: $colorByIdentity)
-                    .toggleStyle(.switch)
-                    .fixedSize()
+        VStack(spacing: 16) {
+            topBand
+            HStack(alignment: .top, spacing: 16) {
+                performanceColumn
+                secondColumn
             }
-
-            selectionSummary
-
-            Group {
-                switch displayMode {
-                case .harmonic:
-                    PitchClassTonnetzView(
-                        heldPitchClasses: heldPitchClasses,
-                        selection: selection,
-                        colorByIdentity: colorByIdentity,
-                        palette: session.activeColorPalette.colors,
-                        paletteTextColors: session.activeColorPalette.textColors,
-                        notationStyle: session.notationStyle,
-                        onSelect: { newSelection in
-                            selection = newSelection
-                            guard canPlay else { return }
-                            play(newSelection)
-                        }
-                    )
-                case .performance:
-                    RegisteredTonnetzView(
-                        heldPitches: heldPitches,
-                        selection: selection,
-                        colorByIdentity: colorByIdentity,
-                        palette: session.activeColorPalette.colors,
-                        paletteTextColors: session.activeColorPalette.textColors,
-                        notationStyle: session.notationStyle,
-                        onSelect: { newSelection in
-                            selection = newSelection
-                            guard canPlay else { return }
-                            play(newSelection)
-                        }
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding()
+        #if os(macOS) || os(visionOS)
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 8) { detachButton; TheoryHelpButton(session: session) }
+                .padding(.horizontal)
+                .padding(.top, 6)
+        }
+        #endif
         // Colors the persistent main-keyboard bar (`ContentView`) with this screen's own
         // selected chord, centered, while this tab is active — same mechanism `ChordLibraryView`
         // uses for its own chord. Only a `.triad` selection has a chord to register; a bare note
@@ -123,10 +141,146 @@ struct TonnetzLibraryView: View {
             id: "theorie.tonnetz", isActive: isActive,
             chord: selection?.chord.map { MainKeyboardChordSpec(root: $0.root.value, tones: $0.pitchClasses.map(\.value)) }
         )
+        // Feeds Intonations' fixed-temperament tuning this screen's OPTIONAL mode — same
+        // isActive-driven set/clear as Modes/Progressions/Intonations (see
+        // `ImprovSession.contextualMode`'s own doc comment). Leaving the mode off (the default)
+        // behaves exactly as Tonnetz always has: no tonic, no correction.
+        .onChange(of: isActive, initial: true) { _, active in
+            session.setContextualMode(active ? selectedMode : nil)
+        }
+        .onChange(of: selectedMode) { _, newMode in
+            guard isActive else { return }
+            session.setContextualMode(newMode)
+        }
+        .registerContextualHelp(id: "theorie.tonnetz", isActive: isActive) {
+            TonnetzHelpContent(language: session.currentLanguage)
+        }
         .onChange(of: recognitionSnapshot) { _, snapshot in
             reactToLiveRecognition(snapshot)
         }
     }
+
+    // MARK: - Bande du haut (A) : contrôles, Harmonique, cercle des quintes
+
+    /// The controls row plus the current selection's name, centered over the WHOLE row (not
+    /// tucked into the Harmonic group anymore) — per explicit request.
+    private var topBand: some View {
+        controlsRow
+            .overlay { selectionSummary }
+    }
+
+    private var controlsRow: some View {
+        HStack {
+            Toggle(L10n.string(.appLabelModeOptionnel, session.currentLanguage), isOn: $isModeEnabled)
+                .toggleStyle(.switch)
+                .fixedSize()
+            if isModeEnabled {
+                Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: $selectedTonic) {
+                    ForEach(0..<12, id: \.self) { pitchClass in
+                        Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
+                    }
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
+                Picker(L10n.string(.fieldGamme, session.currentLanguage), selection: $selectedScaleID) {
+                    ForEach(ScaleLibrary.scales(inFamily: 1), id: \.id) { scale in
+                        Text(scale.popularName).tag(scale.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
+                // Stuck to the mode controls, and only shown once a mode is active — see
+                // `effectiveColorByIdentity`'s own doc comment.
+                Toggle(L10n.string(.appToggleTonnetzCouleursIdentite, session.currentLanguage), isOn: $colorByIdentity)
+                    .toggleStyle(.switch)
+                    .fixedSize()
+            }
+            Spacer()
+        }
+    }
+
+    // MARK: - Colonnes du bas : Performance (toute la hauteur) + Harmonique/cercle des quintes empilés
+
+    private var performanceColumn: some View {
+        RegisteredTonnetzView(
+            heldPitches: heldPitches,
+            selection: selection,
+            colorByIdentity: effectiveColorByIdentity,
+            palette: session.activeColorPalette.colors,
+            paletteTextColors: session.activeColorPalette.textColors,
+            notationStyle: session.notationStyle,
+            mode: selectedMode,
+            diatonicTriads: diatonicTriads,
+            onSelect: { newSelection in
+                selection = newSelection
+                guard canPlay else { return }
+                play(newSelection)
+            }
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Harmonic on top, Circle-of-fifths below — a narrow column next to `performanceColumn`,
+    /// sized to whichever of the two is wider (the Harmonic lattice, 450pt).
+    private var secondColumn: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            harmonicGroup
+            circleOfFifthsGroup
+        }
+    }
+
+    /// Enlarged (300 → 450) now that it's a full column rather than competing for space as a
+    /// floating card.
+    private var harmonicGroup: some View {
+        PitchClassTonnetzView(
+            heldPitchClasses: heldPitchClasses,
+            selection: selection,
+            colorByIdentity: effectiveColorByIdentity,
+            palette: session.activeColorPalette.colors,
+            paletteTextColors: session.activeColorPalette.textColors,
+            notationStyle: session.notationStyle,
+            mode: selectedMode,
+            diatonicTriads: diatonicTriads,
+            onSelect: { newSelection in
+                selection = newSelection
+                guard canPlay else { return }
+                play(newSelection)
+            }
+        )
+        .frame(width: 450)
+    }
+
+    /// The mode's Circle-of-fifths, when there is one — see `circleOfFifthsWheel`'s own doc
+    /// comment. No label (per explicit request — the wheel itself is unambiguous), enlarged again
+    /// (250 → 300, +20%), and centered within its own column width rather than leading-aligned.
+    @ViewBuilder
+    private var circleOfFifthsGroup: some View {
+        if let wheel = circleOfFifthsWheel {
+            CircleOfFifthsWheelView(wheel: wheel, palette: session.activeColorPalette.colors, paletteTextColors: session.activeColorPalette.textColors)
+                .frame(width: 300, height: 300)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .accessibilityLabel(L10n.string(.appLabelCercleDesQuintes, session.currentLanguage))
+        }
+    }
+
+    #if os(macOS) || os(visionOS)
+    @ViewBuilder
+    private var detachButton: some View {
+        if isDetachedWindow {
+            Button {
+                dismissWindow(id: AuxiliaryWindowID.theorieTonnetz.rawValue)
+            } label: {
+                Label(L10n.string(.appButtonReintegrer, session.currentLanguage), systemImage: "arrow.down.right.and.arrow.up.left")
+            }
+        } else {
+            Button {
+                openWindow(id: AuxiliaryWindowID.theorieTonnetz.rawValue)
+            } label: {
+                Image(systemName: "rectangle.on.rectangle")
+            }
+        }
+    }
+    #endif
 
     @ViewBuilder
     private var selectionSummary: some View {
@@ -142,7 +296,7 @@ struct TonnetzLibraryView: View {
         case .note(let pitchClass, _):
             Text(session.notationStyle.rootName(pitchClass, preferFlats: false)).font(.title2).bold()
         case nil:
-            EmptyView()
+            Text(L10n.string(.appModeTonnetzHarmonique, session.currentLanguage)).font(.title2).bold()
         }
     }
 

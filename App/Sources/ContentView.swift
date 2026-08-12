@@ -106,9 +106,10 @@ struct ContentView: View {
     /// once that panel grew further still, "Modes" itself split again into `.modes` (the plain
     /// reference grid, `ModeLibraryContentFocus.overview`) and `.exploration` (the functional/
     /// melodic playground, `.exploration`) — each its own peer tab with its own independent
-    /// tonic/scale picker, per explicit request. All 4 detach into their own window on macOS/
-    /// visionOS (`ChordTabContent`/`TheoryTabContent`/`ProgressionTabContent`/
-    /// `ExplorationTabContent`, each its own `AuxiliaryWindowID`).
+    /// tonic/scale picker, per explicit request. `.accords`/`.modes`/`.progressions`/
+    /// `.exploration`/`.tonnetz` all detach into their own window on macOS/visionOS
+    /// (`ChordTabContent`/`TheoryTabContent`/`ProgressionTabContent`/`ExplorationTabContent`/
+    /// `TonnetzTabContent`, each its own `AuxiliaryWindowID`) — `.intonations` doesn't yet.
     private enum TheorieTab: CaseIterable, Identifiable {
         case accords, modes, progressions, exploration, tonnetz, intonations
 
@@ -182,6 +183,12 @@ struct ContentView: View {
     }
 
     @Environment(AppModel.self) private var appModel
+    /// Only used to hide the Tonnetz tab on iPhone-width layouts (see `.theorie`'s `TabView`
+    /// below) — the Tonnetz screen needs the two-graph-plus-legend layout's own space, which an
+    /// iPhone can't offer. A runtime check, not `#if os()`, per this file's own `.sidebarAdaptable`
+    /// rationale just below (one tab structure, no platform forks) — iPhone and iPad share the
+    /// same OS, so only the size class actually distinguishes them.
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #if os(macOS) || os(visionOS)
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
@@ -194,10 +201,6 @@ struct ContentView: View {
     @State private var selectedTheorieTab: TheorieTab = .modes
     @State private var selectedCompositionTab: CompositionTab = .guide
     @State private var selectedSettingsTab: SettingsTab = .sons
-    /// iOS/iPadOS-only fallback for the generalized contextual-help button below — no
-    /// independent-window equivalent there, same convention `ModeLibraryView`'s own former
-    /// legend sheet already used.
-    @State private var showsContextualHelpSheet = false
 
     /// Studio/Théorie always show the main-keyboard bar's own controls (toggle, detach,
     /// source picker); Settings only does while its own "Sons" sub-tab is active (testing a
@@ -263,8 +266,10 @@ struct ContentView: View {
                                 Tab(TheorieTab.exploration.label(session.currentLanguage), systemImage: TheorieTab.exploration.systemImage, value: TheorieTab.exploration) {
                                     ExplorationTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .exploration)
                                 }
-                                Tab(TheorieTab.tonnetz.label(session.currentLanguage), systemImage: TheorieTab.tonnetz.systemImage, value: TheorieTab.tonnetz) {
-                                    TonnetzTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .tonnetz)
+                                if horizontalSizeClass != .compact {
+                                    Tab(TheorieTab.tonnetz.label(session.currentLanguage), systemImage: TheorieTab.tonnetz.systemImage, value: TheorieTab.tonnetz) {
+                                        TonnetzTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .tonnetz)
+                                    }
                                 }
                                 Tab(TheorieTab.intonations.label(session.currentLanguage), systemImage: TheorieTab.intonations.systemImage, value: TheorieTab.intonations) {
                                     TuningTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .intonations)
@@ -300,6 +305,20 @@ struct ContentView: View {
                         }
                     }
                     .tabViewStyle(.sidebarAdaptable)
+                    // Tonnetz's `Tab` disappears at compact width (see above) — if it was the
+                    // selected Théorie tab when that happens (iPad rotated into split-view, or a
+                    // restored-state cold launch directly on iPhone), fall back to the same
+                    // `.modes` default `selectedTheorieTab` already starts at.
+                    .onChange(of: horizontalSizeClass) { _, newValue in
+                        if newValue == .compact && selectedTheorieTab == .tonnetz {
+                            selectedTheorieTab = .modes
+                        }
+                    }
+                    .task {
+                        if horizontalSizeClass == .compact && selectedTheorieTab == .tonnetz {
+                            selectedTheorieTab = .modes
+                        }
+                    }
 
                     // Persistent, always-visible "long" keyboard — only while the computer
                     // keyboard mode is explicitly turned on (see `ComputerKeyboardSettingsView`,
@@ -502,15 +521,17 @@ struct ContentView: View {
                 }
                 #if !os(macOS) && !os(visionOS)
                 // No independent-window equivalent on iOS/iPadOS — a dismissible sheet instead,
-                // same convention `ModeLibraryView`'s own former legend sheet already used.
-                .sheet(isPresented: $showsContextualHelpSheet) {
+                // same convention `ModeLibraryView`'s own former legend sheet already used. Backed
+                // by `appModel.showsContextualHelpSheet` (not a local `@State`) so any per-screen
+                // help button (`TheoryHelpButton`), not just this bottom-bar one, can trigger it.
+                .sheet(isPresented: Binding(get: { appModel.showsContextualHelpSheet }, set: { appModel.showsContextualHelpSheet = $0 })) {
                     NavigationStack {
                         ScrollView {
                             if let content = appModel.contextualHelpContent { content().padding() }
                         }
                         .toolbar {
                             ToolbarItem(placement: .confirmationAction) {
-                                Button(L10n.string(.appButtonFermer, session.currentLanguage)) { showsContextualHelpSheet = false }
+                                Button(L10n.string(.appButtonFermer, session.currentLanguage)) { appModel.showsContextualHelpSheet = false }
                             }
                         }
                     }
@@ -664,15 +685,16 @@ struct ContentView: View {
     }
 
     /// The generalized contextual-help button — opens `AuxiliaryWindowID.contextualHelp`
-    /// (macOS/visionOS) or `showsContextualHelpSheet` (elsewhere) to show whichever screen is
-    /// currently active's own registered help (see `View.registerContextualHelp`). Only ever
-    /// shown by its own call site when `appModel.contextualHelpContent != nil`.
+    /// (macOS/visionOS) or `appModel.showsContextualHelpSheet` (elsewhere) to show whichever
+    /// screen is currently active's own registered help (see `View.registerContextualHelp`).
+    /// Only ever shown by its own call site when `appModel.contextualHelpContent != nil`. Same
+    /// underlying trigger `TheoryHelpButton` uses for its own per-screen equivalent.
     private func contextualHelpButton(session: ImprovSession) -> some View {
         Button {
             #if os(macOS) || os(visionOS)
             openWindow(id: AuxiliaryWindowID.contextualHelp.rawValue)
             #else
-            showsContextualHelpSheet = true
+            appModel.showsContextualHelpSheet = true
             #endif
         } label: {
             Image(systemName: "questionmark.circle")

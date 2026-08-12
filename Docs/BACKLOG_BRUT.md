@@ -150,3 +150,20 @@ encore prise. Retiré d'ici.
     (et, plus tard, les modes A2/B1/B2 + le graphe de dissonance) dans un module SPM séparé plutôt
     que dispersés dans `MusicTheoryKit`/`AppCore`. Prématuré tant que seul A1 existe ; à reconsidérer
     une fois A2/B1/B2 construits et la surface du module vraiment plus large.
+
+34. **Extensions d'accords (7e, 9e...) en cliquant sur le Tonnetz via un modificateur clavier** —
+    idée soulevée en construisant le mode optionnel/mise en valeur diatonique du Tonnetz : jouer
+    une extension (7e, 9e...) d'un triangle tapé en maintenant une touche modificatrice. Nécessite
+    d'établir une convention de touches (une touche par extension ? un seul modificateur qui fait
+    défiler ?) et de clarifier l'interaction avec le mode clavier ordinateur déjà présent dans
+    l'app (`ComputerKeyboardInputBar`/`MainKeyboardMode` — les touches physiques jouent déjà des
+    notes, un conflit de modificateur est possible). Sujet à part, pas traité avec le reste du
+    Tonnetz cette session.
+
+35. **Bouton "Théorie" (légende en pop-up) — rétrofit sur les autres écrans Théorie** —
+    `TheoryHelpButton`/`.registerContextualHelp` ont été construits et appliqués à Tonnetz
+    (2026-08) comme composant réutilisable, place à côté du bouton "détacher" ; reste à
+    l'appliquer à Accords (`ChordLibraryView`), Modes (les deux focus, `ModeLibraryView`),
+    Progressions (`ProgressionLibraryView`) et Intonations (`TuningLibraryView`), chacun avec son
+    propre contenu d'aide (à écrire). Reporté par choix explicite pour rester focalisé sur Tonnetz
+    ce tour.

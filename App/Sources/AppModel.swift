@@ -3,7 +3,7 @@ import AppCore
 import JamShackUI
 import MusicTheoryKit
 
-/// Identifies each of the 6 screens that can detach into their own `WindowGroup` (macOS/
+/// Identifies each of the screens that can detach into their own `WindowGroup` (macOS/
 /// visionOS only — see `JamShackApp`). Doubles as the `WindowGroup(id:)` string and as the key
 /// tracking which ones are currently open (`AppModel.openAuxiliaryWindows`), since SwiftUI has
 /// no built-in "is this WindowGroup open" query.
@@ -17,7 +17,7 @@ import MusicTheoryKit
 /// one just for a single extra window id.
 enum AuxiliaryWindowID: String, CaseIterable {
     case computerKeyboard, runScreen, guideLecture, microphone, sceneLayout, theorie, contextualHelp
-    case theorieAccords, theorieExploration, theorieProgressions
+    case theorieAccords, theorieExploration, theorieProgressions, theorieTonnetz
 }
 
 /// Owns the single, shared `ImprovSession`/`SessionUIBridge` pair for the whole process —
@@ -73,6 +73,12 @@ final class AppModel {
         contextualHelpOwnerID = nil
         contextualHelpContent = nil
     }
+
+    /// iOS/iPadOS-only fallback for `contextualHelpContent` — no independent-window equivalent
+    /// there (see `ContentView`'s own sheet presentation). Hoisted up from a local `ContentView`
+    /// `@State` so any per-screen help button (`TheoryHelpButton`), not just the shared bottom-bar
+    /// one, can trigger it directly without a binding threaded down through every screen.
+    var showsContextualHelpSheet = false
 
     /// The mode (tonic + scale) whichever Théorie screen is currently active wants the persistent
     /// main-keyboard bar (`ComputerKeyboardInputBar`, in `ContentView`) to color itself by —

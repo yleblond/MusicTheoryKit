@@ -2915,18 +2915,19 @@ public final class ImprovSession: @unchecked Sendable {
     /// actually used by the tuning math — the scale matters only for `TuningLibraryView`'s own
     /// display/playback of that mode's notes and diatonic chords) — derived from whichever
     /// Théorie screen currently has its own tonic/mode selected (Modes/Progressions/Exploration/
-    /// Intonations itself, via `.registerMainKeyboardMode`'s own `mode`), NOT an independent
-    /// setting of its own. `nil` on Accords/Tonnetz (a bare chord/note has no tonic to anchor a
-    /// fixed temperament on — see the Intonations feature's own plan for why only a dynamic,
-    /// per-chord tuning would make sense there, which is future work) and `nil` at launch until
-    /// one of those screens becomes active. Never persisted, exactly like `theoryLiveInputSourceID`.
+    /// Intonations/Tonnetz itself, via `.registerMainKeyboardMode`'s own `mode` or, for Tonnetz's
+    /// OPTIONAL mode picker, its own local wiring), NOT an independent setting of its own. `nil`
+    /// on Accords (a bare chord/note has no tonic to anchor a fixed temperament on — see the
+    /// Intonations feature's own plan for why only a dynamic, per-chord tuning would make sense
+    /// there, which is future work) and `nil` at launch until one of the mode-bearing screens
+    /// becomes active. Never persisted, exactly like `theoryLiveInputSourceID`.
     public private(set) var contextualMode: Mode?
 
     /// The only place `contextualMode` changes — called by Modes/Progressions/Exploration/
-    /// Intonations whenever their own mode changes or they become in/active (mirrors
+    /// Intonations/Tonnetz whenever their own mode changes or they become in/active (mirrors
     /// `MainKeyboardModeRegistration`'s own `isActive`-driven clear/set), and never called by
-    /// Accords/Tonnetz at all (so `contextualMode` simply stays/reverts to whatever the last
-    /// active mode-bearing screen left it as — `nil` if none has been visited yet).
+    /// Accords at all (so `contextualMode` simply stays/reverts to whatever the last active
+    /// mode-bearing screen left it as — `nil` if none has been visited yet).
     public func setContextualMode(_ mode: Mode?) {
         contextualMode = mode
     }
