@@ -124,3 +124,29 @@ encore prise. Retiré d'ici.
     16 canaux MIDI disponibles par piste avant d'activer (un accord de 7e + une mélodie sur un seul
     instrument utilise déjà ~5-6 canaux ; avec 2-3 instruments actifs en Studio, la marge devient
     vite serrée).
+
+31. **Affichage des noms de notes/accords toujours en dièses** — `NotationStyle.rootName`/
+    `PitchClass.name(preferFlats:)` n'utilisent qu'un booléen global, jamais la tonalité réelle du
+    mode affiché ; Accords/Modes/Progressions affichent donc parfois des noms plausibles mais faux
+    dans le contexte (ex. "G#" au lieu de "Ab" en La bémol majeur). Au moins 4 tables dièse/bémol
+    par classe de hauteur sont dupliquées indépendamment dans le code (`PitchClass.swift`,
+    `ChordStaffView.swift`, `CircleOfFifthsWheelView.swift`, `GuideEditionView.swift`), aucune
+    consciente de la tonalité. `ChordStaffView` "triche" même pour le placement sur la portée : son
+    `keySignature` ne sert qu'à supprimer un dièse/bémol redondant déjà indiqué à la clé, jamais à
+    changer l'orthographe ou la ligne/interligne. Découvert en construisant `DiatonicSpelling`
+    (voir le module `SpelledPitch`/`Temperament` pour la résolution correcte, utilisée pour l'instant
+    uniquement par le moteur d'accordage) — un chantier à part, plus large (touche des écrans déjà
+    livrés et stables), pas traité avec l'accordage.
+
+32. **Résolution enharmonique par accord détecté (Accords) et par Guide** — le moteur d'accordage
+    ne résout l'orthographe G#/Ab que par le mode sélectionné (Modes/Progressions/Exploration/
+    Intonations). L'écran Accords n'a pas de tonique de référence, donc pas de tempérament fixe
+    pertinent — mais une fois le mode A2 (accordage dynamique par accord détecté) construit, la
+    résolution par accord ("E-G#-B ⇒ Mi majeur ⇒ G#" vs "Ab-C-Eb ⇒ La bémol majeur ⇒ Ab") devient
+    nécessaire. Idem pour le Guide, une fois qu'il connaît le contexte harmonique courant.
+
+33. **Module SPM dédié `TheoryTuning`** — la spécification d'origine propose de regrouper
+    `Temperament`/`VoiceChannelAllocator`/`TuningConfiguration`/`SpelledPitch`/`DiatonicSpelling`
+    (et, plus tard, les modes A2/B1/B2 + le graphe de dissonance) dans un module SPM séparé plutôt
+    que dispersés dans `MusicTheoryKit`/`AppCore`. Prématuré tant que seul A1 existe ; à reconsidérer
+    une fois A2/B1/B2 construits et la surface du module vraiment plus large.

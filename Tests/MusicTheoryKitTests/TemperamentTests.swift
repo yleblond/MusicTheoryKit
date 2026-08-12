@@ -4,7 +4,10 @@ import XCTest
 final class TemperamentTests: XCTestCase {
 
     func testEqualTemperamentIsAllZero() {
-        XCTAssertEqual(TemperamentLibrary.equal.centsFromEqualByDegree, Array(repeating: 0, count: 12))
+        guard case .chromaticDegree(let table) = TemperamentLibrary.equal.model else {
+            return XCTFail("equal temperament should be modeled as chromaticDegree")
+        }
+        XCTAssertEqual(table, Array(repeating: 0, count: 12))
     }
 
     func testTonicIsAlwaysZeroCentsInEveryTemperament() {
@@ -58,6 +61,42 @@ final class TemperamentTests: XCTestCase {
         let cCents = TemperamentLibrary.cents(for: PitchClass(4), in: TemperamentLibrary.justIntonation, tonic: PitchClass(0))
         let dCents = TemperamentLibrary.cents(for: PitchClass(6), in: TemperamentLibrary.justIntonation, tonic: PitchClass(2))
         XCTAssertEqual(cCents, dCents, accuracy: 0.0001)
+    }
+
+    func testSpellingAwarePythagoreanGSharpAndAFlatDifferByExactlyTheComma() {
+        let cTonic = SpelledPitch(letter: .C, accidental: .natural, octave: 4)
+        let gSharp = SpelledPitch(letter: .G, accidental: .sharp, octave: 4)
+        let aFlat = SpelledPitch(letter: .A, accidental: .flat, octave: 4)
+        let gSharpCents = TemperamentLibrary.cents(for: gSharp, in: TemperamentLibrary.pythagorean, tonicSpelling: cTonic)
+        let aFlatCents = TemperamentLibrary.cents(for: aFlat, in: TemperamentLibrary.pythagorean, tonicSpelling: cTonic)
+        XCTAssertEqual(gSharpCents, 15.64, accuracy: 0.01)
+        XCTAssertEqual(aFlatCents, -7.82, accuracy: 0.01)
+        XCTAssertEqual(gSharpCents - aFlatCents, 23.46, accuracy: 0.01, "the Pythagorean comma")
+    }
+
+    func testSpellingAwareOverloadMatchesPitchClassOnlyOverloadForNonSplittingTemperaments() {
+        // Werckmeister III/Equal/Just Intonation don't care about spelling — both overloads
+        // must agree regardless of which of the two enharmonic spellings is passed in.
+        let cTonic = SpelledPitch(letter: .C, accidental: .natural, octave: 4)
+        let gSharp = SpelledPitch(letter: .G, accidental: .sharp, octave: 4)
+        let aFlat = SpelledPitch(letter: .A, accidental: .flat, octave: 4)
+        for temperament in [TemperamentLibrary.equal, TemperamentLibrary.justIntonation, TemperamentLibrary.werckmeisterIII] {
+            let bySpelling1 = TemperamentLibrary.cents(for: gSharp, in: temperament, tonicSpelling: cTonic)
+            let bySpelling2 = TemperamentLibrary.cents(for: aFlat, in: temperament, tonicSpelling: cTonic)
+            let byPitchClass = TemperamentLibrary.cents(for: PitchClass(8), in: temperament, tonic: PitchClass(0))
+            XCTAssertEqual(bySpelling1, bySpelling2, "\(temperament.id) must not split G#/Ab")
+            XCTAssertEqual(bySpelling1, byPitchClass, "\(temperament.id) spelling-aware and pitch-class-only must agree")
+        }
+    }
+
+    func testPitchClassOnlyOverloadIsUnchangedForPythagoreanDefaultSpelling() {
+        // The pitch-class-only overload (no real musical context) must keep behaving exactly as
+        // it did before `.lineOfFifths` existed, for every one of the 12 pitch classes.
+        let expected: [Double] = [0, -9.775, 3.91, -5.865, 7.82, -1.955, 11.73, 1.955, -7.82, 5.865, -3.91, 9.775]
+        for pitchClass in 0..<12 {
+            let actual = TemperamentLibrary.cents(for: PitchClass(pitchClass), in: TemperamentLibrary.pythagorean, tonic: PitchClass(0))
+            XCTAssertEqual(actual, expected[pitchClass], accuracy: 0.01, "pitch class \(pitchClass)")
+        }
     }
 
     func testByIDFindsEveryRegisteredTemperament() {

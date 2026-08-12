@@ -5,8 +5,11 @@ import AppCore
 /// support yet, same as `TonnetzTabContent`/`StudioJamSessionTabContent`.
 struct TuningTabContent: View {
     let session: ImprovSession
+    /// See `ExplorationTabContent.isActive`'s own doc comment — feeds `TuningLibraryView`'s own
+    /// `session.setContextualMode`.
+    let isActive: Bool
 
     var body: some View {
-        TuningLibraryView(session: session)
+        TuningLibraryView(session: session, isActive: isActive)
     }
 }

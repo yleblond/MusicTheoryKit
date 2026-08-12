@@ -4618,16 +4618,38 @@
   "ru": "Удерживаемые ноты и коррекция",
   "zhHans": "按住的音符与修正"
  },
- "appLabelTemperamentActifBarre": {
-  "de": "Temperament: %@",
-  "en": "Temperament: %@",
-  "es": "Temperamento: %@",
-  "fr": "Tempérament : %@",
-  "it": "Temperamento: %@",
-  "ja": "音律: %@",
-  "pt": "Temperamento: %@",
-  "ru": "Строй: %@",
-  "zhHans": "律制：%@"
+ "appHeadingNotesDeLaGamme": {
+  "de": "Töne der Tonleiter",
+  "en": "Scale notes",
+  "es": "Notas de la escala",
+  "fr": "Notes de la gamme",
+  "it": "Note della scala",
+  "ja": "スケールの音",
+  "pt": "Notas da escala",
+  "ru": "Ноты гаммы",
+  "zhHans": "音阶音符"
+ },
+ "appButtonJouerNonTempere": {
+  "de": "Unverändert abspielen",
+  "en": "Play unchanged",
+  "es": "Reproducir sin cambios",
+  "fr": "Jouer non tempéré",
+  "it": "Riproduci non temperato",
+  "ja": "無補正で再生",
+  "pt": "Tocar sem alteração",
+  "ru": "Воспроизвести без изменений",
+  "zhHans": "播放未调整的音"
+ },
+ "appButtonJouerTempere": {
+  "de": "Temperiert abspielen",
+  "en": "Play tempered",
+  "es": "Reproducir temperado",
+  "fr": "Jouer tempéré",
+  "it": "Riproduci temperato",
+  "ja": "音律補正で再生",
+  "pt": "Tocar temperado",
+  "ru": "Воспроизвести в темперации",
+  "zhHans": "播放调律后的音"
  },
  "appTabTonnetz": {
   "de": "Tonnetz",

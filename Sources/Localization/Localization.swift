@@ -446,7 +446,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appTemperamentEqual, appTemperamentPythagorean, appTemperamentJustIntonation, appTemperamentWerckmeisterIII
     case appFieldTemperament, appFieldReferenceA4
     case appLabelToniqueActuelle, appHintAucunModeActifIntonations, appHeadingNotesTenuesEtCorrection
-    case appLabelTemperamentActifBarre
+    case appHeadingNotesDeLaGamme
+    case appButtonJouerNonTempere, appButtonJouerTempere
 }
 
 public enum L10n {

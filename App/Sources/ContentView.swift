@@ -267,7 +267,7 @@ struct ContentView: View {
                                     TonnetzTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .tonnetz)
                                 }
                                 Tab(TheorieTab.intonations.label(session.currentLanguage), systemImage: TheorieTab.intonations.systemImage, value: TheorieTab.intonations) {
-                                    TuningTabContent(session: session)
+                                    TuningTabContent(session: session, isActive: mode == .theorie && selectedTheorieTab == .intonations)
                                 }
                             }
                         case .settings:
@@ -431,15 +431,22 @@ struct ContentView: View {
                                 .labelsHidden()
                                 .font(.caption)
                                 .frame(maxWidth: Self.bottomBarLabelMaxWidth)
-                                // Passive reminder of the active Intonations temperament while
+                                // Passive reminder of the active Intonations temperament (line 1)
+                                // and the tonic+mode it's anchored to right now (line 2) while
                                 // browsing any Théorie tab — per explicit request, non-interactive
                                 // (the actual picker lives in the Intonations tab itself). Hidden
                                 // for "Égal" since that's acoustically a no-op, same as never
                                 // having touched the setting.
                                 if session.tuningConfiguration.temperamentID != "equal" {
-                                    Text(L10n.string(.appLabelTemperamentActifBarre, session.currentLanguage, temperamentLabel(forID: session.tuningConfiguration.temperamentID, language: session.currentLanguage)))
-                                        .font(.caption).foregroundStyle(.secondary)
-                                        .lineLimit(1)
+                                    VStack(alignment: .trailing, spacing: 0) {
+                                        Text(temperamentLabel(forID: session.tuningConfiguration.temperamentID, language: session.currentLanguage))
+                                            .font(.caption).foregroundStyle(.secondary)
+                                        if let contextualMode = session.contextualMode {
+                                            Text(contextualMode.displayName)
+                                                .font(.caption2).foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .lineLimit(1)
                                 }
                             } else if mode == .studio {
                                 // Studio: read-only, per explicit request — see

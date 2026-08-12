@@ -276,7 +276,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// present for `.microphone` (enforced there, not here).
     private var samplers: [TrackID: SamplerUnit] = [:]
     /// One per track that has ever needed per-voice tuning (see `fixedTemperamentCents`/
-    /// `contextualTonic`) — created lazily, only actually populated while `contextualTonic` is
+    /// `contextualMode`) — created lazily, only actually populated while `contextualMode` is
     /// non-`nil` and a non-zero correction is being applied. Kept per-track (not just for
     /// `theoryLiveInputSourceID`) so the underlying mechanism isn't artificially tied to Théorie
     /// even though only Théorie invokes it today.
@@ -2911,22 +2911,24 @@ public final class ImprovSession: @unchecked Sendable {
         tracks.first { $0.id == theoryLiveInputSourceID }?.recognizedChord
     }
 
-    /// The tonic Intonations' fixed temperament should anchor on right now — derived from
-    /// whichever Théorie screen currently has its own tonic/mode selected (Modes/Progressions/
-    /// Exploration, via `.registerMainKeyboardMode`'s own `mode.tonic`), NOT an independent
+    /// The mode Intonations' fixed temperament should anchor on right now (only its `.tonic` is
+    /// actually used by the tuning math — the scale matters only for `TuningLibraryView`'s own
+    /// display/playback of that mode's notes and diatonic chords) — derived from whichever
+    /// Théorie screen currently has its own tonic/mode selected (Modes/Progressions/Exploration/
+    /// Intonations itself, via `.registerMainKeyboardMode`'s own `mode`), NOT an independent
     /// setting of its own. `nil` on Accords/Tonnetz (a bare chord/note has no tonic to anchor a
     /// fixed temperament on — see the Intonations feature's own plan for why only a dynamic,
     /// per-chord tuning would make sense there, which is future work) and `nil` at launch until
     /// one of those screens becomes active. Never persisted, exactly like `theoryLiveInputSourceID`.
-    public private(set) var contextualTonic: PitchClass?
+    public private(set) var contextualMode: Mode?
 
-    /// The only place `contextualTonic` changes — called by Modes/Progressions/Exploration
-    /// whenever their own tonic changes or they become in/active (mirrors
+    /// The only place `contextualMode` changes — called by Modes/Progressions/Exploration/
+    /// Intonations whenever their own mode changes or they become in/active (mirrors
     /// `MainKeyboardModeRegistration`'s own `isActive`-driven clear/set), and never called by
-    /// Accords/Tonnetz at all (so `contextualTonic` simply stays/reverts to whatever the last
+    /// Accords/Tonnetz at all (so `contextualMode` simply stays/reverts to whatever the last
     /// active mode-bearing screen left it as — `nil` if none has been visited yet).
-    public func setContextualTonic(_ tonic: PitchClass?) {
-        contextualTonic = tonic
+    public func setContextualMode(_ mode: Mode?) {
+        contextualMode = mode
     }
 
     /// Which Intonations temperament is active, plus its A4 reference — mirrors `notationStyle`'s
@@ -4230,8 +4232,13 @@ public final class ImprovSession: @unchecked Sendable {
     /// and a future on-screen/touch virtual keyboard both use. Defaults to `.computerKeyboard`
     /// since that's what a simulated key press most naturally represents; pass a different
     /// track to simulate other hardware without it being physically present.
-    public func pressKey(pitch: Int, velocity: Int = 100, channel: Int = 0, track: TrackID = .computerKeyboard) {
-        handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: pitch, velocity: velocity, channel: channel), track: track)
+    /// `applyTuning` lets a caller explicitly opt out of Intonations' fixed-temperament
+    /// correction for this one note even though one would normally apply — used only by
+    /// `TuningLibraryView`'s own "unchanged vs tempéré" A/B comparison (see
+    /// `updateRecognitionState`'s own tuning branch); every other caller leaves it at its
+    /// default (`true`, i.e. "behave exactly as before this parameter existed").
+    public func pressKey(pitch: Int, velocity: Int = 100, channel: Int = 0, track: TrackID = .computerKeyboard, applyTuning: Bool = true) {
+        handleIncomingMIDIEvent(MIDINoteEvent(kind: .noteOn, pitch: pitch, velocity: velocity, channel: channel), track: track, applyTuning: applyTuning)
     }
 
     public func releaseKey(pitch: Int, channel: Int = 0, track: TrackID = .computerKeyboard) {
@@ -4254,7 +4261,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// microphone (which never sounds through the app, to avoid feedback) or this track's
     /// sound is off — its own sampler. Must run inside `liveInputQueue.sync` — this touches
     /// `recognizers`/`tracks` without its own synchronization, relying on the caller for that.
-    private func updateRecognitionState(pitch: Int, isNoteOn: Bool, velocity: Int, channel: Int, track: TrackID) {
+    private func updateRecognitionState(pitch: Int, isNoteOn: Bool, velocity: Int, channel: Int, track: TrackID, applyTuning: Bool = true) {
         guard let index = tracks.firstIndex(where: { $0.id == track }) else { return }
         lastMIDIEvent = MIDINoteEvent(kind: isNoteOn ? .noteOn : .noteOff, pitch: pitch, velocity: isNoteOn ? velocity : 0, channel: channel)
         tracks[index].lastChannel = channel
@@ -4275,8 +4282,8 @@ public final class ImprovSession: @unchecked Sendable {
 
         guard tracks[index].soundEnabled, let sampler = samplers[track] else { return }
         if isNoteOn {
-            if track == theoryLiveInputSourceID, let contextualTonic {
-                let cents = fixedTemperamentCents(forPitchClass: PitchClass(pitch), tonic: contextualTonic, configuration: tuningConfiguration)
+            if applyTuning, track == theoryLiveInputSourceID, let contextualMode {
+                let cents = temperamentCents(forPitch: pitch, mode: contextualMode, configuration: tuningConfiguration)
                 if cents != 0 {
                     let tunedChannel = tuningVoiceChannelAllocator(for: track).channel(forPitch: pitch)
                     sampler.startNote(pitch: pitch, velocity: velocity, channel: tunedChannel, cents: cents)
@@ -4303,9 +4310,9 @@ public final class ImprovSession: @unchecked Sendable {
     /// thread each one happens to call in on; `.sync`, not `.async`, so existing callers
     /// that check state right after `pressKey`/`releaseKey` keep seeing it updated by the
     /// time the call returns.
-    func handleIncomingMIDIEvent(_ event: MIDINoteEvent, track: TrackID) {
+    func handleIncomingMIDIEvent(_ event: MIDINoteEvent, track: TrackID, applyTuning: Bool = true) {
         liveInputQueue.sync {
-            updateRecognitionState(pitch: event.pitch, isNoteOn: event.kind == .noteOn, velocity: event.velocity, channel: event.channel, track: track)
+            updateRecognitionState(pitch: event.pitch, isNoteOn: event.kind == .noteOn, velocity: event.velocity, channel: event.channel, track: track, applyTuning: applyTuning)
         }
         syncLumiLiveModeIfActive()
     }

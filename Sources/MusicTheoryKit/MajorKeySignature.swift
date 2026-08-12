@@ -37,4 +37,29 @@ public enum MajorKeySignature: Equatable, Sendable {
         ]
         return byTonic[normalized] ?? .sharps(0)
     }
+
+    /// Same letter order as `sharpOrderPitchClasses`/`flatOrderPitchClasses` (F,C,G,D,A,E,B for
+    /// sharps, reversed for flats), but as actual `NoteLetter`s instead of the already-sharped/
+    /// flatted pitch class — the piece those two private tables were always missing for anything
+    /// that needs to build a real `SpelledPitch` (see `DiatonicSpelling`).
+    private static let sharpOrderLetters: [NoteLetter] = [.F, .C, .G, .D, .A, .E, .B]
+    private static let flatOrderLetters: [NoteLetter] = [.B, .E, .A, .D, .G, .C, .F]
+
+    /// Which of the 7 letters this key signature sharps/flats, in the order they're added at the
+    /// clef — e.g. 2 sharps means `{F, C}` (both implicitly raised throughout the piece).
+    public var affectedLetters: Set<NoteLetter> {
+        switch self {
+        case .sharps(let count): return Set(Self.sharpOrderLetters.prefix(count))
+        case .flats(let count): return Set(Self.flatOrderLetters.prefix(count))
+        }
+    }
+
+    /// Whether an affected letter is raised or lowered — `.sharp`/`.flat` matching this
+    /// signature's own case, meaningless (never read) when `accidentalCount == 0`.
+    public var accidentalDirection: Accidental {
+        switch self {
+        case .sharps: return .sharp
+        case .flats: return .flat
+        }
+    }
 }

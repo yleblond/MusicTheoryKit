@@ -6,7 +6,7 @@ import SwiftData
 /// `NotationStyleSettingRecord`'s own shape/rationale exactly: a single current choice, not a
 /// flat list. `temperamentID` is the raw `Temperament.id` string, not the value itself, so adding
 /// a new temperament never requires a schema migration. No tonic is stored here — see
-/// `ImprovSession.contextualTonic`'s own doc comment for why the tonic is derived live from
+/// `ImprovSession.contextualMode`'s own doc comment for why the tonic is derived live from
 /// whichever Théorie screen is browsing a mode, not chosen independently on this setting.
 @Model
 final class TuningConfigurationRecord {
@@ -42,4 +42,26 @@ public func fixedTemperamentCents(forPitchClass pitchClass: PitchClass, tonic: P
     let temperamentDeviation = TemperamentLibrary.cents(for: pitchClass, in: temperament, tonic: tonic)
     let referenceOffset = 1200 * log2(configuration.referenceA4 / 440)
     return temperamentDeviation + referenceOffset
+}
+
+/// The cents correction for `pitch`, resolving its real enharmonic spelling from `mode`'s own
+/// diatonic degrees first (`DiatonicSpelling.spelledDegrees(for:)`) so a temperament built from
+/// an unbroken chain of fifths (Pythagorean) can tell G# from Ab where the mode actually calls
+/// for one specific spelling — priority-2 resolution from the Intonations feature's own plan
+/// ("mode/gamme sélectionné"), the only context this app has today (chord-based and Guide-based
+/// resolution are future work). Falls back to `fixedTemperamentCents(forPitchClass:tonic:)` for
+/// any pitch outside the mode's own 7 degrees (a chromatic passing tone) or for a scale outside
+/// family 1 (no well-defined parent key signature to spell from) — the explicit "politique par
+/// défaut" the spec calls for rather than inventing a context that isn't there.
+public func temperamentCents(forPitch pitch: Int, mode: Mode, configuration: TuningConfiguration) -> Double {
+    let pitchClass = PitchClass(pitch)
+    if let spelledDegrees = DiatonicSpelling.spelledDegrees(for: mode),
+       let spelledPitch = spelledDegrees.first(where: { $0.pitchClass == pitchClass }),
+       let tonicSpelling = spelledDegrees.first(where: { $0.pitchClass == mode.tonic }),
+       let temperament = TemperamentLibrary.byID(configuration.temperamentID) {
+        let temperamentDeviation = TemperamentLibrary.cents(for: spelledPitch, in: temperament, tonicSpelling: tonicSpelling)
+        let referenceOffset = 1200 * log2(configuration.referenceA4 / 440)
+        return temperamentDeviation + referenceOffset
+    }
+    return fixedTemperamentCents(forPitchClass: pitchClass, tonic: mode.tonic, configuration: configuration)
 }
