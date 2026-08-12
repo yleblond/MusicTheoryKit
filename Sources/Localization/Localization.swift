@@ -444,6 +444,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appTonnetzLegendMajorTriad, appTonnetzLegendMinorTriad
     case appLabelModeOptionnel, appLabelCercleDesQuintes
     case appHelpTonnetzTitle, appHelpTonnetzAxes, appHelpTonnetzTriangles, appHelpTonnetzGraphs, appHelpTonnetzDiatonic
+    case appLabelAccord, appLabelNote, appLabelNotes
 
     // MARK: - App: Théorie — bouton d'aide générique par écran
     case appButtonTheorie

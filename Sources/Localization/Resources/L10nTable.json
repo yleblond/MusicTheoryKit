@@ -3496,6 +3496,39 @@
   "ru": "Когда выбран лад, его диатонические аккорды получают более выраженный контур.",
   "zhHans": "选择调式后，其自然和弦会有更明显的轮廓。"
  },
+ "appLabelAccord": {
+  "de": "Akkord",
+  "en": "Chord",
+  "es": "Acorde",
+  "fr": "Accord",
+  "it": "Accordo",
+  "ja": "コード",
+  "pt": "Acorde",
+  "ru": "Аккорд",
+  "zhHans": "和弦"
+ },
+ "appLabelNote": {
+  "de": "Note",
+  "en": "Note",
+  "es": "Nota",
+  "fr": "Note",
+  "it": "Nota",
+  "ja": "音",
+  "pt": "Nota",
+  "ru": "Нота",
+  "zhHans": "音"
+ },
+ "appLabelNotes": {
+  "de": "Noten",
+  "en": "Notes",
+  "es": "Notas",
+  "fr": "Notes",
+  "it": "Note",
+  "ja": "音",
+  "pt": "Notas",
+  "ru": "Ноты",
+  "zhHans": "音"
+ },
  "appButtonTheorie": {
   "de": "Theorie",
   "en": "Theory",

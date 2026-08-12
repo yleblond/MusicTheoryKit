@@ -162,11 +162,15 @@ struct TonnetzLibraryView: View {
 
     // MARK: - Bande du haut (A) : contrôles, Harmonique, cercle des quintes
 
-    /// The controls row plus the current selection's name, centered over the WHOLE row (not
-    /// tucked into the Harmonic group anymore) — per explicit request.
+    /// The controls row, then the current selection's name centered below it — per explicit
+    /// request (moved down from an overlay centered over the row itself, no longer tucked into
+    /// the Harmonic group either).
     private var topBand: some View {
-        controlsRow
-            .overlay { selectionSummary }
+        VStack(spacing: 8) {
+            controlsRow
+            selectionSummary
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
     }
 
     private var controlsRow: some View {
@@ -230,7 +234,8 @@ struct TonnetzLibraryView: View {
     }
 
     /// Enlarged (300 → 450) now that it's a full column rather than competing for space as a
-    /// floating card.
+    /// floating card, and centered within its own column width (matching `circleOfFifthsGroup`'s
+    /// own centering) rather than leading-aligned.
     private var harmonicGroup: some View {
         PitchClassTonnetzView(
             heldPitchClasses: heldPitchClasses,
@@ -248,19 +253,42 @@ struct TonnetzLibraryView: View {
             }
         )
         .frame(width: 450)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     /// The mode's Circle-of-fifths, when there is one — see `circleOfFifthsWheel`'s own doc
     /// comment. No label (per explicit request — the wheel itself is unambiguous), enlarged again
     /// (250 → 300, +20%), and centered within its own column width rather than leading-aligned.
+    /// Tapping a major/minor cell plays it and selects the matching triad on the Tonnetz too —
+    /// per explicit request; a diminished cell has no lattice triangle to select (see
+    /// `diatonicTriads`'s own doc comment), so taps there are silently ignored rather than
+    /// playing something the Tonnetz can't also show.
     @ViewBuilder
     private var circleOfFifthsGroup: some View {
         if let wheel = circleOfFifthsWheel {
-            CircleOfFifthsWheelView(wheel: wheel, palette: session.activeColorPalette.colors, paletteTextColors: session.activeColorPalette.textColors)
-                .frame(width: 300, height: 300)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .accessibilityLabel(L10n.string(.appLabelCercleDesQuintes, session.currentLanguage))
+            CircleOfFifthsWheelView(
+                wheel: wheel, palette: session.activeColorPalette.colors, paletteTextColors: session.activeColorPalette.textColors,
+                onSelectCell: { pitchClass, quality in playCircleOfFifthsCell(pitchClass: pitchClass, quality: quality) }
+            )
+            .frame(width: 300, height: 300)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .accessibilityLabel(L10n.string(.appLabelCercleDesQuintes, session.currentLanguage))
         }
+    }
+
+    private func playCircleOfFifthsCell(pitchClass: Int, quality: String) {
+        let tonnetzQuality: TonnetzTriadQuality
+        switch quality {
+        case "major": tonnetzQuality = .major
+        case "minor": tonnetzQuality = .minor
+        default: return
+        }
+        let tile = Tonnetz.paddedTile()
+        guard let coordinate = Tonnetz.coordinate(forRoot: PitchClass(pitchClass), in: tile.primary + tile.halo) else { return }
+        let triad = Tonnetz.triad(quality: tonnetzQuality, anchoredAt: coordinate)
+        selection = .triad(triad)
+        guard canPlay else { return }
+        play(.triad(triad))
     }
 
     #if os(macOS) || os(visionOS)
@@ -282,19 +310,22 @@ struct TonnetzLibraryView: View {
     }
     #endif
 
+    /// Prefixed with "Accord"/"Note"/"Notes" — per explicit request, a bare root name alone
+    /// doesn't say whether it's a single note or a chord (they can render identically, e.g. a
+    /// plain "C").
     @ViewBuilder
     private var selectionSummary: some View {
         switch selection {
         case .triad:
             if let chord = selection?.chord {
-                Text(session.notationStyle.displayName(for: chord)).font(.title2).bold()
+                Text("\(L10n.string(.appLabelAccord, session.currentLanguage)) \(session.notationStyle.displayName(for: chord))").font(.title2).bold()
             }
         case .edge(let edge, _):
             let rootName = session.notationStyle.rootName(edge.root, preferFlats: false)
             let otherName = session.notationStyle.rootName(edge.other, preferFlats: false)
-            Text("\(rootName) – \(otherName)").font(.title2).bold()
+            Text("\(L10n.string(.appLabelNotes, session.currentLanguage)) \(rootName)-\(otherName)").font(.title2).bold()
         case .note(let pitchClass, _):
-            Text(session.notationStyle.rootName(pitchClass, preferFlats: false)).font(.title2).bold()
+            Text("\(L10n.string(.appLabelNote, session.currentLanguage)) \(session.notationStyle.rootName(pitchClass, preferFlats: false))").font(.title2).bold()
         case nil:
             Text(L10n.string(.appModeTonnetzHarmonique, session.currentLanguage)).font(.title2).bold()
         }

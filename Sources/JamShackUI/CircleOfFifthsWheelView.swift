@@ -18,12 +18,19 @@ public struct CircleOfFifthsWheelView: View {
     /// stable accent color by its position (`Self.instrumentColors`), mirroring
     /// `instrumentColor(index)`/`trackColorByLabel` in `StaticAssets.swift`.
     public let tracks: [WebConsoleTrackState]
+    /// Called with a tapped cell's `(pitchClass, quality)` (`quality` is `cell.quality`'s own raw
+    /// value — `"major"`/`"minor"`/`"diminished"`) — `nil` (the default) keeps this view exactly
+    /// as read-only as it always was for every existing caller (`ModeLibraryView`/
+    /// `GuideLectureView`/`RunScreen`, none of which pass this). Added per explicit request so
+    /// `TonnetzLibraryView` can play (and select) whichever chord gets tapped here.
+    public let onSelectCell: ((Int, String) -> Void)?
 
-    public init(wheel: WebConsoleWheelState, palette: [String], paletteTextColors: [String], tracks: [WebConsoleTrackState] = []) {
+    public init(wheel: WebConsoleWheelState, palette: [String], paletteTextColors: [String], tracks: [WebConsoleTrackState] = [], onSelectCell: ((Int, String) -> Void)? = nil) {
         self.wheel = wheel
         self.palette = palette
         self.paletteTextColors = paletteTextColors
         self.tracks = tracks
+        self.onSelectCell = onSelectCell
     }
 
     // MARK: - Layout constants (same 540x540/center-270 unit system the web SVG uses — see
@@ -52,10 +59,41 @@ public struct CircleOfFifthsWheelView: View {
     private static let chordSuffix: [String: String] = ["major": "", "minor": "m", "diminished": "\u{B0}"]
 
     public var body: some View {
-        Canvas { context, size in
-            draw(in: context, size: size)
+        GeometryReader { proxy in
+            Canvas { context, size in
+                draw(in: context, size: size)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { location in handleTap(at: location, size: proxy.size) }
         }
         .aspectRatio(1, contentMode: .fit)
+    }
+
+    /// Same `point(radius:index:count:offset:)`/`unit`/`center` math `draw(in:size:)` uses —
+    /// nearest cell wins, within a generous tolerance (`cellSize` itself, so a tap doesn't need to
+    /// land pixel-perfect on the shape).
+    private func handleTap(at location: CGPoint, size: CGSize) {
+        guard let onSelectCell else { return }
+        let unit = min(size.width, size.height) / Self.viewBoxSize
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        let count = wheel.columns.count
+        guard count > 0 else { return }
+        func point(radius: CGFloat, index: Int, count: Int, offset: Double = 0) -> CGPoint {
+            let angle = (2 * .pi * (Double(index) + offset)) / Double(count) - .pi / 2
+            return CGPoint(x: center.x + radius * CGFloat(cos(angle)), y: center.y + radius * CGFloat(sin(angle)))
+        }
+        var best: (cell: WebConsoleWheelCellState, distance: CGFloat)?
+        for (index, column) in wheel.columns.enumerated() {
+            for (ringIndex, cell) in column.cells.enumerated() {
+                guard ringIndex < Self.ringRadii.count else { continue }
+                let pos = point(radius: Self.ringRadii[ringIndex] * unit, index: index, count: count)
+                let cellDistance = hypot(location.x - pos.x, location.y - pos.y)
+                if best == nil || cellDistance < best!.distance { best = (cell, cellDistance) }
+            }
+        }
+        if let best, best.distance <= Self.cellSize * unit * 1.5 {
+            onSelectCell(best.cell.pitchClass, best.cell.quality)
+        }
     }
 
     private func draw(in context: GraphicsContext, size: CGSize) {
