@@ -328,6 +328,14 @@ struct ContentView: View {
                             selectedTheorieTab = .modes
                         }
                     }
+                    // Théorie's own "source principale" defaults to MIDI if connected, else the
+                    // computer keyboard, the first time this mode is entered — per explicit
+                    // request, rather than leaving it unset until the user happens to flip the
+                    // "clavier ordinateur" toggle themselves. A no-op once any source is already
+                    // picked (see `ensureTheoryLiveInputSourceHasADefault`'s own doc comment).
+                    .onChange(of: mode, initial: true) { _, newMode in
+                        if newMode == .theorie { session.ensureTheoryLiveInputSourceHasADefault() }
+                    }
 
                     // Persistent, always-visible "long" keyboard — only while the computer
                     // keyboard mode is explicitly turned on (see `ComputerKeyboardSettingsView`,

@@ -2513,16 +2513,23 @@ public final class ImprovSession: @unchecked Sendable {
         }
     }
 
-    /// One role, attached to whichever live input makes sense with nothing configured yet: a
-    /// detected MIDI keyboard if one is visible (preferred — a real instrument beats the virtual
-    /// one when both are possible), else the computer keyboard, always available. No explicit
-    /// `soundName` — leaves the role's sound as the sampler's own default (see
-    /// `setSoundEnabled(_:for:)`'s system-instrument fallback), immediately listening at full
-    /// volume so this fresh scene is genuinely ready to play, not just present. Every step here
-    /// is best-effort (`try?`) — a failure must never prevent the anonymous scene itself from
-    /// existing.
+    /// A detected MIDI keyboard if one is visible (preferred — a real instrument beats the
+    /// virtual one when both are possible), else the computer keyboard, always available. Shared
+    /// by `attachDefaultRoleForFreshScene()` (Studio's own fresh-scene default) and
+    /// `setComputerKeyboardInputEnabled`/`ensureTheoryLiveInputSourceHasADefault()` (Théorie's
+    /// "source principale" default) so the one rule lives in exactly one place.
+    private var defaultLiveInputTrackID: TrackID {
+        tracks.first { if case .midiSource = $0.id { return true } else { return false } }?.id ?? .computerKeyboard
+    }
+
+    /// One role, attached to whichever live input makes sense with nothing configured yet — see
+    /// `defaultLiveInputTrackID`'s own doc comment. No explicit `soundName` — leaves the role's
+    /// sound as the sampler's own default (see `setSoundEnabled(_:for:)`'s system-instrument
+    /// fallback), immediately listening at full volume so this fresh scene is genuinely ready to
+    /// play, not just present. Every step here is best-effort (`try?`) — a failure must never
+    /// prevent the anonymous scene itself from existing.
     private func attachDefaultRoleForFreshScene() {
-        let targetTrackID = tracks.first { if case .midiSource = $0.id { return true } else { return false } }?.id ?? .computerKeyboard
+        let targetTrackID = defaultLiveInputTrackID
         let roleName = tracks.first { $0.id == targetTrackID }?.label ?? "Instrument"
         guard let roleID = try? addSceneRole(name: roleName) else { return }
         try? attachInstrument(targetTrackID, toRole: roleID)
@@ -3250,18 +3257,33 @@ public final class ImprovSession: @unchecked Sendable {
     /// today, e.g. showing held-note display from a scene, regardless of whether typing on the
     /// physical keyboard is what's feeding it).
     ///
-    /// Also defaults `theoryLiveInputSourceID` to `.computerKeyboard` when turning ON with no
-    /// source picked yet (never on turning OFF, and never overriding an existing pick) — per
-    /// explicit "main keyboard" design: physical typing only actually plays notes once BOTH this
-    /// is on AND the picked source is `.computerKeyboard` (see `ContentView`'s own
-    /// `.computerKeyboardInput(isActive:)` call), so simply flipping this toggle on must still
-    /// "just work" for anyone who never touches the source picker at all.
+    /// Also defaults `theoryLiveInputSourceID` when turning ON with no source picked yet (never
+    /// on turning OFF, and never overriding an existing pick) — per explicit "main keyboard"
+    /// design: physical typing only actually plays notes once BOTH this is on AND the picked
+    /// source is `.computerKeyboard` (see `ContentView`'s own `.computerKeyboardInput(isActive:)`
+    /// call), so simply flipping this toggle on must still "just work" for anyone who never
+    /// touches the source picker at all. Uses `defaultLiveInputTrackID` (MIDI preferred if
+    /// connected) rather than unconditionally `.computerKeyboard` — per explicit request, so a
+    /// keyboard that's just been physically plugged in is what actually lights up, matching
+    /// Studio's own fresh-scene default.
     public func setComputerKeyboardInputEnabled(_ enabled: Bool) {
         computerKeyboardInputEnabled = enabled
         if enabled, theoryLiveInputSourceID == nil {
-            setTheoryLiveInputSource(.computerKeyboard)
+            setTheoryLiveInputSource(defaultLiveInputTrackID)
         }
         append("Clavier ordinateur : \(enabled ? "actif" : "inactif").")
+    }
+
+    /// Gives Théorie's "source principale" a sensible default (MIDI if connected, else the
+    /// computer keyboard — `defaultLiveInputTrackID`) the first time Théorie mode is entered,
+    /// rather than leaving it `nil` (no source at all) until the user happens to flip the
+    /// "clavier ordinateur" toggle themselves (`setComputerKeyboardInputEnabled`'s own analogous
+    /// default). A no-op once ANY source is already picked, so it's safe to call every time
+    /// Théorie mode becomes active, not just the very first time — it can only ever fill in a
+    /// still-unset value, never override a choice already made.
+    public func ensureTheoryLiveInputSourceHasADefault() {
+        guard theoryLiveInputSourceID == nil else { return }
+        setTheoryLiveInputSource(defaultLiveInputTrackID)
     }
 
     /// Bumped by `requestComputerKeyboardFocus()` — `ContentView` observes this (via

@@ -30,8 +30,8 @@ struct DissonancesLibraryView: View {
 
     private static let densityOptions = [12, 24, 48, 100, 300, 600, 1000]
     private static let heatmapResolution = 64
-    /// 1.5× the screen's original 360×340 heatmap, per explicit request.
-    private static let heatmapSize = CGSize(width: 540, height: 510)
+    /// 1.5× the screen's original 360×340 heatmap, then -10%, per explicit request.
+    private static let heatmapSize = CGSize(width: 486, height: 459)
     private static let toneColors: [Color] = [.red, .green, .blue]
 
     /// The two rendering modes for the same landscape data — flat 2D heatmap (`DissonanceHeatmapView`)
@@ -134,9 +134,7 @@ struct DissonancesLibraryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                baseNoteKeyboardSection
-                noteReadoutSection
-                settingsSection
+                topRow
 
                 if let grid {
                     landscapeSection(grid: grid)
@@ -147,8 +145,6 @@ struct DissonancesLibraryView: View {
                 } else if let buildError {
                     Text(buildError).foregroundStyle(.red).font(.caption)
                 }
-
-                chordAndScaleRow
             }
             .padding()
         }
@@ -170,13 +166,25 @@ struct DissonancesLibraryView: View {
         }
     }
 
+    /// Row 1: the base-note keyboard (widened +20%, per explicit request) and, alongside it —
+    /// roughly above where the spectrum graph sits in row 2 — the playable-triad row, since this
+    /// row's own job is now "place the base note and propose the chords."
+    private var topRow: some View {
+        HStack(alignment: .top, spacing: 20) {
+            baseNoteKeyboardSection
+                .frame(width: 576)
+            chordButtonsRow
+            Spacer(minLength: 0)
+        }
+    }
+
     /// Picking the base note is now a tap on this keyboard rather than a `Picker` — "vu que les
     /// calculs sont rapides," per explicit request, so exploring different base notes is as
-    /// direct as playing them. Moved to the TOP, thinned to the same slim profile as the app's
-    /// own persistent main-keyboard bar (`ComputerKeyboardInputBar`, also 90pt/full 21...108
-    /// range), rather than the tall 2-octave `PitchKeyboardView` default. Disabled (read-only,
-    /// dimmed) while a build is already running — see this type's own doc comment on why that's
-    /// the chosen way to block a second concurrent request rather than queuing/cancelling one.
+    /// direct as playing them. Thinned to the same slim profile as the app's own persistent
+    /// main-keyboard bar (`ComputerKeyboardInputBar`, also 90pt/full 21...108 range), rather than
+    /// the tall 2-octave `PitchKeyboardView` default. Disabled (read-only, dimmed) while a build
+    /// is already running — see this type's own doc comment on why that's the chosen way to
+    /// block a second concurrent request rather than queuing/cancelling one.
     ///
     /// Two DISTINCT interactions, deliberately kept visually separate per explicit request:
     /// - Picking a base note: a momentary gray flash on exactly the clicked key for as long as
@@ -213,10 +221,20 @@ struct DissonancesLibraryView: View {
         return Set(pressedBasePitch.map { [$0] } ?? [])
     }
 
+    private var densityPickerSection: some View {
+        Picker("Densité", selection: $samplesPerOctave) {
+            ForEach(Self.densityOptions, id: \.self) { count in
+                Text("\(count)/octave").tag(count)
+            }
+        }
+        .pickerStyle(.menu)
+        .fixedSize()
+        .disabled(isBuilding)
+    }
+
     /// The 3 currently selected notes' own names, plus — in parentheses — the name of whichever
     /// chord (ANY root, not just this screen's own base note) those exact 3 pitch classes form,
-    /// if any. Shown regardless of `grid`/`selectionSource`: it's pure note-name/chord-recognition
-    /// math, meaningful even before the octave has been analyzed.
+    /// if any. Shown under the spectrum graph, per explicit request.
     private var noteReadoutSection: some View {
         let names = currentPitches.map(noteLabel(forMidiPitch:)).joined(separator: " – ")
         let suffix = ChordVocabulary.exactMatch(forPitchClasses: currentPitchClasses)
@@ -224,39 +242,23 @@ struct DissonancesLibraryView: View {
         return Text(names + suffix).font(.subheadline)
     }
 
-    private var settingsSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Picker("Densité", selection: $samplesPerOctave) {
-                ForEach(Self.densityOptions, id: \.self) { count in
-                    Text("\(count)/octave").tag(count)
-                }
-            }
-            .pickerStyle(.menu)
-            .fixedSize()
-            .disabled(isBuilding)
-
-            if let sound = session.theoryAuditionSound() {
-                Text(sound.displayName).font(.caption).foregroundStyle(.secondary)
-            } else {
-                // Without an instrument, `analyzeOctave()` silently no-ops on every note/density
-                // change — worth saying so explicitly now that there's no "Analyser" button
-                // whose own disabled state used to be the only hint.
-                Text("Aucun instrument sélectionné").font(.caption).foregroundStyle(.orange)
-            }
-        }
+    /// The currently PLAYED note on each axis (the middle/top tone) — ticked in green/blue on the
+    /// dissonance graph, matching `NoteSpectrumView`'s own per-tone colors, per explicit request.
+    private var playedXNote: (ratio: Double, label: String) {
+        (ratio(forSemitonesAboveRoot: selectedSemitones.x), noteLabel(forMidiPitch: baseMidiPitch + selectedSemitones.x))
     }
 
+    private var playedYNote: (ratio: Double, label: String) {
+        (ratio(forSemitonesAboveRoot: selectedSemitones.y), noteLabel(forMidiPitch: baseMidiPitch + selectedSemitones.y))
+    }
+
+    /// Row 2: the dissonance graph (with density/2D-3D/scale — the 3 params that drive the graph
+    /// and its display — directly below it), its legend + smoothing slider, then the spectrum
+    /// graph (with the note readout directly below IT) — per explicit request.
     @ViewBuilder
     private func landscapeSection(grid: OctaveSpectrumGrid) -> some View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
-                Picker("", selection: $drawingMode) {
-                    ForEach(DrawingMode.allCases) { mode in Text(mode.rawValue).tag(mode) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 120)
-
                 Group {
                     switch drawingMode {
                     case .twoD:
@@ -264,6 +266,7 @@ struct DissonancesLibraryView: View {
                             grid: grid, resolution: Self.heatmapResolution,
                             baseNoteLabel: baseNoteLabel, axisTicks: axisTicks,
                             markerRatios: markerRatios(semitoneX: selectedSemitones.x, semitoneY: selectedSemitones.y),
+                            playedXNote: playedXNote, playedYNote: playedYNote,
                             smoothingSigma: smoothingSigma,
                             onTapRatios: { x, y in selectAndPlay(semitoneX: semitonesFromRatio(x), semitoneY: semitonesFromRatio(y), source: .graphTap) }
                         )
@@ -271,12 +274,15 @@ struct DissonancesLibraryView: View {
                         DissonanceSurfaceView(
                             grid: grid, baseNoteLabel: baseNoteLabel, axisTicks: axisTicks,
                             markerRatios: markerRatios(semitoneX: selectedSemitones.x, semitoneY: selectedSemitones.y),
+                            playedXNote: playedXNote, playedYNote: playedYNote,
                             smoothingSigma: smoothingSigma,
                             onTapRatios: { x, y in selectAndPlay(semitoneX: semitonesFromRatio(x), semitoneY: semitonesFromRatio(y), source: .graphTap) }
                         )
                     }
                 }
                 .frame(width: Self.heatmapSize.width, height: Self.heatmapSize.height)
+
+                parametersRow
             }
 
             HStack(alignment: .top, spacing: 12) {
@@ -285,20 +291,24 @@ struct DissonancesLibraryView: View {
             }
             .frame(height: Self.heatmapSize.height)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Spectre").font(.caption).foregroundStyle(.secondary)
-                Group {
-                    if let spectrumTones {
-                        NoteSpectrumView(tones: spectrumTones)
-                    } else {
-                        ProgressView()
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Spectre").font(.caption).foregroundStyle(.secondary)
+                    Group {
+                        if let spectrumTones {
+                            NoteSpectrumView(tones: spectrumTones)
+                        } else {
+                            ProgressView()
+                        }
                     }
+                    .frame(width: 468, height: Self.heatmapSize.height)
+                    .border(Color.gray.opacity(0.25))
                 }
-                .frame(width: 520, height: Self.heatmapSize.height)
-                .border(Color.gray.opacity(0.25))
-            }
-            .task(id: SpectrumRenderKey(gridKey: grid.key, baseMidiPitch: baseMidiPitch, semitoneX: selectedSemitones.x, semitoneY: selectedSemitones.y)) {
-                await computeSpectrumTones()
+                .task(id: SpectrumRenderKey(gridKey: grid.key, baseMidiPitch: baseMidiPitch, semitoneX: selectedSemitones.x, semitoneY: selectedSemitones.y)) {
+                    await computeSpectrumTones()
+                }
+
+                noteReadoutSection
             }
         }
     }
@@ -319,16 +329,25 @@ struct DissonancesLibraryView: View {
         }
     }
 
-    /// Below the graph, horizontally: the scale picker (its own effect limited to the axis-tick
-    /// legend, see `axisTicks`' own doc comment), then the playable-triad row — same tappable-chip
-    /// rendering `ProgressionLibraryView.chordListSection` uses (root-colored fill via the active
-    /// palette, accent border + bold text on the current selection), just reusing `FlowLayout` for
-    /// the wrap instead of a vertical list, per explicit request.
-    private var chordAndScaleRow: some View {
-        HStack(alignment: .top, spacing: 16) {
+    /// Below the graph, horizontally: density, then the 2D/3D drawing-mode picker, then the scale
+    /// picker (its own effect limited to the axis-tick legend, see `axisTicks`' own doc comment)
+    /// — the 3 parameters that drive the graph's own data and display, grouped together, per
+    /// explicit request.
+    private var parametersRow: some View {
+        HStack(alignment: .center, spacing: 16) {
+            densityPickerSection
+            drawingModePicker
             scalePickerRow
-            chordButtonsRow
         }
+    }
+
+    private var drawingModePicker: some View {
+        Picker("", selection: $drawingMode) {
+            ForEach(DrawingMode.allCases) { mode in Text(mode.rawValue).tag(mode) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(width: 120)
     }
 
     private var scalePickerRow: some View {

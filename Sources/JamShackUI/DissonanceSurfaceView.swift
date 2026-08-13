@@ -17,6 +17,12 @@ public struct DissonanceSurfaceView: View {
     public let baseNoteLabel: String
     public let axisTicks: [(ratio: Double, label: String, isInScale: Bool)]
     public let markerRatios: (x: Double, y: Double)
+    /// The X axis's own currently-played note (the middle tone) — ticked in green, matching
+    /// `NoteSpectrumView`'s own per-tone color convention. `nil` draws no extra tick.
+    public let playedXNote: (ratio: Double, label: String)?
+    /// Same as `playedXNote`, for the Y axis's own currently-played note (the top tone) — ticked
+    /// in blue.
+    public let playedYNote: (ratio: Double, label: String)?
     /// Purely graphical Gaussian blur strength (0 = raw/disabled) — see `DissonanceLandscape`'s
     /// own doc comment.
     public let smoothingSigma: Double
@@ -42,12 +48,16 @@ public struct DissonanceSurfaceView: View {
 
     public init(
         grid: OctaveSpectrumGrid, baseNoteLabel: String, axisTicks: [(ratio: Double, label: String, isInScale: Bool)],
-        markerRatios: (x: Double, y: Double), smoothingSigma: Double = 0, onTapRatios: @escaping (Double, Double) -> Void
+        markerRatios: (x: Double, y: Double), playedXNote: (ratio: Double, label: String)? = nil,
+        playedYNote: (ratio: Double, label: String)? = nil, smoothingSigma: Double = 0,
+        onTapRatios: @escaping (Double, Double) -> Void
     ) {
         self.grid = grid
         self.baseNoteLabel = baseNoteLabel
         self.axisTicks = axisTicks
         self.markerRatios = markerRatios
+        self.playedXNote = playedXNote
+        self.playedYNote = playedYNote
         self.smoothingSigma = smoothingSigma
         self.onTapRatios = onTapRatios
     }
@@ -114,6 +124,7 @@ public struct DissonanceSurfaceView: View {
         var objects: [(depth: Double, object: SceneObject)] = []
         objects.append(contentsOf: surfaceFaces(values: values, projector: projector))
         objects.append(contentsOf: axisObjects(projector: projector))
+        objects.append(contentsOf: playedNoteObjects(projector: projector))
         objects.append(contentsOf: markerObjects(values: values, projector: projector))
         for entry in objects.sorted(by: { $0.depth < $1.depth }) {
             switch entry.object {
@@ -184,6 +195,28 @@ public struct DissonanceSurfaceView: View {
             text: Text(baseNoteLabel).font(.system(size: 10, weight: .semibold)).foregroundStyle(.black),
             at: origin, anchor: .topTrailing
         )))
+        return objects
+    }
+
+    /// Full-length, bolder colored grid lines for the currently PLAYED note on each axis — the 3D
+    /// analog of `DissonanceHeatmapView.drawPlayedNoteTicks`, same green/blue convention matching
+    /// `NoteSpectrumView`'s own tone colors.
+    private func playedNoteObjects(projector: Projector) -> [(depth: Double, object: SceneObject)] {
+        var objects: [(depth: Double, object: SceneObject)] = []
+        if let playedXNote {
+            let x = playedXNote.ratio - 1.0
+            let (nearPoint, nearDepth) = projector.project(x: x, y: 0, z: 0)
+            let (farPoint, _) = projector.project(x: x, y: 1, z: 0)
+            objects.append((nearDepth + 0.001, .line(path: linePath(from: nearPoint, to: farPoint), color: .green, lineWidth: 1.5)))
+            objects.append((nearDepth + 0.001, .text(text: Text(playedXNote.label).font(.system(size: 8, weight: .bold)).foregroundStyle(.green), at: nearPoint, anchor: .top)))
+        }
+        if let playedYNote {
+            let y = playedYNote.ratio - 1.0
+            let (nearPoint, nearDepth) = projector.project(x: 0, y: y, z: 0)
+            let (farPoint, _) = projector.project(x: 1, y: y, z: 0)
+            objects.append((nearDepth + 0.001, .line(path: linePath(from: nearPoint, to: farPoint), color: .blue, lineWidth: 1.5)))
+            objects.append((nearDepth + 0.001, .text(text: Text(playedYNote.label).font(.system(size: 8, weight: .bold)).foregroundStyle(.blue), at: nearPoint, anchor: .trailing)))
+        }
         return objects
     }
 

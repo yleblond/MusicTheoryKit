@@ -15,6 +15,13 @@ public struct DissonanceHeatmapView: View {
     public let baseNoteLabel: String
     public let axisTicks: [(ratio: Double, label: String, isInScale: Bool)]
     public let markerRatios: (x: Double, y: Double)
+    /// The X axis's own currently-played note (the middle tone) — ticked in green, matching
+    /// `NoteSpectrumView`'s own per-tone color convention, so the same note reads identically in
+    /// both places. `nil` draws no extra tick.
+    public let playedXNote: (ratio: Double, label: String)?
+    /// Same as `playedXNote`, for the Y axis's own currently-played note (the top tone) — ticked
+    /// in blue.
+    public let playedYNote: (ratio: Double, label: String)?
     /// Purely graphical Gaussian blur strength (0 = raw/disabled) — see `DissonanceLandscape`'s
     /// own doc comment.
     public let smoothingSigma: Double
@@ -37,6 +44,7 @@ public struct DissonanceHeatmapView: View {
     public init(
         grid: OctaveSpectrumGrid, resolution: Int, baseNoteLabel: String,
         axisTicks: [(ratio: Double, label: String, isInScale: Bool)], markerRatios: (x: Double, y: Double),
+        playedXNote: (ratio: Double, label: String)? = nil, playedYNote: (ratio: Double, label: String)? = nil,
         smoothingSigma: Double = 0, onTapRatios: @escaping (Double, Double) -> Void
     ) {
         self.grid = grid
@@ -44,6 +52,8 @@ public struct DissonanceHeatmapView: View {
         self.baseNoteLabel = baseNoteLabel
         self.axisTicks = axisTicks
         self.markerRatios = markerRatios
+        self.playedXNote = playedXNote
+        self.playedYNote = playedYNote
         self.smoothingSigma = smoothingSigma
         self.onTapRatios = onTapRatios
     }
@@ -62,6 +72,7 @@ public struct DissonanceHeatmapView: View {
                     drawCells(cellColors, in: context, rect: rect)
                 }
                 drawAxisTicks(in: context, rect: rect)
+                drawPlayedNoteTicks(in: context, rect: rect)
                 drawBaseNoteLabel(in: context, rect: rect)
                 drawTick(label: nil, ratios: markerRatios, in: context, rect: rect, color: .red, radius: 6)
             }
@@ -165,6 +176,33 @@ public struct DissonanceHeatmapView: View {
                 }, with: .color(.black.opacity(opacity * 0.7))
             )
             context.draw(Text(tick.label).font(.system(size: fontSize)).foregroundStyle(.black.opacity(opacity)), at: CGPoint(x: rect.minX - tickLength - 2, y: y), anchor: .trailing)
+        }
+    }
+
+    /// A bolder, colored tick on top of whatever `drawAxisTicks` already drew at (or near) the
+    /// same spot — the currently PLAYED note on each axis, matching `NoteSpectrumView`'s own
+    /// tone-color convention (green = the X axis's middle tone, blue = the Y axis's top tone) so
+    /// the same note reads identically in both places.
+    private func drawPlayedNoteTicks(in context: GraphicsContext, rect: CGRect) {
+        if let playedXNote {
+            let x = point(forRatios: (playedXNote.ratio, 1.0), in: rect).x
+            context.stroke(
+                Path { path in
+                    path.move(to: CGPoint(x: x, y: rect.maxY))
+                    path.addLine(to: CGPoint(x: x, y: rect.maxY + 6))
+                }, with: .color(.green), lineWidth: 2
+            )
+            context.draw(Text(playedXNote.label).font(.system(size: 9, weight: .bold)).foregroundStyle(.green), at: CGPoint(x: x, y: rect.maxY + 8), anchor: .top)
+        }
+        if let playedYNote {
+            let y = point(forRatios: (1.0, playedYNote.ratio), in: rect).y
+            context.stroke(
+                Path { path in
+                    path.move(to: CGPoint(x: rect.minX - 6, y: y))
+                    path.addLine(to: CGPoint(x: rect.minX, y: y))
+                }, with: .color(.blue), lineWidth: 2
+            )
+            context.draw(Text(playedYNote.label).font(.system(size: 9, weight: .bold)).foregroundStyle(.blue), at: CGPoint(x: rect.minX - 8, y: y), anchor: .trailing)
         }
     }
 
