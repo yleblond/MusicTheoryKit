@@ -1,4 +1,5 @@
 import AudioEngine
+import Foundation
 import RecognitionEngine
 import SoundFontModel
 
@@ -28,6 +29,15 @@ public enum TrackID: Hashable, Sendable {
     /// server; sound is always a purely local decision (see `TrackInfo.canHaveSound`), never
     /// forced by the network.
     case remote(clientID: String, trackID: String)
+    /// A virtual keyboard derived from splitting one real MIDI source into several pitch-range
+    /// zones — see `MIDIKeyboardSplit`/`ImprovSession.midiKeyboardSplit`. `sourceIndex` is the
+    /// same identity space as `.midiSource(Int)` (an index into `availableMIDISources()`);
+    /// `zoneID` is the zone's own stable `UUID` (not a positional index), so reordering/editing
+    /// OTHER zones in the same split never silently reattaches a scene role to the wrong one.
+    /// When a split is active for a source, its zones REPLACE the plain `.midiSource(sourceIndex)`
+    /// entry in `ImprovSession.tracks` entirely (see `refreshTracks`) — per explicit request, a
+    /// split is a full replacement, not an addition alongside the original.
+    case midiSplitZone(sourceIndex: Int, zoneID: UUID)
 
     /// The canonical wire-format string for this track's *local* identity — what a client
     /// puts in `NetMessage.trackID` when announcing or forwarding a note event for one of
@@ -41,6 +51,7 @@ public enum TrackID: Hashable, Sendable {
         case .webKeyboard(let clientID): return "clavier-web:\(clientID)"
         case .microphone: return "micro"
         case .remote: return nil
+        case .midiSplitZone(let sourceIndex, let zoneID): return "midi-split:\(sourceIndex + 1):\(zoneID.uuidString)"
         }
     }
 
@@ -61,6 +72,12 @@ public enum TrackID: Hashable, Sendable {
                 let clientID = String(text.dropFirst("clavier-web:".count))
                 guard !clientID.isEmpty else { return nil }
                 self = .webKeyboard(clientID: clientID)
+                return
+            }
+            if text.hasPrefix("midi-split:") {
+                let parts = text.dropFirst("midi-split:".count).split(separator: ":", maxSplits: 1)
+                guard parts.count == 2, let n = Int(parts[0]), n >= 1, let zoneID = UUID(uuidString: String(parts[1])) else { return nil }
+                self = .midiSplitZone(sourceIndex: n - 1, zoneID: zoneID)
                 return
             }
             return nil

@@ -2194,11 +2194,78 @@ final class ImprovSessionTests: XCTestCase {
     // MARK: - TrackID
 
     func testTrackIDWireIDTextRoundTrips() throws {
-        for id: TrackID in [.midiMerged, .computerKeyboard, .webKeyboard(clientID: "abc-123"), .microphone, .midiSource(0), .midiSource(3)] {
+        let zoneID = UUID()
+        for id: TrackID in [.midiMerged, .computerKeyboard, .webKeyboard(clientID: "abc-123"), .microphone, .midiSource(0), .midiSource(3), .midiSplitZone(sourceIndex: 1, zoneID: zoneID)] {
             let wireText = try XCTUnwrap(id.wireIDText, "\(id) has no wireIDText")
             XCTAssertEqual(TrackID(wireIDText: wireText), id)
         }
         XCTAssertNil(TrackID(wireIDText: "not-a-real-id"))
+    }
+
+    // MARK: - MIDIKeyboardSplit
+
+    func testMIDIKeyboardSplitZoneLookupAndTransposition() {
+        let zoneA = MIDIKeyboardSplit.Zone(name: "Clavier 1", lowPitch: 24, highPitch: 59, octaveShift: 1)
+        let zoneB = MIDIKeyboardSplit.Zone(name: "Clavier 2", lowPitch: 60, highPitch: 108, octaveShift: -1)
+        let split = MIDIKeyboardSplit(isEnabled: true, zones: [zoneA, zoneB])
+
+        // Inside a zone: transposed by the whole-octave shift.
+        let inZoneA = split.zone(forPitch: 40)
+        XCTAssertEqual(inZoneA?.zone.id, zoneA.id)
+        XCTAssertEqual(inZoneA?.transposedPitch, 52)
+
+        // Exact boundary belongs to the zone that claims it.
+        XCTAssertEqual(split.zone(forPitch: 59)?.zone.id, zoneA.id)
+        XCTAssertEqual(split.zone(forPitch: 60)?.zone.id, zoneB.id)
+
+        // A gap between zones (nothing claims pitch 10) drops silently.
+        XCTAssertNil(split.zone(forPitch: 10))
+
+        // Transposition landing outside 0...127 drops rather than clamps.
+        let edgeZone = MIDIKeyboardSplit.Zone(name: "Edge", lowPitch: 0, highPitch: 11, octaveShift: -1)
+        XCTAssertNil(MIDIKeyboardSplit(isEnabled: true, zones: [edgeZone]).zone(forPitch: 5))
+
+        // Disabled split never routes anything.
+        XCTAssertNil(MIDIKeyboardSplit(isEnabled: false, zones: [zoneA]).zone(forPitch: 40))
+    }
+
+    func testMIDIKeyboardSplitHasOverlap() {
+        let a = MIDIKeyboardSplit.Zone(name: "A", lowPitch: 0, highPitch: 59, octaveShift: 0)
+        let touching = MIDIKeyboardSplit.Zone(name: "B", lowPitch: 60, highPitch: 127, octaveShift: 0)
+        XCTAssertFalse(MIDIKeyboardSplit.hasOverlap(in: [a, touching]), "adjacent-but-touching ranges must not count as overlap")
+
+        let overlapping = MIDIKeyboardSplit.Zone(name: "C", lowPitch: 59, highPitch: 90, octaveShift: 0)
+        XCTAssertTrue(MIDIKeyboardSplit.hasOverlap(in: [a, overlapping]))
+    }
+
+    func testSetMIDIKeyboardSplitUpsertsMatchesByUniqueIDThenDisplayNameAndDeletesOnNil() throws {
+        let session = ImprovSession()
+        let zone = MIDIKeyboardSplit.Zone(name: "Clavier 1", lowPitch: 0, highPitch: 59, octaveShift: 1)
+        let split = MIDIKeyboardSplit(isEnabled: true, zones: [zone])
+
+        // Insert keyed by uniqueID.
+        try session.setMIDIKeyboardSplit(uniqueID: 42, displayName: "Mon Clavier", split: split)
+        XCTAssertEqual(session.midiKeyboardSplit(uniqueID: 42, displayName: "Mon Clavier"), split)
+        // Same uniqueID, different reported name (e.g. renamed by the OS) still matches.
+        XCTAssertEqual(session.midiKeyboardSplit(uniqueID: 42, displayName: "Autre Nom"), split)
+
+        // Upsert with a changed split replaces rather than duplicating.
+        let updatedZone = MIDIKeyboardSplit.Zone(name: "Clavier 1", lowPitch: 0, highPitch: 59, octaveShift: 2)
+        let updatedSplit = MIDIKeyboardSplit(isEnabled: true, zones: [updatedZone])
+        try session.setMIDIKeyboardSplit(uniqueID: 42, displayName: "Mon Clavier", split: updatedSplit)
+        XCTAssertEqual(session.midiKeyboardSplit(uniqueID: 42, displayName: "Mon Clavier"), updatedSplit)
+
+        // No uniqueID falls back to displayName matching.
+        try session.setMIDIKeyboardSplit(uniqueID: nil, displayName: "Clavier Sans ID", split: split)
+        XCTAssertEqual(session.midiKeyboardSplit(uniqueID: nil, displayName: "Clavier Sans ID"), split)
+
+        // nil deletes. Both records cleaned up: this test runs against the real on-disk store
+        // (same as every other `ImprovSession()`-based test in this file), so leaving either
+        // behind would leak into later runs.
+        try session.setMIDIKeyboardSplit(uniqueID: 42, displayName: "Mon Clavier", split: nil)
+        XCTAssertNil(session.midiKeyboardSplit(uniqueID: 42, displayName: "Mon Clavier"))
+        try session.setMIDIKeyboardSplit(uniqueID: nil, displayName: "Clavier Sans ID", split: nil)
+        XCTAssertNil(session.midiKeyboardSplit(uniqueID: nil, displayName: "Clavier Sans ID"))
     }
 
     func testTrackRecordsMostRecentMIDIChannel() throws {

@@ -85,6 +85,7 @@
 		56EEDD2380EA0F70E184B249 /* ModeLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92D0CCE52D97231126907127 /* ModeLibraryView.swift */; };
 		577625AA73822F8E4B000BF0 /* CompositionFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCD1C63D851BB483B73CD474 /* CompositionFileView.swift */; };
 		57E075DA1FCD4D568E942FE8 /* IconAssignmentButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DF506E12A5E6829884DCE65 /* IconAssignmentButton.swift */; };
+		0B3E1CCFDCC129053277D124 /* MIDIKeyboardSplitEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33695B69FE948D8C6E0536B3 /* MIDIKeyboardSplitEditorView.swift */; };
 		5863ACD5290B62D166443E7C /* ExplorationWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66638E51F664628900DC1080 /* ExplorationWindow.swift */; };
 		591A99B18A4B87B7EC3CD7A2 /* GuideDescriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E2F51CDF00A0B57FE9AEAB /* GuideDescriptionView.swift */; };
 		59C2A00572CF722DEE6994C6 /* PlaybackControlButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA393FDD6590DDE0D1E4FAEF /* PlaybackControlButton.swift */; };
@@ -203,6 +204,7 @@
 		BEA5AE67A7CCACEF5E5E736F /* JamShackAIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13B3167768CB0DDEADFFF969 /* JamShackAIView.swift */; };
 		C0CA115AE7679D0B81C49769 /* ExplorationTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 166678F23DADAFC02999CB11 /* ExplorationTabContent.swift */; };
 		C33A55FBA8141B020899B27F /* IconAssignmentButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DF506E12A5E6829884DCE65 /* IconAssignmentButton.swift */; };
+		B35F172A212A08DFAFCB43B2 /* MIDIKeyboardSplitEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33695B69FE948D8C6E0536B3 /* MIDIKeyboardSplitEditorView.swift */; };
 		C441350505E48894B5559800 /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71953E7D8E1B09B320DEFE6A /* RecordingDetailView.swift */; };
 		C691C1B6EB044778674B03E2 /* SoundStorageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 678B28D74D8F68E83990603A /* SoundStorageView.swift */; };
 		C716A5DC69D121C276897938 /* GuideEditionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556A46486C82BF4F493BD822 /* GuideEditionView.swift */; };
@@ -270,6 +272,7 @@
 		D99BD804346E701112162FF4 /* DissonancesLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91705D465E007EBC80E65D1D /* DissonancesLibraryView.swift */; };
 		BBE9830D3738A476333DB562 /* DissonancesTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 665B065D211073F3F5444336 /* DissonancesTabContent.swift */; };
 		FF9D4A6D4F4DE2A8249C1F5E /* IconAssignmentButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DF506E12A5E6829884DCE65 /* IconAssignmentButton.swift */; };
+		C2D5F3CC490C52ED1470EE8D /* MIDIKeyboardSplitEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33695B69FE948D8C6E0536B3 /* MIDIKeyboardSplitEditorView.swift */; };
 		FFE1363E4282F31709E33482 /* ColorHex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80BD5958DD843BF49738DE9 /* ColorHex.swift */; };
 /* End PBXBuildFile section */
 
@@ -325,6 +328,7 @@
 		95942B8846FAA9B3ED42228B /* GuideStepsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideStepsSection.swift; sourceTree = "<group>"; };
 		9678EC3E37F61041F0877632 /* CompositionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionView.swift; sourceTree = "<group>"; };
 		9DF506E12A5E6829884DCE65 /* IconAssignmentButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconAssignmentButton.swift; sourceTree = "<group>"; };
+		33695B69FE948D8C6E0536B3 /* MIDIKeyboardSplitEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIDIKeyboardSplitEditorView.swift; sourceTree = "<group>"; };
 		A7171E005C138F689954FCE0 /* PiecesPlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiecesPlayView.swift; sourceTree = "<group>"; };
 		A80BD5958DD843BF49738DE9 /* ColorHex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorHex.swift; sourceTree = "<group>"; };
 		A848FC0E680010358B07FF10 /* FavoriteSoundsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteSoundsView.swift; sourceTree = "<group>"; };
@@ -465,6 +469,7 @@
 				95942B8846FAA9B3ED42228B /* GuideStepsSection.swift */,
 				1AE61DA02F48C19951B955F1 /* GuideView.swift */,
 				9DF506E12A5E6829884DCE65 /* IconAssignmentButton.swift */,
+				33695B69FE948D8C6E0536B3 /* MIDIKeyboardSplitEditorView.swift */,
 				44E28F5AF89E79FD7606B5CD /* StudioJamSessionTabContent.swift */,
 				13B3167768CB0DDEADFFF969 /* JamShackAIView.swift */,
 				D5998490361DA6721A074DBB /* JamShackApp.swift */,
@@ -710,6 +715,7 @@
 				909FDDEF1B37DDFE810F6CAD /* GuideStepsSection.swift in Sources */,
 				3D9A4A9A9A91CE71B7CD7525 /* GuideView.swift in Sources */,
 				57E075DA1FCD4D568E942FE8 /* IconAssignmentButton.swift in Sources */,
+				0B3E1CCFDCC129053277D124 /* MIDIKeyboardSplitEditorView.swift in Sources */,
 				B59DF314E07D8821C2881B99 /* StudioJamSessionTabContent.swift in Sources */,
 				BEA5AE67A7CCACEF5E5E736F /* JamShackAIView.swift in Sources */,
 				4B891030B381AABC680DEB7A /* JamShackApp.swift in Sources */,
@@ -801,6 +807,7 @@
 				8819D305E821C6CCF92964F1 /* GuideStepsSection.swift in Sources */,
 				ADA096D87B5CBACBB5E8B2B7 /* GuideView.swift in Sources */,
 				FF9D4A6D4F4DE2A8249C1F5E /* IconAssignmentButton.swift in Sources */,
+				C2D5F3CC490C52ED1470EE8D /* MIDIKeyboardSplitEditorView.swift in Sources */,
 				DA5425C41460989F3435DF66 /* StudioJamSessionTabContent.swift in Sources */,
 				2B4B5AA50E88A35C6816730C /* JamShackAIView.swift in Sources */,
 				D8BEDC9D55768CC8B098F320 /* JamShackApp.swift in Sources */,
@@ -892,6 +899,7 @@
 				1AB02A5A72BD4D7D84652261 /* GuideStepsSection.swift in Sources */,
 				00E5EF6FB05246A3A709AE8E /* GuideView.swift in Sources */,
 				C33A55FBA8141B020899B27F /* IconAssignmentButton.swift in Sources */,
+				B35F172A212A08DFAFCB43B2 /* MIDIKeyboardSplitEditorView.swift in Sources */,
 				6743E9D3C12B1E174E105531 /* StudioJamSessionTabContent.swift in Sources */,
 				73DEDCF39E174C027B97D07A /* JamShackAIView.swift in Sources */,
 				DE4436B33AD885B08B6E0E84 /* JamShackApp.swift in Sources */,

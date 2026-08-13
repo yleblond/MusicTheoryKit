@@ -229,6 +229,15 @@ public final class ImprovSession: @unchecked Sendable {
     private let soundTrackPlayer = SoundTrackPlayer()
     private let guideAuditionPlayer = GuideAuditionPlayer()
     private var midiListeners: [TrackID: MIDIInputListener] = [:]
+    /// One real `MIDIInputListener` per real MIDI `sourceIndex` that currently has an ACTIVE
+    /// split with at least one zone being listened to — shared across every one of that split's
+    /// `.midiSplitZone` tracks (never one listener per zone: that would open several redundant
+    /// CoreMIDI connections to the exact same physical port). `routeSplitEvent(_:sourceIndex:)`
+    /// is this listener's handler — it decides which zone (if any) a raw event's pitch belongs
+    /// to and re-dispatches it, transposed, to that zone's own `handleIncomingMIDIEvent` call.
+    /// Created lazily by `startTrack(.midiSplitZone)`, torn down by `stopTrack` once no zone
+    /// sharing that `sourceIndex` is listening anymore.
+    private var midiSplitListeners: [Int: MIDIInputListener] = [:]
     /// Purely diagnostic — one lightweight `MIDIInputListener` per currently-visible MIDI
     /// source, kept connected regardless of whether that source's corresponding track is
     /// actually being listened to (unlike `midiListeners`, which only exists for a *started*
@@ -553,6 +562,7 @@ public final class ImprovSession: @unchecked Sendable {
             CompositionDescriptionRecord.self,
             PieceRecord.self,
             MIDIDeviceIconRecord.self,
+            MIDIKeyboardSplitRecord.self,
             SoundFontRecord.self,
             CloudStorageThresholdRecord.self,
         ])
@@ -2212,6 +2222,11 @@ public final class ImprovSession: @unchecked Sendable {
             return .microphone
         case .remote:
             return nil
+        case .midiSplitZone(let sourceIndex, let zoneID):
+            let descriptors = MIDIInputListener.sourceDescriptors()
+            guard descriptors.indices.contains(sourceIndex) else { return nil }
+            let descriptor = descriptors[sourceIndex]
+            return .midiSplitZone(midiUniqueID: descriptor.uniqueID, displayName: descriptor.displayName, zoneID: zoneID)
         }
     }
 
@@ -2246,6 +2261,16 @@ public final class ImprovSession: @unchecked Sendable {
             return hintClientID == candidateClientID
         case (.microphone, .microphone):
             return true
+        case (.midiSplitZone(let hintUniqueID, let hintDisplayName, let hintZoneID), .midiSplitZone(let sourceIndex, let zoneID)):
+            guard hintZoneID == zoneID else { return false }
+            let descriptors = MIDIInputListener.sourceDescriptors()
+            guard descriptors.indices.contains(sourceIndex) else { return false }
+            let candidate = descriptors[sourceIndex]
+            if let hintUniqueID, let candidateID = candidate.uniqueID {
+                return hintUniqueID == candidateID
+            }
+            return candidate.displayName == hintDisplayName
+                && descriptors.filter { $0.displayName == hintDisplayName }.count == 1
         default:
             return false
         }
@@ -2266,7 +2291,10 @@ public final class ImprovSession: @unchecked Sendable {
 
         for index in scene.roles.indices {
             guard let attachedID = scene.roles[index].attachedTrackID else { continue }
-            guard case .midiSource = attachedID else { continue }
+            switch attachedID {
+            case .midiSource, .midiSplitZone: break // reshuffled index or split reconfigured — try to relocate below
+            default: continue
+            }
             guard !tracks.contains(where: { $0.id == attachedID }) else { continue } // still valid
             claimedTrackIDs.remove(attachedID)
             let hint = scene.roles[index].lastAttachedInstrument
@@ -2857,7 +2885,7 @@ public final class ImprovSession: @unchecked Sendable {
     public var theoryLiveInputSources: [TrackInfo] {
         tracks.filter { track in
             switch track.id {
-            case .computerKeyboard, .midiMerged, .midiSource, .microphone: return true
+            case .computerKeyboard, .midiMerged, .midiSource, .midiSplitZone, .microphone: return true
             default: return false
             }
         }
@@ -3234,6 +3262,54 @@ public final class ImprovSession: @unchecked Sendable {
         append("Icone de clavier MIDI mise a jour : \(displayName).")
     }
 
+    /// The split configuration for a MIDI device, if any — matched the exact same way as
+    /// `midiDeviceIcon` (`uniqueID` first, `displayName` fallback only among `uniqueID == nil`
+    /// rows). `nil` if this device has never had a split saved.
+    public func midiKeyboardSplit(uniqueID: Int32?, displayName: String) -> MIDIKeyboardSplit? {
+        let records = (try? modelContext.fetch(FetchDescriptor<MIDIKeyboardSplitRecord>())) ?? []
+        if let uniqueID, let match = records.first(where: { $0.midiUniqueID == uniqueID }) {
+            return match.asSplit
+        }
+        return records.first(where: { $0.midiUniqueID == nil && $0.displayName == displayName })?.asSplit
+    }
+
+    /// `midiKeyboardSplit(uniqueID:displayName:)`, resolved from a live `sourceIndex` and
+    /// filtered to only an actually-`isEnabled` result — the one check `refreshTracks()` and
+    /// `routeSplitEvent(_:sourceIndex:)` both need before treating a source as split.
+    private func activeMIDIKeyboardSplit(atSourceIndex index: Int) -> MIDIKeyboardSplit? {
+        let descriptors = availableMIDISourceDescriptors()
+        guard descriptors.indices.contains(index) else { return nil }
+        let descriptor = descriptors[index]
+        guard let split = midiKeyboardSplit(uniqueID: descriptor.uniqueID, displayName: descriptor.name), split.isEnabled else { return nil }
+        return split
+    }
+
+    /// Sets (upserts) a MIDI device's split configuration and persists — `split: nil` deletes
+    /// the record outright (equivalent to "no split," the same as never having configured one).
+    /// Refreshes `tracks` immediately afterward so a newly enabled/disabled/edited split's own
+    /// zones show up (or the plain device reappears) without waiting for the next unrelated
+    /// `refreshTracks()` call.
+    public func setMIDIKeyboardSplit(uniqueID: Int32?, displayName: String, split: MIDIKeyboardSplit?) throws {
+        let records = (try? modelContext.fetch(FetchDescriptor<MIDIKeyboardSplitRecord>())) ?? []
+        let existing: MIDIKeyboardSplitRecord? = {
+            if let uniqueID { return records.first { $0.midiUniqueID == uniqueID } }
+            return records.first { $0.midiUniqueID == nil && $0.displayName == displayName }
+        }()
+        if let split {
+            if let existing {
+                existing.encodedSplit = (try? JSONEncoder().encode(split)) ?? Data()
+                existing.displayName = displayName
+            } else {
+                modelContext.insert(MIDIKeyboardSplitRecord(midiUniqueID: uniqueID, displayName: displayName, split: split))
+            }
+        } else if let existing {
+            modelContext.delete(existing)
+        }
+        try modelContext.save()
+        append("Split de clavier MIDI mis a jour : \(displayName).")
+        refreshTracks()
+    }
+
     // MARK: - Tracks
 
     /// Switches between hearing MIDI as one merged stream and hearing it as one
@@ -3334,7 +3410,15 @@ public final class ImprovSession: @unchecked Sendable {
                 updated.append(preservedOrNewTrack(.midiMerged, label: "MIDI (fusionne)"))
             case .individual:
                 for (index, name) in availableMIDISources().enumerated() {
-                    updated.append(preservedOrNewTrack(.midiSource(index), label: "MIDI : \(name)"))
+                    if let split = activeMIDIKeyboardSplit(atSourceIndex: index), !split.zones.isEmpty {
+                        // The split REPLACES the plain source entirely, per explicit request —
+                        // one `TrackInfo` per zone instead of one for the whole device.
+                        for zone in split.zones {
+                            updated.append(preservedOrNewTrack(.midiSplitZone(sourceIndex: index, zoneID: zone.id), label: zone.name))
+                        }
+                    } else {
+                        updated.append(preservedOrNewTrack(.midiSource(index), label: "MIDI : \(name)"))
+                    }
                 }
             }
             updated.append(preservedOrNewTrack(.computerKeyboard, label: "Clavier ordinateur"))
@@ -3416,7 +3500,7 @@ public final class ImprovSession: @unchecked Sendable {
 
     private func isMIDITrack(_ id: TrackID) -> Bool {
         switch id {
-        case .midiMerged, .midiSource: return true
+        case .midiMerged, .midiSource, .midiSplitZone: return true
         case .computerKeyboard, .webKeyboard, .microphone, .remote: return false
         }
     }
@@ -3448,6 +3532,17 @@ public final class ImprovSession: @unchecked Sendable {
                 newListener.connectAllSources()
             }
             midiListeners[id] = newListener
+        case .midiSplitZone(let sourceIndex, _):
+            // Shared across every zone of the same split — see `midiSplitListeners`'s own doc
+            // comment. Only the FIRST zone to start listening actually opens the connection;
+            // every other zone of the same source just starts reusing it.
+            if midiSplitListeners[sourceIndex] == nil {
+                let newListener = try MIDIInputListener { [weak self] event in
+                    self?.routeSplitEvent(event, sourceIndex: sourceIndex)
+                }
+                newListener.connectSource(atIndex: sourceIndex)
+                midiSplitListeners[sourceIndex] = newListener
+            }
         case .computerKeyboard, .webKeyboard:
             break
         case .microphone:
@@ -3485,6 +3580,15 @@ public final class ImprovSession: @unchecked Sendable {
             return
         case .midiMerged, .midiSource:
             midiListeners[id] = nil
+        case .midiSplitZone(let sourceIndex, _):
+            // Tear down the shared listener only once EVERY zone of this source has stopped —
+            // see `midiSplitListeners`'s own doc comment. `tracks[index].isListening` is still
+            // `true` at this point (only cleared below), so this zone counts itself out first.
+            let stillListening = tracks.contains { track in
+                guard case .midiSplitZone(let trackSourceIndex, _) = track.id, trackSourceIndex == sourceIndex, track.id != id else { return false }
+                return track.isListening
+            }
+            if !stillListening { midiSplitListeners[sourceIndex] = nil }
         case .computerKeyboard, .webKeyboard:
             break
         case .microphone:
@@ -4338,6 +4442,21 @@ public final class ImprovSession: @unchecked Sendable {
             updateRecognitionState(pitch: event.pitch, isNoteOn: event.kind == .noteOn, velocity: event.velocity, channel: event.channel, track: track, applyTuning: applyTuning)
         }
         syncLumiLiveModeIfActive()
+    }
+
+    /// The handler behind `midiSplitListeners[sourceIndex]` — decides which zone (if any) of
+    /// that source's active split a raw event's pitch belongs to, and re-dispatches it,
+    /// transposed, to that zone's own `handleIncomingMIDIEvent` call (see `MIDIKeyboardSplit
+    /// .zone(forPitch:)`). A pitch with no matching zone (a gap between ranges, a transposed
+    /// pitch landing outside `0...127`, or the split having been disabled/removed since this
+    /// listener was created) is dropped — nothing plays, matching the "zones don't overlap"
+    /// design: gaps are an accepted consequence, not routed to anything.
+    private func routeSplitEvent(_ event: MIDINoteEvent, sourceIndex: Int) {
+        guard let split = activeMIDIKeyboardSplit(atSourceIndex: sourceIndex),
+              let (zone, transposedPitch) = split.zone(forPitch: event.pitch) else { return }
+        var transposed = event
+        transposed.pitch = transposedPitch
+        handleIncomingMIDIEvent(transposed, track: .midiSplitZone(sourceIndex: sourceIndex, zoneID: zone.id))
     }
 
     /// Turns a stream of "here are the pitches right now, or empty for silence" reports into

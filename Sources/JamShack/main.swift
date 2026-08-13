@@ -353,7 +353,9 @@ func printCompositionDescription() {
 /// scratch, same convention as `remote:` just below), "micro" (microphone),
 /// "remote:<clientID>@<trackID>" (a participant's own track in a collaborative session —
 /// copy/paste the exact id shown by `tracks`, its `clientID` is a UUID not meant to be typed
-/// from scratch).
+/// from scratch), "midi-split:<n>:<zoneID>" (one virtual keyboard of MIDI source <n>'s active
+/// split — see `MIDIKeyboardSplit` — same "copy/paste the exact id shown by `tracks`" convention,
+/// its `zoneID` is a UUID not meant to be typed from scratch).
 func parseTrackID(_ text: String) -> TrackID? {
     let lower = text.lowercased()
     switch lower {
@@ -374,6 +376,11 @@ func parseTrackID(_ text: String) -> TrackID? {
             let trackID = String(text[text.index(after: atIndex)...])
             guard !clientID.isEmpty, !trackID.isEmpty else { return nil }
             return .remote(clientID: clientID, trackID: trackID)
+        }
+        if text.hasPrefix("midi-split:") {
+            let parts = text.dropFirst("midi-split:".count).split(separator: ":", maxSplits: 1)
+            guard parts.count == 2, let n = Int(parts[0]), n >= 1, let zoneID = UUID(uuidString: String(parts[1])) else { return nil }
+            return .midiSplitZone(sourceIndex: n - 1, zoneID: zoneID)
         }
         return nil
     }
@@ -417,6 +424,7 @@ func trackIDText(_ id: TrackID) -> String {
     case .webKeyboard(let clientID): return "clavier-web:\(clientID)"
     case .microphone: return "micro"
     case .remote(let clientID, let trackID): return "remote:\(clientID)@\(trackID)"
+    case .midiSplitZone(let sourceIndex, let zoneID): return "midi-split:\(sourceIndex + 1):\(zoneID.uuidString)"
     }
 }
 

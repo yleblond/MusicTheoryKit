@@ -56,7 +56,7 @@ final class SoundTestModeController: @unchecked Sendable {
     var testableSources: [TrackInfo] {
         session.tracks.filter { track in
             switch track.id {
-            case .computerKeyboard, .midiMerged, .midiSource: return true
+            case .computerKeyboard, .midiMerged, .midiSource, .midiSplitZone: return true
             default: return false
             }
         }

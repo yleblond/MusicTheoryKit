@@ -24,6 +24,10 @@ public enum InstrumentIdentityHint: Codable, Equatable, Sendable {
     /// of the SAME browser/device, not a device-independent identity.
     case webKeyboard(clientID: String)
     case microphone
+    /// Same `midiUniqueID`/`displayName` identity as `.midiPort`, plus the zone's own stable
+    /// `zoneID` — lets a role reattach to the SAME virtual keyboard of a split (not just "some
+    /// zone of this device") across a relaunch, same reasoning as `.midiPort` itself.
+    case midiSplitZone(midiUniqueID: Int32?, displayName: String, zoneID: UUID)
 }
 
 /// One musical position ("Piano 1", "Basse Guitare", "Saxophoniste") declared independently
@@ -155,7 +159,10 @@ extension SceneRole {
         case .microphone:
             hint = .microphone
             migratedName = "Microphone"
-        case .remote, .none:
+        case .remote, .midiSplitZone, .none:
+            // `.midiSplitZone` can't actually occur here in practice — the split feature postdates
+            // every legacy `SceneTrack` this migration ever runs against — but the switch must be
+            // exhaustive; falls back to the same "unrecognized, use the raw id" treatment as `.remote`.
             hint = nil
             migratedName = sceneTrack.trackID
         }

@@ -14,6 +14,16 @@ struct JamShackMIDIView: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
 
+    /// Sheet target for `MIDIKeyboardSplitEditorView` — identity is the same
+    /// uniqueID-first/displayName-fallback pair the split itself is matched by
+    /// (`ImprovSession.midiKeyboardSplit`), not the row's array offset.
+    private struct SplitEditorTarget: Identifiable {
+        let uniqueID: Int32?
+        let displayName: String
+        var id: String { uniqueID.map(String.init) ?? displayName }
+    }
+    @State private var splitEditorTarget: SplitEditorTarget?
+
     /// `bridge.state.tracks` only ever contains currently-listening tracks (see
     /// `WebConsoleTrackState`'s own doc comment) — matches `.midiMerged` ("midi") and every
     /// `.midiSource(n)` ("midi:1", "midi:2"...), see `TrackID.wireIDText`.
@@ -61,6 +71,13 @@ struct JamShackMIDIView: View {
                                 },
                                 onError: { _ in }
                             )
+                            Button {
+                                splitEditorTarget = SplitEditorTarget(uniqueID: source.uniqueID, displayName: source.name)
+                            } label: {
+                                Image(systemName: "arrow.triangle.branch")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Configurer un split de clavier")
                             if let channel = session.observedChannel(forMIDISourceIndex: index) {
                                 Text(L10n.string(.appFormatCanalMidi, session.currentLanguage, source.name, channel + 1))
                             } else {
@@ -87,6 +104,9 @@ struct JamShackMIDIView: View {
         #if os(macOS)
         .formStyle(.grouped)
         #endif
+        .sheet(item: $splitEditorTarget) { target in
+            MIDIKeyboardSplitEditorView(session: session, uniqueID: target.uniqueID, displayName: target.displayName)
+        }
     }
 }
 
