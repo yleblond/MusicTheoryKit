@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import MusicTheoryKit
+import JamShackUI
 
 /// Edits one real MIDI device's split configuration (see `MIDIKeyboardSplit`) — presented as a
 /// sheet from `JamShackMIDIView`'s own per-source row, same `.sheet(item:)` convention
@@ -39,6 +40,10 @@ struct MIDIKeyboardSplitEditorView: View {
                     // keyboard entirely as a selectable source — this isn't an additional
                     // option alongside it.
                     Text("Une fois activé, ce clavier n'apparaît plus lui-même comme source — seuls les claviers virtuels ci-dessous le remplacent.")
+                }
+                Section {
+                    SplitZonesKeyboardOverview(zones: zones)
+                        .listRowInsets(EdgeInsets())
                 }
                 Section {
                     ForEach($zones) { $zone in
@@ -131,5 +136,84 @@ struct MIDIKeyboardSplitEditorView: View {
         } catch {
             saveError = "\(error)"
         }
+    }
+}
+
+/// A read-only full-range (0...127) piano overview with each zone tinted a distinct color over
+/// its own key range, its name above and its octave-shift transposition below — lets the user
+/// see the whole split at a glance instead of piecing it together from the picker rows alone.
+/// Draws `PitchKeyboardView` itself (that view already knows how to lay out 128 keys — no
+/// `onNoteOn`/`onNoteOff` here, so it's non-interactive) and overlays the zone tints/labels on
+/// top using the SAME white-key-slot math `PitchKeyboardView` uses internally (duplicated here
+/// in miniature since that layout function isn't exported outside `JamShackUI`).
+private struct SplitZonesKeyboardOverview: View {
+    let zones: [MIDIKeyboardSplit.Zone]
+
+    private static let minMidi = 0
+    private static let maxMidi = 127
+    private static let topLabelHeight: CGFloat = 16
+    private static let bottomLabelHeight: CGFloat = 16
+    private static let keysHeight: CGFloat = 90
+
+    private static let zoneColors: [Color] = [.blue, .orange, .green, .pink, .purple, .mint, .indigo, .brown]
+
+    // Same tables/formula as `PitchKeyboardView.absoluteWhiteSlot` — kept in sync by hand since
+    // that one is `internal` to `JamShackUI`, not exported.
+    private static let whiteSlotBySemitone: [Int: Int] = [0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6]
+    private static let blackAfterWhiteSlot: [Int: Int] = [1: 0, 3: 1, 6: 3, 8: 4, 10: 5]
+
+    private static func absoluteWhiteSlot(forPitch pitch: Int) -> Double {
+        let pitchClass = ((pitch % 12) + 12) % 12
+        let octave = pitch / 12
+        if let whiteSlot = whiteSlotBySemitone[pitchClass] {
+            return Double(octave * 7 + whiteSlot)
+        }
+        return Double(octave * 7 + blackAfterWhiteSlot[pitchClass]!) + 0.5
+    }
+
+    private static let totalWhiteSlots = absoluteWhiteSlot(forPitch: maxMidi) - absoluteWhiteSlot(forPitch: minMidi) + 1
+
+    /// Fraction (0...1) along the full keyboard's width where `pitch`'s key starts/ends —
+    /// `edge: 1` lands on the NEXT key's own start, giving a black key's boundary the same
+    /// flush-with-its-neighboring-white-keys width a zone boundary needs.
+    private static func xFraction(ofPitch pitch: Int, edge: Double) -> Double {
+        (absoluteWhiteSlot(forPitch: pitch) - absoluteWhiteSlot(forPitch: minMidi) + edge) / totalWhiteSlots
+    }
+
+    private func compactOctaveShiftLabel(_ octaves: Int) -> String {
+        octaves == 0 ? "—" : "\(octaves > 0 ? "+" : "")\(octaves) oct"
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            ZStack(alignment: .topLeading) {
+                PitchKeyboardView(minMidi: Self.minMidi, maxMidi: Self.maxMidi, height: Self.keysHeight)
+                    .offset(y: Self.topLabelHeight)
+                ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
+                    let x0 = CGFloat(Self.xFraction(ofPitch: zone.lowPitch, edge: 0)) * width
+                    let x1 = CGFloat(Self.xFraction(ofPitch: zone.highPitch, edge: 1)) * width
+                    let zoneWidth = max(1, x1 - x0)
+                    let color = Self.zoneColors[index % Self.zoneColors.count]
+                    Rectangle()
+                        .fill(color.opacity(0.32))
+                        .frame(width: zoneWidth, height: Self.keysHeight)
+                        .offset(x: x0, y: Self.topLabelHeight)
+                    Text(zone.name)
+                        .font(.caption2)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .frame(width: zoneWidth)
+                        .offset(x: x0, y: 0)
+                    Text(compactOctaveShiftLabel(zone.octaveShift))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .frame(width: zoneWidth)
+                        .offset(x: x0, y: Self.topLabelHeight + Self.keysHeight)
+                }
+            }
+        }
+        .frame(height: Self.topLabelHeight + Self.keysHeight + Self.bottomLabelHeight)
     }
 }

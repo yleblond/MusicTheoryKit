@@ -56,32 +56,49 @@ struct JamShackMIDIView: View {
                     Text(L10n.string(.appPlaceholderAucuneSourceMidi, session.currentLanguage)).font(.caption).foregroundStyle(.secondary)
                 } else {
                     ForEach(Array(sources.enumerated()), id: \.offset) { index, source in
-                        HStack {
-                            IconAssignmentButton(
-                                currentIcon: session.midiDeviceIcon(uniqueID: source.uniqueID, displayName: source.name),
-                                defaultIcon: "pianokeys",
-                                canUseAI: session.currentLLMConnection != nil,
-                                language: session.currentLanguage,
-                                onSuggestAI: {
-                                    let icon = try session.suggestIcon(kind: "clavier MIDI", name: source.name)
-                                    try session.setMIDIDeviceIcon(uniqueID: source.uniqueID, displayName: source.name, iconSystemName: icon)
-                                },
-                                onPickManual: { icon in
-                                    try? session.setMIDIDeviceIcon(uniqueID: source.uniqueID, displayName: source.name, iconSystemName: icon)
-                                },
-                                onError: { _ in }
-                            )
-                            Button {
-                                splitEditorTarget = SplitEditorTarget(uniqueID: source.uniqueID, displayName: source.name)
-                            } label: {
-                                Image(systemName: "arrow.triangle.branch")
+                        let split = session.midiKeyboardSplit(uniqueID: source.uniqueID, displayName: source.name)
+                        let activeZoneNames = (split?.isEnabled == true) ? split?.zones.map(\.name) ?? [] : []
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                IconAssignmentButton(
+                                    currentIcon: session.midiDeviceIcon(uniqueID: source.uniqueID, displayName: source.name),
+                                    defaultIcon: "pianokeys",
+                                    canUseAI: session.currentLLMConnection != nil,
+                                    language: session.currentLanguage,
+                                    onSuggestAI: {
+                                        let icon = try session.suggestIcon(kind: "clavier MIDI", name: source.name)
+                                        try session.setMIDIDeviceIcon(uniqueID: source.uniqueID, displayName: source.name, iconSystemName: icon)
+                                    },
+                                    onPickManual: { icon in
+                                        try? session.setMIDIDeviceIcon(uniqueID: source.uniqueID, displayName: source.name, iconSystemName: icon)
+                                    },
+                                    onError: { _ in }
+                                )
+                                Button {
+                                    splitEditorTarget = SplitEditorTarget(uniqueID: source.uniqueID, displayName: source.name)
+                                } label: {
+                                    Image(systemName: "arrow.triangle.branch")
+                                        .foregroundStyle(activeZoneNames.isEmpty ? Color.primary : Color.accentColor)
+                                }
+                                .buttonStyle(.borderless)
+                                .help(activeZoneNames.isEmpty ? "Configurer un split de clavier" : "Split actif — modifier")
+                                if let channel = session.observedChannel(forMIDISourceIndex: index) {
+                                    Text(L10n.string(.appFormatCanalMidi, session.currentLanguage, source.name, channel + 1))
+                                } else {
+                                    Text(source.name)
+                                }
+                                if !activeZoneNames.isEmpty {
+                                    Spacer()
+                                    Text("Split actif")
+                                        .font(.caption)
+                                        .foregroundStyle(Color.accentColor)
+                                }
                             }
-                            .buttonStyle(.borderless)
-                            .help("Configurer un split de clavier")
-                            if let channel = session.observedChannel(forMIDISourceIndex: index) {
-                                Text(L10n.string(.appFormatCanalMidi, session.currentLanguage, source.name, channel + 1))
-                            } else {
-                                Text(source.name)
+                            if !activeZoneNames.isEmpty {
+                                Text("→ " + activeZoneNames.joined(separator: ", "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.leading, 28)
                             }
                         }
                     }
