@@ -117,6 +117,27 @@ public enum ChordVocabulary {
     public static func allChords(forRoot root: PitchClass) -> [Chord] {
         allIDs().compactMap(byID).map { Chord(root: root, template: $0) }
     }
+
+    /// The first known chord (any of the 12 roots, any registered quality via `allIDs()`) whose
+    /// own pitch-class set is EXACTLY `pitchClasses` — `nil` if nothing fits. Unlike
+    /// `RecognitionEngine.recognizeChord`, this requires an exact set match (no partial-credit
+    /// scoring against a `minimumConfidence`) and searches the full merged catalog, not just
+    /// `seed` — for callers that already have a small, known-complete pitch-class set (e.g. a
+    /// tapped point on the Dissonances screen's landscape) and want a name for it if one exists,
+    /// under ANY root, not just whichever root the caller happened to build it above.
+    public static func exactMatch(forPitchClasses pitchClasses: Set<PitchClass>) -> Chord? {
+        guard !pitchClasses.isEmpty else { return nil }
+        for rootValue in 0..<12 {
+            let root = PitchClass(rootValue)
+            for id in allIDs() {
+                guard let template = byID(id) else { continue }
+                if Set(template.intervalsFromRoot.map { root + $0 }) == pitchClasses {
+                    return Chord(root: root, template: template)
+                }
+            }
+        }
+        return nil
+    }
 }
 
 /// A chord template anchored to a root — the object actually played/detected/suggested.

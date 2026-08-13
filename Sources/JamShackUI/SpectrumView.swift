@@ -182,91 +182,15 @@ public struct SpectrumView: View {
         }
     }
 
-    /// A small chromatic keyboard strip — one equal-width slot per semitone, so every key
-    /// lines up exactly under its own frequency on the spectrum above (see the type's own doc
-    /// comment for why this isn't a realistic piano layout) — but drawn with real piano-key
-    /// SHAPE cues for a familiar visual read. Spans whatever `[minHz,maxHz]` covers — the full
-    /// 88-key piano range by default (see `init`'s own doc comment).
-    ///
-    /// **White keys actually join beneath the black keys.** A continuous white background
-    /// fills the whole strip first (so there's never a bare-background gap), and separator
-    /// lines are positioned per NATURAL-NOTE PAIR, not per semitone: between two naturals with
-    /// no black key between them (E-F, B-C) the separator sits at the natural boundary, full
-    /// height. Between two naturals WITH a black key between them (e.g. C and D, via C#), the
-    /// separator sits at the CENTER of that black key's own slot, not at either of its edges —
-    /// exactly how a real piano's C and D keys are notched around C# and meet in the middle
-    /// beneath it — and only in the bottom (front) portion, below the black key's own height,
-    /// since the black key itself (drawn last, on top) already provides the visual break for
-    /// the top portion.
+    /// A small chromatic keyboard strip — one equal-width slot per semitone, so every key lines
+    /// up exactly under its own frequency on the spectrum above (see the type's own doc comment
+    /// for why this isn't a realistic piano layout). Every `markedPitches` entry is highlighted
+    /// the same `.accentColor` — see `PitchAxisKeyboardStrip`'s own doc comment for the actual
+    /// drawing logic, shared with `NoteSpectrumView`'s own (per-tone-colored) keyboard strip.
     private func drawKeyboardStrip(in context: GraphicsContext, size: CGSize) {
-        let axisMinPitch = self.axisMinPitch, axisMaxPitch = self.axisMaxPitch
-        guard axisMaxPitch > axisMinPitch else { return }
-        let held = Set(markedPitches)
-        let lowestKey = self.lowestKey
-        let highestKey = self.highestKey
-        guard lowestKey <= highestKey else { return }
-
-        func x(forPitch pitch: Double) -> CGFloat {
-            CGFloat((pitch - axisMinPitch) / (axisMaxPitch - axisMinPitch)) * size.width
-        }
-        func isSharp(_ pitch: Int) -> Bool {
-            [1, 3, 6, 8, 10].contains(((pitch % 12) + 12) % 12)
-        }
-
-        let blackKeyHeight = size.height * 0.62
-
-        // 1) One continuous white background — no per-key gaps anywhere.
-        context.fill(Path(CGRect(x: 0, y: 0, width: size.width, height: size.height)), with: .color(.white.opacity(0.92)))
-
-        // 2) Held WHITE key highlights, each still its own one-semitone slot (a real piano's
-        // physical white keys are wider than one semitone up front, but matching that exactly
-        // isn't the point here — staying aligned with the correct pitch is).
-        for pitch in lowestKey...highestKey where !isSharp(pitch) && held.contains(pitch) {
-            let left = x(forPitch: Double(pitch) - 0.5)
-            let right = x(forPitch: Double(pitch) + 0.5)
-            context.fill(Path(CGRect(x: left, y: 0, width: right - left, height: size.height)), with: .color(.accentColor))
-        }
-
-        // 3) Separator lines, one per pair of consecutive NATURAL notes (not per semitone) —
-        // see this method's own doc comment for exactly where each one lands.
-        let naturalPitches = (lowestKey...highestKey).filter { !isSharp($0) }
-        for (a, b) in zip(naturalPitches, naturalPitches.dropFirst()) {
-            let gap = b - a
-            let boundaryPitch: Double
-            let fullHeight: Bool
-            switch gap {
-            case 1: boundaryPitch = Double(a) + 0.5; fullHeight = true // E-F / B-C: no black key between
-            case 2: boundaryPitch = Double(a) + 1.0; fullHeight = false // meet at the center of the black key between them
-            default: continue // not reachable for consecutive naturals in a chromatic scale
-            }
-            let boundaryX = x(forPitch: boundaryPitch)
-            var line = Path()
-            line.move(to: CGPoint(x: boundaryX, y: fullHeight ? 0 : blackKeyHeight))
-            line.addLine(to: CGPoint(x: boundaryX, y: size.height))
-            context.stroke(line, with: .color(.black.opacity(0.25)), lineWidth: 0.5)
-        }
-
-        // 4) C landmarks — same octave-boundary convention the rest of this app's keyboard
-        // renderers use (e.g. `StaticAssets.swift`'s `octave = pitch/12 - 1`) — without this, a
-        // plain row of equal-width keys gives no way to tell which note is which at a glance.
-        for pitch in lowestKey...highestKey where ((pitch % 12) + 12) % 12 == 0 {
-            let left = x(forPitch: Double(pitch) - 0.5)
-            let right = x(forPitch: Double(pitch) + 0.5)
-            let label = Text("C\(pitch / 12 - 1)").font(.system(size: 8)).foregroundStyle(.black.opacity(0.7))
-            context.draw(context.resolve(label), at: CGPoint(x: (left + right) / 2, y: size.height - 8))
-        }
-
-        // 5) Black keys last, on top, shorter (attached at the top, not reaching the bottom)
-        // and inset narrower within their slot.
-        for pitch in lowestKey...highestKey where isSharp(pitch) {
-            let slotLeft = x(forPitch: Double(pitch) - 0.5)
-            let slotRight = x(forPitch: Double(pitch) + 0.5)
-            let slotWidth = slotRight - slotLeft
-            let inset = slotWidth * 0.16
-            let rect = CGRect(x: slotLeft + inset, y: 0, width: slotWidth - inset * 2, height: blackKeyHeight)
-            let fillColor = held.contains(pitch) ? Color.accentColor : Color.black.opacity(0.88)
-            context.fill(Path(rect), with: .color(fillColor))
-        }
+        let marked = Dictionary(markedPitches.map { ($0, Color.accentColor) }, uniquingKeysWith: { first, _ in first })
+        PitchAxisKeyboardStrip(axisMinPitch: axisMinPitch, axisMaxPitch: axisMaxPitch, lowestKey: lowestKey, highestKey: highestKey, markedPitches: marked)
+            .draw(in: context, size: size)
     }
 }
 

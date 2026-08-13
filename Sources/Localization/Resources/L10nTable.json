@@ -4871,6 +4871,17 @@
   "ru": "Анализ…",
   "zhHans": "正在分析…"
  },
+ "appHeadingAccordsTriades": {
+  "de": "Dreiklänge",
+  "en": "Triad chords",
+  "es": "Tríadas",
+  "fr": "Accords triades",
+  "it": "Triadi",
+  "ja": "三和音",
+  "pt": "Tríades",
+  "ru": "Трезвучия",
+  "zhHans": "三和弦"
+ },
  "appTabTonnetz": {
   "de": "Tonnetz",
   "en": "Tonnetz",

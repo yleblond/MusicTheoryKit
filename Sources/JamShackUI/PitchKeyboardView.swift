@@ -173,6 +173,15 @@ public struct PitchKeyboardView: View {
     /// existing call sites only ever set one or the other). Empty by default; existing call sites
     /// are unaffected.
     public let noteBadges: [Int: KeyBadge]
+    /// Like `noteBadges`, but keyed by EXACT absolute pitch instead of pitch class — one badge
+    /// on exactly that one key, not repeated at every octave. For marking a single specific note
+    /// (e.g. "this is the currently selected base note" on a wide multi-octave keyboard), where
+    /// `noteBadges`' every-octave repetition would be wrong. Drawn in the same slot as
+    /// `noteBadges`' own circle (on top of it, if both happen to target the same key — existing
+    /// call sites only ever use one or the other, same as `noteBadges` already documents for its
+    /// own overlap with the mode's degree badge). Empty by default; existing call sites are
+    /// unaffected.
+    public let pitchBadges: [Int: KeyBadge]
     /// Keyed by EXACT absolute pitch (not pitch class) — colors `chordRoot`/`chordTones` at
     /// these specific keys even when not held, like `alwaysShowChord` but WITHOUT repeating at
     /// every octave the pitch class occurs in range — e.g. a mini keyboard showing one specific
@@ -214,6 +223,7 @@ public struct PitchKeyboardView: View {
         resolutionArrows: [Int: ResolutionDirection] = [:],
         modalCharacteristicPitchClasses: Set<Int> = [],
         noteBadges: [Int: KeyBadge] = [:],
+        pitchBadges: [Int: KeyBadge] = [:],
         referenceChordPitches: Set<Int> = []
     ) {
         self.minMidi = minMidi
@@ -236,6 +246,7 @@ public struct PitchKeyboardView: View {
         self.resolutionArrows = resolutionArrows
         self.modalCharacteristicPitchClasses = modalCharacteristicPitchClasses
         self.noteBadges = noteBadges
+        self.pitchBadges = pitchBadges
         self.referenceChordPitches = referenceChordPitches
     }
 
@@ -396,6 +407,19 @@ public struct PitchKeyboardView: View {
                     for key in white + black {
                         let pitchClass = ((key.pitch % 12) + 12) % 12
                         guard let badge = noteBadges[pitchClass] else { continue }
+                        let center = CGPoint(x: key.rect.midX, y: Self.badgeTopInset / 2)
+                        let circleRect = CGRect(
+                            x: center.x - Self.badgeDiameter / 2, y: center.y - Self.badgeDiameter / 2,
+                            width: Self.badgeDiameter, height: Self.badgeDiameter
+                        )
+                        context.fill(Path(ellipseIn: circleRect), with: .color(badge.fillColor))
+                        context.draw(Text(badge.text).font(.system(size: 9, weight: .bold)).foregroundStyle(badge.textColor), at: center)
+                    }
+                }
+
+                if !pitchBadges.isEmpty {
+                    for key in white + black {
+                        guard let badge = pitchBadges[key.pitch] else { continue }
                         let center = CGPoint(x: key.rect.midX, y: Self.badgeTopInset / 2)
                         let circleRect = CGRect(
                             x: center.x - Self.badgeDiameter / 2, y: center.y - Self.badgeDiameter / 2,

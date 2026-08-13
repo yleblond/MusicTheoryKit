@@ -50,16 +50,40 @@ public struct OctaveSpectrumGrid: Codable, Sendable {
     }
 
     /// The partials to use for a tone at `targetHz`, anywhere within (or slightly beyond) this
-    /// grid's own octave — the nearest captured point's own partials, frequency-scaled by the
-    /// (small, since the grid is dense) ratio between the exact target and that point's own
-    /// real measured frequency. This is the "légère interpolation" from the plan: with a dense
-    /// enough `samplesPerOctave`, the nearest real capture is already close, so a single scale
-    /// factor stands in for genuine interpolation without the ambiguity of blending two
-    /// captures that may have detected different partial counts/orderings.
+    /// grid's own octave — a crossfade between the two captured points bracketing `targetHz`
+    /// (each frequency-scaled to `targetHz` first, same small-ratio scale as before), weighted
+    /// by how close `targetHz` sits to each in LOG-frequency space (matches the grid's own even
+    /// semitone spacing). Outside the grid's own range, falls back to scaling the single nearest
+    /// endpoint (no second point to fade toward).
+    ///
+    /// Earlier version snapped to the single nearest point with no blending — cheap, but a sweep
+    /// across `targetHz` (as `DissonanceHeatmapView`'s heatmap does, independently on both axes)
+    /// stepped abruptly at each point's own boundary, visible as a checkerboard/moiré artifact
+    /// once the heatmap's resolution ran denser than `samplesPerOctave`. Blending by CROSSFADING
+    /// the two neighbors' own (frequency-scaled) partials — rather than trying to match/interpolate
+    /// individual partials pairwise between them — sidesteps the "different partial counts/
+    /// orderings" ambiguity noted before: each side's amplitudes are simply scaled by its own
+    /// fade weight and the two lists concatenated, which is exactly a linear mix of two sound
+    /// sources and keeps `SensoryDissonance`'s pairwise-product math (bilinear in amplitude)
+    /// continuous in `targetHz`.
     public func partials(atFrequencyHz targetHz: Double) -> [SpectralPartial] {
-        guard let nearest = points.min(by: { abs(log($0.frequencyHz / targetHz)) < abs(log($1.frequencyHz / targetHz)) }) else { return [] }
-        let ratio = targetHz / nearest.frequencyHz
-        return nearest.partials.map { SpectralPartial(frequencyHz: $0.frequencyHz * ratio, amplitude: $0.amplitude) }
+        guard let first = points.first, let last = points.last else { return [] }
+        if targetHz <= first.frequencyHz { return Self.scaled(first, toFrequencyHz: targetHz) }
+        if targetHz >= last.frequencyHz { return Self.scaled(last, toFrequencyHz: targetHz) }
+        guard let upperIndex = points.firstIndex(where: { $0.frequencyHz >= targetHz }), upperIndex > 0 else {
+            return Self.scaled(last, toFrequencyHz: targetHz)
+        }
+        let low = points[upperIndex - 1]
+        let high = points[upperIndex]
+        let t = log(targetHz / low.frequencyHz) / log(high.frequencyHz / low.frequencyHz)
+        let lowPartials = Self.scaled(low, toFrequencyHz: targetHz).map { SpectralPartial(frequencyHz: $0.frequencyHz, amplitude: $0.amplitude * (1 - t)) }
+        let highPartials = Self.scaled(high, toFrequencyHz: targetHz).map { SpectralPartial(frequencyHz: $0.frequencyHz, amplitude: $0.amplitude * t) }
+        return lowPartials + highPartials
+    }
+
+    private static func scaled(_ point: CapturedSpectrumPoint, toFrequencyHz targetHz: Double) -> [SpectralPartial] {
+        let ratio = targetHz / point.frequencyHz
+        return point.partials.map { SpectralPartial(frequencyHz: $0.frequencyHz * ratio, amplitude: $0.amplitude) }
     }
 }
 
@@ -83,17 +107,21 @@ public enum OctaveSpectrumGridBuilder {
     /// `nil` `progress` runs silently; otherwise called after every point with `0...1`
     /// (`Double` fraction complete) — a `samplesPerOctave` of even a few dozen is easily a
     /// several-second operation, worth a progress indicator (see the approved plan's "barre de
-    /// progression").
+    /// progression"). `async` — routes the actual rendering through `OfflineRenderQueue` so it
+    /// can never run concurrently with another offline render (`RawSpectrumRenderer`, or another
+    /// call to this same function) — see that type's own doc comment for the crash this fixes.
     public static func buildOrLoad(
         baseMidiPitch: Int, soundFontURL: URL, preset: SoundFontPresetIdentity?, samplesPerOctave: Int,
-        progress: ((Double) -> Void)? = nil
-    ) throws -> OctaveSpectrumGrid {
+        progress: (@Sendable (Double) -> Void)? = nil
+    ) async throws -> OctaveSpectrumGrid {
         let key = OctaveSpectrumGridKey(soundFontPath: soundFontURL.path, preset: preset, baseMidiPitch: baseMidiPitch, samplesPerOctave: samplesPerOctave)
         if let cached = OctaveSpectrumGridStore.load(for: key) { return cached }
 
-        let renderer = try OfflineNoteRenderer()
-        try renderer.loadSample(at: soundFontURL, preset: preset)
-        let grid = try build(key: key, renderer: renderer, progress: progress)
+        let grid = try await OfflineRenderQueue.shared.run {
+            let renderer = try OfflineNoteRenderer()
+            try renderer.loadSample(at: soundFontURL, preset: preset)
+            return try build(key: key, renderer: renderer, progress: progress)
+        }
         try? OctaveSpectrumGridStore.save(grid) // best-effort — a cache-write failure shouldn't fail the whole build
         return grid
     }
@@ -123,11 +151,35 @@ public enum OctaveSpectrumGridBuilder {
             var window = Array(samples[windowStart..<min(windowStart + analyzer.size, samples.count)])
             if window.count < analyzer.size { window += [Float](repeating: 0, count: analyzer.size - window.count) }
 
-            let partials = analyzer.dominantPartials(in: window, sampleRate: renderer.sampleRate).map { SpectralPartial(frequencyHz: $0.frequencyHz, amplitude: $0.amplitude) }
+            let partials = capturedPartials(fromWindow: window, analyzer: analyzer, sampleRate: renderer.sampleRate)
             points.append(.init(semitoneOffset: semitoneOffset, frequencyHz: frequencyHz, partials: partials))
             progress?(Double(i + 1) / Double(totalPoints))
         }
         return OctaveSpectrumGrid(key: key, points: points)
+    }
+
+    /// `FFTPitchAnalyzer.dominantPartials`' own "must clearly stand out from the band average"
+    /// gate is tuned for LIVE PITCH DETECTION (if nothing's clearly dominant, report nothing) —
+    /// shared with this grid, but here "nothing" is the wrong answer: a captured point left with
+    /// ZERO partials registers as UNCONDITIONALLY near-zero dissonance against every other tone
+    /// in `SensoryDissonance`'s pairwise sum (there's nothing to sum), which shows up as a whole
+    /// cross of anomalously blue rows/columns cutting through the landscape at that point's own
+    /// ratio — worse than a single, ungated best-effort peak. Falls back to just the single
+    /// loudest in-band bin (same `[60, 8000]` Hz band `dominantPartials` itself defaults to)
+    /// whenever the gated result comes back empty; genuine silence (`spectrumSnapshot` itself
+    /// returning `nil`, e.g. below the RMS floor) still correctly yields no partials at all.
+    static func capturedPartials(fromWindow window: [Float], analyzer: FFTPitchAnalyzer, sampleRate: Double) -> [SpectralPartial] {
+        let detected = analyzer.dominantPartials(in: window, sampleRate: sampleRate)
+        if !detected.isEmpty {
+            return detected.map { SpectralPartial(frequencyHz: $0.frequencyHz, amplitude: $0.amplitude) }
+        }
+        guard let snapshot = analyzer.spectrumSnapshot(of: window, sampleRate: sampleRate) else { return [] }
+        let minBin = max(1, Int(60.0 / snapshot.binHz))
+        let maxBin = min(snapshot.magnitudes.count - 1, Int(8000.0 / snapshot.binHz))
+        guard minBin < maxBin, let peakBin = (minBin...maxBin).max(by: { snapshot.magnitudes[$0] < snapshot.magnitudes[$1] }) else { return [] }
+        let frequencyHz = Double(peakBin) * snapshot.binHz
+        let amplitude = Double(snapshot.magnitudes[peakBin]).squareRoot()
+        return [SpectralPartial(frequencyHz: frequencyHz, amplitude: amplitude)]
     }
 }
 

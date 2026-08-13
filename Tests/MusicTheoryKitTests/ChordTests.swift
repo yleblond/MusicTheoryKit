@@ -43,4 +43,29 @@ final class ChordTests: XCTestCase {
         let chord = Chord(root: PitchClass(2), template: template)
         XCTAssertEqual(chord.pitchClassSet, Set([2, 5, 9, 0].map(PitchClass.init)))
     }
+
+    func testExactMatchFindsTheChordWhenBuiltFromItsOwnPitchClasses() throws {
+        let pitchClasses = Set([4, 8, 11].map(PitchClass.init)) // E-G#-B, an E major triad
+        let chord = try XCTUnwrap(ChordVocabulary.exactMatch(forPitchClasses: pitchClasses))
+        XCTAssertEqual(chord.root, PitchClass(4))
+        XCTAssertEqual(chord.template.id, "Ma")
+    }
+
+    func testExactMatchReturnsNilForASetNoRegisteredQualityForms() {
+        // C, C#, D — a tight cluster no seeded triad/7th/sus/etc. shape produces from any root.
+        let pitchClasses = Set([0, 1, 2].map(PitchClass.init))
+        XCTAssertNil(ChordVocabulary.exactMatch(forPitchClasses: pitchClasses))
+    }
+
+    func testExactMatchReturnsNilForAnEmptySet() {
+        XCTAssertNil(ChordVocabulary.exactMatch(forPitchClasses: []))
+    }
+
+    func testExactMatchRequiresAnExactSetNotJustASuperset() {
+        // C-C#-D-D#: a 4-note chromatic cluster containing the C-C#-D 3-note cluster tested above
+        // plus one more tone — still no seeded quality forms this shape from any root, so it must
+        // NOT loosely match via a subset/partial fit.
+        let pitchClasses = Set([0, 1, 2, 3].map(PitchClass.init))
+        XCTAssertNil(ChordVocabulary.exactMatch(forPitchClasses: pitchClasses))
+    }
 }

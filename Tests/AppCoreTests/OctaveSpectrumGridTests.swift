@@ -79,23 +79,99 @@ final class OctaveSpectrumGridTests: XCTestCase {
         XCTAssertEqual(result.map(\.amplitude), [1, 0.5])
     }
 
-    func testPartialsBetweenTwoPointsScaleTheNearestOnesFrequencies() {
+    func testPartialsBelowTheGridsLowestPointScalesThatPointAlone() {
         let grid = syntheticGrid()
-        // 210 sits much closer to the 200Hz point than to the 283Hz one — should scale THAT
-        // point's partials by 210/200 = 1.05, not blend with the 283Hz point at all.
-        let result = grid.partials(atFrequencyHz: 210)
-        assertApproximatelyEqual(result.map(\.frequencyHz), [210, 420], accuracy: 1e-9)
+        let result = grid.partials(atFrequencyHz: 180) // below the 200Hz first point — no lower neighbor to fade toward
+        assertApproximatelyEqual(result.map(\.frequencyHz), [180, 360], accuracy: 1e-9)
         XCTAssertEqual(result.map(\.amplitude), [1, 0.5]) // amplitude is untouched by the scale
     }
 
-    func testPartialsPicksTheMiddlePointWhenClosestInLogFrequencySpace() {
+    func testPartialsAboveTheGridsHighestPointScalesThatPointAlone() {
         let grid = syntheticGrid()
-        // Nearest-point selection is log-frequency-based (pitch perception, and this grid's own
-        // even semitone spacing, are both logarithmic) — 320 sits closer to 283 than to 400 in
-        // that space (the log-midpoint between them is ~336.5, well above 320), even though it's
-        // also well clear of the 200Hz point.
+        let result = grid.partials(atFrequencyHz: 420) // above the 400Hz last point — no higher neighbor to fade toward
+        assertApproximatelyEqual(result.map(\.frequencyHz), [420, 840], accuracy: 1e-9)
+        XCTAssertEqual(result.map(\.amplitude), [1, 0.3])
+    }
+
+    func testPartialsBetweenTwoPointsCrossfadesBothScaledToTheSameTargetFrequency() {
+        let grid = syntheticGrid()
+        // 210 sits close to the 200Hz point but still bracketed by the 283Hz one — both
+        // contribute, each scaled to 210Hz first, weighted by log-frequency proximity.
+        let result = grid.partials(atFrequencyHz: 210)
+        let t = log(210.0 / 200.0) / log(283.0 / 200.0)
+        let lowRatio = 210.0 / 200.0
+        let highRatio = 210.0 / 283.0
+        assertApproximatelyEqual(result.map(\.frequencyHz), [200 * lowRatio, 400 * lowRatio, 283 * highRatio, 566 * highRatio], accuracy: 1e-6)
+        assertApproximatelyEqual(result.map(\.amplitude), [1 * (1 - t), 0.5 * (1 - t), 1 * t, 0.4 * t], accuracy: 1e-9)
+    }
+
+    func testPartialsExactlyMidwayInLogFrequencySpaceBlendsBothPointsEqually() {
+        let grid = syntheticGrid()
+        let midpointHz = (200.0 * 283.0).squareRoot() // geometric mean = exact log-space midpoint
+        let result = grid.partials(atFrequencyHz: midpointHz)
+        assertApproximatelyEqual(result.map(\.amplitude), [0.5, 0.25, 0.5, 0.2], accuracy: 1e-9)
+    }
+
+    func testPartialsFartherFromTheMiddlePointStillBlendsWithTheHighEndpoint() {
+        let grid = syntheticGrid()
+        // 320 is bracketed by the 283Hz and 400Hz points (still inside the grid, past the
+        // midpoint) — both contribute, weighted by log-frequency proximity.
         let result = grid.partials(atFrequencyHz: 320)
-        let scaleFromMiddlePoint = 320.0 / 283.0
-        assertApproximatelyEqual(result.map(\.frequencyHz), [283 * scaleFromMiddlePoint, 566 * scaleFromMiddlePoint], accuracy: 1e-6)
+        let t = log(320.0 / 283.0) / log(400.0 / 283.0)
+        let lowRatio = 320.0 / 283.0
+        let highRatio = 320.0 / 400.0
+        assertApproximatelyEqual(result.map(\.frequencyHz), [283 * lowRatio, 566 * lowRatio, 400 * highRatio, 800 * highRatio], accuracy: 1e-6)
+        assertApproximatelyEqual(result.map(\.amplitude), [1 * (1 - t), 0.4 * (1 - t), 1 * t, 0.3 * t], accuracy: 1e-9)
+    }
+
+    // MARK: - capturedPartials fallback (a captured point must never end up with ZERO partials
+    // for a genuinely non-silent render — see the function's own doc comment)
+
+    private static let sampleRate = 44100.0
+
+    private func sineWindow(frequencyHz: Double, analyzer: FFTPitchAnalyzer) -> [Float] {
+        (0..<analyzer.size).map { n in Float(sin(2 * Double.pi * frequencyHz * Double(n) / Self.sampleRate)) }
+    }
+
+    /// Deterministic white noise (a fixed xorshift64 PRNG, not `Double.random`, so the test is
+    /// reproducible) — a genuinely flat expected spectrum, no single bin standing out 8x above
+    /// the band average (`FFTPitchAnalyzer`'s own `candidatePeaks` gate), so `dominantPartials`
+    /// itself returns nothing even though the signal is clearly non-silent.
+    private func flatSpectrumWindow(analyzer: FFTPitchAnalyzer) -> [Float] {
+        var state: UInt64 = 88172645463325252
+        func nextNoise() -> Float {
+            state ^= state << 13
+            state ^= state >> 7
+            state ^= state << 17
+            return Float(Int64(bitPattern: state) % 2000 - 1000) / 1000
+        }
+        return (0..<analyzer.size).map { _ in nextNoise() }
+    }
+
+    func testCapturedPartialsFallsBackToTheLoudestBinWhenDominantPartialsFindsNothing() {
+        let analyzer = FFTPitchAnalyzer(size: 4096)
+        let window = flatSpectrumWindow(analyzer: analyzer)
+        XCTAssertTrue(analyzer.dominantPartials(in: window, sampleRate: Self.sampleRate).isEmpty, "test setup: expected the strict gate to reject a flat spectrum")
+
+        let partials = OctaveSpectrumGridBuilder.capturedPartials(fromWindow: window, analyzer: analyzer, sampleRate: Self.sampleRate)
+        XCTAssertEqual(partials.count, 1)
+        XCTAssertGreaterThan(partials.first?.amplitude ?? 0, 0)
+    }
+
+    func testCapturedPartialsReturnsEmptyForGenuineSilence() {
+        let analyzer = FFTPitchAnalyzer(size: 4096)
+        let silence = [Float](repeating: 0, count: analyzer.size)
+        XCTAssertTrue(OctaveSpectrumGridBuilder.capturedPartials(fromWindow: silence, analyzer: analyzer, sampleRate: Self.sampleRate).isEmpty)
+    }
+
+    func testCapturedPartialsMatchesDominantPartialsWhenItFindsSomething() {
+        let analyzer = FFTPitchAnalyzer(size: 4096)
+        let window = sineWindow(frequencyHz: 440, analyzer: analyzer)
+        let direct = analyzer.dominantPartials(in: window, sampleRate: Self.sampleRate)
+        XCTAssertFalse(direct.isEmpty, "test setup: expected a clean sine tone to produce a clear dominant partial")
+
+        let viaCapturedPartials = OctaveSpectrumGridBuilder.capturedPartials(fromWindow: window, analyzer: analyzer, sampleRate: Self.sampleRate)
+        XCTAssertEqual(viaCapturedPartials.count, direct.count)
+        assertApproximatelyEqual(viaCapturedPartials.map(\.frequencyHz), direct.map(\.frequencyHz), accuracy: 1e-6)
     }
 }

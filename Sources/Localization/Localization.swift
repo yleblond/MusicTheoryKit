@@ -460,6 +460,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     // MARK: - App: Théorie > Dissonances
     case appTabDissonances
     case appFieldNoteDeBase, appButtonAnalyserOctave, appLabelAnalyseEnCours
+    case appHeadingAccordsTriades
 }
 
 public enum L10n {
