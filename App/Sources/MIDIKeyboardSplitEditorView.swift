@@ -89,18 +89,57 @@ struct MIDIKeyboardSplitEditorView: View {
     }
 
     private func zoneRow(zone: Binding<MIDIKeyboardSplit.Zone>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let zoneID = zone.wrappedValue.id
+        return VStack(alignment: .leading, spacing: 6) {
             TextField("Nom", text: zone.name)
             HStack(spacing: 12) {
-                Picker("De", selection: zone.lowPitch) {
+                Picker("De", selection: Binding(
+                    get: { zone.wrappedValue.lowPitch },
+                    set: { setLowPitch($0, forZoneID: zoneID) }
+                )) {
                     ForEach(0...127, id: \.self) { pitch in Text(noteLabel(forMidiPitch: pitch)).tag(pitch) }
                 }
-                Picker("À", selection: zone.highPitch) {
+                Picker("À", selection: Binding(
+                    get: { zone.wrappedValue.highPitch },
+                    set: { setHighPitch($0, forZoneID: zoneID) }
+                )) {
                     ForEach(0...127, id: \.self) { pitch in Text(noteLabel(forMidiPitch: pitch)).tag(pitch) }
                 }
             }
             .pickerStyle(.menu)
             Stepper(octaveShiftLabel(zone.wrappedValue.octaveShift), value: zone.octaveShift, in: -4...4)
+        }
+    }
+
+    /// Extending a zone's low edge DOWN into a neighbor no longer just overlaps it (forcing a
+    /// manual fix via the red banner) — the neighbor directly below (the other zone whose old
+    /// `highPitch` was the closest one still under this zone's old `lowPitch`) gets pushed down
+    /// to stay flush and non-overlapping. Only fires when actually moving downward — shrinking
+    /// a zone (raising its low edge) never touches a neighbor, since nothing is being claimed.
+    private func setLowPitch(_ newValue: Int, forZoneID zoneID: UUID) {
+        guard let index = zones.firstIndex(where: { $0.id == zoneID }) else { return }
+        let oldLow = zones[index].lowPitch
+        zones[index].lowPitch = newValue
+        guard newValue < oldLow else { return }
+        if let prevIndex = zones.indices
+            .filter({ $0 != index && zones[$0].highPitch < oldLow })
+            .max(by: { zones[$0].highPitch < zones[$1].highPitch }),
+           zones[prevIndex].highPitch >= newValue {
+            zones[prevIndex].highPitch = newValue - 1
+        }
+    }
+
+    /// Mirror of `setLowPitch` for extending a zone's high edge UP into the neighbor above it.
+    private func setHighPitch(_ newValue: Int, forZoneID zoneID: UUID) {
+        guard let index = zones.firstIndex(where: { $0.id == zoneID }) else { return }
+        let oldHigh = zones[index].highPitch
+        zones[index].highPitch = newValue
+        guard newValue > oldHigh else { return }
+        if let nextIndex = zones.indices
+            .filter({ $0 != index && zones[$0].lowPitch > oldHigh })
+            .min(by: { zones[$0].lowPitch < zones[$1].lowPitch }),
+           zones[nextIndex].lowPitch <= newValue {
+            zones[nextIndex].lowPitch = newValue + 1
         }
     }
 
@@ -154,6 +193,10 @@ private struct SplitZonesKeyboardOverview: View {
     private static let topLabelHeight: CGFloat = 16
     private static let bottomLabelHeight: CGFloat = 16
     private static let keysHeight: CGFloat = 90
+    private static let sectionGap: CGFloat = 8
+    private static let resultHeaderHeight: CGFloat = 14
+    private static let resultBarGap: CGFloat = 3
+    private static let resultBarHeight: CGFloat = 6
 
     private static let zoneColors: [Color] = [.blue, .orange, .green, .pink, .purple, .mint, .indigo, .brown]
 
@@ -184,36 +227,83 @@ private struct SplitZonesKeyboardOverview: View {
         octaves == 0 ? "—" : "\(octaves > 0 ? "+" : "")\(octaves) oct"
     }
 
+    /// Where `zone` actually sounds after its own transposition, clipped to the valid MIDI
+    /// range — mirrors `MIDIKeyboardSplit.zone(forPitch:)`'s own per-note behavior: a note that
+    /// would land outside `0...127` is dropped, never wrapped or clamped, so the sounding range
+    /// is the zone's own range shifted uniformly and then simply cut off at either end. `nil`
+    /// when the WHOLE zone transposes out of range (nothing from it would ever sound).
+    private func soundingRange(for zone: MIDIKeyboardSplit.Zone) -> ClosedRange<Int>? {
+        let shift = zone.octaveShift * 12
+        let low = max(0, zone.lowPitch + shift)
+        let high = min(127, zone.highPitch + shift)
+        guard low <= high else { return nil }
+        return low...high
+    }
+
+    private static let totalHeight = topLabelHeight + keysHeight + bottomLabelHeight
+        + sectionGap + resultHeaderHeight + keysHeight + resultBarGap + resultBarHeight
+
     var body: some View {
         GeometryReader { geo in
             let width = geo.size.width
-            ZStack(alignment: .topLeading) {
-                PitchKeyboardView(minMidi: Self.minMidi, maxMidi: Self.maxMidi, height: Self.keysHeight)
-                    .offset(y: Self.topLabelHeight)
-                ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
-                    let x0 = CGFloat(Self.xFraction(ofPitch: zone.lowPitch, edge: 0)) * width
-                    let x1 = CGFloat(Self.xFraction(ofPitch: zone.highPitch, edge: 1)) * width
-                    let zoneWidth = max(1, x1 - x0)
-                    let color = Self.zoneColors[index % Self.zoneColors.count]
-                    Rectangle()
-                        .fill(color.opacity(0.32))
-                        .frame(width: zoneWidth, height: Self.keysHeight)
-                        .offset(x: x0, y: Self.topLabelHeight)
-                    Text(zone.name)
-                        .font(.caption2)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                        .frame(width: zoneWidth)
-                        .offset(x: x0, y: 0)
-                    Text(compactOctaveShiftLabel(zone.octaveShift))
+            VStack(alignment: .leading, spacing: 0) {
+                // Source: which real keys belong to each virtual keyboard.
+                ZStack(alignment: .topLeading) {
+                    PitchKeyboardView(minMidi: Self.minMidi, maxMidi: Self.maxMidi, height: Self.keysHeight)
+                        .offset(y: Self.topLabelHeight)
+                    ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
+                        let x0 = CGFloat(Self.xFraction(ofPitch: zone.lowPitch, edge: 0)) * width
+                        let x1 = CGFloat(Self.xFraction(ofPitch: zone.highPitch, edge: 1)) * width
+                        let zoneWidth = max(1, x1 - x0)
+                        let color = Self.zoneColors[index % Self.zoneColors.count]
+                        Rectangle()
+                            .fill(color.opacity(0.32))
+                            .frame(width: zoneWidth, height: Self.keysHeight)
+                            .offset(x: x0, y: Self.topLabelHeight)
+                        Text(zone.name)
+                            .font(.caption2)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .frame(width: zoneWidth)
+                            .offset(x: x0, y: 0)
+                        Text(compactOctaveShiftLabel(zone.octaveShift))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .frame(width: zoneWidth)
+                            .offset(x: x0, y: Self.topLabelHeight + Self.keysHeight)
+                    }
+                }
+                .frame(height: Self.topLabelHeight + Self.keysHeight + Self.bottomLabelHeight)
+
+                // Result: where each virtual keyboard actually sounds once its own
+                // transposition is applied — same colors as above, so a mismatch (a bar that
+                // doesn't line up with where you expect, or one that's missing entirely because
+                // it transposed out of range) is obvious at a glance.
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Résultat après transposition")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .frame(width: zoneWidth)
-                        .offset(x: x0, y: Self.topLabelHeight + Self.keysHeight)
+                        .frame(height: Self.resultHeaderHeight - 2, alignment: .bottom)
+                    ZStack(alignment: .topLeading) {
+                        PitchKeyboardView(minMidi: Self.minMidi, maxMidi: Self.maxMidi, height: Self.keysHeight)
+                        ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
+                            if let range = soundingRange(for: zone) {
+                                let x0 = CGFloat(Self.xFraction(ofPitch: range.lowerBound, edge: 0)) * width
+                                let x1 = CGFloat(Self.xFraction(ofPitch: range.upperBound, edge: 1)) * width
+                                let color = Self.zoneColors[index % Self.zoneColors.count]
+                                Rectangle()
+                                    .fill(color)
+                                    .frame(width: max(1, x1 - x0), height: Self.resultBarHeight)
+                                    .offset(x: x0, y: Self.keysHeight + Self.resultBarGap)
+                            }
+                        }
+                    }
+                    .frame(height: Self.keysHeight + Self.resultBarGap + Self.resultBarHeight)
                 }
+                .padding(.top, Self.sectionGap)
             }
         }
-        .frame(height: Self.topLabelHeight + Self.keysHeight + Self.bottomLabelHeight)
+        .frame(height: Self.totalHeight)
     }
 }
