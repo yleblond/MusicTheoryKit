@@ -262,7 +262,7 @@ private struct SplitZonesKeyboardOverview: View {
     /// inside the colored band itself, per explicit request, instead of floating above it.
     private static let nameStripHeight: CGFloat = 22
     private static let bottomLabelHeight: CGFloat = 18
-    private static let keysHeight: CGFloat = 90
+    private static let keysHeight: CGFloat = 63 // 90 * 0.7 — 30% shorter, per explicit request
     private static let sectionGap: CGFloat = 14
     private static let resultHeaderHeight: CGFloat = 16
     private static let resultBarGap: CGFloat = 4
@@ -484,16 +484,28 @@ private struct SplitZonesKeyboardOverview: View {
                                 let x1 = CGFloat(Self.xFraction(ofPitch: range.upperBound, edge: 1)) * width
                                 let color = zoneColors[index % zoneColors.count]
                                 let barWidth = max(1, x1 - x0)
+                                // The gesture lives on THIS outer row — a full-width, fixed-height
+                                // container whose own frame never changes during the drag. The
+                                // visual band inside moves via `.offset`, which (unlike the
+                                // `.padding(.leading:)` this used before) never resizes/repositions
+                                // the gesture's own view. Retargeting jumps a full octave's width
+                                // at once (by design — whole-octave steps only), and doing that to
+                                // the SAME view the gesture tracks was exactly what made the drag
+                                // flicker/lose tracking; a stable outer row fixes it.
                                 ZStack(alignment: .leading) {
-                                    Rectangle().fill(color)
-                                    Text(zone.name)
-                                        .font(.caption2.bold())
-                                        .foregroundStyle(.white)
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.6)
-                                        .frame(width: barWidth, alignment: .center)
+                                    ZStack(alignment: .leading) {
+                                        Rectangle().fill(color)
+                                        Text(zone.name)
+                                            .font(.caption2.bold())
+                                            .foregroundStyle(.white)
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.6)
+                                            .frame(width: barWidth, alignment: .center)
+                                    }
+                                    .frame(width: barWidth, height: Self.resultBarHeight)
+                                    .offset(x: x0)
                                 }
-                                .frame(width: barWidth, height: Self.resultBarHeight)
+                                .frame(maxWidth: .infinity, minHeight: Self.resultBarHeight, maxHeight: Self.resultBarHeight, alignment: .leading)
                                 .contentShape(Rectangle())
                                 #if os(macOS)
                                 .onHover { inside in
@@ -520,8 +532,6 @@ private struct SplitZonesKeyboardOverview: View {
                                             resultDragStartOctaveShift[zone.id] = nil
                                         }
                                 )
-                                .padding(.leading, x0)
-                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                     }
