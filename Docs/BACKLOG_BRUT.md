@@ -60,6 +60,26 @@ bout-en-bout avec une vraie installation de Claude Desktop. Le dossier `mcp-serv
 superseded) reste sur disque pour l'instant — son retrait est une décision distincte, pas
 encore prise. Retiré d'ici.
 
+L'item 36 (freeze à la connexion d'un participant Jam Session distant) a été implémenté et
+vérifié le 2026-08-14, dans la foulée de sa découverte : même correctif que celui du freeze
+micro+clavier plus tôt cette session (`ImprovSession.mutateTrack`/`mutateTracks`, voir
+[[feedback_improv_app_concurrency]]), appliqué cette fois à `addOrUpdateRemoteTrack`/
+`removeRemoteTrack`/`removeAllRemoteTracks*`/`mergeRemoteSnapshot`. Deux pièges supplémentaires
+rencontrés et corrigés en le faisant : (1) `handleServerMessage` (cas `.noteEvent`) vérifiait
+l'existence d'une piste via `tracks.contains` — différer l'écriture réelle dans `tracks` rendait
+ce test faux-négatif juste après une création ; corrigé par une nouvelle table à part,
+synchrone et non-observée (`knownRemoteTrackIDs`), qui reflète l'état "réel" immédiatement même
+pendant que l'écriture Observable est encore en attente ; (2) `updateRecognitionState` avait
+elle-même un garde strict (`guard let index = tracks.firstIndex(...) else { return }`) qui
+échouait encore pour la toute première note d'une piste distante fraîchement créée, même une
+fois (1) corrigé — remplacé par un repli sur des valeurs par défaut raisonnables (label depuis
+`wireIDText`, `soundEnabled` à `false`, `heldPitches` vide), sûr ici car rien en aval n'a
+réellement besoin que la ligne existe déjà (`recognizers`/`samplers` sont indexés indépendamment
+de `tracks`, et `samplers[track]` est toujours `nil` pour une piste `.remote`). Nouveau test de
+régression `ImprovSessionNetworkTests.testConcurrentRemoteConnectionsAlongsideConnectedClientsPollingNeverHangs`
+(connexions/annonces réseau concurrentes avec un polling de `connectedClients()`). `swift test`
+(complet) et `xcodebuild JamShackApp_macOS` passent tous les deux. Retiré d'ici.
+
 ## Entrées
 
 21. **Gestion de plusieurs microphones en entrée**, en plus du micro de base actuellement géré.

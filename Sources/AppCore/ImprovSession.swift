@@ -396,6 +396,17 @@ public final class ImprovSession: @unchecked Sendable {
     /// survive lookup *by* `clientID` (in `broadcastSyncSoon()`, resolving the owner of every
     /// track, local or remote), not just by connection.
     private var clientIDToClientName: [String: String] = [:]
+    /// Server-side only: every remote track ID `addOrUpdateRemoteTrack` has ever created,
+    /// kept in sync with it/`removeRemoteTrack`/`removeAllRemoteTracks*` — a synchronous
+    /// mirror of "does `tracks` conceptually contain this remote row", deliberately
+    /// `@ObservationIgnored` and updated directly (never through `mutateTracks`) so
+    /// `handleServerMessage`'s `.noteEvent` case can answer that question immediately, even
+    /// while the REAL `tracks` append for a brand-new remote track is still pending on
+    /// `DispatchQueue.main` (see `addOrUpdateRemoteTrack`'s own doc comment for why that
+    /// append can't be synchronous, and why checking `tracks` itself here would silently
+    /// re-break the exact bug this exists to avoid).
+    @ObservationIgnored
+    private var knownRemoteTrackIDs: Set<TrackID> = []
     /// When set, `startRecording` is underway — the moment it started (a monotonic
     /// `DispatchTime`, not a wall-clock `Date`, since only elapsed time matters) and the
     /// title/track filter given at the time. All touched from `updateRecognitionState`'s
@@ -4443,11 +4454,23 @@ public final class ImprovSession: @unchecked Sendable {
     /// is ever invalidated by a plain read); every actual WRITE to `tracks` goes through
     /// `mutateTrack` instead, batched into one call at the end (see that function's own doc
     /// comment for why).
+    ///
+    /// `existingIndex` is deliberately allowed to be `nil` — for a LOCAL track this never
+    /// happens (every local `TrackID` exists in `tracks` well before anything could call in
+    /// on it), but a brand-new `.remote` track's `tracks` append is itself deferred (see
+    /// `addOrUpdateRemoteTrack`'s own doc comment), and `handleServerMessage`'s `.noteEvent`
+    /// case calls straight into this, on the same background thread, moments after creating
+    /// it — the row may genuinely not be in `tracks` YET even though it's about to be. Falling
+    /// back to sensible defaults instead of bailing out (confirmed: bailing out here silently
+    /// dropped a remote participant's very first note from recognition) is safe because
+    /// nothing below actually NEEDS the row to exist first: `recognizers`/`samplers` are keyed
+    /// independently of `tracks`, and `samplers[track]` is `nil` for every `.remote` track
+    /// regardless (never created for those), so the `soundEnabled` default never matters.
     private func updateRecognitionState(pitch: Int, isNoteOn: Bool, velocity: Int, channel: Int, track: TrackID, applyTuning: Bool = true) {
-        guard let index = tracks.firstIndex(where: { $0.id == track }) else { return }
-        let label = tracks[index].label
-        let soundEnabled = tracks[index].soundEnabled
-        var heldPitches = tracks[index].heldPitches
+        let existingIndex = tracks.firstIndex(where: { $0.id == track })
+        let label = existingIndex.map { tracks[$0].label } ?? track.wireIDText ?? "\(track)"
+        let soundEnabled = existingIndex.map { tracks[$0].soundEnabled } ?? false
+        var heldPitches = existingIndex.map { tracks[$0].heldPitches } ?? []
 
         lastMIDIEvent = MIDINoteEvent(kind: isNoteOn ? .noteOn : .noteOff, pitch: pitch, velocity: isNoteOn ? velocity : 0, channel: channel)
         append("\(label) \(isNoteOn ? "on " : "off")pitch=\(pitch) vel=\(isNoteOn ? velocity : 0) ch=\(channel)")
@@ -4461,7 +4484,9 @@ public final class ImprovSession: @unchecked Sendable {
             recognizer.noteOff(pitch: pitch)
             heldPitches.remove(pitch)
         }
-        let (chord, modes) = refreshRecognition(label: label, previousChord: tracks[index].recognizedChord, previousModes: tracks[index].recognizedModes, recognizer: recognizer)
+        let previousChord = existingIndex.flatMap { tracks[$0].recognizedChord }
+        let previousModes = existingIndex.map { tracks[$0].recognizedModes } ?? []
+        let (chord, modes) = refreshRecognition(label: label, previousChord: previousChord, previousModes: previousModes, recognizer: recognizer)
         recordChordEventIfChanged(track: track, heldPitches: heldPitches, chord: chord)
         forwardNoteEventToServerIfClient(track: track, isNoteOn: isNoteOn, pitch: pitch, velocity: velocity, channel: channel)
         captureRecordingEventIfRecording(track: track, isNoteOn: isNoteOn, pitch: pitch, velocity: velocity)
@@ -6694,7 +6719,11 @@ public final class ImprovSession: @unchecked Sendable {
                 guard let clientID = message.clientID, let trackID = message.trackID,
                       let isNoteOn = message.isNoteOn, let pitch = message.pitch else { return }
                 let remoteID = TrackID.remote(clientID: clientID, trackID: trackID)
-                if !tracks.contains(where: { $0.id == remoteID }) {
+                // `knownRemoteTrackIDs`, NOT `tracks.contains` — the real `tracks` append for
+                // a brand-new remote track is deferred (see `addOrUpdateRemoteTrack`'s own doc
+                // comment), so checking `tracks` itself here could still miss a row that was
+                // JUST registered, moments ago, on this same thread.
+                if !knownRemoteTrackIDs.contains(remoteID) {
                     addOrUpdateRemoteTrack(clientID: clientID, trackID: trackID, label: trackID, canHaveSound: true, ownerName: clientIDToClientName[clientID])
                 }
                 updateRecognitionState(pitch: pitch, isNoteOn: isNoteOn, velocity: message.velocity ?? 100, channel: message.channel ?? 0, track: remoteID)
@@ -6719,67 +6748,71 @@ public final class ImprovSession: @unchecked Sendable {
     /// exists (idempotent — a client may re-announce the same track). Must run inside
     /// `liveInputQueue.sync`, same contract as `updateRecognitionState`.
     ///
-    /// Deliberately NOT routed through `mutateTrack`/`mutateTracks` (unlike
-    /// `updateRecognitionState`/`handleDetectedPitches`) despite running on the same kind of
-    /// background thread (Network.framework's own connection callback) — tried that first,
-    /// and it broke a real invariant: `handleServerMessage`'s `.noteEvent` case calls this to
-    /// create a brand-new remote track, then IMMEDIATELY calls `updateRecognitionState` on
-    /// that same track, on the same thread, expecting to find the row it just added.
-    /// Deferring the append to `DispatchQueue.main.async` means it isn't there yet, so
-    /// `updateRecognitionState` silently no-ops on a remote participant's very first note
-    /// (confirmed: `recognizedChord` stayed `nil` the whole test). The confirmed live deadlock
-    /// only ever involves a FIELD EDIT on an already-existing row (`.computerKeyboard`/
-    /// `.microphone`, both created at session start, never race-created) — this class of
-    /// "create a new row, then immediately expect to read it back" doesn't occur there, so
-    /// there's no safe way to just defer this one too without a bigger redesign (a
-    /// synchronously-updated, non-Observable "known remote track IDs" side-table, decoupled
-    /// from `tracks` itself). Left as a known, narrower theoretical risk — same shape as the
-    /// fixed bug, but via Jam Session network traffic instead of MIDI/microphone — rather than
-    /// trading a real, demonstrated regression for a still-unconfirmed one tonight.
+    /// Confirmed live (2026-08-14, a second real freeze the same evening as the mic/keyboard
+    /// one — see `mutateTrack`'s own doc comment): this used to mutate `tracks` directly, on
+    /// the same kind of background thread (Network.framework's own connection callback) as
+    /// the mic/keyboard case, with the same deadlock. Routing the actual `tracks` write
+    /// through `mutateTracks` fixes that — but NOT by itself: `handleServerMessage`'s
+    /// `.noteEvent` case calls this to create a brand-new remote track, then IMMEDIATELY calls
+    /// `updateRecognitionState` on that same track, on the same thread, expecting to find the
+    /// row it just added. Deferring the `tracks` append to `DispatchQueue.main.async` alone
+    /// means it isn't there yet, so that immediately-following call would silently no-op on a
+    /// remote participant's very first note (confirmed once already, reverted, see this
+    /// class's own git history). `knownRemoteTrackIDs` is the fix for that half: updated
+    /// synchronously, right here, regardless of thread — `handleServerMessage` checks THAT
+    /// (not `tracks` itself) to decide whether this track already exists.
     private func addOrUpdateRemoteTrack(clientID: String, trackID: String, label: String, canHaveSound: Bool, ownerName: String?) {
         let id = TrackID.remote(clientID: clientID, trackID: trackID)
-        if let index = tracks.firstIndex(where: { $0.id == id }) {
-            tracks[index].label = label
-            tracks[index].isListening = true
-            tracks[index].ownerName = ownerName
-        } else {
-            tracks.append(TrackInfo(id: id, label: label, isListening: true, canHaveSound: canHaveSound, ownerName: ownerName))
+        knownRemoteTrackIDs.insert(id)
+        mutateTracks { tracks in
+            if let index = tracks.firstIndex(where: { $0.id == id }) {
+                tracks[index].label = label
+                tracks[index].isListening = true
+                tracks[index].ownerName = ownerName
+            } else {
+                tracks.append(TrackInfo(id: id, label: label, isListening: true, canHaveSound: canHaveSound, ownerName: ownerName))
+            }
         }
     }
 
     /// Removes one remote track entirely — a departed track shouldn't linger in the list
-    /// the way a merely-stopped local track does. Must run inside `liveInputQueue.sync`. See
-    /// `addOrUpdateRemoteTrack`'s doc comment for why this isn't routed through `mutateTracks`.
+    /// the way a merely-stopped local track does. Must run inside `liveInputQueue.sync`.
     private func removeRemoteTrack(clientID: String, trackID: String) {
         let id = TrackID.remote(clientID: clientID, trackID: trackID)
-        tracks.removeAll { $0.id == id }
+        knownRemoteTrackIDs.remove(id)
+        mutateTracks { tracks in tracks.removeAll { $0.id == id } }
         recognizers[id] = nil
         samplers[id]?.stop()
         samplers[id] = nil
     }
 
     /// Removes every remote track belonging to one participant — used when their
-    /// connection drops. Must run inside `liveInputQueue.sync`. See
-    /// `addOrUpdateRemoteTrack`'s doc comment for why this isn't routed through `mutateTracks`.
+    /// connection drops. Must run inside `liveInputQueue.sync`. Which IDs to remove comes
+    /// from `knownRemoteTrackIDs`, NOT `tracks` itself — a track this participant just
+    /// announced moments before disconnecting might still be sitting in a pending
+    /// `mutateTracks` append (see `addOrUpdateRemoteTrack`'s own doc comment), and reading
+    /// `tracks` here would miss it, letting it reappear once that append finally lands.
     private func removeAllRemoteTracks(forClientID clientID: String) {
-        let idsToRemove = tracks.compactMap { track -> TrackID? in
-            guard case .remote(let owner, _) = track.id, owner == clientID else { return nil }
-            return track.id
+        let idsToRemove = knownRemoteTrackIDs.filter { id in
+            guard case .remote(let owner, _) = id, owner == clientID else { return false }
+            return true
         }
         for id in idsToRemove {
+            knownRemoteTrackIDs.remove(id)
             recognizers[id] = nil
             samplers[id]?.stop()
             samplers[id] = nil
         }
-        tracks.removeAll { idsToRemove.contains($0.id) }
+        mutateTracks { tracks in tracks.removeAll { idsToRemove.contains($0.id) } }
     }
 
     /// Removes every remote track regardless of owner — used when this session itself
     /// stops being a server or disconnects as a client (either way, every `.remote` entry
-    /// in `tracks` stops being meaningful). Must run inside `liveInputQueue.sync`. See
-    /// `addOrUpdateRemoteTrack`'s doc comment for why this isn't routed through `mutateTracks`.
+    /// in `tracks` stops being meaningful). Must run inside `liveInputQueue.sync`. Same
+    /// `knownRemoteTrackIDs`-not-`tracks` reasoning as `removeAllRemoteTracks(forClientID:)`.
     private func removeAllRemoteTracks() {
-        tracks.removeAll { if case .remote = $0.id { return true }; return false }
+        knownRemoteTrackIDs = Set(knownRemoteTrackIDs.filter { if case .remote = $0 { return false }; return true })
+        mutateTracks { tracks in tracks.removeAll { if case .remote = $0.id { return true }; return false } }
     }
 
     /// The (clientID, wire trackID) a track should be announced as in a `sync` broadcast —
@@ -6831,25 +6864,29 @@ public final class ImprovSession: @unchecked Sendable {
     /// latest broadcast, preserving each one's local sound/instrument choice by identity
     /// (mirrors `refreshTracks`'s preserve-by-id pattern) — excludes any entry whose
     /// `clientID` is this participant's own (that track is already present locally, driven
-    /// by real local recognition, not as a read-only `.remote` mirror of itself). See
-    /// `addOrUpdateRemoteTrack`'s doc comment for why this isn't routed through `mutateTracks`.
+    /// by real local recognition, not as a read-only `.remote` mirror of itself). Routed
+    /// through `mutateTracks` (unlike `addOrUpdateRemoteTrack`/etc. — see that function's own
+    /// doc comment): nothing here immediately reads `tracks` back afterward on the same
+    /// thread, so there's no same-chain staleness trap to work around, unlike the server side.
     private func mergeRemoteSnapshot(_ snapshot: [RemoteTrackSnapshot]) {
         liveInputQueue.sync {
             let previousRemote = Dictionary(uniqueKeysWithValues: tracks.compactMap { track -> (TrackID, TrackInfo)? in
                 guard case .remote = track.id else { return nil }
                 return (track.id, track)
             })
-            tracks.removeAll { if case .remote = $0.id { return true }; return false }
-            for entry in snapshot where entry.clientID != localClientID {
-                let id = TrackID.remote(clientID: entry.clientID, trackID: entry.trackID)
-                var info = previousRemote[id] ?? TrackInfo(id: id, label: entry.label, canHaveSound: entry.canHaveSound)
-                info.label = entry.label
-                info.isListening = entry.isListening
-                info.heldPitches = Set(entry.heldPitches)
-                info.remoteChordDisplay = entry.chordName
-                info.remoteModesDisplay = entry.modesText
-                info.ownerName = entry.clientName
-                tracks.append(info)
+            mutateTracks { tracks in
+                tracks.removeAll { if case .remote = $0.id { return true }; return false }
+                for entry in snapshot where entry.clientID != self.localClientID {
+                    let id = TrackID.remote(clientID: entry.clientID, trackID: entry.trackID)
+                    var info = previousRemote[id] ?? TrackInfo(id: id, label: entry.label, canHaveSound: entry.canHaveSound)
+                    info.label = entry.label
+                    info.isListening = entry.isListening
+                    info.heldPitches = Set(entry.heldPitches)
+                    info.remoteChordDisplay = entry.chordName
+                    info.remoteModesDisplay = entry.modesText
+                    info.ownerName = entry.clientName
+                    tracks.append(info)
+                }
             }
         }
     }

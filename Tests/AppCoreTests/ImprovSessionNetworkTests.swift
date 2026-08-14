@@ -341,4 +341,54 @@ final class ImprovSessionNetworkTests: XCTestCase {
         session.stopWebConsole()
         session.stopVirtualKeyboard()
     }
+
+    // Regression test for a real deadlock captured live (2026-08-14, same evening and same
+    // bug CLASS as ImprovSessionConcurrencyStressTests' mic/keyboard one — see
+    // ImprovSession.mutateTrack's own doc comment): connecting a remote Jam Session
+    // participant while the "Accueil" screen's StatusGraphView polled `connectedClients()`
+    // (a main-thread `liveInputQueue.sync` read) froze the whole app — the real
+    // Network.framework connection callback thread was stuck INSIDE that same queue, in
+    // `addOrUpdateRemoteTrack`, mutating `tracks` and needing SwiftUI's Observation lock the
+    // main thread already held while blocked entering `liveInputQueue`. Fixed via
+    // `mutateTracks` + `knownRemoteTrackIDs` (see `addOrUpdateRemoteTrack`'s own doc comment).
+    // A headless XCTest can't force SwiftUI to actually hold that lock (same honest
+    // limitation as the mic/keyboard regression test), so this only re-exercises the exact
+    // queue-contention shape — real participants repeatedly connecting/announcing/
+    // disconnecting — concurrently with the same kind of main-thread `liveInputQueue` entry
+    // `connectedClients()` represents, under a timeout instead of a plain `Thread.sleep` wait.
+    func testConcurrentRemoteConnectionsAlongsideConnectedClientsPollingNeverHangs() throws {
+        let server = ImprovSession()
+        try server.start()
+        try server.startServer(port: 17893)
+
+        let group = DispatchGroup()
+
+        group.enter()
+        DispatchQueue.global().async {
+            for i in 0..<20 {
+                let client = ImprovSession()
+                try? client.start()
+                try? client.connectToServer(host: "127.0.0.1", port: 17893)
+                Thread.sleep(forTimeInterval: 0.01)
+                try? client.startTrack(.computerKeyboard)
+                client.pressKey(pitch: 60 + (i % 12))
+                client.releaseKey(pitch: 60 + (i % 12))
+                client.disconnectFromServer()
+            }
+            group.leave()
+        }
+        group.enter()
+        DispatchQueue.global().async {
+            for _ in 0..<400 {
+                _ = server.connectedClients()
+            }
+            group.leave()
+        }
+
+        XCTAssertEqual(
+            group.wait(timeout: .now() + 15), .success,
+            "concurrent remote connect/announce alongside connectedClients() polling hung instead of completing"
+        )
+        server.stopServer()
+    }
 }
