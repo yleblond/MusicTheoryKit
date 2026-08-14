@@ -42,13 +42,29 @@ struct TonnetzLibraryView: View {
     /// Optional, unlike Modes/Progressions/Intonations — Tonnetz has always worked fine with just
     /// a bare chord/note (like Accords), so a tonic/mode here is opt-in rather than mandatory.
     @State private var isModeEnabled = false
-    @State private var selectedTonic: Int = 0
-    @State private var selectedScaleID: String = "ionian"
 
     #if os(macOS) || os(visionOS)
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
     #endif
+    @Environment(AppModel.self) private var appModel
+
+    /// `false` when the shared mode (picked on another screen) isn't one of the 7 classic modes
+    /// `diatonicTriads`/`circleOfFifthsWheel` actually support — per explicit request. Unlike
+    /// Progression/Intonations, this doesn't gate the whole screen (Tonnetz already works fine
+    /// with no mode at all) — only the mode-specific highlighting/wheel silently stay empty
+    /// (their own existing `familyID == 1` guard), with a small inline notice instead so it
+    /// reads as "not supported here" rather than "nothing happened."
+    private var isSharedModeSupported: Bool {
+        (ScaleLibrary.byID(appModel.sharedMode.scaleID)?.familyID ?? 1) == 1
+    }
+
+    private var sharedTonicBinding: Binding<Int> {
+        Binding(get: { appModel.sharedMode.tonic }, set: { appModel.sharedMode.tonic = $0 })
+    }
+    private var sharedScaleIDBinding: Binding<String> {
+        Binding(get: { appModel.sharedMode.scaleID }, set: { appModel.sharedMode.scaleID = $0 })
+    }
 
     private var sourceID: TrackID? { session.theoryLiveInputSourceID }
 
@@ -67,7 +83,7 @@ struct TonnetzLibraryView: View {
 
     private var selectedMode: Mode? {
         guard isModeEnabled else { return nil }
-        return Mode(tonic: PitchClass(selectedTonic), scale: ScaleLibrary.byID(selectedScaleID) ?? ScaleLibrary.scales(inFamily: 1)[0])
+        return Mode(tonic: PitchClass(appModel.sharedMode.tonic), scale: ScaleLibrary.byID(appModel.sharedMode.scaleID) ?? ScaleLibrary.scales(inFamily: 1)[0])
     }
 
     /// Its own toggle is only shown once a mode is active (see `controlsRow`) — per explicit
@@ -179,14 +195,14 @@ struct TonnetzLibraryView: View {
                 .toggleStyle(.switch)
                 .fixedSize()
             if isModeEnabled {
-                Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: $selectedTonic) {
+                Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: sharedTonicBinding) {
                     ForEach(0..<12, id: \.self) { pitchClass in
                         Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
                     }
                 }
                 .pickerStyle(.menu)
                 .fixedSize()
-                Picker(L10n.string(.fieldGamme, session.currentLanguage), selection: $selectedScaleID) {
+                Picker(L10n.string(.fieldGamme, session.currentLanguage), selection: sharedScaleIDBinding) {
                     ForEach(ScaleLibrary.scales(inFamily: 1), id: \.id) { scale in
                         Text(scale.popularName).tag(scale.id)
                     }
@@ -198,6 +214,10 @@ struct TonnetzLibraryView: View {
                 Toggle(L10n.string(.appToggleTonnetzCouleursIdentite, session.currentLanguage), isOn: $colorByIdentity)
                     .toggleStyle(.switch)
                     .fixedSize()
+                if !isSharedModeSupported {
+                    Text(L10n.string(.appHintExplorationFamilleUn, session.currentLanguage))
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
             }
             Spacer()
         }

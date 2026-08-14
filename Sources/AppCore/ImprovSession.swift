@@ -2227,6 +2227,8 @@ public final class ImprovSession: @unchecked Sendable {
             guard descriptors.indices.contains(sourceIndex) else { return nil }
             let descriptor = descriptors[sourceIndex]
             return .midiSplitZone(midiUniqueID: descriptor.uniqueID, displayName: descriptor.displayName, zoneID: zoneID)
+        case .dissonancePreview:
+            return nil
         }
     }
 
@@ -3439,6 +3441,11 @@ public final class ImprovSession: @unchecked Sendable {
                 }
             })
             updated.append(preservedOrNewTrack(.microphone, label: "Microphone", canHaveSound: false))
+            // Permanent, never user-facing — see `TrackID.dissonancePreview`'s own doc comment.
+            // Already excluded from every track picker (`theoryLiveInputSources`/
+            // `SoundTestModeController.testableSources`) by their own explicit allow-lists, which
+            // simply don't mention this case.
+            updated.append(preservedOrNewTrack(.dissonancePreview, label: "Dissonances (apercu)"))
             tracks = updated
             refreshPassiveChannelSniffers()
             reconcileSceneAttachmentsAfterTrackRefresh()
@@ -3501,7 +3508,7 @@ public final class ImprovSession: @unchecked Sendable {
     private func isMIDITrack(_ id: TrackID) -> Bool {
         switch id {
         case .midiMerged, .midiSource, .midiSplitZone: return true
-        case .computerKeyboard, .webKeyboard, .microphone, .remote: return false
+        case .computerKeyboard, .webKeyboard, .microphone, .remote, .dissonancePreview: return false
         }
     }
 
@@ -3543,7 +3550,7 @@ public final class ImprovSession: @unchecked Sendable {
                 newListener.connectSource(atIndex: sourceIndex)
                 midiSplitListeners[sourceIndex] = newListener
             }
-        case .computerKeyboard, .webKeyboard:
+        case .computerKeyboard, .webKeyboard, .dissonancePreview:
             break
         case .microphone:
             let mode = tracks[index].microphoneRecognitionMode
@@ -3589,7 +3596,7 @@ public final class ImprovSession: @unchecked Sendable {
                 return track.isListening
             }
             if !stillListening { midiSplitListeners[sourceIndex] = nil }
-        case .computerKeyboard, .webKeyboard:
+        case .computerKeyboard, .webKeyboard, .dissonancePreview:
             break
         case .microphone:
             microphoneListener?.stop()
@@ -4409,7 +4416,11 @@ public final class ImprovSession: @unchecked Sendable {
 
         guard tracks[index].soundEnabled, let sampler = samplers[track] else { return }
         if isNoteOn {
-            if applyTuning, track == theoryLiveInputSourceID, let contextualMode {
+            // `.dissonancePreview` included alongside the picked live source — per explicit
+            // request, the Dissonances screen's own button/mini-keyboard preview should stay
+            // tuned exactly like a real live track would be, even though it plays through a
+            // dedicated non-visible track (see `TrackID.dissonancePreview`'s own doc comment).
+            if applyTuning, track == theoryLiveInputSourceID || track == .dissonancePreview, let contextualMode {
                 let cents = temperamentCents(forPitch: pitch, mode: contextualMode, configuration: tuningConfiguration)
                 if cents != 0 {
                     let tunedChannel = tuningVoiceChannelAllocator(for: track).channel(forPitch: pitch)

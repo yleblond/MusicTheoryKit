@@ -12,25 +12,25 @@ struct ComputerKeyboardWindow: View {
 
     var body: some View {
         SessionGatedView { session, bridge in
+            // Same `mainKeyboardPresentation(session:)`/`mainKeyboardBarLabel(session:)`
+            // `ContentView`'s own embedded bar calls — previously this window hand-rolled a
+            // simplified subset (mode/chord coloring only, no Studio `.live`/Guide-gating, no
+            // `isClickable` gate), so it could disagree with the embedded bar about what the
+            // main keyboard should look like once Théorie screens (or Studio) were detached.
+            let mainKeyboard = appModel.mainKeyboardPresentation(session: session)
             ComputerKeyboardInputBar(
-                heldPitches: session.tracks.first { $0.id == .computerKeyboard }?.heldPitches ?? [],
+                heldPitches: mainKeyboard.heldPitches,
                 palette: bridge.state.palette, paletteTextColors: bridge.state.paletteTextColors,
-                // Same rule as `ContentView.mainKeyboardBarLabel(session:)` — kept inline here
-                // since this is the only other call site.
-                label: appModel.mainKeyboardMode != nil
-                    ? L10n.string(.appLabelNotesDuMode, session.currentLanguage)
-                    : L10n.string(.appLabelClavierPrincipalActif, session.currentLanguage),
+                label: appModel.mainKeyboardBarLabel(session: session),
                 octaveShift: session.computerKeyboardOctaveShift,
-                onNoteOn: { pitch in session.pressKey(pitch: pitch) },
-                onNoteOff: { pitch in session.releaseKey(pitch: pitch) },
+                onNoteOn: { pitch in guard mainKeyboard.isClickable else { return }; session.pressKey(pitch: pitch) },
+                onNoteOff: { pitch in guard mainKeyboard.isClickable else { return }; session.releaseKey(pitch: pitch) },
                 onShiftOctave: { steps in session.shiftComputerKeyboardOctave(by: steps) },
-                modeTones: appModel.mainKeyboardMode?.pitchClasses.map(\.value) ?? [],
-                showModeColoring: appModel.mainKeyboardMode != nil,
-                chordRoot: appModel.mainKeyboardChord?.root,
-                chordTones: appModel.mainKeyboardChord?.tones ?? [],
-                referenceChordPitches: Set(PitchSequencing.ascendingPitches(forPitchClasses: appModel.mainKeyboardChord?.tones ?? [], startingAbove: 47)),
+                modeTones: mainKeyboard.modeTones, showModeColoring: mainKeyboard.showModeColoring,
+                chordRoot: mainKeyboard.chordRoot, chordTones: mainKeyboard.chordTones, referenceChordPitches: mainKeyboard.referenceChordPitches,
                 showsPhysicalKeyLabels: session.theoryLiveInputSourceID == .computerKeyboard
             )
+            .opacity(mainKeyboard.isClickable ? 1 : 0.5)
             .computerKeyboardInput(
                 // Same both-conditions gate `ContentView`'s own bar uses (see
                 // `ImprovSession.setComputerKeyboardInputEnabled`'s own doc comment) — this

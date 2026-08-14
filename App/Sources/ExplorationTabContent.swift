@@ -27,7 +27,7 @@ struct ExplorationTabContent: View {
                 onReintegrate: { dismissWindow(id: AuxiliaryWindowID.theorieExploration.rawValue) }
             )
         } else {
-            ModeLibraryView(session: session, contentFocus: .exploration, isActive: isActive)
+            ModeLibraryView(session: session, contentFocus: .exploration, isActive: isActive, usesSharedModeSelection: false)
         }
         #else
         ModeLibraryView(session: session, contentFocus: .exploration, isActive: isActive)

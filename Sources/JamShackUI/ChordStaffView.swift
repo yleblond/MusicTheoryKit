@@ -127,10 +127,43 @@ public struct ChordStaffView: View {
     /// letter-based question, not a pitch-class one — see the natural-sign logic below).
     private static let lettersByPitchClass: [NoteLetter] = [.C, .D, .D, .E, .E, .F, .F, .G, .A, .A, .B, .B]
 
-    private static func rowIndex(forPitch pitch: Int) -> Int? {
+    /// The natural letter one semitone BELOW each altered pitch class (1,3,6,8,10) — the row an
+    /// active key signature's sharp spelling (e.g. B minor's C#) sits on.
+    private static let sharpCandidateLetter: [Int: NoteLetter] = [1: .C, 3: .D, 6: .F, 8: .G, 10: .A]
+    /// The natural letter one semitone ABOVE each altered pitch class — the row a flat spelling
+    /// (e.g. F major's Bb) sits on.
+    private static let flatCandidateLetter: [Int: NoteLetter] = [1: .D, 3: .E, 6: .G, 8: .A, 10: .B]
+
+    /// Whether `pc` (one of 1,3,6,8,10 — a "black key" pitch class with two valid spellings)
+    /// should be drawn as the sharp-below letter or the flat-above one. Real bug fix: this used
+    /// to always follow `noteNames`'s own single fixed guess per pitch class regardless of
+    /// context, so e.g. B natural minor's C# (2-sharp key signature, `.sharps(2)` = {F, C}) was
+    /// drawn on the D row/spelled as Db instead of on the C row — visually indistinguishable from
+    /// an actual D, exactly the reported "Do dièse représenté comme un Ré" bug. Now, whenever an
+    /// active `keySignature` clearly implies one of the two spellings (its own `affectedLetters`
+    /// contains the corresponding candidate letter), that wins; otherwise falls back to
+    /// `noteNames`'s original fixed guess, unchanged — so every call site with no key signature
+    /// (or a signature that doesn't cover this pitch class, e.g. a chromatic passing tone) keeps
+    /// its exact previous behavior.
+    private static func isSharpSpelling(forPitchClass pc: Int, keySignature: MajorKeySignature?) -> Bool {
+        if let keySignature {
+            if keySignature.accidentalDirection == .sharp, let letter = sharpCandidateLetter[pc], keySignature.affectedLetters.contains(letter) {
+                return true
+            }
+            if keySignature.accidentalDirection == .flat, let letter = flatCandidateLetter[pc], keySignature.affectedLetters.contains(letter) {
+                return false
+            }
+        }
+        return noteNames[pc].contains("#")
+    }
+
+    private static func rowIndex(forPitch pitch: Int, keySignature: MajorKeySignature? = nil) -> Int? {
         let pc = ((pitch % 12) + 12) % 12
-        let name = noteNames[pc]
-        let naturalMidi = pitch - (name.count > 1 ? (name.contains("#") ? 1 : -1) : 0)
+        guard !naturalPitchClasses.contains(pc) else {
+            return rows.firstIndex { $0.midi == pitch }
+        }
+        let isSharp = isSharpSpelling(forPitchClass: pc, keySignature: keySignature)
+        let naturalMidi = pitch - (isSharp ? 1 : -1)
         return rows.firstIndex { $0.midi == naturalMidi }
     }
 
@@ -304,7 +337,7 @@ public struct ChordStaffView: View {
             }
             let tones = Set(event.chordTones)
             let held = event.pitches.compactMap { pitch -> (pitch: Int, row: Int)? in
-                guard let row = Self.rowIndex(forPitch: pitch) else { return nil }
+                guard let row = Self.rowIndex(forPitch: pitch, keySignature: keySignature) else { return nil }
                 return (pitch, row)
             }
             // A run of several consecutive seconds needs a proper zigzag, not just "shift
@@ -385,7 +418,7 @@ public struct ChordStaffView: View {
         }
         for (clefMidis) in [trebleMidis, bassMidis] {
             for (index, midi) in clefMidis.enumerated() {
-                guard let row = Self.rowIndex(forPitch: midi) else { continue }
+                guard let row = Self.rowIndex(forPitch: midi, keySignature: keySignature) else { continue }
                 let x = stavesX + keySignatureStartPadding + CGFloat(index) * keySignatureAccidentalWidth
                 context.draw(Text(glyph).font(.system(size: 14)).foregroundStyle(Color.primary), at: CGPoint(x: x, y: y(row)), anchor: .center)
             }

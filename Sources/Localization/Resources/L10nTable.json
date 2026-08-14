@@ -4882,6 +4882,105 @@
   "ru": "Трезвучия",
   "zhHans": "三和弦"
  },
+ "appFieldOctave": {
+  "de": "Oktave",
+  "en": "Octave",
+  "es": "Octava",
+  "fr": "Octave",
+  "it": "Ottava",
+  "ja": "オクターブ",
+  "pt": "Oitava",
+  "ru": "Октава",
+  "zhHans": "八度"
+ },
+ "appOptionTriades": {
+  "de": "Dreiklänge",
+  "en": "Triads",
+  "es": "Tríadas",
+  "fr": "Triades",
+  "it": "Triadi",
+  "ja": "三和音",
+  "pt": "Tríades",
+  "ru": "Трезвучия",
+  "zhHans": "三和弦"
+ },
+ "appOptionSeptiemes": {
+  "de": "Septakkorde",
+  "en": "Sevenths",
+  "es": "Séptimas",
+  "fr": "Septièmes",
+  "it": "Settime",
+  "ja": "セブンス",
+  "pt": "Sétimas",
+  "ru": "Септаккорды",
+  "zhHans": "七和弦"
+ },
+ "appTabAccueil": {
+  "de": "Start",
+  "en": "Home",
+  "es": "Inicio",
+  "fr": "Accueil",
+  "it": "Home",
+  "ja": "ホーム",
+  "pt": "Início",
+  "ru": "Главная",
+  "zhHans": "主页"
+ },
+ "appLabelServeurJamSessionLocal": {
+  "de": "Jam-Session-Server (lokal)",
+  "en": "Jam Session Server (Local)",
+  "es": "Servidor de Jam Session (local)",
+  "fr": "Serveur Jam Session (local)",
+  "it": "Server Jam Session (locale)",
+  "ja": "ジャムセッションサーバー(ローカル)",
+  "pt": "Servidor de Jam Session (local)",
+  "ru": "Сервер Jam Session (локальный)",
+  "zhHans": "即兴合奏服务器(本地)"
+ },
+ "appLabelServeurJamSessionGameCenter": {
+  "de": "Jam-Session-Server (Game Center)",
+  "en": "Jam Session Server (Game Center)",
+  "es": "Servidor de Jam Session (Game Center)",
+  "fr": "Serveur Jam Session (Game Center)",
+  "it": "Server Jam Session (Game Center)",
+  "ja": "ジャムセッションサーバー(Game Center)",
+  "pt": "Servidor de Jam Session (Game Center)",
+  "ru": "Сервер Jam Session (Game Center)",
+  "zhHans": "即兴合奏服务器(Game Center)"
+ },
+ "appLabelServeurClavierWeb": {
+  "de": "Webtastatur-Server",
+  "en": "Web Keyboard Server",
+  "es": "Servidor de teclado web",
+  "fr": "Serveur de clavier web",
+  "it": "Server tastiera web",
+  "ja": "Webキーボードサーバー",
+  "pt": "Servidor de teclado web",
+  "ru": "Сервер веб-клавиатуры",
+  "zhHans": "网页键盘服务器"
+ },
+ "appLabelSourcesMIDILocales": {
+  "de": "Lokale MIDI-Quellen",
+  "en": "Local MIDI Sources",
+  "es": "Fuentes MIDI locales",
+  "fr": "Sources MIDI locales",
+  "it": "Sorgenti MIDI locali",
+  "ja": "ローカルMIDIソース",
+  "pt": "Fontes MIDI locais",
+  "ru": "Локальные источники MIDI",
+  "zhHans": "本地MIDI源"
+ },
+ "appHeadingRolesNonUtilises": {
+  "de": "Nicht verwendete Rollen",
+  "en": "Unused roles",
+  "es": "Roles no utilizados",
+  "fr": "Rôles non utilisés",
+  "it": "Ruoli non utilizzati",
+  "ja": "未使用のロール",
+  "pt": "Funções não utilizadas",
+  "ru": "Неиспользуемые роли",
+  "zhHans": "未使用的角色"
+ },
  "appTabTonnetz": {
   "de": "Tonnetz",
   "en": "Tonnetz",

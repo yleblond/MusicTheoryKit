@@ -28,11 +28,14 @@ struct ProgressionLibraryView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
     #endif
+    @Environment(AppModel.self) private var appModel
 
     @State private var screen: TheoryLibraryScreen = .list
-    @State private var selectedTonic: Int = 0
-    @State private var selectedScaleID: String = "ionian"
     @State private var selectedTemplateName: String?
+    /// Whole-octave shift applied to the progression staff/keyboard/playback — per explicit
+    /// request, so a progression can be brought low enough to land on the bass (fa) clef instead
+    /// of always sitting around middle C.
+    @State private var octaveShift: Int = 0
     @State private var currentChordIndex: Int = 0
     /// The width of the row holding both detail columns (measured via `.onGeometryChange`, not a
     /// fixed constant) — see `staffAvailableWidth`, which derives the staff's own share of it.
@@ -44,13 +47,60 @@ struct ProgressionLibraryView: View {
     /// sequence finished) invalidates any still-pending ones, same generation-counter idiom
     /// `GuideAuditionPlayer`/`ImprovSession`'s own audition state already uses.
     @State private var playbackGeneration = 0
+    /// Triad by default, seventh as an opt-in — per explicit request ("priorité aux triades").
+    @State private var chordQualityTier: ChordProgressionResolver.ChordQualityTier = .triad
+    /// Replaces `session.isAuditioningTheoryLibrary` (the old isolated-audition player's own
+    /// flag) as `SequenceTransportView`'s own "is playing" state, now that playback goes through
+    /// real `pressKey`/`releaseKey` — see `playProgression()`'s own doc comment.
+    @State private var isPlayingProgression = false
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var usesTwoColumns: Bool { TheoryLibraryLayoutMode.usesTwoColumns(horizontalSizeClass: horizontalSizeClass) }
 
+    /// Reads/writes the ONE shared tonic+scale selection (`AppModel.sharedMode`) instead of a
+    /// local `@State`, so picking a mode here is reflected on every other MusicLab screen,
+    /// including detached windows — per explicit request. This screen's own tonic/scale picker
+    /// stays restricted to the 7 classic major-family modes (see this struct's own doc comment),
+    /// but the SHARED value can be set to something outside that list by another screen (e.g.
+    /// "Modes") — `isSharedModeSupported` gates the rest of this screen's content for that case,
+    /// while the picker itself keeps reading/writing the real shared value directly.
     private var mode: Mode {
-        Mode(tonic: PitchClass(selectedTonic), scale: ScaleLibrary.byID(selectedScaleID) ?? ScaleLibrary.byID("ionian")!)
+        Mode(tonic: PitchClass(appModel.sharedMode.tonic), scale: ScaleLibrary.byID(appModel.sharedMode.scaleID) ?? ScaleLibrary.byID("ionian")!)
+    }
+
+    /// `false` when the shared mode (picked on another screen) isn't one of the 7 classic modes
+    /// this screen's own diatonic resolution actually supports — per explicit request, the
+    /// screen then gates its main content behind an empty-state message instead of showing a
+    /// progression resolved against a scale family `ChordProgressionResolver` was never meant
+    /// for, while its own (family-restricted) picker stays active so a valid mode can be
+    /// re-picked right here.
+    private var isSharedModeSupported: Bool {
+        (ScaleLibrary.byID(appModel.sharedMode.scaleID)?.familyID ?? 1) == 1
+    }
+
+    private var sharedTonicBinding: Binding<Int> {
+        Binding(get: { appModel.sharedMode.tonic }, set: { appModel.sharedMode.tonic = $0 })
+    }
+    private var sharedScaleIDBinding: Binding<String> {
+        Binding(get: { appModel.sharedMode.scaleID }, set: { appModel.sharedMode.scaleID = $0 })
+    }
+
+    /// Whichever live track is the app's current "source principale" — same convention
+    /// `ChordLibraryView`/`ModeLibraryView`/`TonnetzLibraryView` already use. Every playback
+    /// function below plays through THIS track via real `pressKey`/`releaseKey` rather than the
+    /// isolated `playTheoryLibraryAudition` player — per explicit request, so this screen acts as
+    /// a genuine pre-input to the main keyboard. Silently does nothing when no source is picked.
+    private var sourceID: TrackID? { session.theoryLiveInputSourceID }
+
+    /// Presses `pitches` on `track` now, then releases them after `durationSeconds` — guarded by
+    /// `generation`, same shared primitive `ModeLibraryView.pressAndScheduleRelease` uses.
+    private func pressAndScheduleRelease(pitches: [Int], track: TrackID, durationSeconds: Double, generation: Int) {
+        for pitch in pitches { session.pressKey(pitch: pitch, track: track) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + durationSeconds) {
+            guard playbackGeneration == generation else { return }
+            for pitch in pitches { session.releaseKey(pitch: pitch, track: track) }
+        }
     }
 
     /// The mode's parent major key's conventional signature — same derivation as
@@ -81,7 +131,19 @@ struct ProgressionLibraryView: View {
 
     private var resolvedReferences: [ChordReference] {
         guard let selectedTemplate else { return [] }
-        return ChordProgressionResolver.resolveRich(selectedTemplate, in: mode)
+        return ChordProgressionResolver.resolveRich(selectedTemplate, in: mode, qualityTier: chordQualityTier)
+    }
+
+    /// Triad/seventh toggle for `resolvedReferences` — per explicit request, defaults to triads
+    /// with sevenths as an opt-in (see `chordQualityTier`'s own doc comment).
+    private var chordQualityTierPicker: some View {
+        Picker("", selection: $chordQualityTier) {
+            Text(L10n.string(.appOptionTriades, session.currentLanguage)).tag(ChordProgressionResolver.ChordQualityTier.triad)
+            Text(L10n.string(.appOptionSeptiemes, session.currentLanguage)).tag(ChordProgressionResolver.ChordQualityTier.seventh)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
     }
 
     var body: some View {
@@ -150,46 +212,54 @@ struct ProgressionLibraryView: View {
         Form {
             Section {
                 if usesTwoColumns {
-                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: $selectedTonic) {
+                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: sharedTonicBinding) {
                         ForEach(0..<12, id: \.self) { pitchClass in
                             Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
                         }
                     }
                     .pickerStyle(.menu)
                 } else {
-                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: $selectedTonic) {
+                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: sharedTonicBinding) {
                         ForEach(0..<12, id: \.self) { pitchClass in
                             Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
                         }
                     }
                     .pickerStyle(.segmented)
                 }
-                Picker(L10n.string(.fieldGamme, session.currentLanguage), selection: $selectedScaleID) {
+                Picker(L10n.string(.fieldGamme, session.currentLanguage), selection: sharedScaleIDBinding) {
                     ForEach(ScaleLibrary.scales(inFamily: 1), id: \.id) { scale in
                         Text(scale.popularName).tag(scale.id)
                     }
                 }
+                chordQualityTierPicker
             } header: {
                 Text(L10n.string(.appHeadingBibliothequeProgressions, session.currentLanguage))
             }
-            Section {
-                ForEach(uniqueTemplates, id: \.name) { template in
-                    Button {
-                        selectedTemplateName = template.name
-                        currentChordIndex = 0
-                        screen = .detail
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(template.name)
-                                .foregroundStyle(template.name == selectedTemplateName ? Color.accentColor : .primary)
-                            Text(chordSymbolsPreview(template)).font(.caption).foregroundStyle(.secondary)
+            if isSharedModeSupported {
+                Section {
+                    ForEach(uniqueTemplates, id: \.name) { template in
+                        Button {
+                            selectedTemplateName = template.name
+                            currentChordIndex = 0
+                            screen = .detail
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(template.name)
+                                    .foregroundStyle(template.name == selectedTemplateName ? Color.accentColor : .primary)
+                                Text(chordSymbolsPreview(template)).font(.caption).foregroundStyle(.secondary)
+                            }
+                            .contentShape(Rectangle())
                         }
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                } header: {
+                    Text(L10n.string(.appFieldProgressionChoisie, session.currentLanguage))
                 }
-            } header: {
-                Text(L10n.string(.appFieldProgressionChoisie, session.currentLanguage))
+            } else {
+                Section {
+                    Text(L10n.string(.appHintExplorationFamilleUn, session.currentLanguage))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         #if os(macOS)
@@ -215,32 +285,38 @@ struct ProgressionLibraryView: View {
                     }
                 }
 
-                Text(selectedTemplate?.name ?? "").font(.largeTitle).bold()
-                commonNamesSection
+                if isSharedModeSupported {
+                    Text(selectedTemplate?.name ?? "").font(.largeTitle).bold()
+                    commonNamesSection
+                    octaveShiftControl
 
-                // Per explicit request: a wide column (staff + chord sequence) next to a
-                // narrower one (tablature + keyboard) — used to be one column, top to bottom.
-                Group {
-                    if usesTwoColumns {
-                        HStack(alignment: .top, spacing: 16) {
-                            staffAndSequenceColumn
-                            tablatureAndKeyboardColumn
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: 16) {
-                            staffAndSequenceColumn
-                            tablatureAndKeyboardColumn
+                    // Per explicit request: a wide column (staff + chord sequence) next to a
+                    // narrower one (tablature + keyboard) — used to be one column, top to bottom.
+                    Group {
+                        if usesTwoColumns {
+                            HStack(alignment: .top, spacing: 16) {
+                                staffAndSequenceColumn
+                                tablatureAndKeyboardColumn
+                            }
+                        } else {
+                            VStack(alignment: .leading, spacing: 16) {
+                                staffAndSequenceColumn
+                                tablatureAndKeyboardColumn
+                            }
                         }
                     }
-                }
-                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { columnsRowWidth = $0 }
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { columnsRowWidth = $0 }
 
-                SequenceTransportView(
-                    isPlaying: session.isAuditioningTheoryLibrary,
-                    language: session.currentLanguage,
-                    onPlay: playProgression,
-                    onStop: stopProgression
-                )
+                    SequenceTransportView(
+                        isPlaying: isPlayingProgression,
+                        language: session.currentLanguage,
+                        onPlay: playProgression,
+                        onStop: stopProgression
+                    )
+                } else {
+                    Text(L10n.string(.appHintExplorationFamilleUn, session.currentLanguage))
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding()
         }
@@ -267,8 +343,19 @@ struct ProgressionLibraryView: View {
     private var progressionStaffEvents: [StaffEvent] {
         resolvedReferences.compactMap { reference in
             guard let chord = reference.resolve() else { return nil }
-            return ChordStaffView.chordEvent(root: chord.root.value, tones: chord.pitchClasses.map(\.value))
+            return ChordStaffView.chordEvent(root: chord.root.value, tones: chord.pitchClasses.map(\.value), octaveOffset: octaveShift)
         }
+    }
+
+    /// Compact -2...+2 octave control shared by the staff (`progressionStaffEvents`) and the
+    /// mini keyboard (`currentChordVoicingPitches`) — one control, applied to everything this
+    /// screen shows, per explicit request.
+    private var octaveShiftControl: some View {
+        Stepper(value: $octaveShift, in: -2...2) {
+            Text("\(L10n.string(.appFieldOctave, session.currentLanguage)) : \(octaveShift >= 0 ? "+\(octaveShift)" : "\(octaveShift)")")
+                .font(.caption)
+        }
+        .fixedSize()
     }
 
     private var currentReference: ChordReference? {
@@ -283,7 +370,7 @@ struct ProgressionLibraryView: View {
     /// explicit request.
     private var currentChordVoicingPitches: [Int] {
         guard let currentChord else { return [] }
-        return PitchSequencing.ascendingPitches(forPitchClasses: currentChord.pitchClasses.map(\.value), startingAbove: 47)
+        return PitchSequencing.ascendingPitches(forPitchClasses: currentChord.pitchClasses.map(\.value), startingAbove: 47 + octaveShift * 12)
     }
 
     /// Whichever live track is the app's current "source principale" — read directly (not cached
@@ -381,6 +468,16 @@ struct ProgressionLibraryView: View {
                             playSingleChord(resolvedReferences[globalIndex])
                         }
                     )
+                    // This row's own chord names + notes in parens — a diagnostic readout (per
+                    // explicit request) letting a wrong chord be spotted directly, same style as
+                    // `DissonancesLibraryView.noteReadoutSection`.
+                    Text(row.compactMap { entry in
+                        resolvedReferences[entry.offset].resolve().map { chord in
+                            let names = chord.pitchClasses.map { session.notationStyle.rootName($0, preferFlats: false) }.joined(separator: ", ")
+                            return "\(session.notationStyle.displayName(for: chord)) (\(names))"
+                        }
+                    }.joined(separator: "  |  "))
+                    .font(.caption)
                 }
             }
             chordListSection
@@ -449,40 +546,49 @@ struct ProgressionLibraryView: View {
     }
 
     private func playSingleChord(_ reference: ChordReference) {
-        guard let sound = session.theoryAuditionSound(), let chord = reference.resolve() else { return }
-        try? session.loadTheoryLibraryAuditionSample(sound)
+        guard let chord = reference.resolve(), let sourceID else { return }
+        session.releaseAllKeys(track: sourceID)
         playbackGeneration += 1
-        let pitches = PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47)
-        session.playTheoryLibraryAudition([ImprovSession.TheoryAuditionNote(pitches: pitches, startSeconds: 0, durationSeconds: 1.5)])
+        let generation = playbackGeneration
+        let pitches = PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47 + octaveShift * 12)
+        pressAndScheduleRelease(pitches: pitches, track: sourceID, durationSeconds: 1.5, generation: generation)
     }
 
     /// Plays the whole progression back to back AND advances `currentChordIndex` in step (so
-    /// the keyboard and the staff's highlighted column follow along) — scheduled separately
-    /// from the audio itself (`ImprovSession.playTheoryLibraryAudition` has no per-step
-    /// callback), guarded by `playbackGeneration` so a Stop (or restarting playback) cancels
-    /// any still-pending advances instead of them firing late over whatever comes next.
+    /// the keyboard and the staff's highlighted column follow along), guarded by
+    /// `playbackGeneration` so a Stop (or restarting playback) cancels any still-pending advances
+    /// instead of them firing late over whatever comes next. Plays through the "clavier
+    /// principal" — real `pressKey`/`releaseKey` on the picked source track, same mechanism
+    /// `TonnetzLibraryView.play(_:)` already uses — per explicit request, so this screen acts as
+    /// a genuine pre-input to the main keyboard (a simulated key-press), not an isolated preview.
+    /// Silently does nothing when no "source principale" is picked — same gate Tonnetz already
+    /// has, not a regression (previously played regardless of source).
     private func playProgression() {
-        guard let sound = session.theoryAuditionSound() else { return }
-        try? session.loadTheoryLibraryAuditionSample(sound)
+        guard let sourceID else { return }
+        session.releaseAllKeys(track: sourceID)
         playbackGeneration += 1
         let generation = playbackGeneration
+        isPlayingProgression = true
         let stepDuration = 1.0
-        var notes: [ImprovSession.TheoryAuditionNote] = []
         for (index, reference) in resolvedReferences.enumerated() {
             guard let chord = reference.resolve() else { continue }
-            let pitches = PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47)
-            notes.append(ImprovSession.TheoryAuditionNote(pitches: pitches, startSeconds: Double(index) * stepDuration, durationSeconds: stepDuration * 0.9))
+            let pitches = PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47 + octaveShift * 12)
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * stepDuration) {
                 guard playbackGeneration == generation else { return }
                 currentChordIndex = index
+                pressAndScheduleRelease(pitches: pitches, track: sourceID, durationSeconds: stepDuration * 0.9, generation: generation)
             }
         }
-        session.playTheoryLibraryAudition(notes)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(resolvedReferences.count) * stepDuration) {
+            guard playbackGeneration == generation else { return }
+            isPlayingProgression = false
+        }
     }
 
     private func stopProgression() {
         playbackGeneration += 1
-        session.stopTheoryLibraryAudition()
+        isPlayingProgression = false
+        if let sourceID { session.releaseAllKeys(track: sourceID) }
     }
 }
 

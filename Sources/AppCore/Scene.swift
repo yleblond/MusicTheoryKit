@@ -159,10 +159,12 @@ extension SceneRole {
         case .microphone:
             hint = .microphone
             migratedName = "Microphone"
-        case .remote, .midiSplitZone, .none:
-            // `.midiSplitZone` can't actually occur here in practice — the split feature postdates
-            // every legacy `SceneTrack` this migration ever runs against — but the switch must be
-            // exhaustive; falls back to the same "unrecognized, use the raw id" treatment as `.remote`.
+        case .remote, .midiSplitZone, .dissonancePreview, .none:
+            // `.midiSplitZone`/`.dissonancePreview` can't actually occur here in practice — the
+            // split feature postdates every legacy `SceneTrack` this migration ever runs against,
+            // and `.dissonancePreview` never round-trips through `wireIDText` at all — but the
+            // switch must be exhaustive; falls back to the same "unrecognized, use the raw id"
+            // treatment as `.remote`.
             hint = nil
             migratedName = sceneTrack.trackID
         }

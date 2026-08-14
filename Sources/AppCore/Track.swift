@@ -38,6 +38,15 @@ public enum TrackID: Hashable, Sendable {
     /// entry in `ImprovSession.tracks` entirely (see `refreshTracks`) — per explicit request, a
     /// split is a full replacement, not an addition alongside the original.
     case midiSplitZone(sourceIndex: Int, zoneID: UUID)
+    /// A permanent, never-user-facing track used ONLY to preview a chord/triad tapped in the
+    /// Dissonances screen (see `DissonancesLibraryView.selectAndPlay`) — kept entirely separate
+    /// from `.computerKeyboard`/whichever track is `theoryLiveInputSourceID` so a button-
+    /// triggered preview never lights up the persistent main-keyboard bar (which reads that
+    /// picked source's own `heldPitches`), while still going through the same tuned-cents
+    /// (`applyTuning`) playback path a real live track gets. Never appears in any user-facing
+    /// track picker/list — see `ImprovSession.refreshTracks`' own doc comment on where it's
+    /// excluded.
+    case dissonancePreview
 
     /// The canonical wire-format string for this track's *local* identity — what a client
     /// puts in `NetMessage.trackID` when announcing or forwarding a note event for one of
@@ -52,6 +61,7 @@ public enum TrackID: Hashable, Sendable {
         case .microphone: return "micro"
         case .remote: return nil
         case .midiSplitZone(let sourceIndex, let zoneID): return "midi-split:\(sourceIndex + 1):\(zoneID.uuidString)"
+        case .dissonancePreview: return nil
         }
     }
 

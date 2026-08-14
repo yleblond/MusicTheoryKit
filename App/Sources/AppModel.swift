@@ -18,6 +18,8 @@ import MusicTheoryKit
 enum AuxiliaryWindowID: String, CaseIterable {
     case computerKeyboard, runScreen, guideLecture, microphone, sceneLayout, theorie, contextualHelp
     case theorieAccords, theorieExploration, theorieProgressions, theorieTonnetz
+    case theorieDissonances, theorieIntonation
+    case home
 }
 
 /// Owns the single, shared `ImprovSession`/`SessionUIBridge` pair for the whole process —
@@ -120,6 +122,27 @@ final class AppModel {
         mainKeyboardChordOwnerID = nil
         mainKeyboardChord = nil
     }
+
+    /// One shared tonic+scale selection for every MusicLab screen that picks a mode (Modes,
+    /// Progressions, Intonations, Tonnetz, Dissonances) — per explicit request, so picking a
+    /// mode on one screen is reflected on every other, including across detached windows (this
+    /// property lives on `AppModel`, already `.environment()`-injected into every `WindowGroup`).
+    /// `ModeLibraryView`'s own Exploration instance opts out via `usesSharedModeSelection: false`
+    /// and keeps its own independent local state instead — see that view's own doc comment.
+    struct SharedModeSelection: Equatable {
+        var tonic: Int = 0
+        var scaleID: String = ScaleLibrary.all[0].id
+    }
+    var sharedMode = SharedModeSelection()
+
+    /// Top-level app section + Studio/Settings sub-tab — promoted from `ContentView`'s own
+    /// `@State` (2026-08) so `ComputerKeyboardWindow` (a separate detached window) can reproduce
+    /// the exact same main-keyboard coloring/gating logic as the embedded bar — see
+    /// `mainKeyboardPresentation(session:)` in `MainKeyboardMode.swift`, which reads these
+    /// directly instead of taking them as parameters.
+    var mode: AppMode = .studio
+    var selectedStudioTab: StudioTab = .scene
+    var selectedSettingsTab: SettingsTab = .sons
 
     /// Cross-mode navigation for the Guide screens — per explicit request: "jouer le guide" in
     /// Composition mode's own Guide screen (editing) jumps to Studio's Guide tab (playing), and

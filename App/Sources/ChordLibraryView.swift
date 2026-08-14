@@ -35,6 +35,15 @@ struct ChordLibraryView: View {
     /// gracefully falls back to its root-position shape beyond that (`isBasePositionFallback`),
     /// so sharing one control never leaves the tablature broken, only occasionally unchanged.
     @State private var inversion: Int = 0
+    /// Shifts everything shown on this screen's staff (and the paired mini keyboard) up/down by
+    /// whole octaves — per explicit request, so a chord can be brought low enough to actually
+    /// land on the bass (fa) clef instead of always sitting around middle C. Whole-staff, not
+    /// per-note: applied uniformly to every pitch this screen builds (`staffEvent`,
+    /// `voicingPitches`), never to an individual tone.
+    @State private var octaveShift: Int = 0
+    /// Bumped on every `play()` call — guards the scheduled release below, same generation-
+    /// counter idiom `TuningLibraryView.playPitches`/`TonnetzLibraryView.playPitches` already use.
+    @State private var playbackGeneration = 0
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -196,6 +205,8 @@ struct ChordLibraryView: View {
                     .labelsHidden()
                 }
 
+                octaveShiftControl
+
                 // Staff / keyboard / tablature side by side, per explicit request (used to be
                 // stacked top to bottom) — narrow widths fall back to stacking, same breakpoint
                 // as everywhere else. `.staffCenter` (not `.top`) so the keyboard lines up on
@@ -233,10 +244,22 @@ struct ChordLibraryView: View {
             // large ?").
             ChordStaffView(events: [staffEvent], colorScheme: noteColorScheme, heightScale: 0.85, minimumColumnCount: 3)
                 .alignmentGuide(.staffCenter) { $0[VerticalAlignment.center] }
+            // The exact computed root/quality + notes for what's on the staff — a diagnostic
+            // readout (per explicit request) letting a wrong chord be spotted directly, same
+            // style as `DissonancesLibraryView.noteReadoutSection`.
+            chordReadoutSection
             // Directly under the staff, per explicit request: what's ACTUALLY being played right
             // now on the "source principale" track, not just this chord's own reference notes.
             livePlayedNotesLabel
         }
+    }
+
+    private var chordReadoutSection: some View {
+        let names = chord.voicing(inversion: inversion).orderedPitchClasses
+            .map { session.notationStyle.rootName($0, preferFlats: false) }
+            .joined(separator: ", ")
+        return Text("\(names) (\(session.notationStyle.displayName(for: chord)))")
+            .font(.subheadline)
     }
 
     /// Shows only this inversion's own specific voicing (see `voicingPitches`), not every
@@ -280,7 +303,8 @@ struct ChordLibraryView: View {
     private var staffEvent: StaffEvent {
         ChordStaffView.ascendingVoicing(
             pitchClasses: chord.voicing(inversion: inversion).orderedPitchClasses.map(\.value),
-            chordRoot: chord.root.value, chordTones: chord.pitchClasses.map(\.value)
+            chordRoot: chord.root.value, chordTones: chord.pitchClasses.map(\.value),
+            startingAbove: 59 + octaveShift * 12
         )
     }
 
@@ -289,8 +313,19 @@ struct ChordLibraryView: View {
     /// and the mini keyboard always agree on which exact notes represent "this inversion."
     private var voicingPitches: [Int] {
         PitchSequencing.ascendingPitches(
-            forPitchClasses: chord.voicing(inversion: inversion).orderedPitchClasses.map(\.value), startingAbove: 47
+            forPitchClasses: chord.voicing(inversion: inversion).orderedPitchClasses.map(\.value), startingAbove: 47 + octaveShift * 12
         )
+    }
+
+    /// Compact -2...+2 octave control shared by the staff (`staffEvent`) and the mini keyboard
+    /// (`voicingPitches`, via `keyboardColumn`'s `referenceChordPitches`/`keyLabels`) — one
+    /// control, applied to everything this screen shows, per explicit request.
+    private var octaveShiftControl: some View {
+        Stepper(value: $octaveShift, in: -2...2) {
+            Text("\(L10n.string(.appFieldOctave, session.currentLanguage)) : \(octaveShift >= 0 ? "+\(octaveShift)" : "\(octaveShift)")")
+                .font(.caption)
+        }
+        .fixedSize()
     }
 
     /// Whichever live track is the app's current "source principale" — read directly (not
@@ -323,10 +358,26 @@ struct ChordLibraryView: View {
         }
     }
 
+    /// Plays through the "clavier principal" — real `pressKey`/`releaseKey` on the picked source
+    /// track, same mechanism `TonnetzLibraryView.play(_:)` already uses — per explicit request,
+    /// so this screen acts as a genuine pre-input to the main keyboard (a simulated key-press),
+    /// not an isolated preview: whatever's played here now shows up on the persistent main-
+    /// keyboard bar and drives Dissonances' own live triad detection, exactly like really typing.
+    /// Silently does nothing when no "source principale" is picked — same gate Tonnetz already
+    /// has (`canPlay`), not a regression: previously this played regardless of source, since the
+    /// old isolated audition player didn't need one.
     private func play() {
-        guard let sound = session.theoryAuditionSound() else { return }
-        try? session.loadTheoryLibraryAuditionSample(sound)
-        session.playTheoryLibraryAudition([ImprovSession.TheoryAuditionNote(pitches: voicingPitches, startSeconds: 0, durationSeconds: 2)])
+        guard let sourceID = session.theoryLiveInputSourceID else { return }
+        session.releaseAllKeys(track: sourceID)
+        let pitches = voicingPitches
+        for pitch in pitches { session.pressKey(pitch: pitch, track: sourceID) }
+        playbackGeneration += 1
+        let generation = playbackGeneration
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard generation == playbackGeneration else { return }
+            for pitch in pitches { session.releaseKey(pitch: pitch, track: sourceID) }
+        }
     }
 }
 

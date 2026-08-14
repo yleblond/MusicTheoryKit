@@ -27,6 +27,14 @@ import Localization
 struct DissonancesLibraryView: View {
     let session: ImprovSession
     let isActive: Bool
+    /// See `ChordLibraryView.isDetachedWindow`'s own doc comment — self-adapts `detachButton`.
+    var isDetachedWindow: Bool = false
+
+    @Environment(AppModel.self) private var appModel
+    #if os(macOS) || os(visionOS)
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    #endif
 
     private static let densityOptions = [12, 24, 48, 100, 300, 600, 1000]
     private static let heatmapResolution = 64
@@ -70,7 +78,6 @@ struct DissonancesLibraryView: View {
     /// C4 — "un do médian" — the explicit default, immediately analyzed on first appearance (see
     /// the `.onChange(of: baseMidiPitch, initial: true)` below).
     @State private var baseMidiPitch = 60
-    @State private var selectedScaleID = "ionian"
     @State private var samplesPerOctave = 24
     @State private var grid: OctaveSpectrumGrid?
     @State private var isBuilding = false
@@ -97,7 +104,19 @@ struct DissonancesLibraryView: View {
     private var baseNoteLabel: String { noteLabel(forMidiPitch: baseMidiPitch) }
 
     private var mode: Mode {
-        Mode(tonic: basePitchClass, scale: ScaleLibrary.byID(selectedScaleID) ?? ScaleLibrary.all[0])
+        Mode(tonic: basePitchClass, scale: ScaleLibrary.byID(appModel.sharedMode.scaleID) ?? ScaleLibrary.all[0])
+    }
+
+    /// Reads/writes the ONE shared scale selection (`AppModel.sharedMode`) instead of a local
+    /// `@State`, so picking a mode here is reflected on every other MusicLab screen, including
+    /// detached windows — per explicit request. The tonic half of `AppModel.sharedMode` is
+    /// mirrored bidirectionally with `baseMidiPitch`'s own pitch class instead (see
+    /// `onChange(of: appModel.sharedMode.tonic)` in `body` and the base-note tap handler in
+    /// `baseNoteKeyboardSection`) rather than replacing it outright, since `baseMidiPitch` also
+    /// carries this screen's own octave — information the shared tonic (a bare pitch class)
+    /// doesn't have.
+    private var scaleIDBinding: Binding<String> {
+        Binding(get: { appModel.sharedMode.scaleID }, set: { appModel.sharedMode.scaleID = $0 })
     }
 
     /// The root + middle + top absolute MIDI pitches of whatever's currently selected/playing.
@@ -131,9 +150,53 @@ struct DissonancesLibraryView: View {
         }
     }
 
+    /// Snapshot of whatever's actually held on the "clavier principal" live source, plus the
+    /// current top-level app section — `Equatable` so `.onChange` only fires on a real change,
+    /// same idiom `TonnetzLibraryView.RecognitionSnapshot` already uses for its own live-match
+    /// reaction.
+    private struct LiveRecognitionSnapshot: Equatable {
+        let heldPitches: Set<Int>
+        let mode: AppMode
+    }
+
+    private var liveRecognitionSnapshot: LiveRecognitionSnapshot {
+        LiveRecognitionSnapshot(
+            heldPitches: sourceID.flatMap { id in session.tracks.first { $0.id == id } }?.heldPitches ?? [],
+            mode: appModel.mode
+        )
+    }
+
+    /// Live triad detection — per explicit request, ONLY while the app is in Théorie mode (not
+    /// Studio/Composition/Settings): whenever exactly 3 notes are actually held on the "clavier
+    /// principal," and they form one of this screen's own known triad shapes, this screen follows
+    /// them exactly as if they'd been tapped — base note (with its REAL octave, so "prendre sa
+    /// note source du clavier principal" means the actual physical bass note, not an arbitrary
+    /// canonical octave) plus the matching template. Anything else (fewer/more than 3 held notes,
+    /// or 3 notes not matching a known triad shape) leaves the current manual/tapped selection
+    /// untouched, so this is purely additive over the existing tap-driven workflow.
+    private func reactToLiveRecognition(_ snapshot: LiveRecognitionSnapshot) {
+        guard snapshot.mode == .theorie, isActive else { return }
+        let held = snapshot.heldPitches.sorted()
+        guard held.count == 3 else { return }
+        let root = held[0]
+        let x = held[1] - root
+        let y = held[2] - root
+        guard x > 0, y < 12 else { return }
+        guard let template = triadTemplates.first(where: { Set($0.intervalsFromRoot) == Set([0, x, y]) }) else { return }
+        baseMidiPitch = root
+        selectedSemitones = (x, y)
+        selectionSource = .triad(template)
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                #if os(macOS) || os(visionOS)
+                HStack {
+                    Spacer()
+                    detachButton
+                }
+                #endif
                 topRow
 
                 if let grid {
@@ -160,11 +223,40 @@ struct DissonancesLibraryView: View {
             grid = nil
             analyzeOctave()
         }
-        .onChange(of: selectedScaleID) { _, _ in
+        .onChange(of: appModel.sharedMode.scaleID) { _, _ in
             guard isActive else { return }
             session.setContextualMode(mode)
         }
+        // Keeps `baseMidiPitch`'s pitch class following the shared tonic (picked here or on
+        // another screen) while preserving this screen's own octave — see `scaleIDBinding`'s
+        // own doc comment.
+        .onChange(of: appModel.sharedMode.tonic) { _, newTonic in
+            let currentPitchClass = ((baseMidiPitch % 12) + 12) % 12
+            baseMidiPitch = baseMidiPitch - currentPitchClass + newTonic
+        }
+        .onChange(of: liveRecognitionSnapshot) { _, snapshot in
+            reactToLiveRecognition(snapshot)
+        }
     }
+
+    #if os(macOS) || os(visionOS)
+    @ViewBuilder
+    private var detachButton: some View {
+        if isDetachedWindow {
+            Button {
+                dismissWindow(id: AuxiliaryWindowID.theorieDissonances.rawValue)
+            } label: {
+                Label(L10n.string(.appButtonReintegrer, session.currentLanguage), systemImage: "arrow.down.right.and.arrow.up.left")
+            }
+        } else {
+            Button {
+                openWindow(id: AuxiliaryWindowID.theorieDissonances.rawValue)
+            } label: {
+                Image(systemName: "rectangle.on.rectangle")
+            }
+        }
+    }
+    #endif
 
     /// Row 1: the base-note keyboard (widened +20%, per explicit request) and, alongside it —
     /// roughly above where the spectrum graph sits in row 2 — the playable-triad row, since this
@@ -206,6 +298,7 @@ struct DissonancesLibraryView: View {
                 pressedBasePitch = pitch
                 baseMidiPitch = pitch
                 selectionSource = .none
+                appModel.sharedMode.tonic = ((pitch % 12) + 12) % 12
             },
             onNoteOff: isBuilding ? nil : { _ in pressedBasePitch = nil },
             height: 90,
@@ -351,7 +444,7 @@ struct DissonancesLibraryView: View {
     }
 
     private var scalePickerRow: some View {
-        Picker(L10n.string(.fieldGamme, session.currentLanguage), selection: $selectedScaleID) {
+        Picker(L10n.string(.fieldGamme, session.currentLanguage), selection: scaleIDBinding) {
             ForEach(ScaleLibrary.all) { scale in Text(scale.popularName).tag(scale.id) }
         }
         .pickerStyle(.menu)
@@ -509,19 +602,27 @@ struct DissonancesLibraryView: View {
         }
     }
 
+    /// Plays through the dedicated `.dissonancePreview` track — deliberately NOT
+    /// `theoryLiveInputSourceID` (`sourceID`) — so a button/mini-keyboard-triggered preview never
+    /// lights up the persistent main-keyboard bar (which reads `sourceID`'s own `heldPitches`)
+    /// while this screen's own embedded keyboard is ALSO showing the same chord chord-colored —
+    /// that double rendering was the reported "l'accord apparait deux fois" bug. Still goes
+    /// through the same tuned-cents (`applyTuning`) playback path a real live track gets — see
+    /// `TrackID.dissonancePreview`'s own doc comment.
     private func selectAndPlay(semitoneX: Int, semitoneY: Int, source: SelectionSource) {
         selectedSemitones = (semitoneX, semitoneY)
         selectionSource = source
-        guard let sourceID else { return }
-        session.releaseAllKeys(track: sourceID)
+        guard let sound = session.theoryAuditionSound() else { return }
+        try? session.setInstrument(named: sound.path, for: .dissonancePreview, preset: sound.preset)
+        session.releaseAllKeys(track: .dissonancePreview)
         let pitches = [baseMidiPitch, baseMidiPitch + semitoneX, baseMidiPitch + semitoneY]
-        for pitch in pitches { session.pressKey(pitch: pitch, track: sourceID, applyTuning: true) }
+        for pitch in pitches { session.pressKey(pitch: pitch, track: .dissonancePreview, applyTuning: true) }
         playbackGeneration += 1
         let generation = playbackGeneration
         Task {
             try? await Task.sleep(nanoseconds: 1_200_000_000)
             guard generation == playbackGeneration else { return }
-            for pitch in pitches { session.releaseKey(pitch: pitch, track: sourceID) }
+            for pitch in pitches { session.releaseKey(pitch: pitch, track: .dissonancePreview) }
         }
     }
 }

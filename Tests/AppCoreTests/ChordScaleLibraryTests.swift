@@ -60,10 +60,19 @@ final class ChordScaleLibraryTests: XCTestCase {
 
     // MARK: - ChordProgressionResolver
 
-    func testResolveRichUsesTheModesActualDiatonicSeventhChords() {
+    func testResolveRichDefaultsToTheModesActualDiatonicTriads() {
         let mode = Mode(tonic: PitchClass(0), scale: ScaleLibrary.byID("ionian")!) // C major
         let template = ChordProgressionTemplate(name: "test", degrees: ["ii", "V", "I"])
         let references = ChordProgressionResolver.resolveRich(template, in: mode)
+        // ii in C major is D dorian -> mi; V is G mixolydian -> Ma; I is C ionian -> Ma.
+        XCTAssertEqual(references.map(\.chordTemplateID), ["mi", "Ma", "Ma"])
+        XCTAssertEqual(references.map(\.root), [2, 7, 0])
+    }
+
+    func testResolveRichUsesTheModesActualDiatonicSeventhChordsWhenAskedFor() {
+        let mode = Mode(tonic: PitchClass(0), scale: ScaleLibrary.byID("ionian")!) // C major
+        let template = ChordProgressionTemplate(name: "test", degrees: ["ii", "V", "I"])
+        let references = ChordProgressionResolver.resolveRich(template, in: mode, qualityTier: .seventh)
         // ii in C major is D dorian -> mi7; V is G mixolydian -> 7; I is C ionian -> Ma7.
         XCTAssertEqual(references.map(\.chordTemplateID), ["mi7", "7", "Ma7"])
         XCTAssertEqual(references.map(\.root), [2, 7, 0])

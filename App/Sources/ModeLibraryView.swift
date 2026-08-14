@@ -47,15 +47,47 @@ struct ModeLibraryView: View {
     /// it. Feeds `.registerContextualHelp` in `detailContent` below — see that call site's own
     /// doc comment for why this can't just use `.onAppear`/`.onDisappear` instead.
     var isActive: Bool = true
+    /// Whether this instance's tonic/scale picker reads/writes `AppModel.sharedMode` (so picking
+    /// a mode here is reflected on every other MusicLab screen, including detached windows) or
+    /// keeps its own independent local selection — per explicit request. `.overview` ("Modes")
+    /// defaults to `true`; `ExplorationTabContent`'s own instance passes `false` to preserve its
+    /// pre-existing "entirely independent from Modes" behavior (see this struct's own doc
+    /// comment on why `.overview`/`.exploration` are two separate instances to begin with).
+    var usesSharedModeSelection: Bool = true
 
     #if os(macOS) || os(visionOS)
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
     #endif
+    @Environment(AppModel.self) private var appModel
 
     @State private var screen: TheoryLibraryScreen = .list
+    /// Backing storage used only when `usesSharedModeSelection` is `false` — otherwise
+    /// `tonicBinding`/`scaleIDBinding` below route to `appModel.sharedMode` instead. Kept (rather
+    /// than removed) so `ExplorationTabContent`'s independent instance still has somewhere to
+    /// store its own pick.
     @State private var selectedTonic: Int = 0
     @State private var selectedScaleID: String = ScaleLibrary.all[0].id
+    /// Whole-octave shift applied to everything this screen's staffs/keyboards/playback show
+    /// (the scale run, the diatonic chords, and the currently-selected chord's own keyboard) —
+    /// per explicit request, so a mode's notes/chords can be brought low enough to land on the
+    /// bass (fa) clef instead of always sitting around middle C.
+    @State private var octaveShift: Int = 0
+    /// Triad by default, seventh as an opt-in — per explicit request ("priorité aux triades").
+    /// Only affects `diatonicChordReferences` (the harmonized-scale staff/list/keyboard, column
+    /// 2/3) — the scale run above it (row 1) has no chord quality of its own to toggle.
+    @State private var chordQualityTier: ChordProgressionResolver.ChordQualityTier = .triad
+
+    private var tonicBinding: Binding<Int> {
+        usesSharedModeSelection
+            ? Binding(get: { appModel.sharedMode.tonic }, set: { appModel.sharedMode.tonic = $0 })
+            : $selectedTonic
+    }
+    private var scaleIDBinding: Binding<String> {
+        usesSharedModeSelection
+            ? Binding(get: { appModel.sharedMode.scaleID }, set: { appModel.sharedMode.scaleID = $0 })
+            : $selectedScaleID
+    }
     /// Which of `diatonicChordReferences` the right column's mini keyboard currently shows —
     /// defaults to the tonic chord (index 0), same "always populated" convention the other
     /// Library screens already follow. Also doubles as "which chord is currently sounding": every
@@ -71,6 +103,10 @@ struct ModeLibraryView: View {
     /// guards its own, so a Stop (or starting something else before a sequence finishes)
     /// invalidates any still-pending ones instead of them firing late over whatever comes next.
     @State private var playbackGeneration = 0
+    /// Replaces `session.isAuditioningTheoryLibrary` (the old isolated-audition player's own
+    /// flag) as `scalePlaybackControls`' own "show the Arrêter button" gate, now that playback
+    /// goes through real `pressKey`/`releaseKey` — see `play(direction:)`'s own doc comment.
+    @State private var isPlayingScale = false
 
     /// Which of the two `ModalFunctionalMapBuilder.build(for:source:)` sources currently drives
     /// the functional-exploration panel — a user-facing choice (see that type's own doc comment
@@ -98,7 +134,30 @@ struct ModeLibraryView: View {
     private var usesTwoColumns: Bool { TheoryLibraryLayoutMode.usesTwoColumns(horizontalSizeClass: horizontalSizeClass) }
 
     private var mode: Mode {
-        Mode(tonic: PitchClass(selectedTonic), scale: ScaleLibrary.byID(selectedScaleID) ?? ScaleLibrary.all[0])
+        Mode(tonic: PitchClass(tonicBinding.wrappedValue), scale: ScaleLibrary.byID(scaleIDBinding.wrappedValue) ?? ScaleLibrary.all[0])
+    }
+
+    /// Whichever live track is the app's current "source principale" — same convention
+    /// `ChordLibraryView.liveHeldPitches`/`TonnetzLibraryView.sourceID` already use. Every
+    /// playback function below plays through THIS track via real `pressKey`/`releaseKey` (see
+    /// `pressAndScheduleRelease(pitches:track:durationSeconds:generation:)`) rather than the
+    /// isolated `playTheoryLibraryAudition` player — per explicit request, so this screen acts as
+    /// a genuine pre-input to the main keyboard (a simulated key-press): what's played here now
+    /// shows up on the persistent main-keyboard bar and drives Dissonances' own live triad
+    /// detection, exactly like really typing. Silently does nothing when no source is picked —
+    /// same gate Tonnetz already has, not a regression (previously played regardless of source).
+    private var sourceID: TrackID? { session.theoryLiveInputSourceID }
+
+    /// Presses `pitches` on `track` now, then releases them after `durationSeconds` — guarded by
+    /// `generation` so a superseded/stopped playback never releases notes a NEWER one is still
+    /// holding. The shared "one note/chord event" primitive every playback function below builds
+    /// its own scheduling on top of.
+    private func pressAndScheduleRelease(pitches: [Int], track: TrackID, durationSeconds: Double, generation: Int) {
+        for pitch in pitches { session.pressKey(pitch: pitch, track: track) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + durationSeconds) {
+            guard playbackGeneration == generation else { return }
+            for pitch in pitches { session.releaseKey(pitch: pitch, track: track) }
+        }
     }
 
     var body: some View {
@@ -182,14 +241,14 @@ struct ModeLibraryView: View {
         Form {
             Section {
                 if usesTwoColumns {
-                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: $selectedTonic) {
+                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: tonicBinding) {
                         ForEach(0..<12, id: \.self) { pitchClass in
                             Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
                         }
                     }
                     .pickerStyle(.menu)
                 } else {
-                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: $selectedTonic) {
+                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: tonicBinding) {
                         ForEach(0..<12, id: \.self) { pitchClass in
                             Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
                         }
@@ -203,13 +262,13 @@ struct ModeLibraryView: View {
                 Section {
                     ForEach(group.scales, id: \.id) { scale in
                         Button {
-                            selectedScaleID = scale.id
+                            scaleIDBinding.wrappedValue = scale.id
                             selectedChordIndex = 0
                             screen = .detail
                         } label: {
                             HStack {
                                 Text("\(scale.popularName) (\(scale.systematicName))")
-                                    .foregroundStyle(scale.id == selectedScaleID ? Color.accentColor : .primary)
+                                    .foregroundStyle(scale.id == scaleIDBinding.wrappedValue ? Color.accentColor : .primary)
                                 Spacer()
                             }
                             .contentShape(Rectangle())
@@ -303,20 +362,23 @@ struct ModeLibraryView: View {
     /// everywhere else in this screen.
     @ViewBuilder
     private var overviewContent: some View {
-        // `.staffCenter` (not `.top`) — per explicit request, so the selected-chord keyboard in
-        // `circleColumn` lines up on the two staffs' own shared height instead of the top of
-        // whatever happens to sit above it (`selectedChordKeyboard`'s own title text).
-        if usesTwoColumns {
-            HStack(alignment: .staffCenter, spacing: 16) {
-                scaleColumn
-                chordsColumn
-                circleColumn
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 16) {
-                scaleColumn
-                chordsColumn
-                circleColumn
+        VStack(alignment: .leading, spacing: 8) {
+            octaveShiftControl
+            // `.staffCenter` (not `.top`) — per explicit request, so the selected-chord keyboard
+            // in `circleColumn` lines up on the two staffs' own shared height instead of the top
+            // of whatever happens to sit above it (`selectedChordKeyboard`'s own title text).
+            if usesTwoColumns {
+                HStack(alignment: .staffCenter, spacing: 16) {
+                    scaleColumn
+                    chordsColumn
+                    circleColumn
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 16) {
+                    scaleColumn
+                    chordsColumn
+                    circleColumn
+                }
             }
         }
     }
@@ -336,6 +398,11 @@ struct ModeLibraryView: View {
                 minimumColumnCount: sharedStaffColumnCount, onColumnTap: playSingleNote(atColumnIndex:)
             )
             .alignmentGuide(.staffCenter) { $0[VerticalAlignment.center] }
+            // The scale's own note names, in degree order — a diagnostic readout (per explicit
+            // request) letting a wrong note be spotted directly, same style as
+            // `DissonancesLibraryView.noteReadoutSection`.
+            Text(mode.pitchClasses.map { session.notationStyle.rootName($0, preferFlats: false) }.joined(separator: ", "))
+                .font(.subheadline)
             scalePlaybackControls
             VStack(alignment: .leading, spacing: 4) {
                 Text(mode.displayName).font(.headline)
@@ -358,12 +425,14 @@ struct ModeLibraryView: View {
     /// diatonic chord list directly below (used to sit beside the circle of fifths instead).
     private var chordsColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
+            chordQualityTierPicker
             ChordStaffView(
                 events: chordsStaffEvents, notePalette: session.activeColorPalette.colors,
                 heightScale: 0.8, widthScale: 0.56, highlightedIndex: selectedChordIndex, keySignature: modeKeySignature,
                 minimumColumnCount: sharedStaffColumnCount, onColumnTap: tapChordStaffColumn(at:)
             )
             .alignmentGuide(.staffCenter) { $0[VerticalAlignment.center] }
+            diatonicChordsReadout
             playChordSequenceButton
             diatonicChordsSection
         }
@@ -396,7 +465,21 @@ struct ModeLibraryView: View {
     }
 
     private var staffEvents: [StaffEvent] {
-        ChordStaffView.ascendingSequence(pitchClasses: scaleDegreesWithOctave, chordRoot: mode.tonic.value, chordTones: mode.pitchClasses.map(\.value))
+        ChordStaffView.ascendingSequence(
+            pitchClasses: scaleDegreesWithOctave, chordRoot: mode.tonic.value, chordTones: mode.pitchClasses.map(\.value),
+            startingAbove: 59 + octaveShift * 12
+        )
+    }
+
+    /// Compact -2...+2 octave control shared by both staffs in `overviewContent` (`staffEvents`/
+    /// `chordsStaffEvents`) and their paired playback/keyboard pitches — one control, applied to
+    /// everything this screen shows, per explicit request.
+    private var octaveShiftControl: some View {
+        Stepper(value: $octaveShift, in: -2...2) {
+            Text("\(L10n.string(.appFieldOctave, session.currentLanguage)) : \(octaveShift >= 0 ? "+\(octaveShift)" : "\(octaveShift)")")
+                .font(.caption)
+        }
+        .fixedSize()
     }
 
     /// The longer of the two staffs' own column counts — passed as `minimumColumnCount` to
@@ -415,9 +498,9 @@ struct ModeLibraryView: View {
     /// `playingNoteIndex` to track whichever note is currently sounding, guarded by
     /// `playbackGeneration` — see that property's doc comment.
     private func play(direction: SequencePlayDirection) {
-        guard let sound = session.theoryAuditionSound() else { return }
-        try? session.loadTheoryLibraryAuditionSample(sound)
-        let ascending = PitchSequencing.ascendingPitches(forPitchClasses: scaleDegreesWithOctave, startingAbove: 47)
+        guard let sourceID else { return }
+        session.releaseAllKeys(track: sourceID)
+        let ascending = PitchSequencing.ascendingPitches(forPitchClasses: scaleDegreesWithOctave, startingAbove: 47 + octaveShift * 12)
         let sequence: [Int]
         switch direction {
         case .ascending: sequence = ascending
@@ -426,10 +509,8 @@ struct ModeLibraryView: View {
         }
         playbackGeneration += 1
         let generation = playbackGeneration
+        isPlayingScale = true
         let stepDuration = 0.35
-        let notes = sequence.enumerated().map { index, pitch in
-            ImprovSession.TheoryAuditionNote(pitches: [pitch], startSeconds: Double(index) * stepDuration, durationSeconds: stepDuration * 0.9)
-        }
         for (index, pitch) in sequence.enumerated() {
             // Each pitch in `sequence` is one of `ascending`'s own (unique) values regardless of
             // direction, so its index there is exactly the staff column it corresponds to.
@@ -437,32 +518,34 @@ struct ModeLibraryView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * stepDuration) {
                 guard playbackGeneration == generation else { return }
                 playingNoteIndex = columnIndex
+                pressAndScheduleRelease(pitches: [pitch], track: sourceID, durationSeconds: stepDuration * 0.9, generation: generation)
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(sequence.count) * stepDuration) {
             guard playbackGeneration == generation else { return }
             playingNoteIndex = nil
+            isPlayingScale = false
         }
-        session.playTheoryLibraryAudition(notes)
     }
 
     private func stopScalePlayback() {
         playbackGeneration += 1
         playingNoteIndex = nil
-        session.stopTheoryLibraryAudition()
+        isPlayingScale = false
+        if let sourceID { session.releaseAllKeys(track: sourceID) }
     }
 
     /// Plays a single tapped scale note (from the row-1 staff, see `onColumnTap` below) —
     /// highlighted the same way a scheduled Asc/Desc/Asc-et-Desc step is.
     private func playSingleNote(atColumnIndex index: Int) {
-        let ascending = PitchSequencing.ascendingPitches(forPitchClasses: scaleDegreesWithOctave, startingAbove: 47)
-        guard ascending.indices.contains(index), let sound = session.theoryAuditionSound() else { return }
-        try? session.loadTheoryLibraryAuditionSample(sound)
+        let ascending = PitchSequencing.ascendingPitches(forPitchClasses: scaleDegreesWithOctave, startingAbove: 47 + octaveShift * 12)
+        guard ascending.indices.contains(index), let sourceID else { return }
+        session.releaseAllKeys(track: sourceID)
         playbackGeneration += 1
         let generation = playbackGeneration
         playingNoteIndex = index
         let duration = 0.6
-        session.playTheoryLibraryAudition([ImprovSession.TheoryAuditionNote(pitches: [ascending[index]], startSeconds: 0, durationSeconds: duration * 0.9)])
+        pressAndScheduleRelease(pitches: [ascending[index]], track: sourceID, durationSeconds: duration * 0.9, generation: generation)
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
             guard playbackGeneration == generation else { return }
             playingNoteIndex = nil
@@ -471,7 +554,7 @@ struct ModeLibraryView: View {
 
     private var playingNotePitches: Set<Int> {
         guard let playingNoteIndex else { return [] }
-        let ascending = PitchSequencing.ascendingPitches(forPitchClasses: scaleDegreesWithOctave, startingAbove: 47)
+        let ascending = PitchSequencing.ascendingPitches(forPitchClasses: scaleDegreesWithOctave, startingAbove: 47 + octaveShift * 12)
         guard ascending.indices.contains(playingNoteIndex) else { return [] }
         return [ascending[playingNoteIndex]]
     }
@@ -481,7 +564,7 @@ struct ModeLibraryView: View {
             Button(L10n.string(.appButtonAscendant, session.currentLanguage)) { play(direction: .ascending) }
             Button(L10n.string(.appButtonDescendant, session.currentLanguage)) { play(direction: .descending) }
             Button(L10n.string(.appButtonAscEtDescendant, session.currentLanguage)) { play(direction: .both) }
-            if session.isAuditioningTheoryLibrary {
+            if isPlayingScale {
                 Button(L10n.string(.appButtonArreter, session.currentLanguage), role: .destructive, action: stopScalePlayback)
             }
             Spacer()
@@ -491,12 +574,24 @@ struct ModeLibraryView: View {
 
     // MARK: - Diatonic chords
 
+    /// Triad/seventh toggle for `diatonicChordReferences` — per explicit request, defaults to
+    /// triads with sevenths as an opt-in (see `chordQualityTier`'s own doc comment).
+    private var chordQualityTierPicker: some View {
+        Picker("", selection: $chordQualityTier) {
+            Text(L10n.string(.appOptionTriades, session.currentLanguage)).tag(ChordProgressionResolver.ChordQualityTier.triad)
+            Text(L10n.string(.appOptionSeptiemes, session.currentLanguage)).tag(ChordProgressionResolver.ChordQualityTier.seventh)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+    }
+
     /// The mode's own diatonic chords (I...VII) plus one appended trailing entry duplicating
     /// the first (the "VIII"/octave chord) — mirrors `scaleDegreesWithOctave` appending the
     /// octave-completing tonic to the scale run, so the chords list/staff read the same way:
     /// one entry per scale degree, ending back on the tonic an octave up.
     private var diatonicChordReferences: [ChordReference] {
-        let base = ChordProgressionResolver.diatonicChordReferences(in: mode)
+        let base = ChordProgressionResolver.diatonicChordReferences(in: mode, qualityTier: chordQualityTier)
         guard let first = base.first else { return base }
         return base + [first]
     }
@@ -528,16 +623,71 @@ struct ModeLibraryView: View {
         }
     }
 
+    /// Ascending, octave-correct root anchor for each of `mode`'s own 7 diatonic degrees (index 0
+    /// = degree i ... 6 = degree vii), one entry per `mode.pitchClasses` in degree order — same
+    /// anchor mechanism (`PitchSequencing.ascendingPitches`) `staffEvents`/`play(direction:)`
+    /// already use for the SCALE run, at that same visual register (`59`, matching
+    /// `staffEvents`'s own `startingAbove`). Real bug fix: `chordsStaffEvents` used to place each
+    /// chord independently via `ChordStaffView.chordEvent(root:...)`, which anchors purely from
+    /// that chord's OWN root pitch class (`60 + root`) with no regard for scale-degree order —
+    /// so any degree whose root pitch class is numerically LOWER than an earlier degree's (e.g.
+    /// every non-tonic degree of B natural minor, tonic pitch class 11) was drawn (and played,
+    /// see `diatonicVoicingPitches(for:)` below) a full octave too low.
+    private var diatonicDegreeRootAnchorsForStaff: [Int] {
+        PitchSequencing.ascendingPitches(forPitchClasses: mode.pitchClasses.map(\.value), startingAbove: 59 + octaveShift * 12)
+    }
+
+    /// Same idea as `diatonicDegreeRootAnchorsForStaff`, at the lower register
+    /// `play(direction:)`'s own audio anchor uses (`47`) — feeds `diatonicVoicingPitches(for:)`,
+    /// shared by every chord PLAYBACK/keyboard site below.
+    private var diatonicDegreeRootAnchorsForPlayback: [Int] {
+        PitchSequencing.ascendingPitches(forPitchClasses: mode.pitchClasses.map(\.value), startingAbove: 47 + octaveShift * 12)
+    }
+
+    /// `chord`'s own tones, voiced from whichever of `diatonicDegreeRootAnchorsForPlayback`
+    /// matches its root when it's one of `mode`'s own 7 diatonic degrees (the common case, and
+    /// what keeps a played/kept-on-screen chord's register consistent with the staff above);
+    /// falls back to independent per-chord anchoring — the original behavior — for anything else
+    /// (e.g. a borrowed/chromatic progression chord with no scale degree of its own to anchor to).
+    private func diatonicVoicingPitches(for chord: Chord) -> [Int] {
+        let degreeRoots = mode.pitchClasses.map(\.value)
+        if let index = degreeRoots.firstIndex(of: chord.root.value) {
+            let rootMidi = diatonicDegreeRootAnchorsForPlayback[index]
+            return chord.pitchClasses.map { pc in rootMidi + (((pc.value - chord.root.value) % 12) + 12) % 12 }
+        }
+        return PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47 + octaveShift * 12)
+    }
+
     /// All of the mode's diatonic chords, one stacked-chord column each (root position) — the
     /// harmonized-scale staff shown under the chord list. The appended octave entry (see
     /// `diatonicChordReferences`) is drawn one octave higher than degree I, same as the scale
     /// run's own octave-completing tonic.
     private var chordsStaffEvents: [StaffEvent] {
         let references = diatonicChordReferences
+        let anchors = diatonicDegreeRootAnchorsForStaff
         return references.enumerated().compactMap { index, reference in
             guard let chord = reference.resolve() else { return nil }
             let isOctaveEntry = references.count > 1 && index == references.count - 1
-            return ChordStaffView.chordEvent(root: chord.root.value, tones: chord.pitchClasses.map(\.value), octaveOffset: isOctaveEntry ? 1 : 0)
+            let anchorIndex = isOctaveEntry ? 0 : index
+            guard anchors.indices.contains(anchorIndex) else { return nil }
+            let rootMidi = anchors[anchorIndex] + (isOctaveEntry ? 12 : 0)
+            let pitches = chord.pitchClasses.map { pc in rootMidi + (((pc.value - chord.root.value) % 12) + 12) % 12 }
+            return StaffEvent(pitches: pitches, chordRoot: chord.root.value, chordTones: chord.pitchClasses.map(\.value))
+        }
+    }
+
+    /// One line per diatonic degree — chord name + its notes in parens — a diagnostic readout
+    /// (per explicit request) letting a wrong chord be spotted directly, same style as
+    /// `DissonancesLibraryView.noteReadoutSection`.
+    private var diatonicChordsReadout: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(diatonicChordReferences.enumerated()), id: \.offset) { _, reference in
+                if let chord = reference.resolve() {
+                    let names = chord.pitchClasses.map { session.notationStyle.rootName($0, preferFlats: false) }.joined(separator: ", ")
+                    Text("\(session.notationStyle.displayName(for: chord)) (\(names))")
+                        .font(.caption)
+                }
+            }
         }
     }
 
@@ -560,7 +710,7 @@ struct ModeLibraryView: View {
             // Root position (a diatonic-chord reference here has no inversion concept of its
             // own, same as the Progression Library) — one occurrence of each tone instead of
             // every octave in range, per explicit request.
-            let voicingPitches = PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47)
+            let voicingPitches = diatonicVoicingPitches(for: chord)
             VStack(alignment: .leading, spacing: 4) {
                 Text(chordDisplayName(reference)).font(.headline)
                 PitchKeyboardView(
@@ -633,23 +783,27 @@ struct ModeLibraryView: View {
     /// `playbackGeneration`, so the chord list's own highlight, the row-2 keyboard, and the
     /// circle-of-fifths ring all follow along live instead of only updating on an explicit tap.
     private func playAllChords() {
-        guard let sound = session.theoryAuditionSound() else { return }
-        try? session.loadTheoryLibraryAuditionSample(sound)
+        guard let sourceID else { return }
+        session.releaseAllKeys(track: sourceID)
         playbackGeneration += 1
         let generation = playbackGeneration
         let stepDuration = 1.0
-        var notes: [ImprovSession.TheoryAuditionNote] = []
         for (index, reference) in diatonicChordReferences.enumerated() {
             guard let chord = reference.resolve() else { continue }
-            let pitches = PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47)
+            let pitches = diatonicVoicingPitches(for: chord)
             let windowStart = Double(index) * stepDuration
-            notes.append(contentsOf: chordPlaybackNotes(pitches: pitches, style: chordPlaybackStyle, windowStart: windowStart, windowDuration: stepDuration))
+            let notes = chordPlaybackNotes(pitches: pitches, style: chordPlaybackStyle, windowStart: windowStart, windowDuration: stepDuration)
+            for note in notes {
+                DispatchQueue.main.asyncAfter(deadline: .now() + note.startSeconds) {
+                    guard playbackGeneration == generation else { return }
+                    pressAndScheduleRelease(pitches: note.pitches, track: sourceID, durationSeconds: note.durationSeconds, generation: generation)
+                }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + windowStart) {
                 guard playbackGeneration == generation else { return }
                 selectedChordIndex = index
             }
         }
-        session.playTheoryLibraryAudition(notes)
     }
 
     @ViewBuilder
@@ -675,11 +829,12 @@ struct ModeLibraryView: View {
     }
 
     private func playSingleChord(_ reference: ChordReference) {
-        guard let sound = session.theoryAuditionSound(), let chord = reference.resolve() else { return }
-        try? session.loadTheoryLibraryAuditionSample(sound)
+        guard let chord = reference.resolve(), let sourceID else { return }
+        session.releaseAllKeys(track: sourceID)
         playbackGeneration += 1
-        let pitches = PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47)
-        session.playTheoryLibraryAudition([ImprovSession.TheoryAuditionNote(pitches: pitches, startSeconds: 0, durationSeconds: 1.5)])
+        let generation = playbackGeneration
+        let pitches = diatonicVoicingPitches(for: chord)
+        pressAndScheduleRelease(pitches: pitches, track: sourceID, durationSeconds: 1.5, generation: generation)
     }
 
     private func functionalName(_ role: FunctionalHarmonyRole) -> String {
@@ -1005,11 +1160,12 @@ struct ModeLibraryView: View {
     /// only ever carry a pitch class to begin with (the note-chip row has no octave of its own).
     private func playMelodicNote(_ pitchClass: PitchClass, atPitch pitch: Int? = nil) {
         selectedMelodicNote = pitchClass
-        guard let sound = session.theoryAuditionSound() else { return }
-        try? session.loadTheoryLibraryAuditionSample(sound)
+        guard let sourceID else { return }
+        session.releaseAllKeys(track: sourceID)
         playbackGeneration += 1
+        let generation = playbackGeneration
         let pitches = pitch.map { [$0] } ?? PitchSequencing.ascendingPitches(forPitchClasses: [pitchClass.value], startingAbove: 47)
-        session.playTheoryLibraryAudition([ImprovSession.TheoryAuditionNote(pitches: pitches, startSeconds: 0, durationSeconds: 0.55)])
+        pressAndScheduleRelease(pitches: pitches, track: sourceID, durationSeconds: 0.55, generation: generation)
         recentPlayedNotes.append(pitchClass)
         if recentPlayedNotes.count > 4 { recentPlayedNotes.removeFirst() }
     }

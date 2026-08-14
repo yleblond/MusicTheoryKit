@@ -102,6 +102,27 @@ struct JamShackApp: App {
         }
         .environment(appModel)
         .defaultSize(width: 1200, height: 900)
+
+        WindowGroup(id: AuxiliaryWindowID.theorieDissonances.rawValue) {
+            DissonancesWindow()
+                .preferredColorScheme(.dark)
+        }
+        .environment(appModel)
+        .defaultSize(width: 1100, height: 800)
+
+        WindowGroup(id: AuxiliaryWindowID.theorieIntonation.rawValue) {
+            IntonationWindow()
+                .preferredColorScheme(.dark)
+        }
+        .environment(appModel)
+        .defaultSize(width: 1100, height: 800)
+
+        WindowGroup(id: AuxiliaryWindowID.home.rawValue) {
+            StatusWindow()
+                .preferredColorScheme(.dark)
+        }
+        .environment(appModel)
+        .defaultSize(width: 1200, height: 800)
         #endif
     }
 }

@@ -461,6 +461,17 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appTabDissonances
     case appFieldNoteDeBase, appButtonAnalyserOctave, appLabelAnalyseEnCours
     case appHeadingAccordsTriades
+
+    // MARK: - App: Théorie > staff octave-shift control (Accords/Modes/Progressions/Intonations)
+    case appFieldOctave
+
+    // MARK: - App: Théorie > chord quality tier toggle (Modes/Progressions)
+    case appOptionTriades, appOptionSeptiemes
+
+    // MARK: - App: Accueil (diagramme sources -> rôles) — top-level tab, not Settings
+    case appTabAccueil, appHeadingRolesNonUtilises
+    case appLabelServeurJamSessionLocal, appLabelServeurJamSessionGameCenter, appLabelServeurClavierWeb
+    case appLabelSourcesMIDILocales
 }
 
 public enum L10n {

@@ -9,14 +9,17 @@ import Foundation
 /// the merged catalog.
 public enum ScaleLibrary {
     public static let all: [ScaleDefinition] = [
-        // Family 1 — Major Modes
-        ScaleDefinition(id: "ionian", familyID: 1, degree: 1, popularName: "Major", systematicName: "Ionian", chordSymbols: ["Ma7"]),
-        ScaleDefinition(id: "dorian", familyID: 1, degree: 2, popularName: "Dorian", systematicName: "Dorian", chordSymbols: ["mi7"]),
-        ScaleDefinition(id: "phrygian", familyID: 1, degree: 3, popularName: "Phrygian", systematicName: "Phrygian", chordSymbols: ["mi7"]),
-        ScaleDefinition(id: "lydian", familyID: 1, degree: 4, popularName: "Lydian", systematicName: "Lydian", chordSymbols: ["Ma7"]),
-        ScaleDefinition(id: "mixolydian", familyID: 1, degree: 5, popularName: "Mixolydian", systematicName: "Mixolydian", chordSymbols: ["7"]),
-        ScaleDefinition(id: "aeolian", familyID: 1, degree: 6, popularName: "Natural minor", systematicName: "Aeolian", chordSymbols: ["mi7"]),
-        ScaleDefinition(id: "locrian", familyID: 1, degree: 7, popularName: "Locrian", systematicName: "Locrian", chordSymbols: ["mi7b5"]),
+        // Family 1 — Major Modes — `chordSymbols` lists the TRIAD first, then the seventh
+        // (`ChordProgressionResolver.ChordQualityTier`) — per explicit request, so the Mode/
+        // Progression screens can default to simple triads (Bm, not Bm7) while still offering
+        // sevenths as an option.
+        ScaleDefinition(id: "ionian", familyID: 1, degree: 1, popularName: "Major", systematicName: "Ionian", chordSymbols: ["Ma", "Ma7"]),
+        ScaleDefinition(id: "dorian", familyID: 1, degree: 2, popularName: "Dorian", systematicName: "Dorian", chordSymbols: ["mi", "mi7"]),
+        ScaleDefinition(id: "phrygian", familyID: 1, degree: 3, popularName: "Phrygian", systematicName: "Phrygian", chordSymbols: ["mi", "mi7"]),
+        ScaleDefinition(id: "lydian", familyID: 1, degree: 4, popularName: "Lydian", systematicName: "Lydian", chordSymbols: ["Ma", "Ma7"]),
+        ScaleDefinition(id: "mixolydian", familyID: 1, degree: 5, popularName: "Mixolydian", systematicName: "Mixolydian", chordSymbols: ["Ma", "7"]),
+        ScaleDefinition(id: "aeolian", familyID: 1, degree: 6, popularName: "Natural minor", systematicName: "Aeolian", chordSymbols: ["mi", "mi7"]),
+        ScaleDefinition(id: "locrian", familyID: 1, degree: 7, popularName: "Locrian", systematicName: "Locrian", chordSymbols: ["dim", "mi7b5"]),
 
         // Family 2 — Melodic Minor Modes
         ScaleDefinition(id: "altered", familyID: 2, degree: 1, popularName: "Altered / Super Locrian", systematicName: "Ionian #1", chordSymbols: ["7alt", "mi7b5"]),

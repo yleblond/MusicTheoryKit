@@ -425,6 +425,7 @@ func trackIDText(_ id: TrackID) -> String {
     case .microphone: return "micro"
     case .remote(let clientID, let trackID): return "remote:\(clientID)@\(trackID)"
     case .midiSplitZone(let sourceIndex, let zoneID): return "midi-split:\(sourceIndex + 1):\(zoneID.uuidString)"
+    case .dissonancePreview: return "dissonance-preview"
     }
 }
 

@@ -8,7 +8,7 @@ struct ExplorationWindow: View {
 
     var body: some View {
         SessionGatedView { session, _ in
-            ModeLibraryView(session: session, contentFocus: .exploration, isDetachedWindow: true)
+            ModeLibraryView(session: session, contentFocus: .exploration, isDetachedWindow: true, usesSharedModeSelection: false)
         }
         .onAppear { appModel.markWindowOpen(.theorieExploration) }
         .onDisappear { appModel.markWindowClosed(.theorieExploration) }

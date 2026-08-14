@@ -29,12 +29,16 @@ public extension View {
     /// control anywhere (a `Picker`, a `TextField`) that ever took focus left it permanently
     /// stuck there for the rest of the session, with no reliable way to reclaim it back. This
     /// version is only ever focusable/registered when explicitly turned on (default off, see
-    /// `ImprovSession.computerKeyboardInputEnabled`), and since it's real SwiftUI focus, an
-    /// unrecognized key (an arrow key, say) simply falls through this view's `.onKeyPress` (it
-    /// returns `.ignored`) and continues bubbling up/down the normal SwiftUI focus chain to
-    /// whatever else wants it — e.g. `GuideLectureView`'s own arrow-key handlers, which run
-    /// first whenever that screen itself holds focus, well before this reaches the ancestor
-    /// level this modifier is attached at.
+    /// `ImprovSession.computerKeyboardInputEnabled`). While `isActive`, EVERY key this view's own
+    /// `.onKeyPress` sees is swallowed (`.handled`), recognized or not — per explicit request/bug
+    /// report: leaving an unrecognized key (Tab, Space, an arrow...) to fall through used to let
+    /// it reach SwiftUI's own default focus-navigation/control-activation, confusingly moving
+    /// focus/toggling a control while the user thought they were only playing notes. This is safe
+    /// for e.g. `GuideLectureView`'s own arrow-key handlers: those run FIRST whenever that screen
+    /// itself holds real SwiftUI focus (SwiftUI dispatches a key to whichever view is actually
+    /// focused, then bubbles up only what THAT view left unhandled) — this modifier's own
+    /// catch-all only ever fires for a key that reaches ITS OWN focused container, never one
+    /// already consumed by a more specific, closer-to-focus handler.
     /// `focusRequestToken`: bump `ImprovSession.computerKeyboardFocusRequestToken` (via
     /// `requestComputerKeyboardFocus()`) after any interaction with a native `Picker`/`Menu`
     /// elsewhere that would otherwise permanently keep SwiftUI keyboard focus — this modifier
@@ -78,26 +82,35 @@ private struct ComputerKeyboardInputModifier: ViewModifier {
             .onChange(of: focusRequestToken) { _, _ in
                 if isActive { isFocused = true }
             }
-            .onKeyPress(characters: computerKeyboardCharacterSet, phases: [.down, .up]) { press in
-                guard isActive, let character = press.characters.lowercased().first,
-                      let basePitch = computerKeyboardNoteMap[character]
-                else { return .ignored }
-                let pitch = basePitch + octaveShift
-                switch press.phase {
-                case .down: onNoteOn(pitch)
-                case .up: onNoteOff(pitch)
-                default: break
+            // A SINGLE handler (not one per key) — per explicit request/bug report: separate
+            // `.onKeyPress` calls for the note characters and the two arrow keys used to leave
+            // every OTHER key (Tab, Space, Return, up/down arrow...) unhandled, so once this
+            // fell through, SwiftUI's own default focus-navigation/control-activation picked it
+            // up instead — deeply confusing while the user thinks they're only playing notes.
+            // Recognized keys behave exactly as before; anything else is swallowed (`.handled`,
+            // not `.ignored`) while `isActive`, so it never reaches that default navigation.
+            // Still a complete no-op when `isActive` is false (the very first check), so text
+            // fields/pickers/lists elsewhere are entirely unaffected — this view only ever holds
+            // real SwiftUI focus while the computer-keyboard feature itself is turned on.
+            .onKeyPress(phases: [.down, .up]) { press in
+                guard isActive else { return .ignored }
+                if let character = press.characters.lowercased().first,
+                   let basePitch = computerKeyboardNoteMap[character] {
+                    let pitch = basePitch + octaveShift
+                    switch press.phase {
+                    case .down: onNoteOn(pitch)
+                    case .up: onNoteOff(pitch)
+                    default: break
+                    }
+                    return .handled
                 }
-                return .handled
-            }
-            .onKeyPress(.leftArrow) {
-                guard isActive else { return .ignored }
-                onShiftOctave(-1)
-                return .handled
-            }
-            .onKeyPress(.rightArrow) {
-                guard isActive else { return .ignored }
-                onShiftOctave(1)
+                if press.phase == .down {
+                    switch press.key {
+                    case .leftArrow: onShiftOctave(-1); return .handled
+                    case .rightArrow: onShiftOctave(1); return .handled
+                    default: break
+                    }
+                }
                 return .handled
             }
     }
