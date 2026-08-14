@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import Localization
+import MusicTheoryKit
 
 /// "Accueil" — a read-only diagram of the app's live topology, its own top-level tab (not a
 /// Settings sub-tab — self-explanatory entry point, house icon, per explicit request) showing:
@@ -75,6 +76,9 @@ struct StatusGraphView: View {
         /// Non-nil only for whichever source is `session.theoryLiveInputSourceID` — its own
         /// sound + active tuning, per explicit request.
         let mainKeyboardAnnotation: String?
+        /// Non-nil only for a `.midiSplitZone` track — that zone's own source pitch range and,
+        /// if it applies an octave shift, its transposed range too (e.g. "C3–F8 → C4–F9").
+        let splitRangeAnnotation: String?
         /// `nil` connects straight to the App node (every local, non-networked source, as
         /// before) — otherwise the id of a hub node (device/client/server) in an earlier column.
         let parentID: String?
@@ -138,6 +142,16 @@ struct StatusGraphView: View {
         var hubCenterY: [String: CGFloat] = [:]
         var totalHeight: CGFloat = 0
         var appCenterY: CGFloat = 0
+        /// Column X positions — computed once per `layout`, NOT static constants, because an
+        /// empty Client or Device column (e.g. no Jam Session participant, no split MIDI device)
+        /// must collapse instead of leaving a fixed-width gap of dead space (see `columnXPositions`
+        /// below for how these are assigned).
+        var serverX: CGFloat = 0
+        var clientX: CGFloat = 0
+        var deviceX: CGFloat = 0
+        var sourceX: CGFloat = 0
+        var roleX: CGFloat = 0
+        var totalWidth: CGFloat = 0
     }
 
     // MARK: - Layout constants
@@ -153,12 +167,10 @@ struct StatusGraphView: View {
     private static let topMargin: CGFloat = 24
 
     private static let appX: CGFloat = leftMargin
-    private static let serverX: CGFloat = appX + appWidth + columnGap
-    private static let clientX: CGFloat = serverX + hubWidth + columnGap
-    private static let deviceX: CGFloat = clientX + hubWidth + columnGap
-    private static let sourceX: CGFloat = deviceX + hubWidth + columnGap
-    private static let roleX: CGFloat = sourceX + nodeWidth + columnGap
-    private static var totalWidth: CGFloat { roleX + nodeWidth + leftMargin }
+    /// Y for the horizontal "bus" run of a link that skips over one or more populated columns
+    /// (see `stroke(from:to:activity:)`) — comfortably above `topMargin` so that run never
+    /// shares a row with any node, in any column.
+    private static let aerialY: CGFloat = 8
 
     // MARK: - Data — local sources
 
@@ -223,7 +235,34 @@ struct StatusGraphView: View {
             let soundLabel = session.theoryAuditionSound().map { session.displayName(forSamplePath: $0.path, preset: $0.preset) }
             annotation = "\(soundLabel ?? "—") · \(temperamentLabel(forID: session.tuningConfiguration.temperamentID))"
         }
-        return SourceNode(id: track.id, label: track.label, activity: act, mainKeyboardAnnotation: annotation, parentID: parentID)
+        return SourceNode(
+            id: track.id, label: track.label, activity: act, mainKeyboardAnnotation: annotation,
+            splitRangeAnnotation: splitRangeLabel(for: track.id), parentID: parentID
+        )
+    }
+
+    /// Only for a LOCAL split zone (`decodedRemoteKind` deliberately not consulted here — a
+    /// remote participant's own zone index refers to THEIR device list, not
+    /// `session.availableMIDISourceDescriptors()`, so resolving it against this session's split
+    /// config would be plain wrong): that zone's own source pitch range, and its transposed
+    /// range too when `octaveShift != 0` (omitted when the shift is 0 — the two ranges would be
+    /// identical, redundant to show twice).
+    private func splitRangeLabel(for id: TrackID) -> String? {
+        guard case .midiSplitZone(let sourceIndex, let zoneID) = id else { return nil }
+        guard let split = session.activeMIDIKeyboardSplit(atSourceIndex: sourceIndex),
+              let zone = split.zones.first(where: { $0.id == zoneID }) else { return nil }
+        let sourceRange = "\(noteLabel(zone.lowPitch))–\(noteLabel(zone.highPitch))"
+        guard zone.octaveShift != 0 else { return sourceRange }
+        let shift = zone.octaveShift * 12
+        let transposedRange = "\(noteLabel(zone.lowPitch + shift))–\(noteLabel(zone.highPitch + shift))"
+        return "\(sourceRange) → \(transposedRange)"
+    }
+
+    /// Same note-naming convention as `MIDIKeyboardSplitEditorView.noteLabel(forMidiPitch:)`.
+    private func noteLabel(_ midi: Int) -> String {
+        let pitchClass = ((midi % 12) + 12) % 12
+        let octave = midi / 12 - 1
+        return "\(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false))\(octave)"
     }
 
     // MARK: - Data — Jam Session (server/client hierarchy)
@@ -511,6 +550,31 @@ struct StatusGraphView: View {
         let serverColumnHeight = serverCursorY
         result.totalHeight = max(sourcesHeight, rolesHeight, serverColumnHeight, Self.nodeRowHeight)
         result.appCenterY = result.totalHeight / 2
+
+        // 5. Column X positions — assigned last, now that we know which of Client/Device
+        // actually have any nodes to show. An empty column (no Jam Session participant, no
+        // split MIDI device) is skipped entirely rather than reserving its `hubWidth +
+        // columnGap` as dead space — this is what used to leave a huge unexplained gap before
+        // "LUMI Keys BLOCK" whenever no Jam Session was running (the empty Client column's
+        // width was reserved regardless).
+        result.serverX = Self.appX + Self.appWidth + Self.columnGap
+        var cursorX = result.serverX + Self.hubWidth + Self.columnGap
+        if !result.clientNodes.isEmpty {
+            result.clientX = cursorX
+            cursorX = result.clientX + Self.hubWidth + Self.columnGap
+        } else {
+            result.clientX = cursorX
+        }
+        if !result.deviceNodes.isEmpty {
+            result.deviceX = cursorX
+            cursorX = result.deviceX + Self.hubWidth + Self.columnGap
+        } else {
+            result.deviceX = cursorX
+        }
+        result.sourceX = cursorX
+        result.roleX = result.sourceX + Self.nodeWidth + Self.columnGap
+        result.totalWidth = result.roleX + Self.nodeWidth + Self.leftMargin
+
         return result
     }
 
@@ -525,31 +589,31 @@ struct StatusGraphView: View {
                     .position(x: Self.appX + Self.appWidth / 2, y: Self.topMargin + layout.appCenterY)
                 ForEach(layout.serverNodes, id: \.node.id) { entry in
                     hubNodeView(entry.node)
-                        .position(x: Self.serverX + Self.hubWidth / 2, y: Self.topMargin + entry.centerY)
+                        .position(x: layout.serverX + Self.hubWidth / 2, y: Self.topMargin + entry.centerY)
                 }
                 ForEach(layout.clientNodes, id: \.node.id) { entry in
                     hubNodeView(entry.node)
-                        .position(x: Self.clientX + Self.hubWidth / 2, y: Self.topMargin + entry.centerY)
+                        .position(x: layout.clientX + Self.hubWidth / 2, y: Self.topMargin + entry.centerY)
                 }
                 ForEach(layout.deviceNodes, id: \.node.id) { entry in
                     hubNodeView(entry.node)
-                        .position(x: Self.deviceX + Self.hubWidth / 2, y: Self.topMargin + entry.centerY)
+                        .position(x: layout.deviceX + Self.hubWidth / 2, y: Self.topMargin + entry.centerY)
                 }
                 ForEach(layout.sourceRows, id: \.row.id) { entry in
                     sourceRowView(entry.row)
-                        .position(x: Self.sourceX + Self.nodeWidth / 2, y: Self.topMargin + entry.centerY)
+                        .position(x: layout.sourceX + Self.nodeWidth / 2, y: Self.topMargin + entry.centerY)
                 }
                 ForEach(layout.roleRows, id: \.row.id) { entry in
                     roleRowView(entry.row)
-                        .position(x: Self.roleX + Self.nodeWidth / 2, y: Self.topMargin + entry.centerY)
+                        .position(x: layout.roleX + Self.nodeWidth / 2, y: Self.topMargin + entry.centerY)
                 }
                 if session.currentScene == nil {
                     Text(L10n.string(.placeholderAucuneSceneActive, session.currentLanguage))
                         .font(.caption).foregroundStyle(.secondary)
-                        .position(x: Self.roleX + Self.nodeWidth / 2, y: Self.topMargin + Self.nodeRowHeight / 2)
+                        .position(x: layout.roleX + Self.nodeWidth / 2, y: Self.topMargin + Self.nodeRowHeight / 2)
                 }
             }
-            .frame(width: Self.totalWidth, height: Self.topMargin * 2 + layout.totalHeight, alignment: .topLeading)
+            .frame(width: layout.totalWidth, height: Self.topMargin * 2 + layout.totalHeight, alignment: .topLeading)
             .padding(.bottom, 24)
         }
         #if os(macOS) || os(visionOS)
@@ -576,10 +640,34 @@ struct StatusGraphView: View {
         /// Right-angle (horizontal/vertical only) connector, per explicit request — a straight
         /// diagonal line reads ambiguously once a row's Y is pinned away from its natural
         /// sequential slot (e.g. a role aligned to its attached source's exact row).
+        ///
+        /// General rule for where to bend: a link between ADJACENT columns (`to.x - from.x`
+        /// is exactly one `columnGap` — the normal case, nothing else ever sits in that gap)
+        /// bends at that gap's own midpoint, same as before. A link that SKIPS at least one
+        /// populated column (e.g. Clavier ordinateur or a Jam Session Client connecting
+        /// straight back to the App node, bypassing Serveur/Client/Device columns entirely)
+        /// instead bends UP into the immediately-following gap first, travels across at a
+        /// shared aerial Y strictly above every row in every column, then drops straight down
+        /// into the destination — never once running a horizontal segment through the row-span
+        /// of an intervening column's boxes, which the old single-midpoint bend could do
+        /// whenever more than one column lay between `from` and `to`.
         func stroke(from: CGPoint, to: CGPoint, activity: NodeActivity) {
             var path = Path()
             path.move(to: from)
-            if from.y == to.y {
+            let horizontalGap = to.x - from.x
+            let skipsAColumn = horizontalGap > Self.columnGap + 1
+            if from.y == to.y && !skipsAColumn {
+                path.addLine(to: to)
+            } else if skipsAColumn {
+                // Deliberately NOT `from.x + columnGap / 2` — that's the exact midpoint a plain
+                // adjacent-column bend in this same gap already uses (e.g. every Serveur-column
+                // node's own App-> link), so sharing it would cross this riser right through
+                // those other bends. A small fixed inset instead keeps it visually separate
+                // while still landing safely inside the (always node-free) gap.
+                let bendX = from.x + 8
+                path.addLine(to: CGPoint(x: bendX, y: from.y))
+                path.addLine(to: CGPoint(x: bendX, y: Self.aerialY))
+                path.addLine(to: CGPoint(x: to.x, y: Self.aerialY))
                 path.addLine(to: to)
             } else {
                 let midX = (from.x + to.x) / 2
@@ -595,33 +683,33 @@ struct StatusGraphView: View {
         func hubExitX(forParentID id: String?) -> CGFloat {
             switch id {
             case nil: return Self.appX + Self.appWidth
-            case .some(let id) where id.hasPrefix("device:"): return Self.deviceX + Self.hubWidth
-            case .some(let id) where id.hasPrefix("client:"): return Self.clientX + Self.hubWidth
-            case .some: return Self.serverX + Self.hubWidth
+            case .some(let id) where id.hasPrefix("device:"): return layout.deviceX + Self.hubWidth
+            case .some(let id) where id.hasPrefix("client:"): return layout.clientX + Self.hubWidth
+            case .some: return layout.serverX + Self.hubWidth
             }
         }
 
         for (node, centerY) in layout.serverNodes {
             guard let from = parentPoint(node.parentID, exitX: Self.appX + Self.appWidth) else { continue }
-            stroke(from: from, to: CGPoint(x: Self.serverX, y: Self.topMargin + centerY), activity: node.activity)
+            stroke(from: from, to: CGPoint(x: layout.serverX, y: Self.topMargin + centerY), activity: node.activity)
         }
         for (node, centerY) in layout.clientNodes {
-            guard let from = parentPoint(node.parentID, exitX: Self.serverX + Self.hubWidth) else { continue }
-            stroke(from: from, to: CGPoint(x: Self.clientX, y: Self.topMargin + centerY), activity: node.activity)
+            guard let from = parentPoint(node.parentID, exitX: layout.serverX + Self.hubWidth) else { continue }
+            stroke(from: from, to: CGPoint(x: layout.clientX, y: Self.topMargin + centerY), activity: node.activity)
         }
         for (node, centerY) in layout.deviceNodes {
             guard let from = parentPoint(node.parentID, exitX: hubExitX(forParentID: node.parentID)) else { continue }
-            stroke(from: from, to: CGPoint(x: Self.deviceX, y: Self.topMargin + centerY), activity: node.activity)
+            stroke(from: from, to: CGPoint(x: layout.deviceX, y: Self.topMargin + centerY), activity: node.activity)
         }
         for (row, centerY) in layout.sourceRows {
             guard case .node(let node) = row else { continue }
             guard let from = parentPoint(node.parentID, exitX: hubExitX(forParentID: node.parentID)) else { continue }
-            stroke(from: from, to: CGPoint(x: Self.sourceX, y: Self.topMargin + centerY), activity: node.activity)
+            stroke(from: from, to: CGPoint(x: layout.sourceX, y: Self.topMargin + centerY), activity: node.activity)
         }
         for (row, centerY) in layout.roleRows {
             guard case .node(let node) = row, let trackID = node.attachedTrackID, let sourceY = layout.sourceCenterY[trackID] else { continue }
-            let start = CGPoint(x: Self.sourceX + Self.nodeWidth, y: Self.topMargin + sourceY)
-            let end = CGPoint(x: Self.roleX, y: Self.topMargin + centerY)
+            let start = CGPoint(x: layout.sourceX + Self.nodeWidth, y: Self.topMargin + sourceY)
+            let end = CGPoint(x: layout.roleX, y: Self.topMargin + centerY)
             stroke(from: start, to: end, activity: node.activity)
         }
     }
@@ -642,8 +730,9 @@ struct StatusGraphView: View {
             Text(title).font(.caption).bold().foregroundStyle(.secondary)
                 .frame(width: Self.nodeWidth, alignment: .leading)
         case .node(let node):
+            let subtitle = [node.splitRangeAnnotation, node.mainKeyboardAnnotation].compactMap { $0 }.joined(separator: " · ")
             nodeBox(
-                title: node.label, subtitle: node.mainKeyboardAnnotation, activity: node.activity,
+                title: node.label, subtitle: subtitle.isEmpty ? nil : subtitle, activity: node.activity,
                 isMainKeyboardSource: node.id == session.theoryLiveInputSourceID
             )
         }

@@ -2,6 +2,7 @@ import XCTest
 @testable import AppCore
 import PieceModel
 import MusicTheoryKit
+import AudioEngine
 import Foundation
 
 // Regression stress tests for the two concurrency bug classes that have each caused a real
@@ -141,5 +142,51 @@ final class ImprovSessionConcurrencyStressTests: XCTestCase {
         }
 
         XCTAssertEqual(group.wait(timeout: .now() + 10), .success, "concurrent MIDI/channel work hung instead of completing")
+    }
+
+    /// Regression test for a real deadlock captured live on 2026-08-14 via `sample` of an
+    /// actually-frozen app (not a theoretical concern): the main thread was stuck in
+    /// `pressKey` -> `handleIncomingMIDIEvent` -> `liveInputQueue.sync`, while the
+    /// microphone's own real-time callback thread was parked INSIDE that very queue —
+    /// `handleDetectedPitches` mutating `tracks` -> SwiftUI's Observation invalidation lock
+    /// (`_MovableLockLock`), the same lock the main thread had already taken processing the
+    /// in-flight key-down event. Two threads, each holding what the other blocks on — the
+    /// same bug CLASS `testConcurrentChannelReadsAlongsideNoteTrafficNeverHangs` already
+    /// guards (see its own doc comment), but via a different pairing that class's fix
+    /// (`passiveChannelQueue`) didn't cover: a background MUTATION of `tracks`
+    /// (`handleDetectedPitches`), not a main-thread READ. Fixed by routing every `tracks`
+    /// write reachable from a non-main thread through `mutateTrack`/`mutateTracks` (see their
+    /// own doc comment) instead of mutating in place while `liveInputQueue` is held. A
+    /// headless XCTest can't force SwiftUI to actually hold that lock (no live view hierarchy
+    /// here), so — same honest limitation `testConcurrentChannelReadsAlongsideNoteTrafficNeverHangs`
+    /// already accepts — this only re-exercises the exact queue-contention shape under heavy
+    /// concurrent load, not the lock itself; still the closest a unit test gets.
+    func testConcurrentMicrophoneDetectionAlongsideComputerKeyboardNeverHangs() throws {
+        let session = ImprovSession()
+        try session.start()
+        try session.startTrack(.computerKeyboard)
+
+        let group = DispatchGroup()
+
+        group.enter()
+        DispatchQueue.global().async {
+            for i in 0..<400 {
+                let pitch = 60 + (i % 12)
+                session.simulateMicrophoneDetection([DetectedPitch(frequencyHz: 440, midiPitch: pitch)], level: 0.5)
+                session.simulateMicrophoneDetection([], level: 0.0)
+            }
+            group.leave()
+        }
+        group.enter()
+        DispatchQueue.global().async {
+            for i in 0..<400 {
+                let pitch = 60 + (i % 12)
+                session.pressKey(pitch: pitch)
+                session.releaseKey(pitch: pitch)
+            }
+            group.leave()
+        }
+
+        XCTAssertEqual(group.wait(timeout: .now() + 10), .success, "concurrent microphone/keyboard work hung instead of completing")
     }
 }

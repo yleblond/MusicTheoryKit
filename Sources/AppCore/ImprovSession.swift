@@ -3277,8 +3277,9 @@ public final class ImprovSession: @unchecked Sendable {
 
     /// `midiKeyboardSplit(uniqueID:displayName:)`, resolved from a live `sourceIndex` and
     /// filtered to only an actually-`isEnabled` result — the one check `refreshTracks()` and
-    /// `routeSplitEvent(_:sourceIndex:)` both need before treating a source as split.
-    private func activeMIDIKeyboardSplit(atSourceIndex index: Int) -> MIDIKeyboardSplit? {
+    /// `routeSplitEvent(_:sourceIndex:)` both need before treating a source as split. Also used
+    /// by `StatusGraphView` to show a zone's own source/transposed pitch range.
+    public func activeMIDIKeyboardSplit(atSourceIndex index: Int) -> MIDIKeyboardSplit? {
         let descriptors = availableMIDISourceDescriptors()
         guard descriptors.indices.contains(index) else { return nil }
         let descriptor = descriptors[index]
@@ -4390,31 +4391,99 @@ public final class ImprovSession: @unchecked Sendable {
         for pitch in stuck { releaseKey(pitch: pitch, track: track) }
     }
 
+    /// Every mutation of one track's own row in `tracks` from code that might run on a
+    /// background thread (a real CoreMIDI/microphone/Network.framework callback, not the
+    /// main thread) must go through this instead of writing `tracks[index]` directly — see
+    /// `liveInputQueue`'s own doc comment for the two real "crashed in the field" bugs this
+    /// class has already had, and `passiveObservedChannels`'s doc comment for the deadlock
+    /// this specific pattern causes: `tracks` is the one piece of state here with real
+    /// SwiftUI observers (nearly every Théorie/Studio screen reads it), so mutating it from
+    /// a non-main thread while `liveInputQueue` is held can need SwiftUI's Observation
+    /// invalidation lock — a lock the main thread can simultaneously hold while it's itself
+    /// blocked entering `liveInputQueue` for something unrelated, confirmed by a live
+    /// `sample` of an actually-frozen process (main thread stuck in `pressKey` ->
+    /// `handleIncomingMIDIEvent` -> `liveInputQueue.sync`, the microphone's own real-time
+    /// thread stuck inside that same queue mutating `tracks` -> `_MovableLockLock`).
+    /// Applied synchronously when already on main (preserving the "state is updated by the
+    /// time `pressKey`/etc. returns" contract those callers rely on) — hopped to
+    /// `DispatchQueue.main.async` otherwise, which only ever affects hardware-MIDI/
+    /// microphone/network-driven updates (the computer keyboard's own input always calls in
+    /// on main already) and matches the standard "never block a real-time callback thread on
+    /// the main thread" discipline regardless of this class's own history. Re-resolves `id`'s
+    /// index at apply time rather than trusting a captured one, since a deferred application
+    /// can run after some other rebuild of `tracks`.
+    private func mutateTrack(_ id: TrackID, _ mutation: @escaping @Sendable (inout TrackInfo) -> Void) {
+        func apply() {
+            guard let index = tracks.firstIndex(where: { $0.id == id }) else { return }
+            mutation(&tracks[index])
+        }
+        if Thread.isMainThread {
+            apply()
+        } else {
+            DispatchQueue.main.async { apply() }
+        }
+    }
+
+    /// Same contract and reasoning as `mutateTrack(_:_:)`, for a mutation that adds/removes
+    /// whole entries rather than editing one existing row (remote-track announce/departure).
+    private func mutateTracks(_ mutation: @escaping @Sendable (inout [TrackInfo]) -> Void) {
+        if Thread.isMainThread {
+            mutation(&tracks)
+        } else {
+            DispatchQueue.main.async { [self] in mutation(&tracks) }
+        }
+    }
+
     /// Everything a note on/off does to one track's recognition state: logging,
     /// `heldPitches`, feeding that track's own recognizer, and — unless this is the
     /// microphone (which never sounds through the app, to avoid feedback) or this track's
     /// sound is off — its own sampler. Must run inside `liveInputQueue.sync` — this touches
     /// `recognizers`/`tracks` without its own synchronization, relying on the caller for that.
+    /// Only ever READS `tracks[index]` directly (safe from any thread — no SwiftUI observer
+    /// is ever invalidated by a plain read); every actual WRITE to `tracks` goes through
+    /// `mutateTrack` instead, batched into one call at the end (see that function's own doc
+    /// comment for why).
     private func updateRecognitionState(pitch: Int, isNoteOn: Bool, velocity: Int, channel: Int, track: TrackID, applyTuning: Bool = true) {
         guard let index = tracks.firstIndex(where: { $0.id == track }) else { return }
+        let label = tracks[index].label
+        let soundEnabled = tracks[index].soundEnabled
+        var heldPitches = tracks[index].heldPitches
+
         lastMIDIEvent = MIDINoteEvent(kind: isNoteOn ? .noteOn : .noteOff, pitch: pitch, velocity: isNoteOn ? velocity : 0, channel: channel)
-        tracks[index].lastChannel = channel
-        append("\(tracks[index].label) \(isNoteOn ? "on " : "off")pitch=\(pitch) vel=\(isNoteOn ? velocity : 0) ch=\(channel)")
+        append("\(label) \(isNoteOn ? "on " : "off")pitch=\(pitch) vel=\(isNoteOn ? velocity : 0) ch=\(channel)")
 
         let recognizer = recognizers[track] ?? RecognitionEngine()
         recognizers[track] = recognizer
         if isNoteOn {
             recognizer.noteOn(pitch: pitch)
-            tracks[index].heldPitches.insert(pitch)
+            heldPitches.insert(pitch)
         } else {
             recognizer.noteOff(pitch: pitch)
-            tracks[index].heldPitches.remove(pitch)
+            heldPitches.remove(pitch)
         }
-        refreshRecognition(for: track, recognizer: recognizer)
+        let (chord, modes) = refreshRecognition(label: label, previousChord: tracks[index].recognizedChord, previousModes: tracks[index].recognizedModes, recognizer: recognizer)
+        recordChordEventIfChanged(track: track, heldPitches: heldPitches, chord: chord)
         forwardNoteEventToServerIfClient(track: track, isNoteOn: isNoteOn, pitch: pitch, velocity: velocity, channel: channel)
         captureRecordingEventIfRecording(track: track, isNoteOn: isNoteOn, pitch: pitch, velocity: velocity)
 
-        guard tracks[index].soundEnabled, let sampler = samplers[track] else { return }
+        // Applies `isNoteOn`'s insert/remove to WHATEVER `info.heldPitches` holds at apply
+        // time, rather than overwriting it with `heldPitches` (computed above from a snapshot
+        // that can already be stale by the time this runs) — several rapid events for the
+        // SAME track queue several of these calls before the first one's deferred write lands
+        // (confirmed: a real regression, three quick note-ons each computing their own insert
+        // against a stale base, so the last deferred write to actually land silently dropped
+        // the earlier two). `DispatchQueue.main.async` preserves FIFO order, so relative
+        // operations still accumulate correctly even though the read that fed `chord`/`modes`
+        // above did use a snapshot — those two come from `recognizer` instead, which (unlike
+        // `tracks[index]`) IS mutated synchronously above, so they're never stale.
+        mutateTrack(track) { info in
+            info.lastChannel = channel
+            if isNoteOn { info.heldPitches.insert(pitch) } else { info.heldPitches.remove(pitch) }
+            info.recognizedChord = chord
+            info.recognizedModes = modes
+        }
+
+        guard soundEnabled, let sampler = samplers[track] else { return }
         if isNoteOn {
             // `.dissonancePreview` included alongside the picked live source — per explicit
             // request, the Dissonances screen's own button/mini-keyboard preview should stay
@@ -4481,12 +4550,14 @@ public final class ImprovSession: @unchecked Sendable {
     /// thread `MicrophonePitchListener` calls back on.
     func handleDetectedPitches(_ detected: [DetectedPitch], level: Float, track: TrackID) {
         liveInputQueue.sync {
-            guard let index = tracks.firstIndex(where: { $0.id == track }) else { return }
-            tracks[index].microphoneInputLevel = level
-            tracks[index].lastDetectedPitches = detected
+            guard tracks.contains(where: { $0.id == track }) else { return }
             if var capture = microphoneCalibrationCapture {
                 capture.peakLevel = max(capture.peakLevel, level)
                 microphoneCalibrationCapture = capture
+            }
+            mutateTrack(track) { info in
+                info.microphoneInputLevel = level
+                info.lastDetectedPitches = detected
             }
             let raw = Set(detected.map(\.midiPitch))
             for transition in pitchStabilizers[track]?.ingest(raw) ?? [] {
@@ -4696,25 +4767,23 @@ public final class ImprovSession: @unchecked Sendable {
 
     /// Re-runs one track's chord/mode recognition and logs a line only when the result
     /// actually changed, so holding a chord down doesn't spam the log on every repeated note.
-    private func refreshRecognition(for track: TrackID, recognizer: RecognitionEngine) {
-        guard let index = tracks.firstIndex(where: { $0.id == track }) else { return }
-        let label = tracks[index].label
-
+    /// Returns the freshly-recognized `(chord, modes)` rather than writing them into `tracks`
+    /// itself — `updateRecognitionState` is the one place that actually applies them, via
+    /// `mutateTrack` (see that function's own doc comment for why this had to move out of here).
+    private func refreshRecognition(label: String, previousChord: RecognizedChord?, previousModes: [RecognizedMode], recognizer: RecognitionEngine) -> (chord: RecognizedChord?, modes: [RecognizedMode]) {
         let chord = recognizer.recognizeChord()
-        if chord != tracks[index].recognizedChord {
-            tracks[index].recognizedChord = chord
+        if chord != previousChord {
             append("\(label) - Chord: \(chord.map(Self.describe) ?? "(none)")")
         }
 
         let modes = recognizer.recognizeModes()
-        if modes != tracks[index].recognizedModes {
-            tracks[index].recognizedModes = modes
+        if modes != previousModes {
             if !modes.isEmpty {
                 append("\(label) - Mode candidates: " + modes.map(Self.describe).joined(separator: ", "))
             }
         }
 
-        recordChordEventIfChanged(track: track, heldPitches: tracks[index].heldPitches, chord: chord)
+        return (chord, modes)
     }
 
     /// Appends to this track's `recentChordEvents` the instant the held-pitches/chord actually
@@ -6649,6 +6718,24 @@ public final class ImprovSession: @unchecked Sendable {
     /// Adds a new remote-track entry, or updates its label/listening flag if it already
     /// exists (idempotent — a client may re-announce the same track). Must run inside
     /// `liveInputQueue.sync`, same contract as `updateRecognitionState`.
+    ///
+    /// Deliberately NOT routed through `mutateTrack`/`mutateTracks` (unlike
+    /// `updateRecognitionState`/`handleDetectedPitches`) despite running on the same kind of
+    /// background thread (Network.framework's own connection callback) — tried that first,
+    /// and it broke a real invariant: `handleServerMessage`'s `.noteEvent` case calls this to
+    /// create a brand-new remote track, then IMMEDIATELY calls `updateRecognitionState` on
+    /// that same track, on the same thread, expecting to find the row it just added.
+    /// Deferring the append to `DispatchQueue.main.async` means it isn't there yet, so
+    /// `updateRecognitionState` silently no-ops on a remote participant's very first note
+    /// (confirmed: `recognizedChord` stayed `nil` the whole test). The confirmed live deadlock
+    /// only ever involves a FIELD EDIT on an already-existing row (`.computerKeyboard`/
+    /// `.microphone`, both created at session start, never race-created) — this class of
+    /// "create a new row, then immediately expect to read it back" doesn't occur there, so
+    /// there's no safe way to just defer this one too without a bigger redesign (a
+    /// synchronously-updated, non-Observable "known remote track IDs" side-table, decoupled
+    /// from `tracks` itself). Left as a known, narrower theoretical risk — same shape as the
+    /// fixed bug, but via Jam Session network traffic instead of MIDI/microphone — rather than
+    /// trading a real, demonstrated regression for a still-unconfirmed one tonight.
     private func addOrUpdateRemoteTrack(clientID: String, trackID: String, label: String, canHaveSound: Bool, ownerName: String?) {
         let id = TrackID.remote(clientID: clientID, trackID: trackID)
         if let index = tracks.firstIndex(where: { $0.id == id }) {
@@ -6661,7 +6748,8 @@ public final class ImprovSession: @unchecked Sendable {
     }
 
     /// Removes one remote track entirely — a departed track shouldn't linger in the list
-    /// the way a merely-stopped local track does. Must run inside `liveInputQueue.sync`.
+    /// the way a merely-stopped local track does. Must run inside `liveInputQueue.sync`. See
+    /// `addOrUpdateRemoteTrack`'s doc comment for why this isn't routed through `mutateTracks`.
     private func removeRemoteTrack(clientID: String, trackID: String) {
         let id = TrackID.remote(clientID: clientID, trackID: trackID)
         tracks.removeAll { $0.id == id }
@@ -6671,7 +6759,8 @@ public final class ImprovSession: @unchecked Sendable {
     }
 
     /// Removes every remote track belonging to one participant — used when their
-    /// connection drops. Must run inside `liveInputQueue.sync`.
+    /// connection drops. Must run inside `liveInputQueue.sync`. See
+    /// `addOrUpdateRemoteTrack`'s doc comment for why this isn't routed through `mutateTracks`.
     private func removeAllRemoteTracks(forClientID clientID: String) {
         let idsToRemove = tracks.compactMap { track -> TrackID? in
             guard case .remote(let owner, _) = track.id, owner == clientID else { return nil }
@@ -6687,7 +6776,8 @@ public final class ImprovSession: @unchecked Sendable {
 
     /// Removes every remote track regardless of owner — used when this session itself
     /// stops being a server or disconnects as a client (either way, every `.remote` entry
-    /// in `tracks` stops being meaningful). Must run inside `liveInputQueue.sync`.
+    /// in `tracks` stops being meaningful). Must run inside `liveInputQueue.sync`. See
+    /// `addOrUpdateRemoteTrack`'s doc comment for why this isn't routed through `mutateTracks`.
     private func removeAllRemoteTracks() {
         tracks.removeAll { if case .remote = $0.id { return true }; return false }
     }
@@ -6741,7 +6831,8 @@ public final class ImprovSession: @unchecked Sendable {
     /// latest broadcast, preserving each one's local sound/instrument choice by identity
     /// (mirrors `refreshTracks`'s preserve-by-id pattern) — excludes any entry whose
     /// `clientID` is this participant's own (that track is already present locally, driven
-    /// by real local recognition, not as a read-only `.remote` mirror of itself).
+    /// by real local recognition, not as a read-only `.remote` mirror of itself). See
+    /// `addOrUpdateRemoteTrack`'s doc comment for why this isn't routed through `mutateTracks`.
     private func mergeRemoteSnapshot(_ snapshot: [RemoteTrackSnapshot]) {
         liveInputQueue.sync {
             let previousRemote = Dictionary(uniqueKeysWithValues: tracks.compactMap { track -> (TrackID, TrackInfo)? in

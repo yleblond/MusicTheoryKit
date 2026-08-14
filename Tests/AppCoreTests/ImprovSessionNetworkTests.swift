@@ -20,6 +20,17 @@ private func syncGET(_ url: String, timeout: TimeInterval = 2) -> (status: Int, 
     return result
 }
 
+// Waits by pumping the main run loop rather than blocking it with a plain `Thread.sleep` —
+// necessary wherever an assertion depends on a `tracks` update that arrived via a background
+// thread (a real CoreMIDI/Network.framework/HTTP-server callback): those are now applied via
+// `DispatchQueue.main.async`, not synchronously, specifically to avoid a real deadlock against
+// SwiftUI's Observation lock (see `ImprovSession.mutateTrack`'s own doc comment) — a queued
+// `DispatchQueue.main.async` block only ever runs once something pumps the main run loop, which
+// a blocking `Thread.sleep` on the main thread (this test's own thread) never does.
+private func pumpMainRunLoop(for interval: TimeInterval) {
+    RunLoop.main.run(until: Date(timeIntervalSinceNow: interval))
+}
+
 // Real HTTP/TCP integration tests over real loopback sockets (not mocks) — deliberately
 // separate from ImprovSessionTests.swift: these are slow, use fixed ports, and exercise the
 // actual NetworkServer/NetworkClient/HTTPServer wiring end to end, unlike the fast in-process
@@ -50,7 +61,7 @@ final class ImprovSessionNetworkTests: XCTestCase {
         try client.startTrack(.computerKeyboard)
         for pitch in [60, 64, 67] { client.pressKey(pitch: pitch) } // C E G -> C major
 
-        Thread.sleep(forTimeInterval: 0.6) // noteEvent -> server recognizes -> next sync tick -> client merges
+        pumpMainRunLoop(for: 0.6) // noteEvent -> server recognizes -> next sync tick -> client merges
 
         let clientTrackOnServer = TrackID.remote(clientID: client.localClientID, trackID: "clavier")
         let mirroredOnServer = try XCTUnwrap(server.tracks.first { $0.id == clientTrackOnServer })
@@ -64,7 +75,7 @@ final class ImprovSessionNetworkTests: XCTestCase {
 
         server.stopServer()
         client.disconnectFromServer()
-        Thread.sleep(forTimeInterval: 0.1)
+        pumpMainRunLoop(for: 0.1)
         XCTAssertFalse(server.tracks.contains { if case .remote = $0.id { return true }; return false })
         XCTAssertFalse(client.tracks.contains { if case .remote = $0.id { return true }; return false })
     }
@@ -154,7 +165,7 @@ final class ImprovSessionNetworkTests: XCTestCase {
         _ = syncGET("http://127.0.0.1:18398/note-on?pitch=60" + alice)
         _ = syncGET("http://127.0.0.1:18398/note-on?pitch=64" + alice)
         _ = syncGET("http://127.0.0.1:18398/note-on?pitch=67" + alice)
-        Thread.sleep(forTimeInterval: 0.2)
+        pumpMainRunLoop(for: 0.2)
 
         let held = try XCTUnwrap(syncGET("http://127.0.0.1:18398/state?dummy=1" + alice))
         XCTAssertTrue(held.body.contains("\"chordRoot\":0"))
@@ -163,7 +174,7 @@ final class ImprovSessionNetworkTests: XCTestCase {
         // A second, unrelated client must get its OWN independent track — no cross-talk.
         let bob = "&client=bob-uuid&name=Bob"
         _ = syncGET("http://127.0.0.1:18398/note-on?pitch=62" + bob)
-        Thread.sleep(forTimeInterval: 0.2)
+        pumpMainRunLoop(for: 0.2)
         let bobState = try XCTUnwrap(syncGET("http://127.0.0.1:18398/state?dummy=1" + bob))
         let aliceState = try XCTUnwrap(syncGET("http://127.0.0.1:18398/state?dummy=1" + alice))
         XCTAssertTrue(bobState.body.contains("\"heldPitches\":[62]"))
@@ -173,7 +184,7 @@ final class ImprovSessionNetworkTests: XCTestCase {
         _ = syncGET("http://127.0.0.1:18398/note-off?pitch=60" + alice)
         _ = syncGET("http://127.0.0.1:18398/note-off?pitch=64" + alice)
         _ = syncGET("http://127.0.0.1:18398/note-off?pitch=67" + alice)
-        Thread.sleep(forTimeInterval: 0.2)
+        pumpMainRunLoop(for: 0.2)
 
         let released = try XCTUnwrap(syncGET("http://127.0.0.1:18398/state?dummy=1" + alice))
         XCTAssertTrue(released.body.contains("\"heldPitches\":[]"))
@@ -181,9 +192,9 @@ final class ImprovSessionNetworkTests: XCTestCase {
         // The Escape "panic button" route — simulates a note stuck held and confirms
         // GET /release-all clears it without needing to know which pitch was stuck.
         _ = syncGET("http://127.0.0.1:18398/note-on?pitch=72" + alice)
-        Thread.sleep(forTimeInterval: 0.2)
+        pumpMainRunLoop(for: 0.2)
         _ = syncGET("http://127.0.0.1:18398/release-all?dummy=1" + alice)
-        Thread.sleep(forTimeInterval: 0.2)
+        pumpMainRunLoop(for: 0.2)
         let afterReleaseAll = try XCTUnwrap(syncGET("http://127.0.0.1:18398/state?dummy=1" + alice))
         XCTAssertTrue(afterReleaseAll.body.contains("\"heldPitches\":[]"))
 
