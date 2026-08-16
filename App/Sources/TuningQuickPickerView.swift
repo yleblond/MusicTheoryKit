@@ -18,9 +18,22 @@ struct TuningQuickPickerView: View {
     @State private var referenceA4Text: String = ""
     @State private var actionError: String?
 
+    /// Whether the live configuration differs from `TuningConfiguration()`'s own default (Égal,
+    /// A4 = 440) — gates `resetButton`'s visibility, per explicit request: a way to get back to
+    /// the modern-standard temperament without having to remember which one that was.
+    private var isAtDefault: Bool {
+        session.tuningConfiguration == TuningConfiguration()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.string(.appFieldTemperament, session.currentLanguage)).font(.headline)
+            HStack {
+                Text(L10n.string(.appFieldTemperament, session.currentLanguage)).font(.headline)
+                Spacer()
+                if !isAtDefault {
+                    resetButton
+                }
+            }
             Picker(L10n.string(.appFieldTemperament, session.currentLanguage), selection: Binding(
                 get: { session.tuningConfiguration.temperamentID },
                 set: { newID in updateConfiguration { $0.temperamentID = newID } }
@@ -61,7 +74,7 @@ struct TuningQuickPickerView: View {
     /// those two's own doc comment).
     private func label(forTemperamentID id: String) -> String {
         switch id {
-        case "equal": return L10n.string(.appTemperamentEqual, session.currentLanguage)
+        case "equal": return "\(L10n.string(.appTemperamentEqual, session.currentLanguage)) \(L10n.string(.appLabelParDefaut, session.currentLanguage))"
         case "pythagorean": return L10n.string(.appTemperamentPythagorean, session.currentLanguage)
         case "justIntonation": return L10n.string(.appTemperamentJustIntonation, session.currentLanguage)
         case "werckmeisterIII": return L10n.string(.appTemperamentWerckmeisterIII, session.currentLanguage)
@@ -76,6 +89,17 @@ struct TuningQuickPickerView: View {
     private func commitReferenceA4() {
         guard let value = Double(referenceA4Text.replacingOccurrences(of: ",", with: ".")), value > 0 else { return }
         updateConfiguration { $0.referenceA4 = value }
+    }
+
+    private var resetButton: some View {
+        Button {
+            updateConfiguration { $0 = TuningConfiguration() }
+            referenceA4Text = formattedA4(TuningConfiguration().referenceA4)
+        } label: {
+            Label(L10n.string(.appButtonReinitialiser, session.currentLanguage), systemImage: "arrow.counterclockwise")
+                .labelStyle(.iconOnly)
+        }
+        .help(L10n.string(.appButtonReinitialiser, session.currentLanguage))
     }
 
     private func updateConfiguration(_ mutate: (inout TuningConfiguration) -> Void) {

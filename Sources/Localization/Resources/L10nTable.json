@@ -9006,5 +9006,60 @@
   "pt": "Choisit l'affichage préféré des noms de notes (dièses ou bémols) dans toute l'app.",
   "ru": "Choisit l'affichage préféré des noms de notes (dièses ou bémols) dans toute l'app.",
   "zhHans": "Choisit l'affichage préféré des noms de notes (dièses ou bémols) dans toute l'app."
+ },
+ "appLabelParDefaut": {
+  "fr": "(par defaut)",
+  "en": "(default)",
+  "de": "(Standard)",
+  "es": "(por defecto)",
+  "it": "(predefinito)",
+  "ja": "（既定）",
+  "pt": "(padrao)",
+  "ru": "(по умолчанию)",
+  "zhHans": "（默认）"
+ },
+ "appHeadingSpectreNote": {
+  "de": "Spectre de la note",
+  "en": "Spectre de la note",
+  "es": "Spectre de la note",
+  "fr": "Spectre de la note",
+  "it": "Spectre de la note",
+  "ja": "Spectre de la note",
+  "pt": "Spectre de la note",
+  "ru": "Spectre de la note",
+  "zhHans": "Spectre de la note"
+ },
+ "appLabelSpectreBrut": {
+  "de": "SF2 (egal)",
+  "en": "SF2 (egal)",
+  "es": "SF2 (egal)",
+  "fr": "SF2 (egal)",
+  "it": "SF2 (egal)",
+  "ja": "SF2 (egal)",
+  "pt": "SF2 (egal)",
+  "ru": "SF2 (egal)",
+  "zhHans": "SF2 (egal)"
+ },
+ "appLabelSpectreCorrige": {
+  "de": "Corrige",
+  "en": "Corrige",
+  "es": "Corrige",
+  "fr": "Corrige",
+  "it": "Corrige",
+  "ja": "Corrige",
+  "pt": "Corrige",
+  "ru": "Corrige",
+  "zhHans": "Corrige"
+ },
+ "appHintSpectreAucuneNote": {
+  "de": "Tapez une note pour voir son spectre.",
+  "en": "Tapez une note pour voir son spectre.",
+  "es": "Tapez une note pour voir son spectre.",
+  "fr": "Tapez une note pour voir son spectre.",
+  "it": "Tapez une note pour voir son spectre.",
+  "ja": "Tapez une note pour voir son spectre.",
+  "pt": "Tapez une note pour voir son spectre.",
+  "ru": "Tapez une note pour voir son spectre.",
+  "zhHans": "Tapez une note pour voir son spectre."
  }
 }

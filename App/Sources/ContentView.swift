@@ -557,7 +557,7 @@ struct ContentView: View {
     /// free-standing label used inline in a string format, not worth a new shared type for 4 ids.
     private func temperamentLabel(forID id: String, language: AppLanguage) -> String {
         switch id {
-        case "equal": return L10n.string(.appTemperamentEqual, language)
+        case "equal": return "\(L10n.string(.appTemperamentEqual, language)) \(L10n.string(.appLabelParDefaut, language))"
         case "pythagorean": return L10n.string(.appTemperamentPythagorean, language)
         case "justIntonation": return L10n.string(.appTemperamentJustIntonation, language)
         case "werckmeisterIII": return L10n.string(.appTemperamentWerckmeisterIII, language)

@@ -43,6 +43,18 @@ struct TuningLibraryView: View {
     /// highlight either way.
     @State private var playingNoteIndex: Int?
     @State private var playingChordIndex: Int?
+    /// The last-tapped scale note's own raw (index 0, "SF2/égal") and temperament-corrected
+    /// (index 1) full FFT spectra — `nil` before any note has been tapped, or while a render is
+    /// in flight (see `spectrumGeneration`). Ephemeral by design, same as `DissonancesLibraryView
+    /// .rawSpectra` — see `NoteSpectrumView`'s own doc comment for why this doesn't cache/persist
+    /// spectra for every note ever explored.
+    @State private var noteSpectra: [RawNoteSpectrum]?
+    @State private var spectrumPitch: Int?
+    @State private var spectrumCents: Double = 0
+    /// Guards against an in-flight render for an already-superseded note tap completing late and
+    /// overwriting a newer selection's result — same pattern `DissonancesLibraryView
+    /// .spectrumGeneration` already uses for its own analogous race.
+    @State private var spectrumGeneration = 0
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// Same breakpoint every other Théorie library screen uses for its own side-by-side columns
@@ -196,6 +208,7 @@ struct TuningLibraryView: View {
                         notesColumn
                         chordsColumn
                     }
+                    noteSpectrumSection
                     if !heldPitches.isEmpty {
                         heldNotesSection
                     }
@@ -280,6 +293,16 @@ struct TuningLibraryView: View {
                 .fixedSize()
 
                 Spacer()
+
+                // Same "get back to the modern-standard temperament without remembering which
+                // one that was" affordance as `TuningQuickPickerView`'s own reset button.
+                if session.tuningConfiguration != TuningConfiguration() {
+                    Button {
+                        updateConfiguration { $0 = TuningConfiguration() }
+                    } label: {
+                        Label(L10n.string(.appButtonReinitialiser, session.currentLanguage), systemImage: "arrow.counterclockwise")
+                    }
+                }
             }
             Text(mode.displayName).font(.title2).bold()
         }
@@ -366,6 +389,64 @@ struct TuningLibraryView: View {
         return (session.tracks.first { $0.id == sourceID }?.heldPitches ?? []).sorted()
     }
 
+    /// Overlays the last-tapped note's raw ("SF2 (égal)", 0 cents — filled, per `NoteSpectrumView
+    /// .Tone.isBase`) and temperament-corrected (line only) full FFT spectra on one shared axis.
+    /// Deliberately a single STEADY-STATE snapshot, not a live/animated spectrum — same
+    /// `RawSpectrumRenderer`/`OfflineNoteRenderer` pipeline `DissonancesLibraryView` already uses
+    /// (renders the note offline, skips the attack transient, takes one FFT window from the
+    /// sustained portion): a played note's timbre does evolve over its attack/decay, but what this
+    /// graph needs to show is WHERE the correction moves each harmonic, which a steady-state
+    /// snapshot already answers — an animation would add real complexity (live audio-tap FFT is a
+    /// completely different, not-reused mechanism, see `ImprovSession.currentMicrophoneSpectrum`)
+    /// for no comparison benefit, since the correction itself doesn't change over the note's
+    /// duration. The correction itself needs no separate "difference" visualization either: since
+    /// both spectra are rendered from the SAME real audio (just pitch-shifted), on this view's
+    /// pitch-LINEAR (log-Hz) x-axis a cents offset shows up as a uniform lateral shift between the
+    /// two curves' peaks — the gap IS the shift, visible directly, not something to compute/draw
+    /// separately.
+    @ViewBuilder
+    private var noteSpectrumSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L10n.string(.appHeadingSpectreNote, session.currentLanguage)).font(.headline)
+            if let noteSpectrumTones {
+                NoteSpectrumView(tones: noteSpectrumTones)
+            } else if spectrumPitch != nil {
+                ProgressView().frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
+            } else {
+                Text(L10n.string(.appHintSpectreAucuneNote, session.currentLanguage))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var noteSpectrumTones: [NoteSpectrumView.Tone]? {
+        guard let noteSpectra, noteSpectra.count == 2, let spectrumPitch else { return nil }
+        let correctedLabel = "\(L10n.string(.appLabelSpectreCorrige, session.currentLanguage)) (\(String(format: "%+.1f¢", spectrumCents)))"
+        return [
+            NoteSpectrumView.Tone(
+                label: L10n.string(.appLabelSpectreBrut, session.currentLanguage), pitch: spectrumPitch,
+                color: .blue, spectrum: noteSpectra[0], isBase: true
+            ),
+            NoteSpectrumView.Tone(label: correctedLabel, pitch: spectrumPitch, color: .orange, spectrum: noteSpectra[1]),
+        ]
+    }
+
+    /// `pitches: [(pitch, 0 cents), (pitch, cents)]` — same instrument loaded once, two renders,
+    /// see `RawSpectrumRenderer.render(pitches:soundFontURL:preset:)`'s own doc comment.
+    private func computeNoteSpectrum(forPitch pitch: Int, cents: Double) async {
+        noteSpectra = nil
+        spectrumGeneration += 1
+        let generation = spectrumGeneration
+        spectrumPitch = pitch
+        spectrumCents = cents
+        guard let sound = session.theoryAuditionSound() else { return }
+        let soundFontURL = URL(fileURLWithPath: sound.path)
+        let preset = sound.preset
+        let result = try? await RawSpectrumRenderer.render(pitches: [(pitch, 0), (pitch, cents)], soundFontURL: soundFontURL, preset: preset)
+        guard generation == spectrumGeneration else { return } // superseded by a newer note tap
+        noteSpectra = result
+    }
+
     private func cents(for pitchClass: PitchClass) -> Double {
         temperamentCents(forPitch: 60 + pitchClass.value, mode: mode, configuration: session.tuningConfiguration)
     }
@@ -377,7 +458,7 @@ struct TuningLibraryView: View {
 
     private func label(forTemperamentID id: String) -> String {
         switch id {
-        case "equal": return L10n.string(.appTemperamentEqual, session.currentLanguage)
+        case "equal": return "\(L10n.string(.appTemperamentEqual, session.currentLanguage)) \(L10n.string(.appLabelParDefaut, session.currentLanguage))"
         case "pythagorean": return L10n.string(.appTemperamentPythagorean, session.currentLanguage)
         case "justIntonation": return L10n.string(.appTemperamentJustIntonation, session.currentLanguage)
         case "werckmeisterIII": return L10n.string(.appTemperamentWerckmeisterIII, session.currentLanguage)
@@ -414,7 +495,13 @@ struct TuningLibraryView: View {
     /// index, since `spelledDegrees`/`scaleDegreesWithOctave` share the same degree order).
     private func playSingleNote(columnIndex: Int, tempered: Bool) {
         guard scaleDegreesWithOctave.indices.contains(columnIndex) else { return }
-        playPitches([60 + scaleDegreesWithOctave[columnIndex] + octaveShift * 12], tempered: tempered, durationSeconds: 0.7, highlight: $playingNoteIndex, highlightIndex: columnIndex)
+        let pitch = 60 + scaleDegreesWithOctave[columnIndex] + octaveShift * 12
+        playPitches([pitch], tempered: tempered, durationSeconds: 0.7, highlight: $playingNoteIndex, highlightIndex: columnIndex)
+        // Always shows BOTH the raw and corrected spectra, regardless of which of the two
+        // "Jouer non tempéré"/"Jouer tempéré" buttons was actually pressed — `tempered` only
+        // picks which one you HEAR, the graph compares both either way.
+        let noteCents = temperamentCents(forPitch: pitch, mode: mode, configuration: session.tuningConfiguration)
+        Task { await computeNoteSpectrum(forPitch: pitch, cents: noteCents) }
     }
 
     /// See `playSingleNote(columnIndex:tempered:)`'s own doc comment — same idea, for

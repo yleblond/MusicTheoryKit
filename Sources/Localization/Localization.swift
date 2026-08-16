@@ -477,6 +477,14 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appTabIntonations
     case appTemperamentEqual, appTemperamentPythagorean, appTemperamentJustIntonation, appTemperamentWerckmeisterIII
     case appFieldTemperament, appFieldReferenceA4
+    /// Suffix appended to "Égal"'s own label in every temperament picker — it's the modern
+    /// standard (what any instrument/DAW defaults to, unlike the 3 historical temperaments,
+    /// each favoring specific keys) and `TuningConfiguration`'s own default, but nothing
+    /// distinguished it as such in the picker itself — per explicit request (2026-08-16).
+    case appLabelParDefaut
+    // Note spectrum comparison (raw SF2/equal vs. temperament-corrected), added 2026-08-16 —
+    // see `TuningLibraryView.noteSpectrumSection`.
+    case appHeadingSpectreNote, appLabelSpectreBrut, appLabelSpectreCorrige, appHintSpectreAucuneNote
     case appLabelToniqueActuelle, appHintAucunModeActifIntonations, appHeadingNotesTenuesEtCorrection
     case appHeadingNotesDeLaGamme
     case appButtonJouerNonTempere, appButtonJouerTempere
