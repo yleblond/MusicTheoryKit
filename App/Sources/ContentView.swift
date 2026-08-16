@@ -148,38 +148,59 @@ struct ContentView: View {
                                 )
                             } else {
                                 StatusGraphView(session: session)
+                                    .registerContextualHelp(id: HelpTopicID.home.rawValue, isActive: appModel.mode == .home) {
+                                        HelpTopicID.home.content(language: session.currentLanguage)
+                                    }
                             }
                             #else
                             StatusGraphView(session: session)
+                                .registerContextualHelp(id: HelpTopicID.home.rawValue, isActive: appModel.mode == .home) {
+                                    HelpTopicID.home.content(language: session.currentLanguage)
+                                }
                             #endif
                         case .studio:
                             TabView(selection: $appModel.selectedStudioTab) {
                                 Tab(StudioTab.scene.label(session.currentLanguage), systemImage: StudioTab.scene.systemImage, value: StudioTab.scene) {
-                                    SceneManagementView(session: session)
+                                    SceneManagementView(session: session, isActive: appModel.mode == .studio && appModel.selectedStudioTab == .scene)
                                 }
                                 Tab(StudioTab.live.label(session.currentLanguage), systemImage: StudioTab.live.systemImage, value: StudioTab.live) {
-                                    LiveTabContent(session: session, bridge: bridge)
+                                    LiveTabContent(session: session, bridge: bridge, isActive: appModel.mode == .studio && appModel.selectedStudioTab == .live)
                                 }
                                 Tab(StudioTab.guide.label(session.currentLanguage), systemImage: StudioTab.guide.systemImage, value: StudioTab.guide) {
-                                    StudioGuidePlayTabContent(session: session, bridge: bridge)
+                                    StudioGuidePlayTabContent(session: session, bridge: bridge, isActive: appModel.mode == .studio && appModel.selectedStudioTab == .guide)
                                 }
                                 Tab(StudioTab.recordings.label(session.currentLanguage), systemImage: StudioTab.recordings.systemImage, value: StudioTab.recordings) {
                                     RecordingsView(session: session)
+                                        .registerContextualHelp(id: HelpTopicID.studioRecordings.rawValue, isActive: appModel.mode == .studio && appModel.selectedStudioTab == .recordings) {
+                                            HelpTopicID.studioRecordings.content(language: session.currentLanguage)
+                                        }
                                 }
                                 Tab(StudioTab.jamSession.label(session.currentLanguage), systemImage: StudioTab.jamSession.systemImage, value: StudioTab.jamSession) {
                                     StudioJamSessionTabContent(session: session)
+                                        .registerContextualHelp(id: HelpTopicID.studioJamSession.rawValue, isActive: appModel.mode == .studio && appModel.selectedStudioTab == .jamSession) {
+                                            HelpTopicID.studioJamSession.content(language: session.currentLanguage)
+                                        }
                                 }
                             }
                         case .composition:
                             TabView(selection: $selectedCompositionTab) {
                                 Tab(CompositionTab.guide.label(session.currentLanguage), systemImage: CompositionTab.guide.systemImage, value: CompositionTab.guide) {
                                     GuideView(session: session, bridge: bridge)
+                                        .registerContextualHelp(id: HelpTopicID.compositionGuide.rawValue, isActive: appModel.mode == .composition && selectedCompositionTab == .guide) {
+                                            HelpTopicID.compositionGuide.content(language: session.currentLanguage)
+                                        }
                                 }
                                 Tab(CompositionTab.composition.label(session.currentLanguage), systemImage: CompositionTab.composition.systemImage, value: CompositionTab.composition) {
                                     CompositionView(session: session)
+                                        .registerContextualHelp(id: HelpTopicID.compositionComposition.rawValue, isActive: appModel.mode == .composition && selectedCompositionTab == .composition) {
+                                            HelpTopicID.compositionComposition.content(language: session.currentLanguage)
+                                        }
                                 }
                                 Tab(CompositionTab.pieces.label(session.currentLanguage), systemImage: CompositionTab.pieces.systemImage, value: CompositionTab.pieces) {
                                     PiecesView(session: session)
+                                        .registerContextualHelp(id: HelpTopicID.compositionPieces.rawValue, isActive: appModel.mode == .composition && selectedCompositionTab == .pieces) {
+                                            HelpTopicID.compositionPieces.content(language: session.currentLanguage)
+                                        }
                                 }
                             }
                         case .theorie:
@@ -215,24 +236,42 @@ struct ContentView: View {
                                 }
                                 Tab(SettingsTab.midi.label(session.currentLanguage), systemImage: SettingsTab.midi.systemImage, value: SettingsTab.midi) {
                                     JamShackMIDIView(session: session, bridge: bridge)
+                                        .registerContextualHelp(id: HelpTopicID.settingsMidi.rawValue, isActive: appModel.mode == .settings && appModel.selectedSettingsTab == .midi) {
+                                            HelpTopicID.settingsMidi.content(language: session.currentLanguage)
+                                        }
                                 }
                                 Tab(SettingsTab.microphone.label(session.currentLanguage), systemImage: SettingsTab.microphone.systemImage, value: SettingsTab.microphone) {
-                                    MicrophoneTabContent(session: session, bridge: bridge)
+                                    MicrophoneTabContent(session: session, bridge: bridge, isActive: appModel.mode == .settings && appModel.selectedSettingsTab == .microphone)
                                 }
                                 Tab(SettingsTab.console.label(session.currentLanguage), systemImage: SettingsTab.console.systemImage, value: SettingsTab.console) {
                                     ConsoleSettingsView(session: session)
+                                        .registerContextualHelp(id: HelpTopicID.settingsConsole.rawValue, isActive: appModel.mode == .settings && appModel.selectedSettingsTab == .console) {
+                                            HelpTopicID.settingsConsole.content(language: session.currentLanguage)
+                                        }
                                 }
                                 Tab(SettingsTab.couleurs.label(session.currentLanguage), systemImage: SettingsTab.couleurs.systemImage, value: SettingsTab.couleurs) {
                                     JamShackColorsView(session: session)
+                                        .registerContextualHelp(id: HelpTopicID.settingsCouleurs.rawValue, isActive: appModel.mode == .settings && appModel.selectedSettingsTab == .couleurs) {
+                                            HelpTopicID.settingsCouleurs.content(language: session.currentLanguage)
+                                        }
                                 }
                                 Tab(SettingsTab.llm.label(session.currentLanguage), systemImage: SettingsTab.llm.systemImage, value: SettingsTab.llm) {
                                     JamShackAIView(session: session)
+                                        .registerContextualHelp(id: HelpTopicID.settingsLLM.rawValue, isActive: appModel.mode == .settings && appModel.selectedSettingsTab == .llm) {
+                                            HelpTopicID.settingsLLM.content(language: session.currentLanguage)
+                                        }
                                 }
                                 Tab(SettingsTab.langue.label(session.currentLanguage), systemImage: SettingsTab.langue.systemImage, value: SettingsTab.langue) {
                                     JamShackLanguageView(session: session)
+                                        .registerContextualHelp(id: HelpTopicID.settingsLangue.rawValue, isActive: appModel.mode == .settings && appModel.selectedSettingsTab == .langue) {
+                                            HelpTopicID.settingsLangue.content(language: session.currentLanguage)
+                                        }
                                 }
                                 Tab(SettingsTab.notation.label(session.currentLanguage), systemImage: SettingsTab.notation.systemImage, value: SettingsTab.notation) {
                                     NotationStyleSettingsView(session: session)
+                                        .registerContextualHelp(id: HelpTopicID.settingsNotation.rawValue, isActive: appModel.mode == .settings && appModel.selectedSettingsTab == .notation) {
+                                            HelpTopicID.settingsNotation.content(language: session.currentLanguage)
+                                        }
                                 }
                             }
                         }
@@ -481,8 +520,27 @@ struct ContentView: View {
                 .sheet(isPresented: Binding(get: { appModel.showsContextualHelpSheet }, set: { appModel.showsContextualHelpSheet = $0 })) {
                     NavigationStack {
                         ScrollView {
-                            if let content = appModel.contextualHelpContent { content().padding() }
+                            VStack(alignment: .leading, spacing: 12) {
+                                // Same `pinnedHelpTopic`-first priority as `ContextualHelpWindow`
+                                // — see `AppModel.pinnedHelpTopic`'s own doc comment.
+                                if let pinned = appModel.pinnedHelpTopic {
+                                    Button {
+                                        appModel.pinnedHelpTopic = nil
+                                    } label: {
+                                        Label(L10n.string(.appHelpButtonRetour, session.currentLanguage), systemImage: "chevron.backward")
+                                    }
+                                    .buttonStyle(.plain)
+                                    pinned.content(language: session.currentLanguage)
+                                } else if let content = appModel.contextualHelpContent {
+                                    content()
+                                }
+                            }
+                            .padding()
                         }
+                        // A separate SwiftUI hierarchy from `ContextualHelpWindow`'s own
+                        // `WindowGroup` — `.environment(\.openURL, ...)` does NOT propagate
+                        // between the two, so this needs its own independent installation.
+                        .interceptHelpLinks(pinnedTopic: Binding(get: { appModel.pinnedHelpTopic }, set: { appModel.pinnedHelpTopic = $0 }))
                         .toolbar {
                             ToolbarItem(placement: .confirmationAction) {
                                 Button(L10n.string(.appButtonFermer, session.currentLanguage)) { appModel.showsContextualHelpSheet = false }
@@ -514,6 +572,8 @@ struct ContentView: View {
     /// underlying trigger `TheoryHelpButton` uses for its own per-screen equivalent.
     private func contextualHelpButton(session: ImprovSession) -> some View {
         Button {
+            // Reset before opening — see `AppModel.pinnedHelpTopic`'s own doc comment.
+            appModel.pinnedHelpTopic = nil
             #if os(macOS) || os(visionOS)
             openWindow(id: AuxiliaryWindowID.contextualHelp.rawValue)
             #else

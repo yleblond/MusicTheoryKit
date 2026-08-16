@@ -10,9 +10,13 @@ import Localization
 /// share every other part of this view (the tonic/scale picker, all the underlying
 /// state/helpers) since they're really "the same screen, showing a different half of its
 /// content" — factored as one parameterized `ModeLibraryView` rather than two near-duplicate
-/// files, with each `Tab()` in `ContentView` constructing its OWN separate instance, so
-/// "Mode"'s and "Exploration"'s tonic/scale picks stay entirely independent (SwiftUI `@State` is
-/// per-instance) even though they're the same type.
+/// files, with each `Tab()` in `ContentView` constructing its OWN separate instance. Until
+/// 2026-08-16 "Mode"'s and "Exploration"'s tonic/scale picks were kept entirely independent
+/// (`usesSharedModeSelection: false` for Exploration) — reversed by explicit request: Exploration
+/// now shares `AppModel.sharedMode` like every other MusicLab screen, so picking a mode on either
+/// tab (or Progressions/Intonations/Tonnetz/Dissonances) is reflected everywhere. The two still
+/// need separate `ModeLibraryView` instances regardless (different `contentFocus`/layout), this
+/// just no longer means separate STATE.
 enum ModeLibraryContentFocus {
     case overview, exploration
 }
@@ -49,10 +53,11 @@ struct ModeLibraryView: View {
     var isActive: Bool = true
     /// Whether this instance's tonic/scale picker reads/writes `AppModel.sharedMode` (so picking
     /// a mode here is reflected on every other MusicLab screen, including detached windows) or
-    /// keeps its own independent local selection — per explicit request. `.overview` ("Modes")
-    /// defaults to `true`; `ExplorationTabContent`'s own instance passes `false` to preserve its
-    /// pre-existing "entirely independent from Modes" behavior (see this struct's own doc
-    /// comment on why `.overview`/`.exploration` are two separate instances to begin with).
+    /// keeps its own independent local selection. `true` for every caller as of 2026-08-16 (see
+    /// this file's own top doc comment — `ExplorationTabContent` used to pass `false`, per
+    /// explicit request at the time; that request was reversed, since an unsynced Exploration mode
+    /// read as a bug once other screens started sharing). Kept as a real parameter (not just
+    /// deleted) rather than assuming no screen will ever want independent state again.
     var usesSharedModeSelection: Bool = true
 
     #if os(macOS) || os(visionOS)
@@ -172,9 +177,16 @@ struct ModeLibraryView: View {
         // beaucoup de place"). Lands over the title row's own trailing `Spacer()` (see
         // `detailContent`), which is otherwise empty there, so nothing real gets covered.
         .overlay(alignment: .topTrailing) {
-            detachButton
-                .padding(.horizontal)
-                .padding(.top, 6)
+            // `.exploration` deliberately has NO per-screen help icon (see this file's own doc
+            // comment on `registerContextualHelp` above) — only `.overview` ("Modes") gets one.
+            HStack(spacing: 8) {
+                detachButton
+                if contentFocus == .overview {
+                    TheoryHelpButton(session: session)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 6)
         }
         #endif
         // Colors the persistent main-keyboard bar (`ContentView`) by this screen's own picked
@@ -315,6 +327,9 @@ struct ModeLibraryView: View {
                 switch contentFocus {
                 case .overview:
                     overviewContent
+                        .registerContextualHelp(id: HelpTopicID.theorieModes.rawValue, isActive: isActive) {
+                            HelpTopicID.theorieModes.content(language: session.currentLanguage)
+                        }
                 case .exploration:
                     // The `.registerContextualHelp` call used to be a per-screen "?" button here
                     // instead — moved into `ContentView`'s shared bottom bar per explicit request,
@@ -330,8 +345,8 @@ struct ModeLibraryView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .registerContextualHelp(id: "theorie.exploration", isActive: isActive && mode.scale.familyID == 1) {
-                        TheoryLegendContent(language: session.currentLanguage)
+                    .registerContextualHelp(id: HelpTopicID.theorieExploration.rawValue, isActive: isActive && mode.scale.familyID == 1) {
+                        HelpTopicID.theorieExploration.content(language: session.currentLanguage)
                     }
                 }
             }
@@ -604,7 +619,7 @@ struct ModeLibraryView: View {
                 ForEach(Array(diatonicChordReferences.enumerated()), id: \.offset) { index, reference in
                     Button {
                         selectedChordIndex = index
-                        playSingleChord(reference)
+                        playSingleChord(reference, diatonicIndex: index)
                     } label: {
                         HStack {
                             Image(systemName: "play.circle")
@@ -649,10 +664,33 @@ struct ModeLibraryView: View {
     /// what keeps a played/kept-on-screen chord's register consistent with the staff above);
     /// falls back to independent per-chord anchoring — the original behavior — for anything else
     /// (e.g. a borrowed/chromatic progression chord with no scale degree of its own to anchor to).
-    private func diatonicVoicingPitches(for chord: Chord) -> [Int] {
+    ///
+    /// `diatonicIndex`, when given, is `chord`'s own position in `diatonicChordReferences` —
+    /// callers that already know it (the diatonic chord list/staff, not some other progression)
+    /// should always pass it. Real bug fix: the appended "VIII"/octave entry (see
+    /// `diatonicChordReferences`) has the SAME root pitch class as degree I by construction, so
+    /// looking it up by VALUE (`degreeRoots.firstIndex(of:)`, the `diatonicIndex == nil` fallback
+    /// below) always resolved to degree I's anchor — the octave chord played/showed a full
+    /// octave too low instead of +12. `chordsStaffEvents` already avoided this by anchoring from
+    /// each entry's own POSITION instead of its value; this mirrors that fix for playback.
+    private func diatonicVoicingPitches(for chord: Chord, diatonicIndex: Int? = nil) -> [Int] {
+        let anchors = diatonicDegreeRootAnchorsForPlayback
+        if let diatonicIndex {
+            let references = diatonicChordReferences
+            guard references.indices.contains(diatonicIndex) else {
+                return PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47 + octaveShift * 12)
+            }
+            let isOctaveEntry = references.count > 1 && diatonicIndex == references.count - 1
+            let anchorIndex = isOctaveEntry ? 0 : diatonicIndex
+            guard anchors.indices.contains(anchorIndex) else {
+                return PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47 + octaveShift * 12)
+            }
+            let rootMidi = anchors[anchorIndex] + (isOctaveEntry ? 12 : 0)
+            return chord.pitchClasses.map { pc in rootMidi + (((pc.value - chord.root.value) % 12) + 12) % 12 }
+        }
         let degreeRoots = mode.pitchClasses.map(\.value)
-        if let index = degreeRoots.firstIndex(of: chord.root.value) {
-            let rootMidi = diatonicDegreeRootAnchorsForPlayback[index]
+        if let index = degreeRoots.firstIndex(of: chord.root.value), anchors.indices.contains(index) {
+            let rootMidi = anchors[index]
             return chord.pitchClasses.map { pc in rootMidi + (((pc.value - chord.root.value) % 12) + 12) % 12 }
         }
         return PitchSequencing.ascendingPitches(forPitchClasses: chord.pitchClasses.map(\.value), startingAbove: 47 + octaveShift * 12)
@@ -710,7 +748,7 @@ struct ModeLibraryView: View {
             // Root position (a diatonic-chord reference here has no inversion concept of its
             // own, same as the Progression Library) — one occurrence of each tone instead of
             // every octave in range, per explicit request.
-            let voicingPitches = diatonicVoicingPitches(for: chord)
+            let voicingPitches = diatonicVoicingPitches(for: chord, diatonicIndex: selectedChordIndex)
             VStack(alignment: .leading, spacing: 4) {
                 Text(chordDisplayName(reference)).font(.headline)
                 PitchKeyboardView(
@@ -731,7 +769,7 @@ struct ModeLibraryView: View {
     private func tapChordStaffColumn(at index: Int) {
         guard diatonicChordReferences.indices.contains(index) else { return }
         selectedChordIndex = index
-        playSingleChord(diatonicChordReferences[index])
+        playSingleChord(diatonicChordReferences[index], diatonicIndex: index)
     }
 
     /// How `playAllChords()` renders each chord within its own time window — "Lié" (the
@@ -790,7 +828,7 @@ struct ModeLibraryView: View {
         let stepDuration = 1.0
         for (index, reference) in diatonicChordReferences.enumerated() {
             guard let chord = reference.resolve() else { continue }
-            let pitches = diatonicVoicingPitches(for: chord)
+            let pitches = diatonicVoicingPitches(for: chord, diatonicIndex: index)
             let windowStart = Double(index) * stepDuration
             let notes = chordPlaybackNotes(pitches: pitches, style: chordPlaybackStyle, windowStart: windowStart, windowDuration: stepDuration)
             for note in notes {
@@ -828,12 +866,15 @@ struct ModeLibraryView: View {
         return session.notationStyle.displayName(for: chord)
     }
 
-    private func playSingleChord(_ reference: ChordReference) {
+    /// `diatonicIndex`: see `diatonicVoicingPitches(for:diatonicIndex:)`'s own doc comment — pass
+    /// it whenever `reference` is known to be one of `diatonicChordReferences`' own entries
+    /// (leave `nil` for a chord from some other list, e.g. a previewed progression's own chips).
+    private func playSingleChord(_ reference: ChordReference, diatonicIndex: Int? = nil) {
         guard let chord = reference.resolve(), let sourceID else { return }
         session.releaseAllKeys(track: sourceID)
         playbackGeneration += 1
         let generation = playbackGeneration
-        let pitches = diatonicVoicingPitches(for: chord)
+        let pitches = diatonicVoicingPitches(for: chord, diatonicIndex: diatonicIndex)
         pressAndScheduleRelease(pitches: pitches, track: sourceID, durationSeconds: 1.5, generation: generation)
     }
 
@@ -894,7 +935,7 @@ struct ModeLibraryView: View {
     private func playFunctionalChord(atDegree degree: Int) {
         guard let chordFunction = functionalMap.chords.first(where: { $0.degree == degree }) else { return }
         selectedChordIndex = degree - 1
-        playSingleChord(chordFunction.reference)
+        playSingleChord(chordFunction.reference, diatonicIndex: degree - 1)
     }
 
     /// Everything about exploring the mode from a chosen chord's own point of view — harmonic
@@ -1368,13 +1409,24 @@ struct ModeLibraryView: View {
     /// through its own track, so re-triggering the audition sample here would double the audio.
     private func reactToLiveChordMatch(_ chord: RecognizedChord?) {
         guard let chord else { return }
-        guard let index = ImprovSession.matchingChordIndex(chord, in: diatonicChordReferences, reference: { $0 }) else { return }
+        guard let index = ImprovSession.matchingChordIndex(chord, in: diatonicChordReferences, reference: { $0 }, preferring: selectedChordIndex) else { return }
         selectedChordIndex = index
         guard contentFocus == .exploration,
               let name = selectedProgressionName,
               let template = uniqueProgressionTemplates.first(where: { $0.name == name }) else { return }
         let references = ChordProgressionResolver.resolveRich(template, in: mode)
-        if let progressionIndex = references.firstIndex(where: { matchingFunctionalChord(for: $0)?.degree == index + 1 }) {
+        // Same "prefer the already-selected occurrence" fix as `matchingChordIndex` above — this
+        // one isn't expressed as a `ChordReference` match (it's matched by functional degree
+        // instead), so it can't reuse that helper directly, but the bug and fix are identical: a
+        // progression with a repeated degree (e.g. I...IV-V-I) would otherwise always scrub back
+        // to its FIRST occurrence.
+        let alreadyOnAMatch: Bool
+        if let current = selectedProgressionChordIndex, references.indices.contains(current) {
+            alreadyOnAMatch = matchingFunctionalChord(for: references[current])?.degree == index + 1
+        } else {
+            alreadyOnAMatch = false
+        }
+        if !alreadyOnAMatch, let progressionIndex = references.firstIndex(where: { matchingFunctionalChord(for: $0)?.degree == index + 1 }) {
             selectedProgressionChordIndex = progressionIndex
         }
     }

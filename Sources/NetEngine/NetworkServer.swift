@@ -33,10 +33,19 @@ public final class NetworkServer: @unchecked Sendable {
     /// `advertisedAs`, when given, makes this server discoverable on the local network via
     /// Bonjour/mDNS under that display name (see `ServiceBrowser.discover`) — `nil` starts
     /// a listener that only accepts connections to a known host/port, same as before this
-    /// existed.
+    /// existed. `prohibitedInterfaceTypes = [.cellular]` excludes whatever route mobile data
+    /// provides (e.g. Personal Hotspot sharing) — never a same-room LAN device — same
+    /// reasoning and same scope limitation as `HTTPServer.start(port:host:)`'s own doc comment
+    /// (BACKLOG.md's "revérifier le binding réseau" entry, 2026-08-16): this does NOT protect
+    /// against another device on the same (possibly untrusted) Wi-Fi network reaching this
+    /// unauthenticated/unencrypted server, only against a mobile-data-routed path. Doesn't
+    /// apply to `GameCenterTransport` (a `GKMatch`-backed peer, not `NWListener`-based at all —
+    /// routed through Apple's own matchmaking/relay, no local port to bind).
     public func start(port: UInt16, advertisedAs serviceName: String? = nil) throws {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { throw NetworkError.invalidPort }
-        let newListener = try NWListener(using: .tcp, on: nwPort)
+        let parameters: NWParameters = .tcp
+        parameters.prohibitedInterfaceTypes = [.cellular]
+        let newListener = try NWListener(using: parameters, on: nwPort)
         if let serviceName {
             newListener.service = NWListener.Service(name: serviceName, type: ServiceBrowser.serviceType)
         }

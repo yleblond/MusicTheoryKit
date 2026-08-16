@@ -71,6 +71,9 @@ struct SoundsView: View {
         .onChange(of: session.theoryLiveInputSourceID) { _, _ in
             controller.syncTestSource()
         }
+        .registerContextualHelp(id: HelpTopicID.settingsSons.rawValue, isActive: isActive) {
+            HelpTopicID.settingsSons.content(language: session.currentLanguage)
+        }
     }
 }
 

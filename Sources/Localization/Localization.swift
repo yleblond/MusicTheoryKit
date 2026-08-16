@@ -406,9 +406,6 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHeadingExplorationFonctionnelle, appTabApercuMode
     case appRoleHome, appRoleAway, appRoleTension, appRoleNeutral
     case appLabelCaracteristiqueModale, appFieldSourceFonctionnelle, appOptionFormuleCalculee, appOptionTableStandard
-    case appHelpFunctionalMapTitle, appHelpFunctionalMapHome, appHelpFunctionalMapAway, appHelpFunctionalMapTension
-    case appHelpFunctionalMapNeutral, appHelpFunctionalMapModal, appHelpFunctionalMapDistance
-    case appHelpFunctionalMapArrows, appHelpFunctionalMapImportant
     case appLabelNoteCaracteristique, appFieldRoleFonctionnel
     case appHeadingOrbiteFonctionnelle, appHeadingAttractions
     case appHeadingSonAudition, appHintSonAuditionTheorie
@@ -419,8 +416,6 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appMelodicRoleStable, appMelodicRoleChordTone, appMelodicRoleColor, appMelodicRoleTension, appMelodicRoleContextual
     case appQualifierEleve, appQualifierMoyen, appQualifierFaible
     case appFieldConsonance, appFieldCouleurMelodique, appFieldTensionMelodique, appLabelResolutionsPossibles
-    case appHelpMelodicMapTitle, appHelpMelodicMapStable, appHelpMelodicMapChordTone, appHelpMelodicMapColor
-    case appHelpMelodicMapTension, appHelpMelodicMapContextual, appHelpMelodicMapPrinciple
     case appLabelNotesJoueesRecemment, appLabelAccordsExploresRecemment, appHeadingProgressionsTypeDuMode
     /// The Chord Library's own live-played overlay (Accords screen) — distinct from
     /// `appLabelNotesJoueesRecemment`'s "history of the last few" — this is "what's held right
@@ -443,11 +438,40 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appTonnetzLegendFifth, appTonnetzLegendMajorThird, appTonnetzLegendMinorThird
     case appTonnetzLegendMajorTriad, appTonnetzLegendMinorTriad
     case appLabelModeOptionnel, appLabelCercleDesQuintes
-    case appHelpTonnetzTitle, appHelpTonnetzAxes, appHelpTonnetzTriangles, appHelpTonnetzGraphs, appHelpTonnetzDiatonic
+    case appHelpTonnetzTitle, appHelpTonnetzBody
     case appLabelAccord, appLabelNote, appLabelNotes
 
     // MARK: - App: Théorie — bouton d'aide générique par écran
     case appButtonTheorie
+
+    // MARK: - App: aide contextuelle par écran (HelpTopicID, App/Sources/HelpTopicID.swift) —
+    // un titre + un corps markdown par écran, rendus par `HelpContentView`. Texte français
+    // uniquement pour l'instant, dupliqué dans les 9 langues de `L10nTable.json` en attendant
+    // une vraie passe de traduction (même convention que le reste de l'app).
+    case appHelpButtonRetour
+    case appHelpHomeTitle, appHelpHomeBody
+    case appHelpStudioSceneTitle, appHelpStudioSceneBody
+    case appHelpStudioLiveTitle, appHelpStudioLiveBody
+    case appHelpStudioGuideTitle, appHelpStudioGuideBody
+    case appHelpStudioRecordingsTitle, appHelpStudioRecordingsBody
+    case appHelpStudioJamSessionTitle, appHelpStudioJamSessionBody
+    case appHelpCompositionGuideTitle, appHelpCompositionGuideBody
+    case appHelpCompositionTitle, appHelpCompositionBody
+    case appHelpPiecesTitle, appHelpPiecesBody
+    case appHelpAccordsTitle, appHelpAccordsBody
+    case appHelpModesTitle, appHelpModesBody
+    case appHelpProgressionsTitle, appHelpProgressionsBody
+    case appHelpExplorationTitle, appHelpExplorationBody
+    case appHelpIntonationsTitle, appHelpIntonationsBody
+    case appHelpDissonancesTitle, appHelpDissonancesBody
+    case appHelpSonsTitle, appHelpSonsBody
+    case appHelpMidiTitle, appHelpMidiBody
+    case appHelpMicrophoneTitle, appHelpMicrophoneBody
+    case appHelpConsoleTitle, appHelpConsoleBody
+    case appHelpCouleursTitle, appHelpCouleursBody
+    case appHelpLLMTitle, appHelpLLMBody
+    case appHelpLangueTitle, appHelpLangueBody
+    case appHelpNotationTitle, appHelpNotationBody
 
     // MARK: - App: Théorie > Intonations
     case appTabIntonations

@@ -82,6 +82,14 @@ final class AppModel {
     /// one, can trigger it directly without a binding threaded down through every screen.
     var showsContextualHelpSheet = false
 
+    /// When non-nil, the help window/sheet shows THIS topic's content instead of whichever
+    /// screen is currently active's own `contextualHelpContent` — set by tapping a
+    /// `[label](jamshackhelp://<id>)` cross-reference inside another topic's own help text (see
+    /// `View.interceptHelpLinks`). Reset to `nil` every time help is freshly opened
+    /// (`ContentView.contextualHelpButton`/`TheoryHelpButton`), so a stale navigated-to topic
+    /// from a previous session never leaks into a fresh "?" tap on a different screen.
+    var pinnedHelpTopic: HelpTopicID?
+
     /// The mode (tonic + scale) whichever Théorie screen is currently active wants the persistent
     /// main-keyboard bar (`ComputerKeyboardInputBar`, in `ContentView`) to color itself by —
     /// mode-tone fill + scale-degree badges, same as any other mode-aware keyboard in the app

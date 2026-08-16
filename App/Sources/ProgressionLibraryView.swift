@@ -152,6 +152,7 @@ struct ProgressionLibraryView: View {
             HStack {
                 Spacer()
                 detachButton
+                TheoryHelpButton(session: session)
             }
             .padding(.horizontal)
             .padding(.top, 6)
@@ -389,7 +390,7 @@ struct ProgressionLibraryView: View {
     /// reacts live).
     private func reactToLiveChordMatch(_ chord: RecognizedChord?) {
         guard let chord else { return }
-        guard let index = ImprovSession.matchingChordIndex(chord, in: resolvedReferences, reference: { $0 }) else { return }
+        guard let index = ImprovSession.matchingChordIndex(chord, in: resolvedReferences, reference: { $0 }, preferring: currentChordIndex) else { return }
         currentChordIndex = index
     }
 

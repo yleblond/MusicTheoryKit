@@ -137,14 +137,23 @@ public final class ImprovSession: @unchecked Sendable {
     /// lists what's *available*, not what's currently selected); resets to the first palette
     /// every time migration runs.
     public private(set) var activeColorPaletteIndex: Int = 0
-    /// Bounds-checked rather than a plain subscript: `buildWebConsoleState()` reads this from
-    /// a detached background task (see `SessionUIBridge`) with no synchronization against
-    /// `migrateColorPalettesFromJSONIfNeeded`/`selectColorPalette` mutating `colorPalettes`/
-    /// `activeColorPaletteIndex` on the main actor — the same class of benign cross-thread
-    /// read documented on `SessionUIBridge`, except an out-of-range index here crashes instead
-    /// of just returning a stale value, so it falls back to the first palette instead.
+    /// Bounds-checked rather than a plain subscript, as a last-resort fallback — this plain,
+    /// unsynchronized property is fine for the many call sites that are always on main
+    /// (`JamShackColorsView`, `PaletteEditorView`, the CLI in `Sources/JamShack/main.swift`),
+    /// which never race each other. The two call sites that can run off-main
+    /// (`buildWebConsoleState()`, `handleVirtualKeyboardRequest`) must use
+    /// `activeColorPaletteSnapshot()` instead, which is actually synchronized — see
+    /// `colorPaletteQueue`'s doc comment for the crash this distinction guards against.
     public var activeColorPalette: ColorPalette {
         colorPalettes.indices.contains(activeColorPaletteIndex) ? colorPalettes[activeColorPaletteIndex] : ColorPalette.builtInDefaults[0]
+    }
+
+    /// The thread-safe counterpart to `activeColorPalette` — call this instead from any code
+    /// that might run off the main thread. See `colorPaletteQueue`'s doc comment.
+    private func activeColorPaletteSnapshot() -> ColorPalette {
+        colorPaletteQueue.sync {
+            colorPalettes.indices.contains(activeColorPaletteIndex) ? colorPalettes[activeColorPaletteIndex] : ColorPalette.builtInDefaults[0]
+        }
     }
     /// Every composition description's addressable name currently in the SwiftData store,
     /// sorted — mirrors `guideSequenceNames`. Refreshed after every migrate/insert/update/delete.
@@ -340,6 +349,20 @@ public final class ImprovSession: @unchecked Sendable {
     /// with memory corruption in testing, not just a benign "worst case interleaved log line"
     /// like the single-threaded live-input writes elsewhere in this class.
     private let playbackStateQueue = DispatchQueue(label: "ImprovSession.playbackState")
+    /// Guards `colorPalettes`/`activeColorPaletteIndex` against the exact torn read that
+    /// crashed in TestFlight (2026-08-01, iOS build 1.1/17 on "Designed for iPad" macOS):
+    /// `buildWebConsoleState()`/`handleVirtualKeyboardRequest` read `activeColorPalette` from
+    /// a background thread (`webConsoleRefreshTimer`'s `.global()` queue, or a
+    /// `Task.detached` — see `SessionUIBridge`) while `refreshColorPalettes()`/
+    /// `selectColorPalette(atIndex:)`/`migrateColorPalettesFromJSONIfNeeded` — always called on
+    /// main — write the two properties as separate statements, so a background reader could
+    /// observe a freshly-replaced `colorPalettes` against a stale `activeColorPaletteIndex` (or
+    /// vice versa) and index out of bounds. Unlike `liveInputQueue`/`tracks`, nothing here ever
+    /// WRITES from a background thread, so there's no risk of a background thread needing
+    /// SwiftUI's Observation invalidation lock while holding this one — plain mutual exclusion
+    /// between the always-main writers and the background readers is enough, see
+    /// `activeColorPaletteSnapshot()`.
+    private let colorPaletteQueue = DispatchQueue(label: "ImprovSession.colorPalette")
     /// Protocol-typed (not the concrete `NetworkServer`/`NetworkClient`) so either the
     /// local-network transport or `GameCenterTransport` can be stored/called the same way —
     /// see `NetworkServerTransport`/`NetworkClientTransport`'s own doc comments.
@@ -2688,7 +2711,7 @@ public final class ImprovSession: @unchecked Sendable {
         }
         try? modelContext.save()
         refreshColorPalettes()
-        activeColorPaletteIndex = 0
+        colorPaletteQueue.sync { activeColorPaletteIndex = 0 }
     }
 
     /// Re-reads `colorPalettes` (in stored order, see `ColorPaletteRecord.sortOrder`) from
@@ -2701,7 +2724,8 @@ public final class ImprovSession: @unchecked Sendable {
     private func refreshColorPalettes() {
         let descriptor = FetchDescriptor<ColorPaletteRecord>(sortBy: [SortDescriptor(\.sortOrder)])
         let records = (try? modelContext.fetch(descriptor)) ?? []
-        colorPalettes = records.map(\.asColorPalette)
+        let palettes = records.map(\.asColorPalette)
+        colorPaletteQueue.sync { colorPalettes = palettes }
     }
 
     public func selectColorPalette(named name: String) throws {
@@ -2714,7 +2738,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// from a name that isn't guaranteed unique (unlike e.g. `llmConnections`' file names).
     public func selectColorPalette(atIndex index: Int) throws {
         guard colorPalettes.indices.contains(index) else { throw SessionError.invalidColorPaletteIndex }
-        activeColorPaletteIndex = index
+        colorPaletteQueue.sync { activeColorPaletteIndex = index }
         append("Using color palette: \(activeColorPalette.name)")
     }
 
@@ -3013,8 +3037,26 @@ public final class ImprovSession: @unchecked Sendable {
     /// ones already on screen" lookup Théorie's Modes/Progressions/Exploration screens each need
     /// against their own already-displayed chord list (diatonic chords, a progression's resolved
     /// steps), so none of them has to hand-roll the same comparison.
-    public static func matchingChordIndex<T>(_ chord: RecognizedChord, in elements: [T], reference: (T) -> ChordReference) -> Int? {
-        elements.firstIndex { let r = reference($0); return r.root == chord.root.value && r.chordTemplateID == chord.chordTemplateID }
+    ///
+    /// `preferring currentIndex`: real bug fix — a progression/chord list can legitimately
+    /// contain the SAME chord (root+template) more than once (e.g. a ii-V-I-I with two identical
+    /// "I"s, or the diatonic chords list's own appended octave entry, which always matches degree
+    /// I by value — see `ModeLibraryView.diatonicChordReferences`). Playing/tapping one occurrence
+    /// presses real keys on the live-input track, which `RecognitionEngine` then recognizes,
+    /// looping back through this same lookup (see each caller's own `reactToLiveChordMatch`) — a
+    /// plain `firstIndex(where:)` always snapped the selection back to the FIRST occurrence,
+    /// clobbering whichever one had actually just been tapped. Checking `currentIndex` first (if
+    /// it's already a valid match) keeps the just-tapped occurrence selected instead of only ever
+    /// being reachable via `firstIndex`'s bias.
+    public static func matchingChordIndex<T>(_ chord: RecognizedChord, in elements: [T], reference: (T) -> ChordReference, preferring currentIndex: Int? = nil) -> Int? {
+        func matches(_ element: T) -> Bool {
+            let r = reference(element)
+            return r.root == chord.root.value && r.chordTemplateID == chord.chordTemplateID
+        }
+        if let currentIndex, elements.indices.contains(currentIndex), matches(elements[currentIndex]) {
+            return currentIndex
+        }
+        return elements.firstIndex(where: matches)
     }
 
     // MARK: - Chord progression templates (roman-numeral libraries, see `RomanNumeralChord`)
@@ -5070,6 +5112,7 @@ public final class ImprovSession: @unchecked Sendable {
     /// to unit-test the event log.
     public func buildWebConsoleState() -> WebConsoleState {
         let lastEvent = lastMIDIEvent.map { "\($0.kind == .noteOn ? "on " : "off")pitch=\($0.pitch) vel=\($0.velocity)" }
+        let palette = activeColorPaletteSnapshot()
 
         let listeningTracks: [TrackInfo] = liveInputQueue.sync { tracks.filter { $0.isListening } }
         let trackStates = listeningTracks.map(self.webConsoleTrackState)
@@ -5099,7 +5142,7 @@ public final class ImprovSession: @unchecked Sendable {
             lastEvent: lastEvent, tracks: trackStates, playback: playback, soundTrackPlayback: soundTrackPlayback,
             wheel: buildWebConsoleWheelState(listeningTracks: listeningTracks),
             guide: buildWebConsoleGuideState(),
-            palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors,
+            palette: palette.colors, paletteTextColors: palette.textColors,
             scene: buildWebConsoleSceneState(), language: currentLanguage.rawValue,
             lumi: WebConsoleLumiState(
                 rootColorHex: lumiSettings.rootColorHex, scaleColorHex: lumiSettings.scaleColorHex,
@@ -6334,9 +6377,10 @@ public final class ImprovSession: @unchecked Sendable {
             // client-side while no guide is running — see `app.js`'s own `renderWheel`.
             let listeningTracks: [TrackInfo] = liveInputQueue.sync { tracks.filter(\.isListening) }
             let wheelState = buildWebConsoleWheelState(listeningTracks: listeningTracks)
+            let palette = activeColorPaletteSnapshot()
             let response = VirtualKeyboardStateResponse(
                 track: info.map(self.webConsoleTrackState), guide: isGuideActive ? guideState : nil, wheel: wheelState,
-                palette: activeColorPalette.colors, paletteTextColors: activeColorPalette.textColors, language: currentLanguage.rawValue,
+                palette: palette.colors, paletteTextColors: palette.textColors, language: currentLanguage.rawValue,
                 noteColors: WebConsoleNoteColorsState(
                     modeRootHex: noteColorSettings.modeRootHex, modeOtherHex: noteColorSettings.modeOtherHex,
                     chordRootHex: noteColorSettings.chordRootHex, chordToneHex: noteColorSettings.chordToneHex,

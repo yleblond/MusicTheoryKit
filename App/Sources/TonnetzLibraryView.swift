@@ -168,8 +168,8 @@ struct TonnetzLibraryView: View {
             guard isActive else { return }
             session.setContextualMode(newMode)
         }
-        .registerContextualHelp(id: "theorie.tonnetz", isActive: isActive) {
-            TonnetzHelpContent(language: session.currentLanguage)
+        .registerContextualHelp(id: HelpTopicID.theorieTonnetz.rawValue, isActive: isActive) {
+            HelpTopicID.theorieTonnetz.content(language: session.currentLanguage)
         }
         .onChange(of: recognitionSnapshot) { _, snapshot in
             reactToLiveRecognition(snapshot)

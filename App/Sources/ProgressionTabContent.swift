@@ -23,10 +23,17 @@ struct ProgressionTabContent: View {
                 onReintegrate: { dismissWindow(id: AuxiliaryWindowID.theorieProgressions.rawValue) }
             )
         } else {
-            ProgressionLibraryView(session: session, isActive: isActive)
+            progressionLibrary
         }
         #else
-        ProgressionLibraryView(session: session, isActive: isActive)
+        progressionLibrary
         #endif
+    }
+
+    private var progressionLibrary: some View {
+        ProgressionLibraryView(session: session, isActive: isActive)
+            .registerContextualHelp(id: HelpTopicID.theorieProgressions.rawValue, isActive: isActive) {
+                HelpTopicID.theorieProgressions.content(language: session.currentLanguage)
+            }
     }
 }

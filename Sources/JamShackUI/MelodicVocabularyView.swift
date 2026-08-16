@@ -137,7 +137,8 @@ public struct MelodicResolutionsRowView: View {
 /// Always-visible color/role key for the melodic-vocabulary palette — kept as its own view
 /// (rather than merged with `FunctionalMapLegendView`) since the two legends' role sets/colors
 /// are genuinely distinct. The fuller explanation used to live behind this view's own "?"
-/// popover; see `TheoryLegendContent`'s own doc comment for where it lives now.
+/// popover, then in a combined `TheoryLegendContent`; both are gone now (2026-08-16) in favor of
+/// the app-wide `HelpTopicID.theorieExploration` content (see `HelpTopicID.swift`, App target).
 public struct MelodicMapLegendView: View {
     public let language: AppLanguage
     /// See `FunctionalMapLegendView.axis`'s own doc comment — same `.horizontal`/`.vertical`
@@ -171,32 +172,5 @@ public struct MelodicMapLegendView: View {
             Image(systemName: "diamond.fill").foregroundStyle(FunctionalRoleColors.modalCharacteristicAccent).font(.system(size: 9))
             Text(L10n.string(.appLabelCaracteristiqueModale, language)).font(.caption)
         }
-    }
-}
-
-/// Public so `TheoryLegendContent` can compose it into the combined legend window/sheet.
-public struct MelodicMapHelpContent: View {
-    public let language: AppLanguage
-
-    public init(language: AppLanguage) {
-        self.language = language
-    }
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(L10n.string(.appHelpMelodicMapTitle, language)).font(.headline)
-            Group {
-                Text(L10n.string(.appHelpMelodicMapStable, language))
-                Text(L10n.string(.appHelpMelodicMapChordTone, language))
-                Text(L10n.string(.appHelpMelodicMapColor, language))
-                Text(L10n.string(.appHelpMelodicMapTension, language))
-                Text(L10n.string(.appHelpMelodicMapContextual, language))
-                Text(L10n.string(.appHelpFunctionalMapModal, language))
-            }
-            .font(.callout)
-            Divider()
-            Text(L10n.string(.appHelpMelodicMapPrinciple, language)).font(.caption).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: 340, alignment: .leading)
     }
 }

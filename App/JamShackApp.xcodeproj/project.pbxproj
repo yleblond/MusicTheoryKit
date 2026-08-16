@@ -63,6 +63,7 @@
 		34D898F93E23EC88710EAE78 /* SoundsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4765E80FA8CA331E5728B0F0 /* SoundsView.swift */; };
 		35B050C640C7B52F29632BD7 /* SceneLayoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC498287531CCB5772C1258B /* SceneLayoutView.swift */; };
 		3684ED3623D6C6C0954FA999 /* GuideDescriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E2F51CDF00A0B57FE9AEAB /* GuideDescriptionView.swift */; };
+		3817E7CCA3A5CDD85330D93D /* HelpTopicID.swift in Sources */ = {isa = PBXBuildFile; fileRef = D09CC7E96F75883F7B69D35E /* HelpTopicID.swift */; };
 		38F537A45F6133BAC6560CE5 /* PlainDataDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */; };
 		38F552870D3837F3930B9E0D /* NotationStyleSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F399A09A42E00F69FE65879F /* NotationStyleSettingsView.swift */; };
 		3A8E64861B3EE2B4FE083D76 /* SessionGatedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE90A4A7D561D191DF3EDBE8 /* SessionGatedView.swift */; };
@@ -175,6 +176,7 @@
 		966B76FC7D5F2B899F508746 /* TuningTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 353107FDEB841F0D54853B2D /* TuningTabContent.swift */; };
 		967E3BFE3151EDEE780BDE11 /* RunScreenWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 737D83A55D0D5B9052B92AE7 /* RunScreenWindow.swift */; };
 		9681084D2258CC517AA3D0D1 /* StudioGuidePlayTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84823DDF6207C0D0213DBD87 /* StudioGuidePlayTabContent.swift */; };
+		974BA1EA48EEA789BC5C2C0D /* HelpTopicID.swift in Sources */ = {isa = PBXBuildFile; fileRef = D09CC7E96F75883F7B69D35E /* HelpTopicID.swift */; };
 		996C6C5C6F6B690E76DAD4DD /* GuideEditionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556A46486C82BF4F493BD822 /* GuideEditionView.swift */; };
 		9A6D4E8F6192E6CC1225CCB2 /* ColorHex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80BD5958DD843BF49738DE9 /* ColorHex.swift */; };
 		9BD7175879646171CA7BFB25 /* Localization in Frameworks */ = {isa = PBXBuildFile; productRef = E01C405FDA95346DCCD5782F /* Localization */; };
@@ -186,6 +188,7 @@
 		9EA52431C5A4D8F6B13D293A /* ComputerKeyboardWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 425EE89B1471CD7198F934E0 /* ComputerKeyboardWindow.swift */; };
 		A044C2621C5109FCA32DAEF5 /* GuideLectureWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 392B0B4CD11A65E3AE00FDA2 /* GuideLectureWindow.swift */; };
 		A0D70A7091E037DF7C3D35BD /* GuidePlayIndicationRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EA276BC19892B1D37813D15 /* GuidePlayIndicationRow.swift */; };
+		A15FC165C61718B69DA6002C /* HelpTopicID.swift in Sources */ = {isa = PBXBuildFile; fileRef = D09CC7E96F75883F7B69D35E /* HelpTopicID.swift */; };
 		A1B39769EE55232E63D6ACDE /* FavoriteSoundsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A848FC0E680010358B07FF10 /* FavoriteSoundsView.swift */; };
 		A28FF5C56862E1F6FB3B66EC /* StatusWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A6BEFED9C8F5A8EA4E7B8DA /* StatusWindow.swift */; };
 		A29795D78276C834FCB91148 /* TheoryHelpButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAEBB7A7A90674ED3C13CE6B /* TheoryHelpButton.swift */; };
@@ -370,6 +373,7 @@
 		CC0EEDCEAF1C96726ACE9B17 /* GuideFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideFileView.swift; sourceTree = "<group>"; };
 		CD2262AC6E608B65CBF6DDBA /* DissonancesLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DissonancesLibraryView.swift; sourceTree = "<group>"; };
 		CEBDAE3CC92EC37EACBB1B1C /* TheoryTabContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TheoryTabContent.swift; sourceTree = "<group>"; };
+		D09CC7E96F75883F7B69D35E /* HelpTopicID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpTopicID.swift; sourceTree = "<group>"; };
 		D18A6BE11EC3ADC166F77984 /* SoundFontInfoSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundFontInfoSheet.swift; sourceTree = "<group>"; };
 		D26C37BCD338FB3890089C34 /* GuideConfigurationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideConfigurationView.swift; sourceTree = "<group>"; };
 		D3D77E2216CC7C9B43720B44 /* SceneLayoutWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneLayoutWindow.swift; sourceTree = "<group>"; };
@@ -478,6 +482,7 @@
 				4EA276BC19892B1D37813D15 /* GuidePlayIndicationRow.swift */,
 				95942B8846FAA9B3ED42228B /* GuideStepsSection.swift */,
 				1AE61DA02F48C19951B955F1 /* GuideView.swift */,
+				D09CC7E96F75883F7B69D35E /* HelpTopicID.swift */,
 				9DF506E12A5E6829884DCE65 /* IconAssignmentButton.swift */,
 				13B3167768CB0DDEADFFF969 /* JamShackAIView.swift */,
 				D5998490361DA6721A074DBB /* JamShackApp.swift */,
@@ -726,6 +731,7 @@
 				143F82B51732D9FC35633767 /* GuidePlayIndicationRow.swift in Sources */,
 				909FDDEF1B37DDFE810F6CAD /* GuideStepsSection.swift in Sources */,
 				3D9A4A9A9A91CE71B7CD7525 /* GuideView.swift in Sources */,
+				3817E7CCA3A5CDD85330D93D /* HelpTopicID.swift in Sources */,
 				57E075DA1FCD4D568E942FE8 /* IconAssignmentButton.swift in Sources */,
 				D04C2A11B27D8CD3D2FF4C06 /* IntonationWindow.swift in Sources */,
 				BEA5AE67A7CCACEF5E5E736F /* JamShackAIView.swift in Sources */,
@@ -822,6 +828,7 @@
 				A0D70A7091E037DF7C3D35BD /* GuidePlayIndicationRow.swift in Sources */,
 				8819D305E821C6CCF92964F1 /* GuideStepsSection.swift in Sources */,
 				ADA096D87B5CBACBB5E8B2B7 /* GuideView.swift in Sources */,
+				A15FC165C61718B69DA6002C /* HelpTopicID.swift in Sources */,
 				FF9D4A6D4F4DE2A8249C1F5E /* IconAssignmentButton.swift in Sources */,
 				0700456063A09994A4633452 /* IntonationWindow.swift in Sources */,
 				2B4B5AA50E88A35C6816730C /* JamShackAIView.swift in Sources */,
@@ -918,6 +925,7 @@
 				0EE109635C4ED7522CB6F528 /* GuidePlayIndicationRow.swift in Sources */,
 				1AB02A5A72BD4D7D84652261 /* GuideStepsSection.swift in Sources */,
 				00E5EF6FB05246A3A709AE8E /* GuideView.swift in Sources */,
+				974BA1EA48EEA789BC5C2C0D /* HelpTopicID.swift in Sources */,
 				C33A55FBA8141B020899B27F /* IconAssignmentButton.swift in Sources */,
 				413D187E7DE9AE3CC5A8225B /* IntonationWindow.swift in Sources */,
 				73DEDCF39E174C027B97D07A /* JamShackAIView.swift in Sources */,

@@ -10,6 +10,10 @@ import Localization
 struct LiveTabContent: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
+    /// See `ExplorationTabContent.isActive`'s own doc comment — feeds `.registerContextualHelp`
+    /// below; `false` while a detached `RunScreenWindow` shows the real screen instead (this
+    /// wrapper still runs, but only ever renders the placeholder branch then).
+    let isActive: Bool
 
     @Environment(AppModel.self) private var appModel
     #if os(macOS) || os(visionOS)
@@ -25,22 +29,31 @@ struct LiveTabContent: View {
                 onReintegrate: { dismissWindow(id: AuxiliaryWindowID.runScreen.rawValue) }
             )
         } else {
-            RunScreen(session: session, bridge: bridge)
-                // Same LUMI-follows-the-active-screen wiring as Guide > Lecture.
-                .onAppear { session.notifyActiveScreen(.run) }
-                .onDisappear {
-                    // Guarded: if `RunScreenWindow` just took over (this tab disappearing
-                    // because the user opened it in its own window), don't stomp its `.run`
-                    // with `.other`.
-                    if !appModel.openAuxiliaryWindows.contains(.runScreen) {
-                        session.notifyActiveScreen(.other)
-                    }
-                }
+            runScreen
         }
         #else
-        RunScreen(session: session, bridge: bridge)
-            .onAppear { session.notifyActiveScreen(.run) }
-            .onDisappear { session.notifyActiveScreen(.other) }
+        runScreen
         #endif
+    }
+
+    private var runScreen: some View {
+        RunScreen(session: session, bridge: bridge)
+            // Same LUMI-follows-the-active-screen wiring as Guide > Lecture.
+            .onAppear { session.notifyActiveScreen(.run) }
+            .onDisappear {
+                // Guarded: if `RunScreenWindow` just took over (this tab disappearing
+                // because the user opened it in its own window), don't stomp its `.run`
+                // with `.other`.
+                #if os(macOS) || os(visionOS)
+                if !appModel.openAuxiliaryWindows.contains(.runScreen) {
+                    session.notifyActiveScreen(.other)
+                }
+                #else
+                session.notifyActiveScreen(.other)
+                #endif
+            }
+            .registerContextualHelp(id: HelpTopicID.studioLive.rawValue, isActive: isActive) {
+                HelpTopicID.studioLive.content(language: session.currentLanguage)
+            }
     }
 }

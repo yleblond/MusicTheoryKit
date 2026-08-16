@@ -82,6 +82,8 @@ struct StatusGraphView: View {
         /// `nil` connects straight to the App node (every local, non-networked source, as
         /// before) — otherwise the id of a hub node (device/client/server) in an earlier column.
         let parentID: String?
+        /// See `systemImage(for:)`'s own doc comment.
+        let systemImage: String
     }
 
     private enum SourceRow: Identifiable {
@@ -199,6 +201,40 @@ struct StatusGraphView: View {
         }
     }
 
+    /// Per explicit request — a small icon in front of every node, distinguishing what KIND of
+    /// thing it is at a glance (independent of the green/red activity language, which only says
+    /// whether it's live). A `.remote` track shows its own DECODED kind (a remote computer
+    /// keyboard still reads as a keyboard) rather than a generic "network" icon — the Client
+    /// hub it's parented to, and its own "· PlayerName" header, already carry the "this is
+    /// someone else's" distinction; repeating that on every one of their rows too would just be
+    /// noise. Falls back to a generic dot for a `.remote` track whose wire id this build can't
+    /// decode (a future/older client's own opaque kind) rather than guessing.
+    private func systemImage(for id: TrackID) -> String {
+        switch id {
+        case .computerKeyboard: return "keyboard"
+        case .midiMerged, .midiSource, .midiSplitZone: return "pianokeys"
+        case .microphone: return "mic.fill"
+        case .webKeyboard: return "network"
+        case .remote: return decodedRemoteKind(id).map(systemImage(for:)) ?? "circle.fill"
+        case .dissonancePreview: return "circle.fill"
+        }
+    }
+
+    /// Icon per hub-column node KIND, derived from its own composite id prefix (see
+    /// `HubNode.id`'s own doc comment for the id shapes) — the local-MIDI hub and every MIDI
+    /// device share `.systemImage(for: .midiSource(0))`'s icon (a plain constant here, not a
+    /// real `TrackID`, since a hub isn't one addressable track).
+    private func hubSystemImage(forID id: String) -> String {
+        switch id {
+        case "hub:localmidi": return "pianokeys"
+        case "server:local", "server:gamecenter": return "server.rack"
+        case "server:webkeyboard": return "network"
+        case let id where id.hasPrefix("client:"): return "person.fill"
+        case let id where id.hasPrefix("device:"): return "pianokeys"
+        default: return "circle.fill"
+        }
+    }
+
     private func temperamentLabel(forID id: String) -> String {
         switch id {
         case "equal": return L10n.string(.appTemperamentEqual, session.currentLanguage)
@@ -237,7 +273,8 @@ struct StatusGraphView: View {
         }
         return SourceNode(
             id: track.id, label: track.label, activity: act, mainKeyboardAnnotation: annotation,
-            splitRangeAnnotation: splitRangeLabel(for: track.id), parentID: parentID
+            splitRangeAnnotation: splitRangeLabel(for: track.id), parentID: parentID,
+            systemImage: systemImage(for: track.id)
         )
     }
 
@@ -618,7 +655,7 @@ struct StatusGraphView: View {
         }
         #if os(macOS) || os(visionOS)
         .overlay(alignment: .topTrailing) {
-            detachButton
+            HStack(spacing: 8) { detachButton; TheoryHelpButton(session: session) }
                 .padding(.horizontal)
                 .padding(.top, 6)
         }
@@ -715,12 +752,14 @@ struct StatusGraphView: View {
     }
 
     private var appNodeView: some View {
-        Text("JamShack")
-            .font(.headline)
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .frame(width: Self.appWidth, height: Self.nodeRowHeight)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.secondary.opacity(0.35), lineWidth: 1))
+        HStack(spacing: 6) {
+            Image(systemName: "waveform").foregroundStyle(.secondary)
+            Text("JamShack").font(.headline)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .frame(width: Self.appWidth, height: Self.nodeRowHeight)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(.secondary.opacity(0.35), lineWidth: 1))
     }
 
     @ViewBuilder
@@ -733,7 +772,7 @@ struct StatusGraphView: View {
             let subtitle = [node.splitRangeAnnotation, node.mainKeyboardAnnotation].compactMap { $0 }.joined(separator: " · ")
             nodeBox(
                 title: node.label, subtitle: subtitle.isEmpty ? nil : subtitle, activity: node.activity,
-                isMainKeyboardSource: node.id == session.theoryLiveInputSourceID
+                systemImage: node.systemImage, isMainKeyboardSource: node.id == session.theoryLiveInputSourceID
             )
         }
     }
@@ -745,7 +784,7 @@ struct StatusGraphView: View {
             Text(title).font(.caption).bold().foregroundStyle(.secondary)
                 .frame(width: Self.nodeWidth, alignment: .leading)
         case .node(let node):
-            nodeBox(title: node.name, subtitle: node.detail, activity: node.activity)
+            nodeBox(title: node.name, subtitle: node.detail, activity: node.activity, systemImage: "theatermasks")
         }
     }
 
@@ -753,12 +792,21 @@ struct StatusGraphView: View {
     /// point (`session.theoryLiveInputSourceID`) — a RED ring, deliberately independent of the
     /// green activity language: per explicit request, being "clavier principal" is purely an
     /// observation choice (which track the main-keyboard component previews) and must never read
-    /// as if it were what turns other sources' own listening on or off — it doesn't.
-    private func nodeBox(title: String, subtitle: String?, activity: NodeActivity, width: CGFloat = Self.nodeWidth, isMainKeyboardSource: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.subheadline).bold().lineLimit(1)
-            if let subtitle {
-                Text(subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+    /// as if it were what turns other sources' own listening on or off — it doesn't. `systemImage`
+    /// is purely decorative (per explicit request — a small icon per node TYPE, independent of
+    /// the activity language), never itself a source of the red/green distinction.
+    private func nodeBox(title: String, subtitle: String?, activity: NodeActivity, width: CGFloat = Self.nodeWidth, systemImage: String, isMainKeyboardSource: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline).bold().lineLimit(1)
+                if let subtitle {
+                    Text(subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                }
             }
         }
         .padding(.horizontal, 10)
@@ -777,9 +825,10 @@ struct StatusGraphView: View {
         )
     }
 
-    /// Server/Client/Device column node — same box, `hubWidth` instead of `nodeWidth`.
+    /// Server/Client/Device column node — same box, `hubWidth` instead of `nodeWidth`. Icon
+    /// derived from the node's own composite id prefix (see `hubSystemImage(forID:)`).
     private func hubNodeView(_ node: HubNode) -> some View {
-        nodeBox(title: node.label, subtitle: node.subtitle, activity: node.activity, width: Self.hubWidth)
+        nodeBox(title: node.label, subtitle: node.subtitle, activity: node.activity, width: Self.hubWidth, systemImage: hubSystemImage(forID: node.id))
     }
 
     #if os(macOS) || os(visionOS)

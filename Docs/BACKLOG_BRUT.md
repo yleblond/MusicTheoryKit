@@ -80,6 +80,15 @@ régression `ImprovSessionNetworkTests.testConcurrentRemoteConnectionsAlongsideC
 (connexions/annonces réseau concurrentes avec un polling de `connectedClients()`). `swift test`
 (complet) et `xcodebuild JamShackApp_macOS` passent tous les deux. Retiré d'ici.
 
+Les onglets Théorie "Tonnetz", "Intonations" et "Dissonances" ont été livrés courant début/mi-août
+2026 sans passer par ce fichier (découverts après coup via un balayage des dates de modification,
+pas suivis en amont) : Tonnetz (exploration harmonique), Intonations (mode A1 — tempérament
+théorique fixe, précondition des items 26/29/30/33 ci-dessous), Dissonances (modèle de rugosité
+sensorielle de Sethares sur le spectre réel du SoundFont actif, voir item 27 ci-dessous pour le
+détail de ce qui est couvert et ce qui ne l'est pas). Voir `Docs/ARCHITECTURE.md` pour le détail.
+Les trois onglets ont depuis gagné le détachement en fenêtre propre (`openWindow`/`WindowGroup`,
+vérifié dans le code au 2026-08-16).
+
 ## Entrées
 
 21. **Gestion de plusieurs microphones en entrée**, en plus du micro de base actuellement géré.
@@ -107,8 +116,9 @@ régression `ImprovSessionNetworkTests.testConcurrentRemoteConnectionsAlongsideC
     par les deux). Probablement un SwiftData singleton du même genre que `NoteColorSettingsFile`,
     avec des valeurs par défaut = les couleurs actuelles codées en dur.
 
-26. **Accordage/tempérament — mode A2 (intonation adaptative théorique)** — une fois l'onglet
-    Music Lab "Intonations" (A1, théorique + fixe) livré, ajouter le mode dynamique : recalcule la
+26. **Accordage/tempérament — mode A2 (intonation adaptative théorique)** — l'onglet Théorie
+    "Intonations" (A1, théorique + fixe) est livré depuis début août 2026 ; sa précondition est
+    donc remplie, reste à ajouter le mode dynamique : recalcule la
     correction de chaque voix en fonction de l'accord détecté en direct (`RecognizedChord`), via
     les rapports harmoniques théoriques (juste intonation ciblée sur l'accord courant, pas juste la
     tonique). Nécessite : une fonction de coût (dissonance + pénalité d'éloignement + pénalité de
@@ -116,20 +126,28 @@ régression `ImprovSessionNetworkTests.testConcurrentRemoteConnectionsAlongsideC
     quinte/etc. — n'existe pas encore, voir `PitchDisplayState`), et un lissage/glide pour les notes
     tenues lors d'un changement d'accord (`TuningTransition` dans la spec d'origine).
 
-27. **Accordage/tempérament — mode B1 (spectre SF2 réel + fixe)** — analyser le spectre réel des
-    samples d'un SoundFont (FFT sur les données PCM réelles, pas seulement les métadonnées lues par
-    `SoundFontPresetReader` aujourd'hui — lire `sdta`/`shdr`/`ibag`/`igen` est un travail neuf,
-    seule la marche RIFF bas niveau est réutilisable) pour proposer une disposition fixe des 12
-    notes optimisée pour les résonances réelles de cet instrument précis (pas un tempérament
-    historique). Presque gratuit une fois le mode B2 construit (réutilise son moteur spectral).
+27. **Accordage/tempérament — mode B1 (spectre SF2 réel + fixe)** — PARTIELLEMENT couvert par
+    l'onglet Théorie "Dissonances" livré le 2026-08-12/13 (`App/Sources/DissonancesLibraryView.swift`,
+    `Sources/AppCore/SensoryDissonance.swift`, `OctaveSpectrumGrid`/`OctaveSpectrumGridBuilder` via
+    `FFTPitchAnalyzer`+`OfflineNoteRenderer`) : le moteur d'analyse spectrale réelle du SoundFont
+    (FFT sur les données PCM réelles, plus seulement les métadonnées `SoundFontPresetReader`) existe
+    et fonctionne, exposé comme heatmap 2D de dissonance pour un accord à 3 notes au-dessus d'une
+    tonique choisie, avec bouton d'audition "Jouer tempéré". Ce qui MANQUE encore pour clore
+    vraiment l'item : ce n'est qu'un outil d'exploration/visualisation, pas un mode de tempérament
+    intégré et sélectionnable dans l'onglet "Intonations" au même titre que A1 — il ne produit pas
+    de disposition fixe des 12 notes réellement appliquée au jeu/à la lecture. Reste à faire pour
+    clore : exposer ce moteur comme un vrai mode B1 dans `TuningLibraryView`/
+    `VoiceChannelAllocator`, au même niveau qu'A1.
 
 28. **Accordage/tempérament — mode B2 (spectre SF2 réel + adaptatif)** — le mode le plus avancé de
     la spec d'origine : optimisation en temps réel de chaque accord détecté à partir des partiels
-    réellement mesurés dans les samples actifs (pas des partiels harmoniques idéaux). Inclut le
-    graphe de dissonance 2D (surface/carte de contours pour un accord à 3 notes, axes = offset en
-    cents des 2 notes non-fondamentales) — techniquement, réutiliser la technique de rendu bitmap/
-    `CGImage` de `SpectrogramView.makeWaterfallImage` plutôt que des remplissages `Canvas` par
-    cellule (bien trop lent pour une grille 2D, cf. commentaire de ce fichier).
+    réellement mesurés dans les samples actifs (pas des partiels harmoniques idéaux). Le moteur
+    spectral (`SensoryDissonance.swift`/`OctaveSpectrumGrid`) et le rendu heatmap 2D existent déjà
+    depuis l'onglet Dissonances (voir item 27) — la partie neuve restante est surtout le
+    branchement temps réel sur l'accord détecté (`RecognizedChord`) et l'intégration comme mode de
+    lecture dans Intonations, pas la construction du graphe de dissonance lui-même. Le graphe 2D
+    existant réutilise déjà la technique de rendu bitmap/`CGImage` (comme
+    `SpectrogramView.makeWaterfallImage`) plutôt que des remplissages `Canvas` par cellule.
 
 29. **Accordage/tempérament — optimisation de trajectoire sur une progression (Guide)** — une fois
     A2/B2 en place, le Guide musical connaît potentiellement l'accord suivant d'une progression ;
@@ -180,10 +198,35 @@ régression `ImprovSessionNetworkTests.testConcurrentRemoteConnectionsAlongsideC
     notes, un conflit de modificateur est possible). Sujet à part, pas traité avec le reste du
     Tonnetz cette session.
 
-35. **Bouton "Théorie" (légende en pop-up) — rétrofit sur les autres écrans Théorie** —
-    `TheoryHelpButton`/`.registerContextualHelp` ont été construits et appliqués à Tonnetz
-    (2026-08) comme composant réutilisable, place à côté du bouton "détacher" ; reste à
-    l'appliquer à Accords (`ChordLibraryView`), Modes (les deux focus, `ModeLibraryView`),
-    Progressions (`ProgressionLibraryView`) et Intonations (`TuningLibraryView`), chacun avec son
-    propre contenu d'aide (à écrire). Reporté par choix explicite pour rester focalisé sur Tonnetz
-    ce tour.
+35. ~~Bouton "Théorie" (légende en pop-up) — rétrofit sur les autres écrans Théorie~~ **FAIT et
+    ÉLARGI le 2026-08-16** : la demande initiale (4 écrans Théorie) a été étendue par l'utilisateur
+    à **tous les écrans de l'application** (24 écrans de haut niveau), avec une refonte du format de
+    rédaction. Livré :
+    - `HelpTopicID` (`App/Sources/HelpTopicID.swift`, `String, CaseIterable`, 24 cas) + `HelpContentView`
+      (`Sources/JamShackUI/HelpContentView.swift`) remplacent le pattern "une struct par écran" —
+      un titre + un corps markdown par écran (`AttributedString(markdown:)` natif, aucune dépendance
+      tierce ; mode `.inlineOnlyPreservingWhitespace` choisi après vérification empirique : préserve
+      les sauts de ligne littéralement, gras/italique/liens fonctionnent, mais PAS les titres/listes
+      markdown — convention de rédaction : texte plat, "•" littéraux, ligne vide = nouveau
+      paragraphe).
+    - Hypertexte entre écrans liés : liens `[texte](jamshackhelp://<id>)` interceptés par
+      `View.interceptHelpLinks` (posé indépendamment sur `ContextualHelpWindow` ET la feuille iOS/
+      iPadOS de `ContentView` — deux hiérarchies SwiftUI séparées) → `AppModel.pinnedHelpTopic`,
+      avec bouton "Retour". Utilisé par ex. Accords→Progressions/Tonnetz, Modes→Exploration,
+      Intonations→Dissonances.
+    - Les 24 écrans enregistrent leur aide (bottom-bar "?" partagé, qui marche déjà partout
+      automatiquement) ; en plus, l'icône "book.closed" sur écran est posée aux 10 écrans qui ont
+      déjà un coin "détacher" (Accueil, Studio Scène/Live/Guide, les 5 Théorie restants, Réglages >
+      Microphone) — pas d'UI neuve inventée ailleurs. `RunScreen` (Studio > Live) reste sans icône
+      dédiée : c'est une vue du package `JamShackUI`, qui ne peut pas référencer les types
+      App-only (`HelpTopicID`/`TheoryHelpButton`) ; le "?" partagé y fonctionne normalement.
+    - `TonnetzHelpContent`/`TheoryLegendContent`/`FunctionalMapHelpContent`/`MelodicMapHelpContent`
+      retirés (16+5 anciennes clés L10n consolidées en 4 nouvelles : titre+corps pour Tonnetz et
+      pour Exploration).
+    - Contenu français rédigé comme premier jet pour les 22 écrans qui n'en avaient aucun — **pas
+      encore traduit dans les 8 autres langues** (dupliqué tel quel dans `L10nTable.json` en
+      attendant une vraie passe de traduction, même convention que le reste de l'app).
+    - Vérifié : `swift build`/`swift test` (649/649) et `xcodebuild JamShackApp_macOS` verts.
+      **Non vérifié visuellement** : capture d'écran impossible dans cet environnement (écran
+      verrouillé ou permission manquante) — le rendu réel (espacement des paragraphes, liens
+      cliquables, bascule "Retour") reste à confirmer par l'utilisateur à l'usage.

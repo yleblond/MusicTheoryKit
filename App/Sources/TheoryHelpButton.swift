@@ -23,6 +23,8 @@ struct TheoryHelpButton: View {
 
     var body: some View {
         Button {
+            // Reset before opening — see `AppModel.pinnedHelpTopic`'s own doc comment.
+            appModel.pinnedHelpTopic = nil
             #if os(macOS) || os(visionOS)
             openWindow(id: AuxiliaryWindowID.contextualHelp.rawValue)
             #else

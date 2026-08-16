@@ -156,6 +156,7 @@ struct GuideLectureView: View {
                     Label(L10n.string(.appButtonOuvrirDansUneFenetre, session.currentLanguage), systemImage: "rectangle.on.rectangle")
                 }
             }
+            TheoryHelpButton(session: session)
             #endif
         }
     }

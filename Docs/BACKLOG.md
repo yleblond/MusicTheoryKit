@@ -18,27 +18,27 @@ CHANGELOG une fois traitée.
    chevauchement) — un seul run propre ne prouve rien pour ce genre de bug de concurrence
    intermittente. Une variante "répéter N fois" transformerait une vérification manuelle par
    session pty en filet permanent, exécuté à chaque `swift test`.
-3. **Revérifier le binding réseau avant tout usage hors LAN de confiance.** Console web,
-   clavier virtuel et jam session n'ont ni authentification ni chiffrement (limite déjà
-   documentée dans le README) et rien n'empêche aujourd'hui ces serveurs d'écouter sur toutes
-   les interfaces réseau plutôt que juste le LAN local. Pas un problème à la maison, mais à
-   vérifier avant un usage sur réseau partagé (café, conférence).
-4. **Synchroniser `colorPalettes`/`activeColorPaletteIndex` par une queue dédiée** (même
-   discipline que `liveInputQueue`/`playbackStateQueue`), au lieu des simples `var` actuelles.
-   Trouvé le 2026-08-01 : un crash en TestFlight (build iOS 1.1/17 tournant sur Mac via
-   "Designed for iPad") plantait dans `ImprovSession.activeColorPalette` (`ImprovSession.swift`,
-   alors ligne 140) — `buildWebConsoleState()` lit cette valeur depuis une `Task.detached` en
-   arrière-plan (voir `SessionUIBridge.swift`) sans aucune synchronisation avec les écritures de
-   `refreshColorPalettes()`/`migrateColorPalettesFromJSONIfNeeded`/`selectColorPalette(atIndex:)`,
-   qui ne passent par aucune queue. Un correctif immédiat a été appliqué (le getter retombe sur
-   `ColorPalette.builtInDefaults[0]` si l'index est momentanément hors bornes plutôt que de
-   crasher), mais ça neutralise le symptôme, pas la race elle-même. Le vrai correctif, pas fait
-   faute de temps : ajouter une queue série dédiée (ex. `colorPaletteQueue`) et y faire passer
-   les 2-3 sites d'écriture ci-dessus plus la lecture dans `buildWebConsoleState()` — pas besoin
-   de toucher les lectures directes côté SwiftUI (`JamShackColorsView`, `PaletteEditorView`) ou
-   CLI (`Sources/JamShack/main.swift`), qui tolèrent déjà la même race bénigne que `tracks`.
-   Change borné (5-6 sites, un seul fichier), à faire indépendamment du refactor `actor` plus
-   large du point 1 ci-dessus.
+3. ~~Revérifier le binding réseau avant tout usage hors LAN de confiance.~~ **FAIT le
+   2026-08-16** : les trois serveurs (`HTTPServer` pour console web/clavier virtuel,
+   `NetworkServer` pour Jam Session) posent maintenant `NWParameters.prohibitedInterfaceTypes =
+   [.cellular]`, ce qui exclut le routage par données mobiles (ex. partage de connexion) — jamais
+   un appareil du même LAN. `GameCenterTransport` (un pair `GKMatch`, pas `NWListener`) n'est pas
+   concerné, pas de port local à restreindre. **Limite explicitement assumée, pas corrigée ici** :
+   ceci ne protège PAS contre un autre appareil sur le même Wi-Fi (même non fiable — café,
+   conférence) — Network.framework n'a aucune notion de "Wi-Fi de confiance", l'absence
+   d'authentification/chiffrement documentée dans le README reste entière. Web console et clavier
+   virtuel gardent leur liaison LAN volontaire (`HTTPServer.start(port:host:)` avec `host: nil`) —
+   seul le pont MCP (`host: "127.0.0.1"`) reste loopback-only, ce qui était déjà correct avant ce
+   correctif.
+4. ~~Synchroniser `colorPalettes`/`activeColorPaletteIndex` par une queue dédiée~~ **FAIT le
+   2026-08-16** : `colorPaletteQueue` (même fichier, même discipline que `liveInputQueue`/
+   `playbackStateQueue`) protège maintenant `refreshColorPalettes()`/
+   `migrateColorPalettesFromJSONIfNeeded`/`selectColorPalette(atIndex:)` en écriture, et une
+   nouvelle méthode `activeColorPaletteSnapshot()` (lecture synchronisée) remplace `activeColorPalette`
+   aux deux sites background (`buildWebConsoleState()`, `handleVirtualKeyboardRequest`) qui
+   causaient le crash TestFlight du 2026-08-01. Les lectures directes main-thread (SwiftUI, CLI)
+   gardent `activeColorPalette` tel quel, sans changement de comportement. `swift test` (649/649)
+   et `xcodebuild JamShackApp_macOS` verts.
 
 ## Fonctionnalités (2026-07-11)
 

@@ -5,9 +5,9 @@ import Localization
 /// Always-visible color/role key for the "Exploration fonctionnelle" panel — per the original
 /// spec's own explicit requirement that color never be the sole way to recognize a role (each
 /// chip carries a text label too, not just a colored dot). The fuller explanation used to live
-/// behind this view's own "?" popover; it's now part of the single combined `TheoryLegendContent`
-/// window/sheet (see that type's own doc comment) shared with `MelodicMapLegendView`, so there's
-/// one place to look up either palette instead of two separate, easy-to-miss popovers.
+/// behind this view's own "?" popover, then in a combined `TheoryLegendContent`; both are gone
+/// now (2026-08-16) in favor of the app-wide `HelpTopicID.theorieExploration` content (see
+/// `HelpTopicID.swift`, App target), rendered through the shared `HelpContentView`.
 public struct FunctionalMapLegendView: View {
     public let language: AppLanguage
     /// `.horizontal` (the original, still used wherever there's a full-width row to spare) or
@@ -73,34 +73,5 @@ private enum ModalFunctionalRoleForLegend: Hashable {
         case .tension: return functionalRoleLabel(.tension, language: language)
         case .neutral: return functionalRoleLabel(.neutral, language: language)
         }
-    }
-}
-
-/// Public so `TheoryLegendContent` can compose it into the combined legend window/sheet.
-public struct FunctionalMapHelpContent: View {
-    public let language: AppLanguage
-
-    public init(language: AppLanguage) {
-        self.language = language
-    }
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(L10n.string(.appHelpFunctionalMapTitle, language)).font(.headline)
-            Group {
-                Text(L10n.string(.appHelpFunctionalMapHome, language))
-                Text(L10n.string(.appHelpFunctionalMapAway, language))
-                Text(L10n.string(.appHelpFunctionalMapTension, language))
-                Text(L10n.string(.appHelpFunctionalMapNeutral, language))
-                Text(L10n.string(.appHelpFunctionalMapModal, language))
-            }
-            .font(.callout)
-            Divider()
-            Text(L10n.string(.appHelpFunctionalMapDistance, language)).font(.callout)
-            Text(L10n.string(.appHelpFunctionalMapArrows, language)).font(.callout)
-            Divider()
-            Text(L10n.string(.appHelpFunctionalMapImportant, language)).font(.caption).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: 340, alignment: .leading)
     }
 }

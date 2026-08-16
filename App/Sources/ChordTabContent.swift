@@ -23,10 +23,17 @@ struct ChordTabContent: View {
                 onReintegrate: { dismissWindow(id: AuxiliaryWindowID.theorieAccords.rawValue) }
             )
         } else {
-            ChordLibraryView(session: session, isActive: isActive)
+            chordLibrary
         }
         #else
-        ChordLibraryView(session: session, isActive: isActive)
+        chordLibrary
         #endif
+    }
+
+    private var chordLibrary: some View {
+        ChordLibraryView(session: session, isActive: isActive)
+            .registerContextualHelp(id: HelpTopicID.theorieAccords.rawValue, isActive: isActive) {
+                HelpTopicID.theorieAccords.content(language: session.currentLanguage)
+            }
     }
 }

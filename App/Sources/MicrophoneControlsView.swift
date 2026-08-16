@@ -141,6 +141,7 @@ struct MicrophoneControlsView: View {
                         Label(L10n.string(.appButtonOuvrirDansUneFenetre, session.currentLanguage), systemImage: "rectangle.on.rectangle")
                     }
                 }
+                TheoryHelpButton(session: session)
                 #endif
             } header: {
                 Text(L10n.string(.appHeadingMicrophone, session.currentLanguage))

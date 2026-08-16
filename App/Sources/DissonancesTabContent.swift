@@ -24,10 +24,17 @@ struct DissonancesTabContent: View {
                 onReintegrate: { dismissWindow(id: AuxiliaryWindowID.theorieDissonances.rawValue) }
             )
         } else {
-            DissonancesLibraryView(session: session, isActive: isActive)
+            dissonancesLibrary
         }
         #else
-        DissonancesLibraryView(session: session, isActive: isActive)
+        dissonancesLibrary
         #endif
+    }
+
+    private var dissonancesLibrary: some View {
+        DissonancesLibraryView(session: session, isActive: isActive)
+            .registerContextualHelp(id: HelpTopicID.theorieDissonances.rawValue, isActive: isActive) {
+                HelpTopicID.theorieDissonances.content(language: session.currentLanguage)
+            }
     }
 }

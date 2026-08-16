@@ -10,6 +10,8 @@ import Localization
 struct MicrophoneTabContent: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
+    /// See `ExplorationTabContent.isActive`'s own doc comment.
+    let isActive: Bool
 
     @Environment(AppModel.self) private var appModel
     #if os(macOS) || os(visionOS)
@@ -25,10 +27,17 @@ struct MicrophoneTabContent: View {
                 onReintegrate: { dismissWindow(id: AuxiliaryWindowID.microphone.rawValue) }
             )
         } else {
-            MicrophoneControlsView(session: session, bridge: bridge)
+            microphoneControls
         }
         #else
-        MicrophoneControlsView(session: session, bridge: bridge)
+        microphoneControls
         #endif
+    }
+
+    private var microphoneControls: some View {
+        MicrophoneControlsView(session: session, bridge: bridge)
+            .registerContextualHelp(id: HelpTopicID.settingsMicrophone.rawValue, isActive: isActive) {
+                HelpTopicID.settingsMicrophone.content(language: session.currentLanguage)
+            }
     }
 }

@@ -178,6 +178,7 @@ struct TuningLibraryView: View {
                 HStack {
                     Spacer()
                     detachButton
+                    TheoryHelpButton(session: session)
                 }
                 #endif
                 if let actionError {

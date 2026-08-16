@@ -195,6 +195,7 @@ struct DissonancesLibraryView: View {
                 HStack {
                     Spacer()
                     detachButton
+                    TheoryHelpButton(session: session)
                 }
                 #endif
                 topRow

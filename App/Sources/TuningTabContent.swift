@@ -24,10 +24,17 @@ struct TuningTabContent: View {
                 onReintegrate: { dismissWindow(id: AuxiliaryWindowID.theorieIntonation.rawValue) }
             )
         } else {
-            TuningLibraryView(session: session, isActive: isActive)
+            tuningLibrary
         }
         #else
-        TuningLibraryView(session: session, isActive: isActive)
+        tuningLibrary
         #endif
+    }
+
+    private var tuningLibrary: some View {
+        TuningLibraryView(session: session, isActive: isActive)
+            .registerContextualHelp(id: HelpTopicID.theorieIntonations.rawValue, isActive: isActive) {
+                HelpTopicID.theorieIntonations.content(language: session.currentLanguage)
+            }
     }
 }

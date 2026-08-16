@@ -65,6 +65,7 @@ struct ChordLibraryView: View {
             HStack {
                 Spacer()
                 detachButton
+                TheoryHelpButton(session: session)
             }
             .padding(.horizontal)
             .padding(.top, 6)

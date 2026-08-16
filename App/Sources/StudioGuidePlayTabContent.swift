@@ -13,6 +13,10 @@ import Localization
 struct StudioGuidePlayTabContent: View {
     let session: ImprovSession
     let bridge: SessionUIBridge
+    /// See `ExplorationTabContent.isActive`'s own doc comment — feeds `.registerContextualHelp`
+    /// below, further gated off while the detached `GuideLectureWindow` is showing the real
+    /// `.lecture` screen instead of this tab (see `helpIsActive`).
+    let isActive: Bool
 
     private enum Screen { case list, lecture }
 
@@ -23,10 +27,21 @@ struct StudioGuidePlayTabContent: View {
     @Environment(\.dismissWindow) private var dismissWindow
     #endif
 
-    init(session: ImprovSession, bridge: SessionUIBridge) {
+    init(session: ImprovSession, bridge: SessionUIBridge, isActive: Bool) {
         self.session = session
         self.bridge = bridge
+        self.isActive = isActive
         _screen = State(initialValue: (session.currentGuide?.steps.isEmpty ?? true) ? .list : .lecture)
+    }
+
+    /// `false` while the detached `GuideLectureWindow` shows the real `.lecture` screen instead
+    /// of this tab's own placeholder — same reasoning as `LiveTabContent`'s own gating.
+    private var helpIsActive: Bool {
+        #if os(macOS) || os(visionOS)
+        isActive && !(screen == .lecture && appModel.openAuxiliaryWindows.contains(.guideLecture))
+        #else
+        isActive
+        #endif
     }
 
     var body: some View {
@@ -59,6 +74,9 @@ struct StudioGuidePlayTabContent: View {
             guard appModel.guideNavigationRequest == .playInStudio else { return }
             screen = .lecture
         }
+        .registerContextualHelp(id: HelpTopicID.studioGuide.rawValue, isActive: helpIsActive) {
+            HelpTopicID.studioGuide.content(language: session.currentLanguage)
+        }
     }
 
     /// The back-to-list chevron mirrors `GuideConfigurationView`'s own; the "Éditer le guide"
@@ -87,6 +105,6 @@ struct StudioGuidePlayTabContent: View {
 
 #Preview {
     let session = ImprovSession()
-    return StudioGuidePlayTabContent(session: session, bridge: SessionUIBridge(session: session))
+    return StudioGuidePlayTabContent(session: session, bridge: SessionUIBridge(session: session), isActive: true)
         .environment(AppModel())
 }

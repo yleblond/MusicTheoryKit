@@ -12,6 +12,10 @@ import Localization
 /// one (even the only one) is always an explicit step.
 struct SceneManagementView: View {
     let session: ImprovSession
+    /// See `ExplorationTabContent.isActive`'s own doc comment — feeds `.registerContextualHelp`
+    /// below, further gated off while the detached `SceneLayoutWindow` shows the real
+    /// `.configuration` screen instead of this tab (see `helpIsActive`).
+    let isActive: Bool
 
     @Environment(AppModel.self) private var appModel
     #if os(macOS) || os(visionOS)
@@ -22,9 +26,20 @@ struct SceneManagementView: View {
 
     @State private var screen: Screen
 
-    init(session: ImprovSession) {
+    init(session: ImprovSession, isActive: Bool) {
         self.session = session
+        self.isActive = isActive
         _screen = State(initialValue: session.sceneNames.isEmpty ? .configuration : .list)
+    }
+
+    /// `false` while the detached `SceneLayoutWindow` shows the real `.configuration` screen
+    /// instead of this tab's own placeholder — same reasoning as `LiveTabContent`'s own gating.
+    private var helpIsActive: Bool {
+        #if os(macOS) || os(visionOS)
+        isActive && !(screen == .configuration && appModel.openAuxiliaryWindows.contains(.sceneLayout))
+        #else
+        isActive
+        #endif
     }
 
     var body: some View {
@@ -49,9 +64,12 @@ struct SceneManagementView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .registerContextualHelp(id: HelpTopicID.studioScene.rawValue, isActive: helpIsActive) {
+            HelpTopicID.studioScene.content(language: session.currentLanguage)
+        }
     }
 }
 
 #Preview {
-    SceneManagementView(session: ImprovSession())
+    SceneManagementView(session: ImprovSession(), isActive: true)
 }

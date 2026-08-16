@@ -4,6 +4,7 @@ import SwiftData
 @testable import PieceModel
 import MIDIEngine
 import MusicTheoryKit
+import RecognitionEngine
 import LLMEngine
 import SoundTrackModel
 import SoundFontModel
@@ -3073,6 +3074,34 @@ final class ImprovSessionTests: XCTestCase {
         XCTAssertThrowsError(try session.setSoundFontSyncPreference(hash: imported.hash, to: .localOnly)) { error in
             XCTAssertEqual(error as? SoundFontLibraryError, .notDownloadedOnThisDevice)
         }
+    }
+
+    // MARK: - matchingChordIndex
+
+    /// Real bug fix (2026-08-16): a progression/chord list containing the same chord more than
+    /// once (root + template ID) used to always snap the live-recognized selection back to the
+    /// FIRST occurrence, even when the user had just tapped a LATER one — see `ProgressionLibraryView
+    /// .reactToLiveChordMatch`/`ModeLibraryView.reactToLiveChordMatch`, both of which press real
+    /// keys on the live-input track when a chord is tapped, which `RecognitionEngine` then
+    /// recognizes, looping back through this same lookup.
+    func testMatchingChordIndexPrefersCurrentIndexWhenItAlreadyMatches() {
+        let references = [
+            ChordReference(root: 0, chordTemplateID: "Ma"),
+            ChordReference(root: 5, chordTemplateID: "Ma"),
+            ChordReference(root: 7, chordTemplateID: "Ma7"),
+            ChordReference(root: 0, chordTemplateID: "Ma"), // same as index 0 — the repeated chord
+        ]
+        let chord = RecognizedChord(root: PitchClass(0), chordTemplateID: "Ma", bass: PitchClass(0), confidence: 1)
+
+        // No preference given (or the current index doesn't match) — falls back to the first match.
+        XCTAssertEqual(ImprovSession.matchingChordIndex(chord, in: references, reference: { $0 }), 0)
+        XCTAssertEqual(ImprovSession.matchingChordIndex(chord, in: references, reference: { $0 }, preferring: 2), 0)
+
+        // The bug: tapping the LAST (repeated) occurrence must keep it selected, not jump to the first.
+        XCTAssertEqual(ImprovSession.matchingChordIndex(chord, in: references, reference: { $0 }, preferring: 3), 3)
+
+        // An out-of-bounds "preferred" index is ignored rather than crashing.
+        XCTAssertEqual(ImprovSession.matchingChordIndex(chord, in: references, reference: { $0 }, preferring: 99), 0)
     }
 }
 

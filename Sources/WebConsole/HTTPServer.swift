@@ -34,8 +34,18 @@ public final class HTTPServer: @unchecked Sendable {
     /// `"127.0.0.1"` for loopback-only — used by the embedded MCP server, see `MCPServer.swift`,
     /// since its tools allow far more powerful control of the app than WebConsole's own browser
     /// UI, with no authentication at all) via `NWParameters.requiredLocalEndpoint`. `nil` (the
-    /// default) preserves the original behavior: bind all interfaces, as WebConsole itself
-    /// still does (its own LAN-reachability is intentional — see its own doc comment).
+    /// default) preserves the original behavior: bind every LOCAL-NETWORK interface, as
+    /// WebConsole/virtual keyboard still do (their own LAN-reachability — another device's
+    /// browser/phone needs to reach them — is intentional, see their own doc comments; loopback-
+    /// only here would silently break that). Either way, `prohibitedInterfaceTypes = [.cellular]`
+    /// always applies (BACKLOG.md's "revérifier le binding réseau" entry, 2026-08-16): a listener
+    /// bound to "all interfaces" still includes whatever route mobile data provides (e.g.
+    /// Personal Hotspot sharing), which is never a same-room LAN device — excluding it costs
+    /// nothing for the legitimate Wi-Fi/Ethernet LAN use case. Deliberately NOT a fix for the
+    /// "untrusted shared Wi-Fi" (café/conference) scenario the backlog entry actually named —
+    /// Network.framework has no notion of "trusted vs untrusted Wi-Fi," anyone else on the same
+    /// Wi-Fi network can still reach these unauthenticated/unencrypted servers exactly as before;
+    /// that gap needs actual auth, tracked separately, not an interface-type filter.
     public func start(port: UInt16, host: String? = nil) throws {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { throw HTTPServerError.invalidPort }
         let newListener: NWListener
@@ -46,9 +56,12 @@ public final class HTTPServer: @unchecked Sendable {
             // "Invalid argument" at `.start(queue:)` when both were set).
             let parameters: NWParameters = .tcp
             parameters.requiredLocalEndpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: nwPort)
+            parameters.prohibitedInterfaceTypes = [.cellular]
             newListener = try NWListener(using: parameters)
         } else {
-            newListener = try NWListener(using: .tcp, on: nwPort)
+            let parameters: NWParameters = .tcp
+            parameters.prohibitedInterfaceTypes = [.cellular]
+            newListener = try NWListener(using: parameters, on: nwPort)
         }
         newListener.newConnectionHandler = { [weak self] connection in
             guard let self else { return }
