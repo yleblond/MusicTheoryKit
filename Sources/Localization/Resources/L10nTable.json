@@ -4586,15 +4586,15 @@
   "zhHans": "音阶音符"
  },
  "appButtonJouerNonTempere": {
-  "de": "Unverändert abspielen",
-  "en": "Play unchanged",
-  "es": "Reproducir sin cambios",
-  "fr": "Jouer non tempéré",
-  "it": "Riproduci non temperato",
-  "ja": "無補正で再生",
-  "pt": "Tocar sem alteração",
-  "ru": "Воспроизвести без изменений",
-  "zhHans": "播放未调整的音"
+  "de": "Gleichstufig abspielen",
+  "en": "Play equal temperament",
+  "es": "Reproducir temperamento igual",
+  "fr": "Jouer intonation égale",
+  "it": "Riproduci temperamento equabile",
+  "ja": "平均律で再生",
+  "pt": "Tocar temperamento igual",
+  "ru": "Воспроизвести в равномерной темперации",
+  "zhHans": "以平均律播放"
  },
  "appButtonJouerTempere": {
   "de": "Temperiert abspielen",

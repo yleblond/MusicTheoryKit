@@ -40,6 +40,48 @@ public enum RawSpectrumRenderer {
         }
     }
 
+    /// Renders `pitches` TOGETHER as one chord (see `OfflineNoteRenderer.renderChord`'s own doc
+    /// comment) TWICE — once with every `cents` forced to 0 ("raw", i.e. the chord exactly as the
+    /// instrument provides it) and once with each pitch's own real `cents` (the same mode's
+    /// temperament correction, per tone) — and returns ONE consolidated spectrum pair for the
+    /// WHOLE chord, instead of one pair per tone. This is what lets a chord's comparison show as
+    /// two curves (like a single note's) rather than 2×N — the tradeoff: since a chord's tones
+    /// aren't each individually identifiable in a mixed FFT, this can't show which specific
+    /// harmonic belongs to which tone, only how the chord's overall spectral shape shifts between
+    /// the two tunings.
+    public static func renderChord(
+        pitches: [(pitch: Int, cents: Double)], soundFontURL: URL, preset: SoundFontPresetIdentity?
+    ) async throws -> (raw: RawNoteSpectrum, corrected: RawNoteSpectrum) {
+        try await OfflineRenderQueue.shared.run {
+            let renderer = try OfflineNoteRenderer()
+            try renderer.loadSample(at: soundFontURL, preset: preset)
+            return try renderChord(pitches: pitches, renderer: renderer)
+        }
+    }
+
+    /// The actual render-both-versions logic, factored out from
+    /// `renderChord(pitches:soundFontURL:preset:)` so a test can drive it against an
+    /// `OfflineNoteRenderer` that never had `loadSample` called — same reasoning as
+    /// `render(pitches:renderer:)`'s own analogous split.
+    static func renderChord(pitches: [(pitch: Int, cents: Double)], renderer: OfflineNoteRenderer) throws -> (raw: RawNoteSpectrum, corrected: RawNoteSpectrum) {
+        let analyzer = FFTPitchAnalyzer(size: 4096)
+        let skipSamples = Int(OctaveSpectrumGridBuilder.attackSkipSeconds * renderer.sampleRate)
+        func snapshot(cents: [Double]) throws -> RawNoteSpectrum {
+            let entries = zip(pitches, cents).map { (pitch: $0.0.pitch, cents: $0.1) }
+            let samples = try renderer.renderChord(pitches: entries, durationSeconds: OctaveSpectrumGridBuilder.renderDurationSeconds)
+            let windowStart = min(skipSamples, max(0, samples.count - analyzer.size))
+            var window = Array(samples[windowStart..<min(windowStart + analyzer.size, samples.count)])
+            if window.count < analyzer.size { window += [Float](repeating: 0, count: analyzer.size - window.count) }
+            guard let result = analyzer.spectrumSnapshot(of: window, sampleRate: renderer.sampleRate) else {
+                return RawNoteSpectrum(magnitudes: [], binHz: 0)
+            }
+            return RawNoteSpectrum(magnitudes: result.magnitudes, binHz: result.binHz)
+        }
+        let raw = try snapshot(cents: pitches.map { _ in 0 })
+        let corrected = try snapshot(cents: pitches.map(\.cents))
+        return (raw, corrected)
+    }
+
     /// The actual render-every-pitch loop, factored out from `render(pitches:soundFontURL:preset:)`
     /// so a test can drive it against an `OfflineNoteRenderer` that never had `loadSample` called
     /// (exercising `AVAudioUnitSampler`'s own built-in default instrument) — same reasoning as

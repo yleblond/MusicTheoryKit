@@ -19,19 +19,27 @@ import AppCore
 public struct NoteSpectrumView: View {
     public struct Tone {
         public let label: String
-        public let pitch: Int
+        /// Every pitch this tone's curve should mark on the keyboard strip below — one for a
+        /// single note, several for a tone that consolidates a whole chord into one curve (see
+        /// `TuningLibraryView.computeChordSpectrum`), all drawn in this same tone's `color`.
+        public let markPitches: [Int]
         public let color: Color
         public let spectrum: RawNoteSpectrum
         /// The base/root note draws filled (a clear visual anchor — "this is the note everything
         /// else is measured against"); every other tone draws as a plain line only, per explicit
         /// request.
         public let isBase: Bool
-        public init(label: String, pitch: Int, color: Color, spectrum: RawNoteSpectrum, isBase: Bool = false) {
+        public init(label: String, markPitches: [Int], color: Color, spectrum: RawNoteSpectrum, isBase: Bool = false) {
             self.label = label
-            self.pitch = pitch
+            self.markPitches = markPitches
             self.color = color
             self.spectrum = spectrum
             self.isBase = isBase
+        }
+        /// Convenience for the common single-pitch case (one note, one mark) — unchanged call
+        /// sites (e.g. `DissonancesLibraryView`) keep working exactly as before.
+        public init(label: String, pitch: Int, color: Color, spectrum: RawNoteSpectrum, isBase: Bool = false) {
+            self.init(label: label, markPitches: [pitch], color: color, spectrum: spectrum, isBase: isBase)
         }
     }
 
@@ -66,7 +74,7 @@ public struct NoteSpectrumView: View {
             .frame(minHeight: 160)
             .background(Color.black.opacity(0.05))
             Canvas { context, size in
-                let marked = Dictionary(tones.map { ($0.pitch, $0.color) }, uniquingKeysWith: { first, _ in first })
+                let marked = Dictionary(tones.flatMap { tone in tone.markPitches.map { ($0, tone.color) } }, uniquingKeysWith: { first, _ in first })
                 PitchAxisKeyboardStrip(axisMinPitch: axisMinPitch, axisMaxPitch: axisMaxPitch, lowestKey: lowestKey, highestKey: highestKey, markedPitches: marked)
                     .draw(in: context, size: size)
             }

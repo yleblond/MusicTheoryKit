@@ -95,6 +95,53 @@ public final class OfflineNoteRenderer {
         return samples
     }
 
+    /// Renders every `(pitch, cents)` pair TOGETHER, as one simultaneously-sounding chord, and
+    /// returns the single mixed-down signal — unlike `renderNote`, which renders one pitch at a
+    /// time. Each pitch gets its own MIDI channel (0..<pitches.count) so it can carry its OWN
+    /// pitch-bend cents independently (`sendPitchBend`/`sendPitchBend(_:onChannel:)` applies to a
+    /// whole channel, not one note within it — the only way for several simultaneous notes to
+    /// each carry a different correction is to put them on different channels); the loaded
+    /// instrument/preset is shared across all of them (one `loadSample` call, same as
+    /// `renderNote`), only the pitch-bend differs per channel. `AVAudioUnitSampler` supports up to
+    /// 16 channels, comfortably more than this app's chords (triads/7ths) ever need.
+    public func renderChord(pitches: [(pitch: Int, cents: Double)], velocity: Int = 100, durationSeconds: Double = 1.0) throws -> [Float] {
+        let totalFrames = AVAudioFrameCount((durationSeconds * sampleRate).rounded(.up))
+        var samples = [Float]()
+        samples.reserveCapacity(Int(totalFrames))
+
+        for (channel, entry) in pitches.enumerated() {
+            if entry.cents != 0 {
+                sampler.sendPitchBend(SamplerUnit.pitchBendValue(forCents: entry.cents), onChannel: UInt8(channel))
+            }
+            sampler.startNote(Self.clampedByte(entry.pitch), withVelocity: Self.clampedByte(velocity), onChannel: UInt8(channel))
+        }
+
+        let renderBuffer = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: engine.manualRenderingMaximumFrameCount)!
+        var renderedFrames: AVAudioFrameCount = 0
+        while renderedFrames < totalFrames {
+            let framesToRender = min(engine.manualRenderingMaximumFrameCount, totalFrames - renderedFrames)
+            let status = try engine.renderOffline(framesToRender, to: renderBuffer)
+            switch status {
+            case .success:
+                guard let channelData = renderBuffer.floatChannelData else { throw OfflineNoteRenderError.renderingFailed }
+                samples.append(contentsOf: UnsafeBufferPointer(start: channelData[0], count: Int(renderBuffer.frameLength)))
+                renderedFrames += renderBuffer.frameLength
+            case .insufficientDataFromInputNode:
+                renderedFrames = totalFrames
+            case .cannotDoInCurrentContext:
+                continue
+            case .error:
+                throw OfflineNoteRenderError.renderingFailed
+            @unknown default:
+                throw OfflineNoteRenderError.renderingFailed
+            }
+        }
+        for (channel, entry) in pitches.enumerated() {
+            sampler.stopNote(Self.clampedByte(entry.pitch), onChannel: UInt8(channel))
+        }
+        return samples
+    }
+
     private static func clampedByte(_ value: Int) -> UInt8 {
         UInt8(clamping: max(0, min(127, value)))
     }

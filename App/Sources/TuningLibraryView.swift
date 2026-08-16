@@ -11,8 +11,8 @@ import Localization
 /// restricted to family 1 — the 7 classic modes — since `ChordProgressionResolver
 /// .diatonicChordReferences(in:)` only resolves a full diatonic-chord table for that family), so
 /// this screen is self-sufficient: pick a temperament, pick a tonic/mode, and immediately hear
-/// its notes and diatonic chords both "non tempéré" (plain 12-TET) and "tempéré" (with the
-/// picked temperament's correction), A/B style. Being active registers this mode as
+/// its notes and diatonic chords both in "intonation égale" (plain 12-TET) and "tempéré" (with
+/// the picked temperament's correction), A/B style. Being active registers this mode as
 /// `session.contextualMode` exactly like Modes/Progressions/Exploration do, so this screen's own
 /// pick becomes the temperament's live anchor everywhere else too while it's the active tab.
 struct TuningLibraryView: View {
@@ -44,8 +44,8 @@ struct TuningLibraryView: View {
     @State private var playingNoteIndex: Int?
     @State private var playingChordIndex: Int?
     /// One note being spectrum-compared per `SpectrumNoteInput` entry — a single tapped scale
-    /// degree (1 entry) or every tone of a tapped chord (one per chord tone), each rendered as a
-    /// raw + corrected pair (see `spectrumTones`). `nil` before anything's been tapped, or while a
+    /// degree (1 entry) or every tone of a tapped chord (one per chord tone, for keyboard-strip
+    /// marking only — see `spectrumIsChord`). `nil` before anything's been tapped, or while a
     /// render is in flight (see `spectrumGeneration`). Ephemeral by design, same as
     /// `DissonancesLibraryView.rawSpectra` — see `NoteSpectrumView`'s own doc comment for why this
     /// doesn't cache/persist spectra for every note/chord ever explored.
@@ -56,7 +56,16 @@ struct TuningLibraryView: View {
         let color: Color
     }
     @State private var spectrumNotes: [SpectrumNoteInput] = []
-    @State private var rawSpectraByNote: [RawNoteSpectrum]?
+    /// Always exactly a raw+corrected PAIR regardless of how many notes are involved: a single
+    /// tapped note's own 2 spectra, or (per explicit request) a tapped/played CHORD's single
+    /// consolidated pair (`computeChordSpectrum`) rather than one pair per chord tone — see
+    /// `RawSpectrumRenderer.renderChord`'s own doc comment for why a chord can't be shown as
+    /// separate per-tone spectra there without losing the "hear it as one sound" comparison.
+    @State private var rawSpectrum: RawNoteSpectrum?
+    @State private var correctedSpectrum: RawNoteSpectrum?
+    /// `true` when `rawSpectrum`/`correctedSpectrum` hold a chord's consolidated render (label
+    /// text differs — see `spectrumTones`) rather than a single note's.
+    @State private var spectrumIsChord = false
     /// Guards against an in-flight render for an already-superseded note/chord tap completing
     /// late and overwriting a newer selection's result — same pattern `DissonancesLibraryView
     /// .spectrumGeneration` already uses for its own analogous race.
@@ -224,20 +233,23 @@ struct TuningLibraryView: View {
                     octaveShiftControl
                     // Column 1 (staff/values, toggled notes<->chords) : column 2 (spectrum graph).
                     // Column 1 gets a real fixed width — widened from the original 320
-                    // (`TheoryLibraryLayout.sidebarWidth`'s convention) to 500 per explicit
-                    // request, so the 7-chord "accords du mode" staff fits on one row instead of
-                    // wrapping even at the widest key signatures (7 accidentals) — see
+                    // (`TheoryLibraryLayout.sidebarWidth`'s convention) to fit the 7-chord
+                    // "accords du mode" staff on one row even at the widest key signatures (7
+                    // accidentals), then narrowed back 10% per explicit request — see
                     // `column1Width`'s own doc comment for how it wraps onto further rows instead
-                    // of clipping if 500pt still isn't enough at the current `widthScale`. Column
-                    // 2 (spectrum graph) narrows accordingly, but `NoteSpectrumView`'s own height
-                    // is fixed (`minHeight: 160` + a 56pt keyboard strip), not width-derived, so
-                    // this doesn't actually shrink the spectrum graph's height.
+                    // of clipping if this still isn't enough at the current `widthScale`. Column 2
+                    // (spectrum graph) narrows accordingly, but `NoteSpectrumView`'s own height is
+                    // fixed (`minHeight: 160` + a 56pt keyboard strip), not width-derived, so this
+                    // doesn't shrink the spectrum graph's height. Trailing padding on column 2
+                    // keeps its own right edge off the window edge, same reasoning as
+                    // `TheoryLibraryLayout`'s other screens.
                     if usesTwoColumns {
                         HStack(alignment: .top, spacing: 20) {
                             notesOrChordsColumn
-                                .frame(width: 500, alignment: .leading)
+                                .frame(width: 450, alignment: .leading)
                             spectrumSection
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.trailing, 16)
                         }
                     } else {
                         notesOrChordsColumn
@@ -504,35 +516,77 @@ struct TuningLibraryView: View {
     private static let spectrumToneColors: [Color] = [.blue, .green, .orange, .purple]
 
     private var spectrumTones: [NoteSpectrumView.Tone]? {
-        guard let rawSpectraByNote, rawSpectraByNote.count == spectrumNotes.count * 2 else { return nil }
-        return spectrumNotes.enumerated().flatMap { index, note -> [NoteSpectrumView.Tone] in
-            let raw = rawSpectraByNote[index * 2]
-            let corrected = rawSpectraByNote[index * 2 + 1]
-            let rawLabel = "\(note.label) (\(L10n.string(.appLabelSpectreBrut, session.currentLanguage)))"
-            let correctedLabel = "\(note.label) (\(L10n.string(.appLabelSpectreCorrige, session.currentLanguage)) \(String(format: "%+.1f¢", note.cents)))"
+        guard let rawSpectrum, let correctedSpectrum else { return nil }
+        let markPitches = spectrumNotes.map(\.pitch)
+        if spectrumIsChord {
+            // One consolidated pair for the whole chord — note names joined ("C E G"), no single
+            // cents value shown (each tone can carry its own correction, see
+            // `RawSpectrumRenderer.renderChord`'s own doc comment).
+            let chordName = spectrumNotes.map(\.label).joined(separator: " ")
+            let rawLabel = "\(chordName) (\(L10n.string(.appLabelSpectreBrut, session.currentLanguage)))"
+            let correctedLabel = "\(chordName) (\(L10n.string(.appLabelSpectreCorrige, session.currentLanguage)))"
             return [
-                NoteSpectrumView.Tone(label: rawLabel, pitch: note.pitch, color: note.color, spectrum: raw, isBase: true),
-                NoteSpectrumView.Tone(label: correctedLabel, pitch: note.pitch, color: note.color, spectrum: corrected),
+                NoteSpectrumView.Tone(label: rawLabel, markPitches: markPitches, color: .blue, spectrum: rawSpectrum, isBase: true),
+                NoteSpectrumView.Tone(label: correctedLabel, markPitches: [], color: .orange, spectrum: correctedSpectrum),
             ]
         }
+        guard let note = spectrumNotes.first else { return nil }
+        let rawLabel = "\(note.label) (\(L10n.string(.appLabelSpectreBrut, session.currentLanguage)))"
+        let correctedLabel = "\(note.label) (\(L10n.string(.appLabelSpectreCorrige, session.currentLanguage)) \(String(format: "%+.1f¢", note.cents)))"
+        return [
+            NoteSpectrumView.Tone(label: rawLabel, pitch: note.pitch, color: note.color, spectrum: rawSpectrum, isBase: true),
+            NoteSpectrumView.Tone(label: correctedLabel, pitch: note.pitch, color: note.color, spectrum: correctedSpectrum),
+        ]
     }
 
-    /// Renders `notes.count * 2` spectra (raw + corrected per note) with the same instrument,
-    /// loaded once — see `RawSpectrumRenderer.render(pitches:soundFontURL:preset:)`'s own doc
-    /// comment. Used for both a single tapped scale degree (1 note) and every tone of a tapped
-    /// chord (N notes).
+    /// Renders a single tapped/played scale degree's own raw + corrected spectrum pair — see
+    /// `RawSpectrumRenderer.render(pitches:soundFontURL:preset:)`'s own doc comment.
     private func computeSpectrum(for notes: [SpectrumNoteInput]) async {
         spectrumNotes = notes
-        rawSpectraByNote = nil
+        rawSpectrum = nil
+        correctedSpectrum = nil
+        spectrumIsChord = false
         spectrumGeneration += 1
         let generation = spectrumGeneration
-        guard let sound = session.theoryAuditionSound() else { return }
-        let pitches = notes.flatMap { [($0.pitch, 0.0), ($0.pitch, $0.cents)] }
+        guard let note = notes.first, let sound = session.theoryAuditionSound() else { return }
         let soundFontURL = URL(fileURLWithPath: sound.path)
         let preset = sound.preset
-        let result = try? await RawSpectrumRenderer.render(pitches: pitches, soundFontURL: soundFontURL, preset: preset)
+        let result = try? await RawSpectrumRenderer.render(pitches: [(note.pitch, 0.0), (note.pitch, note.cents)], soundFontURL: soundFontURL, preset: preset)
         guard generation == spectrumGeneration else { return } // superseded by a newer note/chord tap
-        rawSpectraByNote = result
+        guard let result, result.count == 2 else { return }
+        rawSpectrum = result[0]
+        correctedSpectrum = result[1]
+    }
+
+    /// Renders every tone of a tapped/played chord TOGETHER as one consolidated raw + corrected
+    /// pair — per explicit request, showing the chord as a single sound comparison (2 curves)
+    /// instead of one pair per tone. See `RawSpectrumRenderer.renderChord`'s own doc comment.
+    private func computeChordSpectrum(for notes: [SpectrumNoteInput]) async {
+        spectrumNotes = notes
+        rawSpectrum = nil
+        correctedSpectrum = nil
+        spectrumIsChord = true
+        spectrumGeneration += 1
+        let generation = spectrumGeneration
+        guard !notes.isEmpty, let sound = session.theoryAuditionSound() else { return }
+        let pitches = notes.map { (pitch: $0.pitch, cents: $0.cents) }
+        let soundFontURL = URL(fileURLWithPath: sound.path)
+        let preset = sound.preset
+        let result = try? await RawSpectrumRenderer.renderChord(pitches: pitches, soundFontURL: soundFontURL, preset: preset)
+        guard generation == spectrumGeneration else { return } // superseded by a newer note/chord tap
+        guard let result else { return }
+        rawSpectrum = result.raw
+        correctedSpectrum = result.corrected
+    }
+
+    /// Builds one `SpectrumNoteInput` for `pitch`, resolving its temperament correction/label from
+    /// the current mode — shared by every playback path (`playSingleNote`/`playSingleChord`/the
+    /// sequence buttons' per-step refresh) so they all agree on exactly what the spectrum compares.
+    private func spectrumNote(forPitch pitch: Int, color: Color) -> SpectrumNoteInput {
+        SpectrumNoteInput(
+            pitch: pitch, cents: temperamentCents(forPitch: pitch, mode: mode, configuration: session.tuningConfiguration),
+            label: session.notationStyle.rootName(PitchClass(pitch), preferFlats: false), color: color
+        )
     }
 
     private func cents(for pitchClass: PitchClass) -> Double {
@@ -586,28 +640,22 @@ struct TuningLibraryView: View {
         let pitch = 60 + scaleDegreesWithOctave[columnIndex] + octaveShift * 12
         playPitches([pitch], tempered: tempered, durationSeconds: 0.7, highlight: $playingNoteIndex, highlightIndex: columnIndex)
         // Always shows BOTH the raw and corrected spectra, regardless of which of the two
-        // "Jouer non tempéré"/"Jouer tempéré" buttons was actually pressed — `tempered` only
+        // "Jouer intonation égale"/"Jouer tempéré" buttons was actually pressed — `tempered` only
         // picks which one you HEAR, the graph compares both either way.
-        let noteCents = temperamentCents(forPitch: pitch, mode: mode, configuration: session.tuningConfiguration)
-        let label = session.notationStyle.rootName(PitchClass(pitch), preferFlats: false)
-        Task { await computeSpectrum(for: [SpectrumNoteInput(pitch: pitch, cents: noteCents, label: label, color: Self.spectrumToneColors[0])]) }
+        Task { await computeSpectrum(for: [spectrumNote(forPitch: pitch, color: Self.spectrumToneColors[0])]) }
     }
 
     /// See `playSingleNote(columnIndex:tempered:)`'s own doc comment — same idea, for
-    /// `diatonicChordReferences`/the "accords du mode" staff instead, except the spectrum compares
-    /// EVERY tone of the chord (not just its root), since each can carry its own correction.
+    /// `diatonicChordReferences`/the "accords du mode" staff instead, except the spectrum shows
+    /// the CHORD's own consolidated spectrum (`computeChordSpectrum`), not one pair per tone.
     private func playSingleChord(columnIndex: Int, tempered: Bool) {
         guard diatonicChordReferences.indices.contains(columnIndex), let chord = diatonicChordReferences[columnIndex].resolve() else { return }
         let pitches = diatonicVoicingPitches(for: chord)
         playPitches(pitches, tempered: tempered, durationSeconds: 1.2, highlight: $playingChordIndex, highlightIndex: columnIndex)
         let notes = pitches.enumerated().map { index, pitch in
-            SpectrumNoteInput(
-                pitch: pitch, cents: temperamentCents(forPitch: pitch, mode: mode, configuration: session.tuningConfiguration),
-                label: session.notationStyle.rootName(PitchClass(pitch), preferFlats: false),
-                color: Self.spectrumToneColors[index % Self.spectrumToneColors.count]
-            )
+            spectrumNote(forPitch: pitch, color: Self.spectrumToneColors[index % Self.spectrumToneColors.count])
         }
-        Task { await computeSpectrum(for: notes) }
+        Task { await computeChordSpectrum(for: notes) }
     }
 
     /// `highlight`/`highlightIndex` mirror the corresponding staff's `highlightedIndex` for as
@@ -633,15 +681,32 @@ struct TuningLibraryView: View {
 
     private func playScale(tempered: Bool) {
         let pitches = PitchSequencing.ascendingPitches(forPitchClasses: scaleDegreesWithOctave, startingAbove: 47 + octaveShift * 12)
-        playSequence(pitches.map { [$0] }, tempered: tempered, stepSeconds: 0.35, highlight: $playingNoteIndex)
+        // Per explicit request: the spectrum graph refreshes as the scale advances, exactly as if
+        // each note were tapped in turn — same "shows both regardless of `tempered`" reasoning as
+        // `playSingleNote`'s own doc comment.
+        playSequence(pitches.map { [$0] }, tempered: tempered, stepSeconds: 0.35, highlight: $playingNoteIndex) { stepPitches in
+            guard let pitch = stepPitches.first else { return }
+            Task { await computeSpectrum(for: [spectrumNote(forPitch: pitch, color: Self.spectrumToneColors[0])]) }
+        }
     }
 
     private func playChordSequence(tempered: Bool) {
         let chordPitches = diatonicChordReferences.compactMap { $0.resolve() }.map(diatonicVoicingPitches(for:))
-        playSequence(chordPitches, tempered: tempered, stepSeconds: 0.9, highlight: $playingChordIndex)
+        // Per explicit request: refreshes with each chord's own consolidated spectrum as the
+        // sequence advances — same `computeChordSpectrum` a single tapped chord uses.
+        playSequence(chordPitches, tempered: tempered, stepSeconds: 0.9, highlight: $playingChordIndex) { stepPitches in
+            let notes = stepPitches.enumerated().map { index, pitch in
+                spectrumNote(forPitch: pitch, color: Self.spectrumToneColors[index % Self.spectrumToneColors.count])
+            }
+            Task { await computeChordSpectrum(for: notes) }
+        }
     }
 
-    private func playSequence(_ items: [[Int]], tempered: Bool, stepSeconds: Double, highlight: Binding<Int?>) {
+    /// `onStep`, when given, fires once per step (right as it starts sounding) — used to refresh
+    /// the spectrum graph in step with the sequence, fire-and-forget (`spectrumGeneration` already
+    /// guards against a slow render for an earlier step overwriting a later one's result, same as
+    /// a rapid double-tap would).
+    private func playSequence(_ items: [[Int]], tempered: Bool, stepSeconds: Double, highlight: Binding<Int?>, onStep: (([Int]) -> Void)? = nil) {
         guard let sourceID else { return }
         session.releaseAllKeys(track: sourceID)
         playbackGeneration += 1
@@ -650,6 +715,7 @@ struct TuningLibraryView: View {
             for (index, pitches) in items.enumerated() {
                 guard generation == playbackGeneration else { return }
                 highlight.wrappedValue = index
+                onStep?(pitches)
                 for pitch in pitches { session.pressKey(pitch: pitch, track: sourceID, applyTuning: tempered) }
                 try? await Task.sleep(nanoseconds: UInt64(stepSeconds * 0.85 * 1_000_000_000))
                 guard generation == playbackGeneration else { return }

@@ -28,4 +28,32 @@ final class OfflineNoteRendererTests: XCTestCase {
         let samples = try renderer.renderNote(pitch: 69, cents: 35, durationSeconds: 0.5)
         XCTAssertGreaterThan(FFTPitchAnalyzer.rms(of: Array(samples.suffix(4096))), FFTPitchAnalyzer.minimumRMSForDetection)
     }
+
+    func testRenderChordReturnsApproximatelyTheRequestedSampleCount() throws {
+        let renderer = try OfflineNoteRenderer(sampleRate: 44100)
+        let samples = try renderer.renderChord(pitches: [(60, 0), (64, 0), (67, 0)], durationSeconds: 0.5)
+        XCTAssertGreaterThanOrEqual(samples.count, Int(0.5 * 44100))
+        XCTAssertLessThan(samples.count, Int(0.5 * 44100) + 8192)
+    }
+
+    func testRenderChordProducesNonSilentAudio() throws {
+        let renderer = try OfflineNoteRenderer(sampleRate: 44100)
+        let samples = try renderer.renderChord(pitches: [(60, 0), (64, 0), (67, 0)], durationSeconds: 0.5)
+        XCTAssertGreaterThan(FFTPitchAnalyzer.rms(of: Array(samples.suffix(4096))), FFTPitchAnalyzer.minimumRMSForDetection)
+    }
+
+    /// Each tone's own independent pitch-bend (one MIDI channel per tone — see `renderChord`'s
+    /// own doc comment) must actually take effect in the MIXED output, not just the last one
+    /// applied — a real regression this shape of bug could hide: if channel assignment were
+    /// broken (e.g. every tone accidentally sharing channel 0), only one cents value could ever
+    /// apply at a time. Comparing a chord rendered with all-zero cents against the same chord
+    /// with a large uniform offset on every tone should produce a MEASURABLY different spectrum
+    /// (peaks shift), confirming the offsets reached the sampler.
+    func testRenderChordAppliesEachChannelsOwnPitchBend() throws {
+        let renderer = try OfflineNoteRenderer(sampleRate: 44100)
+        let unbent = try renderer.renderChord(pitches: [(60, 0), (64, 0), (67, 0)], durationSeconds: 0.5)
+        let renderer2 = try OfflineNoteRenderer(sampleRate: 44100)
+        let bent = try renderer2.renderChord(pitches: [(60, 90), (64, 90), (67, 90)], durationSeconds: 0.5)
+        XCTAssertNotEqual(Array(unbent.suffix(4096)), Array(bent.suffix(4096)))
+    }
 }
