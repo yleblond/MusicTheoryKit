@@ -20,6 +20,7 @@ enum AuxiliaryWindowID: String, CaseIterable {
     case theorieAccords, theorieExploration, theorieProgressions, theorieTonnetz
     case theorieDissonances, theorieIntonation
     case home
+    case compositionPieceDetail
 }
 
 /// Owns the single, shared `ImprovSession`/`SessionUIBridge` pair for the whole process —

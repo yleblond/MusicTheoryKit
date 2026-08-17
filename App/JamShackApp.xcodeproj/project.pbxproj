@@ -12,8 +12,7 @@
 		00E5EF6FB05246A3A709AE8E /* GuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AE61DA02F48C19951B955F1 /* GuideView.swift */; };
 		03434124F882655EA74ED88D /* ProgressionLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A804FA9376E50827AA8019F /* ProgressionLibraryView.swift */; };
 		05A55780712E1D194CD9FB87 /* StudioGuidePlayTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84823DDF6207C0D0213DBD87 /* StudioGuidePlayTabContent.swift */; };
-		066DB6ECE6F1061FC797DF56 /* PiecesPlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7171E005C138F689954FCE0 /* PiecesPlayView.swift */; };
-		9ACD2A0D5ACB7578A9019849 /* PieceScoreSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24AA4EA377C987FE205B8A11 /* PieceScoreSheet.swift */; };
+		066DB6ECE6F1061FC797DF56 /* PieceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7171E005C138F689954FCE0 /* PieceDetailView.swift */; };
 		06CEF7FF7580C390D568769E /* ComputerKeyboardWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 425EE89B1471CD7198F934E0 /* ComputerKeyboardWindow.swift */; };
 		0700456063A09994A4633452 /* IntonationWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DAC551C3F6FAEFBE4687F11 /* IntonationWindow.swift */; };
 		07C4C1FBFD056EEC2670D1C0 /* DissonancesTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23E8ED947369F4995D97D4BF /* DissonancesTabContent.swift */; };
@@ -52,6 +51,7 @@
 		2A007CE84B97DCB9445E0B67 /* TheoryTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEBDAE3CC92EC37EACBB1B1C /* TheoryTabContent.swift */; };
 		2A015AE58FE5376FF9FDB5BB /* SoundFontInfoSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D18A6BE11EC3ADC166F77984 /* SoundFontInfoSheet.swift */; };
 		2A13BA475B494C58C5963DA6 /* TonnetzWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64B15FEE71645678849254A0 /* TonnetzWindow.swift */; };
+		436327FDAC5D58B3C0DC27B5 /* PieceDetailWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 855DF7416B956E1F2472EA2F /* PieceDetailWindow.swift */; };
 		2B2EB615E1C991B35F4A9C62 /* StaffCenterAlignment.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDE04732A393585E44C7EB82 /* StaffCenterAlignment.swift */; };
 		2B43BBCA961BEC45FDBBD3C6 /* ContextualHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F5B84BE365D23928D663D1 /* ContextualHelp.swift */; };
 		2B4B5AA50E88A35C6816730C /* JamShackAIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13B3167768CB0DDEADFFF969 /* JamShackAIView.swift */; };
@@ -69,8 +69,7 @@
 		38F552870D3837F3930B9E0D /* NotationStyleSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F399A09A42E00F69FE65879F /* NotationStyleSettingsView.swift */; };
 		3A8E64861B3EE2B4FE083D76 /* SessionGatedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE90A4A7D561D191DF3EDBE8 /* SessionGatedView.swift */; };
 		3B9243B29A433229B6D11F53 /* SceneLayoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC498287531CCB5772C1258B /* SceneLayoutView.swift */; };
-		3C05FE05BFF6CFA16E5225D0 /* PiecesPlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7171E005C138F689954FCE0 /* PiecesPlayView.swift */; };
-		4A55327CB8061DEE98C221F0 /* PieceScoreSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24AA4EA377C987FE205B8A11 /* PieceScoreSheet.swift */; };
+		3C05FE05BFF6CFA16E5225D0 /* PieceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7171E005C138F689954FCE0 /* PieceDetailView.swift */; };
 		3D11A2463C903C824EA09722 /* RemoteNotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61EB999B2BB050D2A3FD5F3B /* RemoteNotificationDelegate.swift */; };
 		3D9A4A9A9A91CE71B7CD7525 /* GuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AE61DA02F48C19951B955F1 /* GuideView.swift */; };
 		3E29CB3D8764DCD6CE9D0155 /* MIDIKeyboardSplitEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFC15C49AF9935E58EE8F865 /* MIDIKeyboardSplitEditorView.swift */; };
@@ -124,6 +123,7 @@
 		665079528B7FF62A0F75A0B2 /* SoundFontCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8542DB3109F0EE2C04FFBC1 /* SoundFontCatalogView.swift */; };
 		67CCA36685B322EFBE37923F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04D7D71FEF77850B75E4B7B5 /* Assets.xcassets */; };
 		67D16889B5C084C1055474C0 /* TonnetzWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64B15FEE71645678849254A0 /* TonnetzWindow.swift */; };
+		A45E7F29B630C7176D93A3A9 /* PieceDetailWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 855DF7416B956E1F2472EA2F /* PieceDetailWindow.swift */; };
 		68C6FE5177D67E4E3CAC7446 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85845D37B71BB8E94BC0A6E4 /* ContentView.swift */; };
 		691A300ACB4B2C5E361937B8 /* SceneManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7E9682F1AA59646B67BDD9 /* SceneManagementView.swift */; };
 		69FB537F37951DBF4B01AA97 /* SessionGatedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE90A4A7D561D191DF3EDBE8 /* SessionGatedView.swift */; };
@@ -175,6 +175,7 @@
 		94D969FB386C5A92E169025B /* TuningTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 353107FDEB841F0D54853B2D /* TuningTabContent.swift */; };
 		95F0005F0AC3755B8AC07FB3 /* ServerControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE00B5478A71F5B75E67AE6 /* ServerControlsView.swift */; };
 		964658486F70DD164A8C88CF /* TonnetzWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64B15FEE71645678849254A0 /* TonnetzWindow.swift */; };
+		D7845F01A1CCD65B878AE03E /* PieceDetailWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 855DF7416B956E1F2472EA2F /* PieceDetailWindow.swift */; };
 		966B76FC7D5F2B899F508746 /* TuningTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 353107FDEB841F0D54853B2D /* TuningTabContent.swift */; };
 		967E3BFE3151EDEE780BDE11 /* RunScreenWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 737D83A55D0D5B9052B92AE7 /* RunScreenWindow.swift */; };
 		9681084D2258CC517AA3D0D1 /* StudioGuidePlayTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84823DDF6207C0D0213DBD87 /* StudioGuidePlayTabContent.swift */; };
@@ -216,8 +217,7 @@
 		B0B6DD3C070F41E4CE82F5DE /* ConsoleSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D72FDD1A028A974C8DE0155A /* ConsoleSettingsView.swift */; };
 		B1582EDCECFBFA0602F14007 /* JamShackLanguageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE39EAC785B1BF4AA9F44EDE /* JamShackLanguageView.swift */; };
 		B28B49B66968B01115887F36 /* DissonancesWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B433A34E42AC9FDA82D6597A /* DissonancesWindow.swift */; };
-		B3BEFD433A0B1B32F423302A /* PiecesPlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7171E005C138F689954FCE0 /* PiecesPlayView.swift */; };
-		44DB5DBC01EBBDF984D1FED5 /* PieceScoreSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24AA4EA377C987FE205B8A11 /* PieceScoreSheet.swift */; };
+		B3BEFD433A0B1B32F423302A /* PieceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7171E005C138F689954FCE0 /* PieceDetailView.swift */; };
 		B58D6F16866C835C999DFA92 /* JamShackUI in Frameworks */ = {isa = PBXBuildFile; productRef = 87F816FA700F02A4EAC0B7EC /* JamShackUI */; };
 		B77FE8D91A8CF489D4064315 /* StaffCenterAlignment.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDE04732A393585E44C7EB82 /* StaffCenterAlignment.swift */; };
 		B82F181EB1C90DFFBBCAD927 /* SceneLayoutWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3D77E2216CC7C9B43720B44 /* SceneLayoutWindow.swift */; };
@@ -329,6 +329,7 @@
 		61EB999B2BB050D2A3FD5F3B /* RemoteNotificationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteNotificationDelegate.swift; sourceTree = "<group>"; };
 		644B983658E125A8D42F09FD /* TheoryWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TheoryWindow.swift; sourceTree = "<group>"; };
 		64B15FEE71645678849254A0 /* TonnetzWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TonnetzWindow.swift; sourceTree = "<group>"; };
+		855DF7416B956E1F2472EA2F /* PieceDetailWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PieceDetailWindow.swift; sourceTree = "<group>"; };
 		65216BF446097CC5017A98DE /* ProgressionTabContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressionTabContent.swift; sourceTree = "<group>"; };
 		66638E51F664628900DC1080 /* ExplorationWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExplorationWindow.swift; sourceTree = "<group>"; };
 		678B28D74D8F68E83990603A /* SoundStorageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundStorageView.swift; sourceTree = "<group>"; };
@@ -353,8 +354,7 @@
 		9678EC3E37F61041F0877632 /* CompositionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionView.swift; sourceTree = "<group>"; };
 		9DF506E12A5E6829884DCE65 /* IconAssignmentButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconAssignmentButton.swift; sourceTree = "<group>"; };
 		A2F5B84BE365D23928D663D1 /* ContextualHelp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextualHelp.swift; sourceTree = "<group>"; };
-		A7171E005C138F689954FCE0 /* PiecesPlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiecesPlayView.swift; sourceTree = "<group>"; };
-		24AA4EA377C987FE205B8A11 /* PieceScoreSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PieceScoreSheet.swift; sourceTree = "<group>"; };
+		A7171E005C138F689954FCE0 /* PieceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PieceDetailView.swift; sourceTree = "<group>"; };
 		A80BD5958DD843BF49738DE9 /* ColorHex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorHex.swift; sourceTree = "<group>"; };
 		A848FC0E680010358B07FF10 /* FavoriteSoundsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteSoundsView.swift; sourceTree = "<group>"; };
 		A8542DB3109F0EE2C04FFBC1 /* SoundFontCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundFontCatalogView.swift; sourceTree = "<group>"; };
@@ -454,6 +454,7 @@
 				1A6BEFED9C8F5A8EA4E7B8DA /* StatusWindow.swift */,
 				644B983658E125A8D42F09FD /* TheoryWindow.swift */,
 				64B15FEE71645678849254A0 /* TonnetzWindow.swift */,
+				855DF7416B956E1F2472EA2F /* PieceDetailWindow.swift */,
 			);
 			path = Windows;
 			sourceTree = "<group>";
@@ -502,8 +503,7 @@
 				F399A09A42E00F69FE65879F /* NotationStyleSettingsView.swift */,
 				8D58534383002A55C5D49F9D /* PaletteEditorView.swift */,
 				FC0DA62416ED6B405EBDF8DF /* PiecesFileView.swift */,
-				A7171E005C138F689954FCE0 /* PiecesPlayView.swift */,
-				24AA4EA377C987FE205B8A11 /* PieceScoreSheet.swift */,
+				A7171E005C138F689954FCE0 /* PieceDetailView.swift */,
 				1DAE2E35B014C09B62C4CE0A /* PiecesView.swift */,
 				61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */,
 				FA393FDD6590DDE0D1E4FAEF /* PlaybackControlButton.swift */,
@@ -754,8 +754,7 @@
 				38F552870D3837F3930B9E0D /* NotationStyleSettingsView.swift in Sources */,
 				303D7201D5131E7A9DF4AAD6 /* PaletteEditorView.swift in Sources */,
 				F069C2E7AFFA1D00E85D6D76 /* PiecesFileView.swift in Sources */,
-				066DB6ECE6F1061FC797DF56 /* PiecesPlayView.swift in Sources */,
-				9ACD2A0D5ACB7578A9019849 /* PieceScoreSheet.swift in Sources */,
+				066DB6ECE6F1061FC797DF56 /* PieceDetailView.swift in Sources */,
 				F08F348DB63C1F25930AC00D /* PiecesView.swift in Sources */,
 				F1B775220E08B345D98C1E69 /* PlainDataDocument.swift in Sources */,
 				2636F5B565CF2E54B614292F /* PlaybackControlButton.swift in Sources */,
@@ -793,6 +792,7 @@
 				780B26ECEA48CEFCBB96114A /* TonnetzLibraryView.swift in Sources */,
 				111C587B38920AC84D052149 /* TonnetzTabContent.swift in Sources */,
 				67D16889B5C084C1055474C0 /* TonnetzWindow.swift in Sources */,
+				A45E7F29B630C7176D93A3A9 /* PieceDetailWindow.swift in Sources */,
 				839F64EAAFE5F532EF58940B /* TrackChannelLabel.swift in Sources */,
 				0B957A0AFD1AB063D049629E /* TuningLibraryView.swift in Sources */,
 				B085E0923273F4E2B71B58A5 /* TuningQuickPickerView.swift in Sources */,
@@ -852,8 +852,7 @@
 				00A73F7017BCEC745DF7A754 /* NotationStyleSettingsView.swift in Sources */,
 				750CC9F9D1A1A0F79D3219FE /* PaletteEditorView.swift in Sources */,
 				555D9CC774486846D6BFE0B0 /* PiecesFileView.swift in Sources */,
-				3C05FE05BFF6CFA16E5225D0 /* PiecesPlayView.swift in Sources */,
-				4A55327CB8061DEE98C221F0 /* PieceScoreSheet.swift in Sources */,
+				3C05FE05BFF6CFA16E5225D0 /* PieceDetailView.swift in Sources */,
 				E4741CC44CDC1C3A7E6701C8 /* PiecesView.swift in Sources */,
 				F386C7B3E174F8629694C909 /* PlainDataDocument.swift in Sources */,
 				DD7A83AB76208132AF099757 /* PlaybackControlButton.swift in Sources */,
@@ -891,6 +890,7 @@
 				D38F7AE5F8DFE21BE558117E /* TonnetzLibraryView.swift in Sources */,
 				22E06D65051C01A3CEC9264D /* TonnetzTabContent.swift in Sources */,
 				2A13BA475B494C58C5963DA6 /* TonnetzWindow.swift in Sources */,
+				436327FDAC5D58B3C0DC27B5 /* PieceDetailWindow.swift in Sources */,
 				DC443C26D8BCA51941DD7E85 /* TrackChannelLabel.swift in Sources */,
 				231DB3F90202FB5524076696 /* TuningLibraryView.swift in Sources */,
 				530093E82EAF96499FD12EFF /* TuningQuickPickerView.swift in Sources */,
@@ -950,8 +950,7 @@
 				F11E0AB4F55351FC8DA23065 /* NotationStyleSettingsView.swift in Sources */,
 				AE9F39EB072B95572BAAB60C /* PaletteEditorView.swift in Sources */,
 				12B769366D7FED7F404F8EF2 /* PiecesFileView.swift in Sources */,
-				B3BEFD433A0B1B32F423302A /* PiecesPlayView.swift in Sources */,
-				44DB5DBC01EBBDF984D1FED5 /* PieceScoreSheet.swift in Sources */,
+				B3BEFD433A0B1B32F423302A /* PieceDetailView.swift in Sources */,
 				5E26D90A74444A5D8BB4504E /* PiecesView.swift in Sources */,
 				38F537A45F6133BAC6560CE5 /* PlainDataDocument.swift in Sources */,
 				59C2A00572CF722DEE6994C6 /* PlaybackControlButton.swift in Sources */,
@@ -989,6 +988,7 @@
 				D3FEBEDC22FC1FF8F1862517 /* TonnetzLibraryView.swift in Sources */,
 				9032A9A982D938AFE228304D /* TonnetzTabContent.swift in Sources */,
 				964658486F70DD164A8C88CF /* TonnetzWindow.swift in Sources */,
+				D7845F01A1CCD65B878AE03E /* PieceDetailWindow.swift in Sources */,
 				D1A542BC7D7E156E0F21685F /* TrackChannelLabel.swift in Sources */,
 				851843C7C043458585379341 /* TuningLibraryView.swift in Sources */,
 				CAFDCD30469910151AD31281 /* TuningQuickPickerView.swift in Sources */,

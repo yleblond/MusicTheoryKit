@@ -230,3 +230,67 @@ vérifié dans le code au 2026-08-16).
       **Non vérifié visuellement** : capture d'écran impossible dans cet environnement (écran
       verrouillé ou permission manquante) — le rendu réel (espacement des paragraphes, liens
       cliquables, bascule "Retour") reste à confirmer par l'utilisateur à l'usage.
+
+36. ~~Portée à deux clés simultanées pour une seule piste (vrai grand-staff)~~ **FAIT le
+    2026-08-17** : la version précédente (une seule clé par piste, majorité sous/au-dessus du
+    Do4) rendait la piste piano à 75%/25% illisible en clé de sol seule avec des lignes
+    supplémentaires en pagaille — retour utilisateur direct sur cet écran précis. Remplacé par
+    `ScoreEngravingAdapter.staffPlan(forPitches:)` : au-delà de 20% de notes dans le registre
+    minoritaire (seuil calé sur ce même fichier réel — Baritone reste lisible à 89%/11%, le piano
+    à 75%/25% ne l'était pas), la piste se scinde en deux `NotatedPart` (clé de sol + clé de fa,
+    même `staffGroupID`) au lieu d'une seule — split fait en filtrant les notes par hauteur AVANT
+    `buildMeasures`, donc la segmentation/silence/accords existants sont réutilisés tels quels
+    (chaque portée hérite silencieusement des trous là où l'autre porte les notes). `bridge.js`
+    dessine désormais une accolade (`StaveConnector` type `"brace"`) reliant les deux portées
+    d'une même piste, plus une ligne fine (`"singleLeft"`) reliant TOUTES les portées d'un système
+    — Soprano/Baritone restent bien deux pistes sans accolade entre elles. Couleurs de rôle aussi
+    adoucies (~35% vers le blanc) sur demande explicite ("trop vives"). Vérifié : 50+ tests Swift,
+    xcodebuild macOS/iOS, rendu VexFlow validé en Node+jsdom (exactement 1 `singleLeft` + 1
+    `brace` sur un système à 4 portées/2 pistes). Le format MusicXML/MuseScore, importé depuis le
+    2026-08-17 (item 37), porte directement l'assignation de portée par note (`RawNote.staff`)
+    plutôt que de la déduire par tessiture — mais `ScoreEngravingAdapter.staffPlan(forPitches:)`
+    ne consulte pas encore ce champ (voir item 37 pour le détail de cet écart restant).
+
+37. **Import MusicXML + MuseScore (compressé et non compressé)** — **FAIT le 2026-08-17** :
+    troisième et quatrième formats du chantier score-import, après MIDI. `ZipArchiveReader`
+    (`Sources/ScoreImport/Archive`) lit les archives ZIP à la main (répertoire central + en-têtes
+    locaux, `Compression`/`COMPRESSION_ZLIB` pour l'inflation DEFLATE) — aucune dépendance tierce,
+    même choix que NetEngine/WebConsole ; contrairement à FreePats (`.7z`/`.tar.xz`, jamais
+    évalués comme faisables), le ZIP est nativement décompressable par une API Apple. Réutilisé
+    tel quel par `MusicXMLReader` (`.musicxml`/`.xml` directs, ou `.mxl` via l'indirection
+    `META-INF/container.xml` prévue par le format) et `MuseScoreReader` (`.mscx` direct, ou
+    `.mscz` — convention MuseScore : un seul `.mscx` à la racine de l'archive). Les deux lecteurs
+    utilisent `XMLParser` natif de Foundation (aucune dépendance). `RawScore` n'a nécessité aucun
+    changement : `RawSpelling`/`RawNote.voice`/`.staff`/`explicitChords` existaient déjà,
+    anticipés depuis la toute première phase MIDI. Périmètre v1 documenté : MusicXML
+    `<score-partwise>` seulement (`<score-timewise>` rejeté explicitement) ; MuseScore schéma
+    4.x seulement (version majeure ≠ 4 rejetée explicitement — le format natif MuseScore n'est
+    pas un standard public documenté et a changé de forme entre versions majeures, risque
+    assumé et signalé, contrairement à MusicXML qui est un vrai standard stable). Écart connu,
+    pas un oubli : `RawNote.staff` (rempli maintenant par ces deux formats) n'est pas encore
+    consulté par `ScoreEngravingAdapter.staffPlan(forPitches:)`, qui continue de déduire la
+    clé/portée par tessiture même quand la source déclare explicitement la portée — amélioration
+    naturelle à faire une fois qu'un fichier réel MusicXML/MuseScore avec grand-staff explicite
+    est disponible pour vérifier. Vérifié : 738 tests Swift (dont un vrai aller-retour `.mxl` et
+    `.mscz` par fixtures ZIP construites à la main), xcodebuild macOS/iOS,
+    `ImprovSession.importScore(at:)` bout-en-bout pour les deux formats.
+
+38. **Analyse harmonique (chiffrage romain) — filtrage des notes de passage/broderies (v2)**.
+    Fonctionnalité livrée le 2026-08-17 (`RomanNumeralAnalyzer` dans `RecognitionEngine`,
+    `HarmonicAnalysisReport` dans `AppCore`, onglet "Analyse" de `PieceDetailView`) et vérifiée
+    sur le fichier réel *An die Musik* (Schubert) contre une analyse de référence
+    (`analyse_harmonique.md`, produite via music21 puis corrigée à la main). La règle de
+    stabilité actuelle (`ChordSliceDetector` : une tranche du quadrillage à la croche est
+    "stable" si ≥3 classes de hauteur y sonnent, sinon elle hérite du dernier accord stable) ne
+    distingue pas une vraie broderie/note de passage résolutive d'un changement d'accord réel dès
+    que la tranche atteint ≥3 classes malgré tout. Conséquence concrète observée : aux mesures 8,
+    17, 20 et 22, une tranche attrape une note chromatique de passage à la place de la "vraie"
+    harmonie, ce qui change la qualité détectée d'un demi-ton près (ex. `C#dim7` au lieu du
+    `A#m7(b5)` attendu à la m.8 — pas une erreur d'étiquetage, une pitch-class réellement
+    différente captée par le quadrillage). C'est exactement le point que
+    `spec_analyse_harmonique_1.md` (§3, raffinement v2) et son propre commentaire flanquaient
+    déjà comme "non indispensable pour un premier jet" : détecter qu'une note supplémentaire est
+    un degré conjoint (broderie/appoggiature) qui se résout ensuite sur une note de l'accord
+    précédent, et l'ignorer même si elle porte la tranche à ≥3 classes. Documenté (pas juste
+    contourné) dans `Tests/AppCoreTests/HarmonicAnalysisReportTests.swift`, dont le test golden
+    n'affirme volontairement rien sur ces 4 mesures précises.

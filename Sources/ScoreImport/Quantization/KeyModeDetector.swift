@@ -23,20 +23,37 @@ public enum KeyModeDetector {
         let totalWeight = weights.values.reduce(0, +)
         guard totalWeight > 0 else { return nil }
 
-        var best: (tonic: PitchClass, scaleID: String, score: Double, noteCount: Int)?
+        // Common/simple modes preferred over the more exotic church modes when nothing else
+        // breaks a tie — most pieces are major or (natural) minor, not dorian/phrygian/lydian/
+        // mixolydian/locrian.
+        let commonModeIDs: Set<String> = ["ionian", "aeolian"]
+
+        var best: (tonic: PitchClass, scaleID: String, score: Double, noteCount: Int, tonicWeight: Double, isCommonMode: Bool)?
         for rootValue in 0..<12 {
             let tonic = PitchClass(rootValue)
+            let tonicWeight = weights[tonic] ?? 0
             for scale in ScaleLibrary.all {
                 let scaleSet = Mode(tonic: tonic, scale: scale).pitchClassSet
                 let matchedWeight = weights.reduce(into: 0.0) { acc, entry in
                     if scaleSet.contains(entry.key) { acc += entry.value }
                 }
                 let score = matchedWeight / totalWeight
-                // Ties (e.g. a major scale and its relative minor cover identical pitch
-                // classes) prefer the scale with fewer notes — the more specific candidate —
-                // same tie-break RecognitionEngine.recognizeModes already uses.
-                if best == nil || score > best!.score || (score == best!.score && scale.noteCount < best!.noteCount) {
-                    best = (tonic, scale.id, score, scale.noteCount)
+                let isCommonMode = commonModeIDs.contains(scale.id)
+                let candidate = (tonic, scale.id, score, scale.noteCount, tonicWeight, isCommonMode)
+                guard let current = best else { best = candidate; continue }
+                // Ties (e.g. a major scale and every other mode sharing its exact pitch-class
+                // set, such as the relative minor, or any other rotation of the same collection)
+                // are broken by: (1) fewer notes in the scale — the more specific candidate, same
+                // tie-break `RecognitionEngine.recognizeModes` already uses; (2) which candidate's
+                // OWN tonic pitch class is held the longest in the piece — the strongest signal
+                // for "this note is actually home," which a bare pitch-class-set match can't see
+                // at all (all 7 rotations of one diatonic collection score identically otherwise);
+                // (3) plain major/minor over the rarer church modes.
+                if score > current.score
+                    || (score == current.score && scale.noteCount < current.noteCount)
+                    || (score == current.score && scale.noteCount == current.noteCount && tonicWeight > current.tonicWeight)
+                    || (score == current.score && scale.noteCount == current.noteCount && tonicWeight == current.tonicWeight && isCommonMode && !current.isCommonMode) {
+                    best = candidate
                 }
             }
         }

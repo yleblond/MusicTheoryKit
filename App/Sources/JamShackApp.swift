@@ -123,6 +123,13 @@ struct JamShackApp: App {
         }
         .environment(appModel)
         .defaultSize(width: 1200, height: 800)
+
+        WindowGroup(id: AuxiliaryWindowID.compositionPieceDetail.rawValue) {
+            PieceDetailWindow()
+                .preferredColorScheme(.dark)
+        }
+        .environment(appModel)
+        .defaultSize(width: 1000, height: 800)
         #endif
     }
 }

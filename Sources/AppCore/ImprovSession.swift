@@ -508,7 +508,7 @@ public final class ImprovSession: @unchecked Sendable {
             case .noLLMConnectionSelected: return "no LLM connection selected — try 'use-llm <n|name>' first"
             case .llmComposeFailed(let warnings): return "composition failed: \(warnings.joined(separator: "; "))"
             case .scoreImportFailed(let warnings): return "import failed: \(warnings.joined(separator: "; "))"
-            case .unsupportedScoreFileExtension(let ext): return "unsupported file type '\(ext)' — only .mid/.midi can be imported for now"
+            case .unsupportedScoreFileExtension(let ext): return "unsupported file type '\(ext)' — .mid/.midi, .musicxml/.xml/.mxl, and .mscz/.mscx can be imported"
             case .unknownTrack(let text): return "no such track '\(text)' — try 'tracks' first"
             case .trackCannotHaveSound: return "this track can't produce sound (the microphone is never sounded through the app, to avoid feedback)"
             case .recognitionModeOnlyForMicrophone: return "recognition mode only applies to the microphone track"
@@ -1360,16 +1360,21 @@ public final class ImprovSession: @unchecked Sendable {
     /// like a freshly LLM-composed piece isn't — `savePiece(as:)` is the existing, unchanged
     /// way to persist it afterward.
     ///
-    /// Only Standard MIDI Files are supported so far (`SMFReader`) — MusicXML/MuseScore parsing
-    /// is a later phase of the score-import feature (see the project plan); anything else
-    /// throws `.unsupportedScoreFileExtension` before ever touching the file. The parsed
-    /// `RawScore` (tick-based, format-faithful) is deliberately NOT persisted yet — that's what
-    /// a future "afficher le fichier brut" view will need, not the composed `Piece` alone.
+    /// Standard MIDI Files (`SMFReader`), MusicXML (`MusicXMLReader` — plain `.musicxml`/`.xml`
+    /// or the compressed `.mxl`), and MuseScore (`MuseScoreReader` — a loose `.mscx` or the
+    /// compressed `.mscz`) are all supported; anything else throws
+    /// `.unsupportedScoreFileExtension` before ever touching the file. The parsed `RawScore`
+    /// (tick-based, format-faithful) is deliberately NOT persisted yet — that's what a future
+    /// "afficher le fichier brut" view will need, not the composed `Piece` alone.
     public func importScore(at url: URL) throws {
         let rawScore: RawScore
         switch url.pathExtension.lowercased() {
         case "mid", "midi":
             rawScore = try SMFReader.parse(contentsOf: url)
+        case "musicxml", "xml", "mxl":
+            rawScore = try MusicXMLReader.parse(contentsOf: url)
+        case "mscz", "mscx":
+            rawScore = try MuseScoreReader.parse(contentsOf: url)
         default:
             throw SessionError.unsupportedScoreFileExtension(url.pathExtension)
         }

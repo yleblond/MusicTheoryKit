@@ -1828,6 +1828,94 @@
   "ru": "Воспроизведение",
   "zhHans": "播放"
  },
+ "appTabInfos": {
+  "de": "Infos",
+  "en": "Info",
+  "es": "Información",
+  "fr": "Infos",
+  "it": "Info",
+  "ja": "情報",
+  "pt": "Informações",
+  "ru": "Инфо",
+  "zhHans": "信息"
+ },
+ "appHeadingPisteMIDI": {
+  "de": "MIDI-Spuren",
+  "en": "MIDI Tracks",
+  "es": "Pistas MIDI",
+  "fr": "Pistes MIDI",
+  "it": "Tracce MIDI",
+  "ja": "MIDIトラック",
+  "pt": "Faixas MIDI",
+  "ru": "MIDI-дорожки",
+  "zhHans": "MIDI音轨"
+ },
+ "appTabAnalyse": {
+  "de": "Analyse",
+  "en": "Analysis",
+  "es": "Análisis",
+  "fr": "Analyse",
+  "it": "Analisi",
+  "ja": "分析",
+  "pt": "Análise",
+  "ru": "Анализ",
+  "zhHans": "分析"
+ },
+ "appHeadingMesure": {
+  "de": "Takt",
+  "en": "Measure",
+  "es": "Compás",
+  "fr": "Mesure",
+  "it": "Misura",
+  "ja": "小節",
+  "pt": "Compasso",
+  "ru": "Такт",
+  "zhHans": "小节"
+ },
+ "appHeadingAccords": {
+  "de": "Akkorde",
+  "en": "Chords",
+  "es": "Acordes",
+  "fr": "Accords",
+  "it": "Accordi",
+  "ja": "コード",
+  "pt": "Acordes",
+  "ru": "Аккорды",
+  "zhHans": "和弦"
+ },
+ "appHeadingChiffrage": {
+  "de": "Stufenbezifferung",
+  "en": "Figures",
+  "es": "Grados",
+  "fr": "Chiffrage",
+  "it": "Gradi",
+  "ja": "度数",
+  "pt": "Graus",
+  "ru": "Ступени",
+  "zhHans": "级数"
+ },
+ "appLabelConfianceFaible": {
+  "de": "Geringe Zuverlässigkeit – zu prüfen",
+  "en": "Low confidence – needs review",
+  "es": "Confianza baja – por revisar",
+  "fr": "Confiance faible – à vérifier",
+  "it": "Bassa affidabilità – da verificare",
+  "ja": "信頼度低 – 要確認",
+  "pt": "Confiança baixa – a rever",
+  "ru": "Низкая достоверность – требует проверки",
+  "zhHans": "置信度低 – 待复核"
+ },
+ "appHeadingAccordsSection": {
+  "de": "Akkorde",
+  "en": "Chords",
+  "es": "Acordes",
+  "fr": "Accords",
+  "it": "Accordi",
+  "ja": "コード",
+  "pt": "Acordes",
+  "ru": "Аккорды",
+  "zhHans": "和弦"
+ },
  "appHeadingLangueInterface": {
   "de": "Oberflächensprache",
   "en": "Interface language",
@@ -8709,6 +8797,50 @@
   "pt": "Bibliothèque des morceaux composés (structurés en mesures et accords) — chargez-en un pour le rejouer ou le modifier, ou repartez d'un nouveau.",
   "ru": "Bibliothèque des morceaux composés (structurés en mesures et accords) — chargez-en un pour le rejouer ou le modifier, ou repartez d'un nouveau.",
   "zhHans": "Bibliothèque des morceaux composés (structurés en mesures et accords) — chargez-en un pour le rejouer ou le modifier, ou repartez d'un nouveau."
+ },
+ "appScoreLegendChordRoot": {
+  "de": "Fondamentale de l'accord",
+  "en": "Fondamentale de l'accord",
+  "es": "Fondamentale de l'accord",
+  "fr": "Fondamentale de l'accord",
+  "it": "Fondamentale de l'accord",
+  "ja": "Fondamentale de l'accord",
+  "pt": "Fondamentale de l'accord",
+  "ru": "Fondamentale de l'accord",
+  "zhHans": "Fondamentale de l'accord"
+ },
+ "appScoreLegendChordTone": {
+  "de": "Note de l'accord",
+  "en": "Note de l'accord",
+  "es": "Note de l'accord",
+  "fr": "Note de l'accord",
+  "it": "Note de l'accord",
+  "ja": "Note de l'accord",
+  "pt": "Note de l'accord",
+  "ru": "Note de l'accord",
+  "zhHans": "Note de l'accord"
+ },
+ "appScoreLegendModeRoot": {
+  "de": "Tonique de la tonalité",
+  "en": "Tonique de la tonalité",
+  "es": "Tonique de la tonalité",
+  "fr": "Tonique de la tonalité",
+  "it": "Tonique de la tonalité",
+  "ja": "Tonique de la tonalité",
+  "pt": "Tonique de la tonalité",
+  "ru": "Tonique de la tonalité",
+  "zhHans": "Tonique de la tonalité"
+ },
+ "appScoreLegendModeTone": {
+  "de": "Degré de la tonalité",
+  "en": "Degré de la tonalité",
+  "es": "Degré de la tonalité",
+  "fr": "Degré de la tonalité",
+  "it": "Degré de la tonalité",
+  "ja": "Degré de la tonalité",
+  "pt": "Degré de la tonalité",
+  "ru": "Degré de la tonalité",
+  "zhHans": "Degré de la tonalité"
  },
  "appHelpAccordsTitle": {
   "de": "Bibliothèque d'accords",

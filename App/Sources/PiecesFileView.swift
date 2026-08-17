@@ -16,6 +16,13 @@ struct PiecesFileView: View {
     @State private var showFileImporter = false
     @State private var isImporting = false
 
+    /// None of these have a system-provided `UTType` — dynamically constructed from the raw
+    /// extension, which needs no Info.plist declaration and is exactly what `.fileImporter`
+    /// needs for a niche, non-standard file type.
+    private var importableScoreTypes: [UTType] {
+        [.midi, .xml] + ["musicxml", "mxl", "mscz", "mscx"].compactMap { UTType(filenameExtension: $0) }
+    }
+
     var body: some View {
         Form {
             if let actionError {
@@ -27,7 +34,7 @@ struct PiecesFileView: View {
         #if os(macOS)
         .formStyle(.grouped)
         #endif
-        .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.midi]) { result in
+        .fileImporter(isPresented: $showFileImporter, allowedContentTypes: importableScoreTypes) { result in
             switch result {
             case .success(let url): importScoreFile(at: url)
             case .failure(let error): actionError = "\(error)"
@@ -49,10 +56,11 @@ struct PiecesFileView: View {
 
     // MARK: - Score import
 
-    /// Only `.mid`/`.midi` can be imported so far — MusicXML/MuseScore are a later phase of the
-    /// score-import feature (see the project plan). Mirrors `SoundLibraryView.importFile`'s own
-    /// shape: yield once so the spinner actually paints, then run the (synchronous, main-actor)
-    /// import on this thread since `ImprovSession` is thread-confined to wherever it was created.
+    /// `.mid`/`.midi`, `.musicxml`/`.xml`/`.mxl`, and `.mscz`/`.mscx` can all be imported — see
+    /// `ImprovSession.importScore(at:)`'s own dispatch. Mirrors `SoundLibraryView.importFile`'s
+    /// own shape: yield once so the spinner actually paints, then run the (synchronous,
+    /// main-actor) import on this thread since `ImprovSession` is thread-confined to wherever it
+    /// was created.
     private func importScoreFile(at url: URL) {
         guard !isImporting else { return }
         isImporting = true
@@ -81,10 +89,6 @@ struct PiecesFileView: View {
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 Text(L10n.string(.appPlaceholderAucunMorceauChargePoint, session.currentLanguage)).foregroundStyle(.secondary)
-            }
-            Button(L10n.string(.appButtonChargerLaDemo, session.currentLanguage)) {
-                session.loadDemoPiece()
-                onLoaded()
             }
             Button {
                 showFileImporter = true

@@ -42,13 +42,70 @@ final class ScoreImportSessionTests: XCTestCase {
 
     func testImportScoreWithUnsupportedExtensionThrows() throws {
         let session = makeTestSession()
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).musicxml")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).pdf")
         try Data().write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
 
         XCTAssertThrowsError(try session.importScore(at: url)) { error in
-            XCTAssertEqual(error as? ImprovSession.SessionError, .unsupportedScoreFileExtension("musicxml"))
+            XCTAssertEqual(error as? ImprovSession.SessionError, .unsupportedScoreFileExtension("pdf"))
         }
+    }
+
+    func testImportMusicXMLFileProducesAPlayablePiece() throws {
+        let session = makeTestSession()
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <score-partwise version="3.1">
+          <part-list><score-part id="P1"><part-name>Melody</part-name></score-part></part-list>
+          <part id="P1">
+            <measure number="1">
+              <attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>
+              <note><pitch><step>C</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration></note>
+              <note><pitch><step>E</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration></note>
+              <note><pitch><step>G</step><alter>0</alter><octave>4</octave></pitch><duration>2</duration></note>
+            </measure>
+          </part>
+        </score-partwise>
+        """
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).musicxml")
+        try Data(xml.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try session.importScore(at: url)
+
+        let piece = try XCTUnwrap(session.piece)
+        XCTAssertEqual(piece.sections.count, 1)
+        XCTAssertEqual(piece.sections[0].tracks[0].melodyEvents.count, 3)
+    }
+
+    func testImportMuseScoreFileProducesAPlayablePiece() throws {
+        let session = makeTestSession()
+        let mscx = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <museScore version="4.20">
+          <Score>
+            <Staff id="1">
+              <Measure>
+                <voice>
+                  <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+                  <Chord><durationType>quarter</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+                  <Chord><durationType>quarter</durationType><Note><pitch>64</pitch><tpc>18</tpc></Note></Chord>
+                  <Chord><durationType>half</durationType><Note><pitch>67</pitch><tpc>15</tpc></Note></Chord>
+                </voice>
+              </Measure>
+            </Staff>
+          </Score>
+        </museScore>
+        """
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mscx")
+        try Data(mscx.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try session.importScore(at: url)
+
+        let piece = try XCTUnwrap(session.piece)
+        XCTAssertEqual(piece.sections.count, 1)
+        XCTAssertEqual(piece.sections[0].tracks[0].melodyEvents.count, 3)
     }
 
     func testImportMIDIFileProducesAPlayablePieceNamedAfterTheFile() throws {

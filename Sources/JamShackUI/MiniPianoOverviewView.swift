@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import RecognitionEngine
 
 /// A read-only, full-range (MIDI 0...108) overview piano sitting above a `PitchKeyboardView`
 /// excerpt — same idea as the web console's Observer tab own mini-piano overview

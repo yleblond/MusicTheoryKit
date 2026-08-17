@@ -24,41 +24,54 @@ public struct NoteAction: Equatable, Sendable {
 public struct ScoreEngravingView: View {
     public let score: NotatedScore
     public let onNoteAction: ((NoteAction) -> Void)?
+    /// Pitches to draw a highlight halo behind, right now — driven by
+    /// `ImprovSession.playbackHeldPitches` during playback (see `window.highlightPitches` in
+    /// `bridge.js`). Empty (the default) draws no highlight at all.
+    public let highlightedPitches: Set<Int>
 
-    public init(score: NotatedScore, onNoteAction: ((NoteAction) -> Void)? = nil) {
+    public init(score: NotatedScore, highlightedPitches: Set<Int> = [], onNoteAction: ((NoteAction) -> Void)? = nil) {
         self.score = score
+        self.highlightedPitches = highlightedPitches
         self.onNoteAction = onNoteAction
     }
 
     /// Convenience for the common "just imported a raw file, show it as-is" case — builds the
     /// notated model via `ScoreEngravingAdapter` (no role-coloring; that comes from a `Piece`
     /// later, once quantization/analysis exist).
-    public init(rawScore: RawScore, onNoteAction: ((NoteAction) -> Void)? = nil) {
-        self.init(score: ScoreEngravingAdapter.build(from: rawScore), onNoteAction: onNoteAction)
+    public init(rawScore: RawScore, highlightedPitches: Set<Int> = [], onNoteAction: ((NoteAction) -> Void)? = nil) {
+        self.init(score: ScoreEngravingAdapter.build(from: rawScore), highlightedPitches: highlightedPitches, onNoteAction: onNoteAction)
     }
 
     public var body: some View {
-        ScoreEngravingWebView(score: score, onNoteAction: onNoteAction)
+        ScoreEngravingWebView(score: score, highlightedPitches: highlightedPitches, onNoteAction: onNoteAction)
     }
 }
 
 #if canImport(UIKit)
 private struct ScoreEngravingWebView: UIViewRepresentable {
     let score: NotatedScore
+    let highlightedPitches: Set<Int>
     let onNoteAction: ((NoteAction) -> Void)?
 
     func makeCoordinator() -> ScoreEngravingCoordinator { ScoreEngravingCoordinator(onNoteAction: onNoteAction) }
     func makeUIView(context: Context) -> WKWebView { context.coordinator.makeWebView() }
-    func updateUIView(_ webView: WKWebView, context: Context) { context.coordinator.render(score, in: webView) }
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        context.coordinator.render(score, in: webView)
+        context.coordinator.highlight(highlightedPitches, in: webView)
+    }
 }
 #else
 private struct ScoreEngravingWebView: NSViewRepresentable {
     let score: NotatedScore
+    let highlightedPitches: Set<Int>
     let onNoteAction: ((NoteAction) -> Void)?
 
     func makeCoordinator() -> ScoreEngravingCoordinator { ScoreEngravingCoordinator(onNoteAction: onNoteAction) }
     func makeNSView(context: Context) -> WKWebView { context.coordinator.makeWebView() }
-    func updateNSView(_ webView: WKWebView, context: Context) { context.coordinator.render(score, in: webView) }
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        context.coordinator.render(score, in: webView)
+        context.coordinator.highlight(highlightedPitches, in: webView)
+    }
 }
 #endif
 
@@ -70,6 +83,8 @@ private final class ScoreEngravingCoordinator: NSObject, WKScriptMessageHandler,
     private let onNoteAction: ((NoteAction) -> Void)?
     private var isPageLoaded = false
     private var pendingScore: NotatedScore?
+    private var currentHighlight: Set<Int> = []
+    private var lastPushedHighlight: Set<Int>?
 
     init(onNoteAction: ((NoteAction) -> Void)?) {
         self.onNoteAction = onNoteAction
@@ -108,6 +123,21 @@ private final class ScoreEngravingCoordinator: NSObject, WKScriptMessageHandler,
         )
     }
 
+    /// Cheap by design — `bridge.js`'s `window.highlightPitches` just toggles a highlight layer,
+    /// no re-layout — so this can be called on every note onset/offset during playback without
+    /// re-running `renderScore`'s own 3-pass layout.
+    func highlight(_ pitches: Set<Int>, in webView: WKWebView) {
+        currentHighlight = pitches
+        guard isPageLoaded, pitches != lastPushedHighlight else { return }
+        pushHighlight(to: webView)
+    }
+
+    private func pushHighlight(to webView: WKWebView) {
+        lastPushedHighlight = currentHighlight
+        let json = (try? JSONEncoder().encode(Array(currentHighlight))).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        webView.evaluateJavaScript("window.highlightPitches && window.highlightPitches(\(json));")
+    }
+
     // MARK: - WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -116,6 +146,7 @@ private final class ScoreEngravingCoordinator: NSObject, WKScriptMessageHandler,
             push(pendingScore, to: webView)
             self.pendingScore = nil
         }
+        pushHighlight(to: webView) // in case pitches were already set before the page finished loading
     }
 
     // MARK: - WKScriptMessageHandler

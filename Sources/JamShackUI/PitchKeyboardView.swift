@@ -1,6 +1,7 @@
 import SwiftUI
 import AppCore
 import MusicTheoryKit
+import RecognitionEngine
 
 /// Colors for each `PitchDisplayRole`, plus the plain white/black key backgrounds. Defaults
 /// are a reasonable starting palette, independent of `NoteColorSettingsFile` (the app's
@@ -101,7 +102,7 @@ struct KeyRect: Equatable {
 }
 
 /// A vectorial piano keyboard over an absolute MIDI pitch range, colored via
-/// `pitchDisplayState(...)` (`Sources/AppCore/PitchDisplayState.swift`) — the same
+/// `pitchDisplayState(...)` (`Sources/RecognitionEngine/PitchDisplayState.swift`) — the same
 /// classification logic the ASCII terminal keyboard and the web console's `keyboardHTML`
 /// use, so all three surfaces agree on what "root/tone/outside/held/mode" means for a given
 /// pitch. Pure `Canvas`/`Path` (no `UIViewRepresentable`/`NSViewRepresentable`) so it hosts

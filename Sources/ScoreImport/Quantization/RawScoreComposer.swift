@@ -45,7 +45,8 @@ public enum RawScoreComposer {
 
         let chordProgression = resolveChordProgression(
             rawScore: rawScore, allNotes: allNotes, totalTicks: totalTicks,
-            measureLengthTicks: measureLengthTicks, ticksPerBeatUnit: ticksPerBeatUnit, warnings: &warnings
+            measureLengthTicks: measureLengthTicks, ticksPerBeatUnit: ticksPerBeatUnit,
+            ticksPerQuarter: ticksPerQuarter, warnings: &warnings
         )
         if chordProgression.isEmpty {
             warnings.append("no chords could be confidently detected")
@@ -91,7 +92,7 @@ public enum RawScoreComposer {
 
     private static func resolveChordProgression(
         rawScore: RawScore, allNotes: [RawNote], totalTicks: Int,
-        measureLengthTicks: Int, ticksPerBeatUnit: Int, warnings: inout [String]
+        measureLengthTicks: Int, ticksPerBeatUnit: Int, ticksPerQuarter: Int, warnings: inout [String]
     ) -> [ChordEvent] {
         if !rawScore.explicitChords.isEmpty {
             let sorted = rawScore.explicitChords.sorted { $0.tick < $1.tick }
@@ -113,9 +114,15 @@ public enum RawScoreComposer {
             }
         }
 
+        // Eighth-note grid, not one slice per measure: a whole measure's melody + accompaniment
+        // notes lumped into a single pitch-class set almost always "looks like" some 9th/11th
+        // chord by Jaccard overlap even when the actual harmony is a plain triad — the eighth
+        // note is fine enough to isolate real harmonic changes without over-fragmenting into
+        // single-note slices (see the harmonic-analysis feature's own chordify step).
+        let eighthNoteTicks = max(ticksPerQuarter / 2, 1)
         return ChordSliceDetector.detectChordProgression(
             notes: allNotes.map { (startTick: $0.startTick, durationTicks: $0.durationTicks, pitch: $0.pitch) },
-            totalTicks: totalTicks, sliceTicks: measureLengthTicks,
+            totalTicks: totalTicks, sliceTicks: eighthNoteTicks,
             ticksPerBeatUnit: ticksPerBeatUnit, measureLengthTicks: measureLengthTicks
         )
     }

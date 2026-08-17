@@ -36,11 +36,19 @@ public enum ChordSliceDetector {
     }
 
     /// Slices `[0, totalTicks)` into fixed `sliceTicks`-wide windows, detects the best chord per
-    /// window (a note counts as sounding in a window if it overlaps it at all), and merges
-    /// consecutive windows that land on the same chord into one longer `ChordEvent`. Windows
-    /// with no confident match are simply skipped (no `ChordEvent` emitted for that gap) —
-    /// documented as a known v1 limitation (a chordless passage stays chordless rather than
-    /// repeating its neighbor's chord).
+    /// *harmonically stable* window (a note counts as sounding in a window if it overlaps it at
+    /// all), and merges consecutive windows that land on the same chord into one longer
+    /// `ChordEvent`.
+    ///
+    /// A window is stable only if ≥3 distinct pitch classes sound in it — fewer than that and a
+    /// single passing/neighbor tone can make 2 notes look like a "chord" that isn't one (the
+    /// exact defect a music21-based analysis of a real piece hit: spurious labels like "V6532"
+    /// on what was really just a passing tone over a held chord). An unstable window inherits
+    /// the *previous stable window's* label (extending its `ChordEvent` rather than starting a
+    /// new one) instead of being re-evaluated on its own, incomplete pitch-class set. A window
+    /// with no PRECEDING stable window yet (or a stable window with no confident match) is
+    /// simply skipped — a known v1 limitation (a chordless passage stays chordless rather than
+    /// repeating a neighbor's chord).
     public static func detectChordProgression(
         notes: [(startTick: Int, durationTicks: Int, pitch: Int)],
         totalTicks: Int, sliceTicks: Int, ticksPerBeatUnit: Int, measureLengthTicks: Int
@@ -54,12 +62,17 @@ public enum ChordSliceDetector {
             let sounding = Set(notes
                 .filter { $0.startTick < sliceEnd && ($0.startTick + $0.durationTicks) > sliceStart }
                 .map { PitchClass($0.pitch) })
-            if let best = bestChord(forPitchClasses: sounding) {
+
+            if sounding.count >= 3, let best = bestChord(forPitchClasses: sounding) {
                 if let last = merged.last, last.root == best.root, last.templateID == best.chordTemplateID, last.endTick == sliceStart {
                     merged[merged.count - 1].endTick = sliceEnd
                 } else {
                     merged.append((sliceStart, sliceEnd, best.root, best.chordTemplateID))
                 }
+            } else if let last = merged.last, last.endTick == sliceStart {
+                // Unstable (or too-sparse) window right after a stable one — inherit its label
+                // rather than guessing from an incomplete pitch-class set.
+                merged[merged.count - 1].endTick = sliceEnd
             }
             sliceStart = sliceEnd
         }

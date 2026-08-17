@@ -257,6 +257,10 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHeadingJouer, appPlaceholderAucunSonFavori, appHeadingSonDeLecture, appHintSonParDefaut
     case appPlaceholderAucunMorceauChargeOnglet, appPlaceholderAucunMorceauChargePoint
     case appButtonChargerLaDemo, appHeadingMorceauCharge
+    // Piece detail screen (catalog → detail, `PieceDetailView`): "Infos" tab (file info + per-track sound) / "Play" tab (`appHeadingJouer`, notation + live highlight).
+    case appTabInfos, appHeadingPisteMIDI, appHeadingAccordsSection
+    // "Analyse" tab (harmonic/Roman-numeral analysis table).
+    case appTabAnalyse, appHeadingMesure, appHeadingAccords, appHeadingChiffrage, appLabelConfianceFaible
     case appButtonVoirPartition, appHeadingPartition
     case appPlaceholderAucunDossierMorceaux, appHeadingDossierMorceaux
     case appFormatFragmentsBPM
@@ -459,6 +463,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHelpCompositionGuideTitle, appHelpCompositionGuideBody
     case appHelpCompositionTitle, appHelpCompositionBody
     case appHelpPiecesTitle, appHelpPiecesBody
+    // Score-view role-coloring legend (`ScoreColorLegendView`, mirrors `TonnetzLegendView`'s own
+    // placement pattern: a live-content component embedded in this screen's help, not prose).
+    case appScoreLegendChordRoot, appScoreLegendChordTone, appScoreLegendModeRoot, appScoreLegendModeTone
     case appHelpAccordsTitle, appHelpAccordsBody
     case appHelpModesTitle, appHelpModesBody
     case appHelpProgressionsTitle, appHelpProgressionsBody

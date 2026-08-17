@@ -39,9 +39,9 @@ enum HelpTopicID: String, CaseIterable {
     case settingsNotation = "settings.notation"
 
     /// The rendered help content for this screen — `HelpContentView` handles markdown/fallback;
-    /// this just supplies the (title key, body key) pair, plus `theorieTonnetz`'s own trailing
-    /// `TonnetzLegendView` swatch, the one screen whose help embeds a live component rather than
-    /// pure prose (see `HelpContentView`'s `trailing` slot).
+    /// this just supplies the (title key, body key) pair. `theorieTonnetz` and `compositionPieces`
+    /// each add their own trailing live-component swatch (`TonnetzLegendView`/
+    /// `ScoreColorLegendView`) instead of pure prose (see `HelpContentView`'s `trailing` slot).
     @ViewBuilder
     func content(language: AppLanguage) -> some View {
         switch self {
@@ -62,7 +62,9 @@ enum HelpTopicID: String, CaseIterable {
         case .compositionComposition:
             HelpContentView(title: L10n.string(.appHelpCompositionTitle, language), body: L10n.string(.appHelpCompositionBody, language))
         case .compositionPieces:
-            HelpContentView(title: L10n.string(.appHelpPiecesTitle, language), body: L10n.string(.appHelpPiecesBody, language))
+            HelpContentView(title: L10n.string(.appHelpPiecesTitle, language), body: L10n.string(.appHelpPiecesBody, language)) {
+                ScoreColorLegendView(language: language)
+            }
         case .theorieAccords:
             HelpContentView(title: L10n.string(.appHelpAccordsTitle, language), body: L10n.string(.appHelpAccordsBody, language))
         case .theorieModes:

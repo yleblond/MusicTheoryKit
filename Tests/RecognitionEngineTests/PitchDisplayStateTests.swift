@@ -1,5 +1,5 @@
 import XCTest
-@testable import AppCore
+@testable import RecognitionEngine
 
 // Mirrors WebConsole's keyboardHTML decision tree (Sources/WebConsole/StaticAssets.swift) —
 // every branch exercised here should match what that JS function would classify for the same
