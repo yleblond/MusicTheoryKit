@@ -127,8 +127,14 @@ extension AppModel {
         var presentation = MainKeyboardPresentation()
         // Always whatever's held on the picked source track, regardless of screen — the bar is
         // "clavier principal," not "clavier ordinateur," so it should never stay hardcoded to
-        // showing only the `.computerKeyboard` track's own held notes.
-        presentation.heldPitches = sourceID.flatMap { id in session.tracks.first { $0.id == id } }?.heldPitches ?? []
+        // showing only the `.computerKeyboard` track's own held notes. In Théorie specifically,
+        // `theoryLiveInputHeldPitches` additionally substitutes piece-playback notes when
+        // `piecePlaybackObservationScope` is set (Music Lab's own "observe playback" feature) —
+        // gated to `.theorie` only so an unrelated playback-observation pick made in Théorie
+        // never bleeds into Studio's own armed-track display.
+        presentation.heldPitches = mode == .theorie
+            ? session.theoryLiveInputHeldPitches
+            : (sourceID.flatMap { id in session.tracks.first { $0.id == id } }?.heldPitches ?? [])
         let isComputerKeyboardSource = sourceID == .computerKeyboard
 
         switch mode {

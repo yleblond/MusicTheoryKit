@@ -68,9 +68,11 @@ struct TonnetzLibraryView: View {
 
     private var sourceID: TrackID? { session.theoryLiveInputSourceID }
 
+    /// Includes piece-playback notes when `session.piecePlaybackObservationScope` is set (Music
+    /// Lab's own "observe playback" feature) — same `theoryLiveInputHeldPitches` every other
+    /// Théorie-only held-pitches read now goes through.
     private var heldPitches: Set<Int> {
-        guard let sourceID else { return [] }
-        return session.tracks.first { $0.id == sourceID }?.heldPitches ?? []
+        session.theoryLiveInputHeldPitches
     }
 
     private var heldPitchClasses: Set<PitchClass> { Set(heldPitches.map { PitchClass($0) }) }

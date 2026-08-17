@@ -330,4 +330,34 @@ final class ScoreEngravingAdapterPieceTests: XCTestCase {
         XCTAssertEqual(melody?.measures[0].chordAnnotations.first?.isLowConfidence, false)
         XCTAssertEqual(bass?.measures[0].chordAnnotations, [], "chord symbols are a harmonic event, not repeated on every staff")
     }
+
+    // MARK: - Playback-time note positions
+
+    /// `NotatedNote.startSeconds`/`durationSeconds` must match real playback time exactly (same
+    /// formula `Piece.renderedNotes()` itself uses) — this is what lets the score highlight tell
+    /// "the note sounding right now" apart from another occurrence of the same pitch elsewhere.
+    func testNoteStartAndDurationSecondsMatchTempo() {
+        let piece = Piece(
+            title: "Test", timeSignature: TimeSignature(beatsPerMeasure: 4, beatUnit: 4),
+            tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"),
+            sections: [
+                Section(
+                    name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"),
+                    tracks: [
+                        Track(name: "Melody", instrument: "", melodyEvents: [
+                            MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 60, velocity: 100),
+                            MelodyEvent(measure: 1, beat: 2, durationBeats: 1, pitch: 62, velocity: 100),
+                        ]),
+                    ]
+                ),
+            ]
+        )
+
+        let notes = ScoreEngravingAdapter.build(from: piece).parts[0].measures[0].notes.filter { !$0.isRest }
+        // 120 BPM -> 0.5s per beat: beat 1 starts at 0s, beat 2 at 0.5s, each a 1-beat (0.5s) note.
+        XCTAssertEqual(notes[0].startSeconds ?? -1, 0, accuracy: 0.001)
+        XCTAssertEqual(notes[0].durationSeconds ?? -1, 0.5, accuracy: 0.001)
+        XCTAssertEqual(notes[1].startSeconds ?? -1, 0.5, accuracy: 0.001)
+        XCTAssertEqual(notes[1].durationSeconds ?? -1, 0.5, accuracy: 0.001)
+    }
 }

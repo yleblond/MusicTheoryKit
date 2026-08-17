@@ -26,6 +26,9 @@ final class ScoreEngravingAdapterTests: XCTestCase {
         // Raw-file preview has no harmonic/mode context yet (no `Piece`, no analysis) — role
         // coloring only applies via `build(from: Piece)`.
         XCTAssertNil(measures[0].notes.first?.colors)
+        // Same for playback-time positions — no `Piece`/tempo context to resolve real seconds from.
+        XCTAssertNil(measures[0].notes.first?.startSeconds)
+        XCTAssertNil(measures[0].notes.first?.durationSeconds)
         XCTAssertEqual(notated.parts[0].clef, .treble)
     }
 

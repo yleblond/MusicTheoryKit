@@ -264,6 +264,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appButtonVoirPartition, appHeadingPartition
     case appPlaceholderAucunDossierMorceaux, appHeadingDossierMorceaux
     case appFormatFragmentsBPM
+    // Observe piece playback in Music Lab (Théorie) — `ImprovSession.piecePlaybackObservationScope`.
+    case appHeadingObserverMusicLab, appLabelObserverToutLeMorceau
 
     // MARK: - App: Enregistrement tab (Fichier/Record/Play/IA sub-tabs)
     case appPlaceholderAucunDossierSoundtracks, appHeadingDossierSoundtracks

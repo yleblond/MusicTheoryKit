@@ -28,10 +28,16 @@ public struct ScoreEngravingView: View {
     /// `ImprovSession.playbackHeldPitches` during playback (see `window.highlightPitches` in
     /// `bridge.js`). Empty (the default) draws no highlight at all.
     public let highlightedPitches: Set<Int>
+    /// The elapsed playback position (seconds), driven by `ImprovSession.playbackElapsedSeconds`
+    /// — paired with `highlightedPitches` so `bridge.js` can tell "the note sounding right now"
+    /// apart from another occurrence of the same pitch elsewhere in the piece (e.g. a repeating
+    /// arpeggiated accompaniment, where the same pitch recurs many times).
+    public let elapsedSeconds: Double
 
-    public init(score: NotatedScore, highlightedPitches: Set<Int> = [], onNoteAction: ((NoteAction) -> Void)? = nil) {
+    public init(score: NotatedScore, highlightedPitches: Set<Int> = [], elapsedSeconds: Double = 0, onNoteAction: ((NoteAction) -> Void)? = nil) {
         self.score = score
         self.highlightedPitches = highlightedPitches
+        self.elapsedSeconds = elapsedSeconds
         self.onNoteAction = onNoteAction
     }
 
@@ -43,7 +49,7 @@ public struct ScoreEngravingView: View {
     }
 
     public var body: some View {
-        ScoreEngravingWebView(score: score, highlightedPitches: highlightedPitches, onNoteAction: onNoteAction)
+        ScoreEngravingWebView(score: score, highlightedPitches: highlightedPitches, elapsedSeconds: elapsedSeconds, onNoteAction: onNoteAction)
     }
 }
 
@@ -51,26 +57,28 @@ public struct ScoreEngravingView: View {
 private struct ScoreEngravingWebView: UIViewRepresentable {
     let score: NotatedScore
     let highlightedPitches: Set<Int>
+    let elapsedSeconds: Double
     let onNoteAction: ((NoteAction) -> Void)?
 
     func makeCoordinator() -> ScoreEngravingCoordinator { ScoreEngravingCoordinator(onNoteAction: onNoteAction) }
     func makeUIView(context: Context) -> WKWebView { context.coordinator.makeWebView() }
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.render(score, in: webView)
-        context.coordinator.highlight(highlightedPitches, in: webView)
+        context.coordinator.highlight(highlightedPitches, elapsedSeconds: elapsedSeconds, in: webView)
     }
 }
 #else
 private struct ScoreEngravingWebView: NSViewRepresentable {
     let score: NotatedScore
     let highlightedPitches: Set<Int>
+    let elapsedSeconds: Double
     let onNoteAction: ((NoteAction) -> Void)?
 
     func makeCoordinator() -> ScoreEngravingCoordinator { ScoreEngravingCoordinator(onNoteAction: onNoteAction) }
     func makeNSView(context: Context) -> WKWebView { context.coordinator.makeWebView() }
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.render(score, in: webView)
-        context.coordinator.highlight(highlightedPitches, in: webView)
+        context.coordinator.highlight(highlightedPitches, elapsedSeconds: elapsedSeconds, in: webView)
     }
 }
 #endif
@@ -84,7 +92,9 @@ private final class ScoreEngravingCoordinator: NSObject, WKScriptMessageHandler,
     private var isPageLoaded = false
     private var pendingScore: NotatedScore?
     private var currentHighlight: Set<Int> = []
+    private var currentElapsedSeconds: Double = 0
     private var lastPushedHighlight: Set<Int>?
+    private var lastPushedElapsedSeconds: Double?
 
     init(onNoteAction: ((NoteAction) -> Void)?) {
         self.onNoteAction = onNoteAction
@@ -125,17 +135,21 @@ private final class ScoreEngravingCoordinator: NSObject, WKScriptMessageHandler,
 
     /// Cheap by design — `bridge.js`'s `window.highlightPitches` just toggles a highlight layer,
     /// no re-layout — so this can be called on every note onset/offset during playback without
-    /// re-running `renderScore`'s own 3-pass layout.
-    func highlight(_ pitches: Set<Int>, in webView: WKWebView) {
+    /// re-running `renderScore`'s own 3-pass layout. Pushes whenever EITHER `pitches` or
+    /// `elapsedSeconds` changes — the same pitch set can recur (a chord held across a repeated
+    /// arpeggio note), and `elapsedSeconds` is exactly what lets `bridge.js` tell those apart.
+    func highlight(_ pitches: Set<Int>, elapsedSeconds: Double, in webView: WKWebView) {
         currentHighlight = pitches
-        guard isPageLoaded, pitches != lastPushedHighlight else { return }
+        currentElapsedSeconds = elapsedSeconds
+        guard isPageLoaded, pitches != lastPushedHighlight || elapsedSeconds != lastPushedElapsedSeconds else { return }
         pushHighlight(to: webView)
     }
 
     private func pushHighlight(to webView: WKWebView) {
         lastPushedHighlight = currentHighlight
+        lastPushedElapsedSeconds = currentElapsedSeconds
         let json = (try? JSONEncoder().encode(Array(currentHighlight))).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-        webView.evaluateJavaScript("window.highlightPitches && window.highlightPitches(\(json));")
+        webView.evaluateJavaScript("window.highlightPitches && window.highlightPitches(\(json), \(currentElapsedSeconds));")
     }
 
     // MARK: - WKNavigationDelegate

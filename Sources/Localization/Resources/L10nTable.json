@@ -1245,6 +1245,28 @@
   "ru": "%@ фрагмент(ов), %@ BPM",
   "zhHans": "%@ 个片段，%@ BPM"
  },
+ "appHeadingObserverMusicLab": {
+  "de": "In Music Lab beobachten",
+  "en": "Observe in Music Lab",
+  "es": "Observar en Music Lab",
+  "fr": "Observer dans Music Lab",
+  "it": "Osserva in Music Lab",
+  "ja": "Music Labで観察",
+  "pt": "Observar no Music Lab",
+  "ru": "Наблюдать в Music Lab",
+  "zhHans": "在 Music Lab 中观察"
+ },
+ "appLabelObserverToutLeMorceau": {
+  "de": "Das ganze Stück",
+  "en": "The whole piece",
+  "es": "Toda la pieza",
+  "fr": "Tout le morceau",
+  "it": "Tutto il brano",
+  "ja": "曲全体",
+  "pt": "A peça inteira",
+  "ru": "Всё произведение",
+  "zhHans": "整首曲子"
+ },
  "appFormatGameCenterErreur": {
   "de": "Game Center: %@",
   "en": "Game Center: %@",

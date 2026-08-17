@@ -232,6 +232,23 @@ final class RenderingTests: XCTestCase {
         XCTAssertEqual(notes.filter { $0.pitch != 72 }.map(\.instrumentName), Array(repeating: "strings.sf2", count: 4))
     }
 
+    /// `trackName` round-trips through `Track.scheduledNotes` -> `Piece.renderedNotes` so
+    /// playback can report "which track(s)" are currently sounding — a chord-progression note
+    /// has no track of its own, so it must stay `nil`.
+    func testPieceRenderedNotesCarryTrackNameForTrackNotesButNotChordNotes() {
+        let track = Track(name: "lead", instrument: "piano", melodyEvents: [MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 72)])
+        let section = Section(
+            name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"),
+            chordProgression: [ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 0, chordTemplateID: "Ma7"))],
+            tracks: [track]
+        )
+        let piece = Piece(title: "t", tempoBPM: 120, key: ModeReference(tonic: 0, scaleID: "ionian"), sections: [section])
+        let notes = piece.renderedNotes()
+
+        XCTAssertEqual(notes.first { $0.pitch == 72 }?.trackName, "lead")
+        XCTAssertTrue(notes.filter { $0.pitch != 72 }.allSatisfy { $0.trackName == nil })
+    }
+
     func testPieceRenderedNotesOffsetsSecondSectionByFirstSectionsLength() {
         let sectionA = Section(name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"))
         let trackB = Track(name: "lead", instrument: "piano", melodyEvents: [MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 60)])

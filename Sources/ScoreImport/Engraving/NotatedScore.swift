@@ -110,8 +110,20 @@ public struct NotatedNote: Codable, Equatable, Sendable {
     /// `ScoreEngravingAdapter.build(from: RawScore)`) — `bridge.js` falls back to its own
     /// derive-from-the-key-string behavior in that case, exactly like before this field existed.
     public var accidentals: [String?]?
+    /// This note's own absolute position in real playback time — `nil` for a rest or for the
+    /// raw-file preview (`build(from: RawScore)`, which has no tempo/`Piece` context to resolve
+    /// real seconds from). Lets `bridge.js` tell "the note actually sounding right now" apart
+    /// from any other note sharing the same pitch elsewhere in the piece (see
+    /// `window.highlightPitches`'s own doc comment) — matching by pitch value alone previously lit
+    /// up every occurrence of a repeating pitch (e.g. an arpeggiated accompaniment), not just the
+    /// current one.
+    public var startSeconds: Double?
+    public var durationSeconds: Double?
 
-    public init(id: String, isRest: Bool, keys: [String] = [], duration: String, pitches: [Int] = [], colors: [String?]? = nil, accidentals: [String?]? = nil) {
+    public init(
+        id: String, isRest: Bool, keys: [String] = [], duration: String, pitches: [Int] = [],
+        colors: [String?]? = nil, accidentals: [String?]? = nil, startSeconds: Double? = nil, durationSeconds: Double? = nil
+    ) {
         self.id = id
         self.isRest = isRest
         self.keys = keys
@@ -119,5 +131,7 @@ public struct NotatedNote: Codable, Equatable, Sendable {
         self.pitches = pitches
         self.colors = colors
         self.accidentals = accidentals
+        self.startSeconds = startSeconds
+        self.durationSeconds = durationSeconds
     }
 }

@@ -73,6 +73,25 @@ public final class ImprovSession: @unchecked Sendable {
     /// to each track's `heldPitches` (which only reflects live input), so a UI can draw a
     /// separate keyboard for "what the composition is playing right now".
     public private(set) var playbackHeldPitches: Set<Int> = []
+    /// The elapsed playback position (seconds since `play()` started), as of the most recent
+    /// note onset — updated at the exact same scheduling points as `playbackHeldPitches`, not on
+    /// a separate continuous timer. Lets `ScoreEngravingView` tell "the note sounding right now"
+    /// apart from another occurrence of the same pitch elsewhere in the piece (matching by pitch
+    /// value alone previously highlighted every occurrence of a repeating pitch, e.g. an
+    /// arpeggiated accompaniment).
+    public private(set) var playbackElapsedSeconds: Double = 0
+    /// Same as `playbackHeldPitches`, but attributed per originating track name (`RenderedNote.trackName`,
+    /// `nil`-tagged chord-progression notes aren't included here at all) — lets Music Lab observe
+    /// just one/several specific tracks' notes during playback instead of the whole piece
+    /// combined (see `piecePlaybackObservationScope`/`theoryDisplayState`).
+    public private(set) var playbackHeldPitchesByTrack: [String: Set<Int>] = [:]
+    /// Which piece-playback source (if any) the Théorie/Music Lab screens should observe instead
+    /// of a live track (`theoryLiveInputSourceID`) — `nil` means "not observing playback," in
+    /// which case those screens fall back to the live-track source as before. See
+    /// `theoryDisplayState`'s own doc comment for why this is a SEPARATE axis from
+    /// `theoryLiveInputSourceID` rather than a new `TrackID` case: playback already has its exact
+    /// composed harmony, nothing here needs live recognition.
+    public private(set) var piecePlaybackObservationScope: PlaybackObservationScope?
     /// Human-readable status/event lines, oldest first. A CLI prints new entries as they
     /// arrive; a future UI could bind this straight to a scrolling console view.
     public private(set) var log: [String] = []
@@ -3016,13 +3035,85 @@ public final class ImprovSession: @unchecked Sendable {
         try? setSoundEnabled(true, for: id)
     }
 
+    /// Picks (or clears, via `nil`) which piece-playback scope Théorie/Music Lab should observe
+    /// instead of a live track — no side effects to arm/disarm anything (unlike
+    /// `setTheoryLiveInputSource`): a piece's tracks already have their own instruments, nothing
+    /// here needs starting/swapping/restoring.
+    public func setPiecePlaybackObservationScope(_ scope: PlaybackObservationScope?) {
+        piecePlaybackObservationScope = scope
+    }
+
+    /// The single held-pitches/chord/mode tuple every Théorie screen should display — `nil` when
+    /// nothing is selected to observe at all (no live track picked, not observing playback).
+    ///
+    /// Playback (`piecePlaybackObservationScope` non-nil) takes priority over a live track when
+    /// both happen to be set, and is handled entirely differently: a live track's chord/mode are
+    /// LIVE-RECOGNIZED from its own held notes (`RecognitionEngine`, real uncertainty — there's
+    /// no ground truth for a real keyboard), but a piece already has its exact composed harmony
+    /// (`Section.mode`/`ChordEvent.chord`, via `playbackTimeline`) — re-deriving it live would be
+    /// redundant and could briefly disagree with the composed harmony on a passing tone/arpeggio
+    /// note that the composition already resolves correctly. So playback's chord/mode here are
+    /// always the piece's own ground truth, regardless of which track(s) are being observed for
+    /// HELD PITCHES specifically — a chord is a property of the whole musical moment, not of
+    /// whichever instrument subset happens to be selected.
+    public var theoryDisplayState: (heldPitches: Set<Int>, chordRoot: Int?, chordTones: [Int], modeTones: [Int])? {
+        if let scope = piecePlaybackObservationScope {
+            let held: Set<Int>
+            switch scope {
+            case .wholePiece:
+                held = playbackHeldPitches
+            case .tracks(let names):
+                held = names.reduce(into: Set<Int>()) { $0.formUnion(playbackHeldPitchesByTrack[$1] ?? []) }
+            }
+            guard let index = playbackCurrentChordIndex, playbackTimeline.indices.contains(index) else {
+                return (held, nil, [], [])
+            }
+            let event = playbackTimeline[index]
+            let (chordTones, modeTones) = Self.pitchClassSets(
+                forChordRoot: event.chord.root, chordTemplateID: event.chord.chordTemplateID,
+                modeTonic: event.mode.tonic, scaleID: event.mode.scaleID
+            )
+            return (held, event.chord.root, chordTones, modeTones)
+        }
+        guard let id = theoryLiveInputSourceID, let track = tracks.first(where: { $0.id == id }) else { return nil }
+        let (chordTones, modeTones) = Self.pitchClassSets(
+            forChordRoot: track.recognizedChord?.root.value, chordTemplateID: track.recognizedChord?.chordTemplateID,
+            modeTonic: track.recognizedModes.first?.tonic.value, scaleID: track.recognizedModes.first?.scaleID
+        )
+        return (track.heldPitches, track.recognizedChord?.root.value, chordTones, modeTones)
+    }
+
     /// The best-matching chord currently held on `theoryLiveInputSourceID`'s own track, if one is
     /// picked — the single input every Théorie screen's live-recognition reaction observes (see
     /// `ChordLibraryView`/`ModeLibraryView`/`ProgressionLibraryView`'s own `reactToLiveChordMatch`),
     /// also reused by `TonnetzLibraryView` (`App/Sources/TonnetzLibraryView.swift`) to follow live
     /// playing on the same "clavier principal" source.
+    ///
+    /// When `piecePlaybackObservationScope` is set, this is the piece's own ground-truth chord
+    /// (`playbackTimeline`) instead — a synthesized `RecognizedChord` at `confidence: 1.0` (no
+    /// real ambiguity to report) and `bass` defaulting to the root (`ChordReference` carries no
+    /// inversion of its own). Same reasoning as `theoryDisplayState`'s own doc comment: playback
+    /// already knows its exact harmony, no live recognition needed.
     public var theoryLiveInputRecognizedChord: RecognizedChord? {
-        tracks.first { $0.id == theoryLiveInputSourceID }?.recognizedChord
+        if piecePlaybackObservationScope != nil {
+            guard let index = playbackCurrentChordIndex, playbackTimeline.indices.contains(index) else { return nil }
+            let event = playbackTimeline[index]
+            return RecognizedChord(
+                root: PitchClass(event.chord.root), chordTemplateID: event.chord.chordTemplateID,
+                bass: PitchClass(event.chord.root), confidence: 1.0
+            )
+        }
+        return tracks.first { $0.id == theoryLiveInputSourceID }?.recognizedChord
+    }
+
+    /// Whatever's currently held that Théorie should visually reflect — piece-playback notes
+    /// when `piecePlaybackObservationScope` is set (Music Lab's own "observe playback" feature),
+    /// else `theoryLiveInputSourceID`'s own track, else empty. See `theoryDisplayState`'s own doc
+    /// comment for the full reasoning; this is the same held-pitches half of that tuple, exposed
+    /// on its own for callers (`TonnetzLibraryView`, `MainKeyboardMode`) that don't also need the
+    /// chord/mode half.
+    public var theoryLiveInputHeldPitches: Set<Int> {
+        theoryDisplayState?.heldPitches ?? []
     }
 
     /// The mode Intonations' fixed temperament should anchor on right now (only its `.tonic` is
@@ -3251,6 +3342,8 @@ public final class ImprovSession: @unchecked Sendable {
         playbackTimeline = timeline
         playbackCurrentChordIndex = timeline.isEmpty ? nil : 0
         playbackHeldPitches = []
+        playbackHeldPitchesByTrack = [:]
+        playbackElapsedSeconds = 0
         append("Playing '\(piece.title)': \(notes.count) notes, \(String(format: "%.1f", duration))s.")
 
         // Mirrors PiecePlayer's own note-on/off scheduling, but drives `playbackHeldPitches`
@@ -3263,10 +3356,17 @@ public final class ImprovSession: @unchecked Sendable {
             playbackStateQueue.asyncAfter(deadline: now + note.startSeconds) { [weak self] in
                 guard let self, self.playbackGeneration == generation else { return }
                 self.playbackHeldPitches.insert(note.pitch)
+                self.playbackElapsedSeconds = note.startSeconds
+                if let trackName = note.trackName {
+                    self.playbackHeldPitchesByTrack[trackName, default: []].insert(note.pitch)
+                }
             }
             playbackStateQueue.asyncAfter(deadline: now + note.startSeconds + note.durationSeconds) { [weak self] in
                 guard let self, self.playbackGeneration == generation else { return }
                 self.playbackHeldPitches.remove(note.pitch)
+                if let trackName = note.trackName {
+                    self.playbackHeldPitchesByTrack[trackName]?.remove(note.pitch)
+                }
             }
         }
         for (index, segment) in timeline.enumerated() {
@@ -3283,6 +3383,7 @@ public final class ImprovSession: @unchecked Sendable {
             guard let self, self.playbackGeneration == generation else { return }
             self.isPlaying = false
             self.playbackHeldPitches = []
+            self.playbackHeldPitchesByTrack = [:]
             self.playbackCurrentChordIndex = nil
             self.append("Playback finished.")
         }
@@ -3299,6 +3400,7 @@ public final class ImprovSession: @unchecked Sendable {
         player.stopAllNotes()
         isPlaying = false
         playbackHeldPitches = []
+        playbackHeldPitchesByTrack = [:]
         playbackCurrentChordIndex = nil
         append("Lecture arretee.")
     }

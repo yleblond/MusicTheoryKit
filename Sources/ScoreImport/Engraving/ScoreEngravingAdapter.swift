@@ -39,6 +39,12 @@ public enum ScoreEngravingAdapter {
         let timeline = harmonicTimeline(from: piece, ticksPerBeatUnit: ticksPerBeatUnit, beatsPerMeasure: beatsPerMeasure)
         let colorLookup: (Int, Int) -> String? = { pitch, tick in color(forPitch: pitch, atTick: tick, in: timeline) }
 
+        // Same formula `Piece.renderedNotes()` itself uses — lets `NotatedNote.startSeconds`
+        // match real playback time exactly, so `bridge.js` can tell "the note sounding right
+        // now" apart from another occurrence of the same pitch elsewhere in the piece.
+        let secondsPerBeat = 60.0 / max(piece.tempoBPM, 1)
+        let secondsForTick: (Int) -> Double = { tick in Double(tick) / Double(ticksPerBeatUnit) * secondsPerBeat }
+
         // One key signature for the whole score — same "one detected mode for the whole piece"
         // v1 simplification `RawScoreComposer` already documents; `nil` (no signature, today's
         // un-suppressed-accidentals behavior) for anything outside the 7 classic modes.
@@ -56,7 +62,7 @@ public enum ScoreEngravingAdapter {
                     for: rawPart, timeSignatures: timeSignatures, ticksPerQuarter: ticksPerQuarter, minimumTicks: totalTicks,
                     colorLookup: colorLookup, keySignature: keyContext?.signature, keySignatureName: keyContext?.keyName,
                     diatonicSpelling: keyContext?.diatonicSpellingByPitchClass,
-                    chordAnnotationsByMeasure: index == 0 ? chordAnnotations : nil
+                    chordAnnotationsByMeasure: index == 0 ? chordAnnotations : nil, secondsForTick: secondsForTick
                 )
             }
         return NotatedScore(parts: parts)
@@ -104,7 +110,8 @@ public enum ScoreEngravingAdapter {
     private static func notatedParts(
         for rawPart: RawPart, timeSignatures: [RawTimeSignatureEvent], ticksPerQuarter: Int, minimumTicks: Int = 0,
         colorLookup: ((Int, Int) -> String?)? = nil, keySignature: MajorKeySignature? = nil, keySignatureName: String? = nil,
-        diatonicSpelling: [Int: SpelledPitch]? = nil, chordAnnotationsByMeasure: [Int: [ChordAnnotationEntry]]? = nil
+        diatonicSpelling: [Int: SpelledPitch]? = nil, chordAnnotationsByMeasure: [Int: [ChordAnnotationEntry]]? = nil,
+        secondsForTick: ((Int) -> Double)? = nil
     ) -> [NotatedPart] {
         let realNotes = rawPart.notes.filter { !$0.isRest }
         let plan = staffPlan(forPitches: realNotes.map(\.pitch))
@@ -113,7 +120,8 @@ public enum ScoreEngravingAdapter {
                 id: rawPart.id, name: rawPart.name, clef: plan.first ?? .treble, keySignature: keySignatureName,
                 measures: buildMeasures(
                     notes: rawPart.notes, timeSignatures: timeSignatures, ticksPerQuarter: ticksPerQuarter, minimumTicks: minimumTicks,
-                    colorLookup: colorLookup, keySignature: keySignature, diatonicSpelling: diatonicSpelling, chordAnnotationsByMeasure: chordAnnotationsByMeasure
+                    colorLookup: colorLookup, keySignature: keySignature, diatonicSpelling: diatonicSpelling,
+                    chordAnnotationsByMeasure: chordAnnotationsByMeasure, secondsForTick: secondsForTick
                 )
             )]
         }
@@ -122,14 +130,16 @@ public enum ScoreEngravingAdapter {
                 id: "\(rawPart.id)-treble", name: rawPart.name, clef: .treble, staffGroupID: rawPart.id, keySignature: keySignatureName,
                 measures: buildMeasures(
                     notes: realNotes.filter { $0.pitch >= 60 }, timeSignatures: timeSignatures, ticksPerQuarter: ticksPerQuarter, minimumTicks: minimumTicks,
-                    colorLookup: colorLookup, keySignature: keySignature, diatonicSpelling: diatonicSpelling, chordAnnotationsByMeasure: chordAnnotationsByMeasure
+                    colorLookup: colorLookup, keySignature: keySignature, diatonicSpelling: diatonicSpelling,
+                    chordAnnotationsByMeasure: chordAnnotationsByMeasure, secondsForTick: secondsForTick
                 )
             ),
             NotatedPart(
                 id: "\(rawPart.id)-bass", name: rawPart.name, clef: .bass, staffGroupID: rawPart.id, keySignature: keySignatureName,
                 measures: buildMeasures(
                     notes: realNotes.filter { $0.pitch < 60 }, timeSignatures: timeSignatures, ticksPerQuarter: ticksPerQuarter, minimumTicks: minimumTicks,
-                    colorLookup: colorLookup, keySignature: keySignature, diatonicSpelling: diatonicSpelling, chordAnnotationsByMeasure: nil // top staff (treble half) only
+                    colorLookup: colorLookup, keySignature: keySignature, diatonicSpelling: diatonicSpelling,
+                    chordAnnotationsByMeasure: nil, secondsForTick: secondsForTick // top staff (treble half) only for annotations
                 )
             ),
         ]
@@ -409,7 +419,8 @@ public enum ScoreEngravingAdapter {
     private static func buildMeasures(
         notes: [RawNote], timeSignatures: [RawTimeSignatureEvent], ticksPerQuarter: Int, minimumTicks: Int = 0,
         colorLookup: ((Int, Int) -> String?)? = nil, keySignature: MajorKeySignature? = nil,
-        diatonicSpelling: [Int: SpelledPitch]? = nil, chordAnnotationsByMeasure: [Int: [ChordAnnotationEntry]]? = nil
+        diatonicSpelling: [Int: SpelledPitch]? = nil, chordAnnotationsByMeasure: [Int: [ChordAnnotationEntry]]? = nil,
+        secondsForTick: ((Int) -> Double)? = nil
     ) -> [NotatedMeasure] {
         let sortedNotes = notes.filter { !$0.isRest }.sorted { $0.startTick < $1.startTick }
         guard !sortedNotes.isEmpty || minimumTicks > 0 else { return [] }
@@ -468,7 +479,9 @@ public enum ScoreEngravingAdapter {
                         position.notes.map {
                             accidentalGlyph(forPitch: $0.pitch, spelling: $0.spelling, diatonicSpelling: diatonicSpelling, keySignature: signature, tracker: &accidentalTracker)
                         }
-                    }
+                    },
+                    startSeconds: secondsForTick?(position.startTick),
+                    durationSeconds: secondsForTick.map { toSeconds in toSeconds(position.startTick + clippedDuration) - toSeconds(position.startTick) }
                 ))
                 cursor = position.startTick + clippedDuration
             }

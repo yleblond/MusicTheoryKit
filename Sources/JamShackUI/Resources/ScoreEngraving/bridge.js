@@ -370,7 +370,12 @@ window.renderScore = function (score) {
                         // `systemY`/`systemHeight` (this system's own top y and total height) let
                         // `window.highlightPitches` draw a playhead band spanning the WHOLE
                         // system, not just this one note's own bounding box.
-                        if (bb) noteEntries.push({ pitches: meta.pitches, bbox: bb, systemTop: systemY, systemHeight: systemHeight });
+                        if (bb) {
+                            noteEntries.push({
+                                pitches: meta.pitches, bbox: bb, systemTop: systemY, systemHeight: systemHeight,
+                                startSeconds: meta.startSeconds, durationSeconds: meta.durationSeconds,
+                            });
+                        }
                     }
                 });
 
@@ -409,33 +414,48 @@ window.renderScore = function (score) {
     }
     window.__noteEntries = noteEntries;
     window.__highlightLayer = highlightLayer;
-    window.highlightPitches(window.__lastHighlightedPitches || []);
+    window.highlightPitches(window.__lastHighlightedPitches || [], window.__lastElapsedSeconds || 0);
 };
 
-// Called by the native side whenever the set of currently-sounding pitches changes during
-// playback (see `ScoreEngravingCoordinator.highlight(_:in:)`) — deliberately NOT part of
-// `renderScore`'s own layout passes: re-running the whole 3-pass render on every note
-// onset/offset would be far too heavy for something that can fire many times a second.
+// Called by the native side whenever the set of currently-sounding pitches (or the elapsed
+// playback position) changes (see `ScoreEngravingCoordinator.highlight(_:elapsedSeconds:in:)`) —
+// deliberately NOT part of `renderScore`'s own layout passes: re-running the whole 3-pass render
+// on every note onset/offset would be far too heavy for something that can fire many times a
+// second.
 //
 // Draws one greyed vertical band per matching note — a narrow cursor at that note's own x,
-// spanning its system's FULL height (not just the note's own bounding box). Deliberately NOT
-// merged into one [minX, maxX] span per system (an earlier version did this): matching is by
-// bare absolute pitch alone (`pitches: Set<Int>` carries no note-identity/timing), and the SAME
-// pitch commonly recurs many times within one measure in exactly the arpeggiated-accompaniment
-// texture this app's own real test file uses — merging turned that into one giant band
-// swallowing the whole repeating pattern instead of a moving cursor. Multiple simultaneous
-// chord tones still get several bands close together, close enough to read as one thicker cursor;
-// a same-pitch false match elsewhere just draws a second, separate, still-narrow band rather than
-// stretching to meet it.
-window.highlightPitches = function (pitches) {
+// spanning its system's FULL height (not just the note's own bounding box). A note matches only
+// when BOTH its pitch is in `pitches` AND `elapsedSeconds` falls within its own
+// `[startSeconds, startSeconds + durationSeconds)` window (a small epsilon tolerance for
+// scheduling/floating-point slop) — pitch alone isn't enough: the same pitch commonly recurs many
+// times within one measure in exactly the arpeggiated-accompaniment texture this app's own real
+// test file uses, so an earlier version (pitch-only matching) lit up every occurrence of a
+// repeating pitch instead of just the one actually sounding. `startSeconds`/`durationSeconds` are
+// `undefined` for a score with no tempo context (the raw-file preview, `build(from: RawScore)`) —
+// falls back to pitch-only matching there, same as before this fix (that path currently has no
+// playback highlight at all, but degrades safely if it ever does).
+window.highlightPitches = function (pitches, elapsedSeconds) {
     window.__lastHighlightedPitches = pitches;
+    window.__lastElapsedSeconds = elapsedSeconds;
     const layer = window.__highlightLayer;
     if (!layer) return;
     while (layer.firstChild) layer.removeChild(layer.firstChild);
     const active = new Set(pitches);
     const padding = 4;
+    // Tolerance on the LOWER bound only (tiny float-precision slop) — `playbackElapsedSeconds`
+    // is always set to a note's own exact intended `startSeconds` in the same closure that
+    // triggers this push, so there's no real scheduling slop to accommodate on the upper bound.
+    // Adding tolerance there too would make two back-to-back notes (no gap, common in this app's
+    // own real test file) both match at their shared boundary instant — an exclusive upper bound
+    // resolves that ambiguity in favor of the note that's just starting.
+    const epsilon = 0.001;
     (window.__noteEntries || []).forEach((entry) => {
         if (!entry.pitches.some((p) => active.has(p))) return;
+        if (entry.startSeconds !== undefined && entry.durationSeconds !== undefined) {
+            const withinWindow = elapsedSeconds >= entry.startSeconds - epsilon
+                && elapsedSeconds < entry.startSeconds + entry.durationSeconds;
+            if (!withinWindow) return;
+        }
         const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
         rect.setAttribute("x", entry.bbox.x - padding);
         rect.setAttribute("y", entry.systemTop);

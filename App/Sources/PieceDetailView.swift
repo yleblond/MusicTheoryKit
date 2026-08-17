@@ -165,6 +165,7 @@ struct PieceDetailView: View {
                     }
                 }
                 defaultSoundSection
+                playbackObservationSection(piece: piece)
             } else {
                 Text(L10n.string(.appPlaceholderAucunMorceauChargeOnglet, session.currentLanguage)).foregroundStyle(.secondary)
             }
@@ -275,6 +276,44 @@ struct PieceDetailView: View {
         }
     }
 
+    /// Lets Music Lab (Théorie: Tonnetz, Modes, Accords, Progressions...) observe this piece's
+    /// own playback instead of a live track — either combined ("tout le morceau") or one/several
+    /// specific tracks. See `ImprovSession.theoryDisplayState`'s own doc comment: unlike a live
+    /// track, playback's chord/mode are always the piece's ground truth, never re-recognized.
+    @ViewBuilder
+    private func playbackObservationSection(piece: Piece) -> some View {
+        Section {
+            Toggle(L10n.string(.appLabelObserverToutLeMorceau, session.currentLanguage), isOn: Binding(
+                get: { session.piecePlaybackObservationScope == .wholePiece },
+                set: { session.setPiecePlaybackObservationScope($0 ? .wholePiece : nil) }
+            ))
+            ForEach(orderedTrackNames(in: piece), id: \.self) { trackName in
+                Toggle(trackName, isOn: Binding(
+                    get: { observedTrackNames.contains(trackName) },
+                    set: { isOn in
+                        var names = observedTrackNames
+                        if isOn { names.insert(trackName) } else { names.remove(trackName) }
+                        session.setPiecePlaybackObservationScope(names.isEmpty ? nil : .tracks(names))
+                    }
+                ))
+            }
+        } header: {
+            Text(L10n.string(.appHeadingObserverMusicLab, session.currentLanguage))
+        }
+    }
+
+    private var observedTrackNames: Set<String> {
+        if case .tracks(let names) = session.piecePlaybackObservationScope { return names }
+        return []
+    }
+
+    /// Every track name across every section, first-seen order, deduplicated — the same track
+    /// name (e.g. "Piano") can legitimately repeat across sections, but should appear once here.
+    private func orderedTrackNames(in piece: Piece) -> [String] {
+        var seen = Set<String>()
+        return piece.sections.flatMap(\.tracks).map(\.name).filter { seen.insert($0).inserted }
+    }
+
     // MARK: - Play tab
 
     @ViewBuilder
@@ -283,7 +322,7 @@ struct PieceDetailView: View {
             // No outer ScrollView: the WKWebView (score.html) already scrolls its own content
             // when it overflows this frame — nesting a SwiftUI ScrollView around it risks
             // gesture conflicts between the two scroll surfaces.
-            ScoreEngravingView(score: ScoreEngravingAdapter.build(from: piece), highlightedPitches: session.playbackHeldPitches)
+            ScoreEngravingView(score: ScoreEngravingAdapter.build(from: piece), highlightedPitches: session.playbackHeldPitches, elapsedSeconds: session.playbackElapsedSeconds)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding()
         } else {

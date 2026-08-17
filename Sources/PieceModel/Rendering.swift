@@ -14,10 +14,15 @@ public struct ScheduledNote: Equatable, Sendable {
     /// Which preset within `instrumentName`, when it names a multi-preset `.sf2` — `nil`
     /// alongside a non-nil `instrumentName` means that file's own default sound.
     public var instrumentPreset: SoundFontPresetIdentity?
+    /// The originating `Track.name`, when this note came from one — `nil` for a chord-progression
+    /// note (`Section.chordScheduledNotes`, which has no track of its own). Lets playback report
+    /// "which track(s)" are currently sounding, e.g. for observing a specific track's notes in
+    /// Music Lab (see `ImprovSession.playbackHeldPitchesByTrack`).
+    public var trackName: String?
 
     public init(
         startBeat: Double, durationBeats: Double, pitch: Int, velocity: Int,
-        instrumentName: String? = nil, instrumentPreset: SoundFontPresetIdentity? = nil
+        instrumentName: String? = nil, instrumentPreset: SoundFontPresetIdentity? = nil, trackName: String? = nil
     ) {
         self.startBeat = startBeat
         self.durationBeats = durationBeats
@@ -25,6 +30,7 @@ public struct ScheduledNote: Equatable, Sendable {
         self.velocity = velocity
         self.instrumentName = instrumentName
         self.instrumentPreset = instrumentPreset
+        self.trackName = trackName
     }
 }
 
@@ -58,7 +64,8 @@ public extension Track {
                 pitch: event.pitch,
                 velocity: event.velocity,
                 instrumentName: instrumentName,
-                instrumentPreset: instrumentPreset
+                instrumentPreset: instrumentPreset,
+                trackName: name
             )
         }
 
@@ -73,7 +80,7 @@ public extension Track {
             for (pitch, duration) in zip(pitches, resolved.noteDurations) {
                 notes.append(ScheduledNote(
                     startBeat: cursor, durationBeats: duration, pitch: pitch, velocity: placement.velocity,
-                    instrumentName: instrumentName, instrumentPreset: instrumentPreset
+                    instrumentName: instrumentName, instrumentPreset: instrumentPreset, trackName: name
                 ))
                 cursor += duration
             }
@@ -168,10 +175,12 @@ public struct RenderedNote: Equatable, Sendable {
     public var instrumentName: String?
     /// Carried over from `ScheduledNote.instrumentPreset`.
     public var instrumentPreset: SoundFontPresetIdentity?
+    /// Carried over from `ScheduledNote.trackName` — `nil` for a chord-progression note.
+    public var trackName: String?
 
     public init(
         startSeconds: Double, durationSeconds: Double, pitch: Int, velocity: Int,
-        instrumentName: String? = nil, instrumentPreset: SoundFontPresetIdentity? = nil
+        instrumentName: String? = nil, instrumentPreset: SoundFontPresetIdentity? = nil, trackName: String? = nil
     ) {
         self.startSeconds = startSeconds
         self.durationSeconds = durationSeconds
@@ -179,6 +188,7 @@ public struct RenderedNote: Equatable, Sendable {
         self.velocity = velocity
         self.instrumentName = instrumentName
         self.instrumentPreset = instrumentPreset
+        self.trackName = trackName
     }
 }
 
@@ -205,7 +215,8 @@ public extension Piece {
                     pitch: note.pitch,
                     velocity: note.velocity,
                     instrumentName: note.instrumentName,
-                    instrumentPreset: note.instrumentPreset
+                    instrumentPreset: note.instrumentPreset,
+                    trackName: note.trackName
                 ))
             }
             sectionStartBeat += Double(section.lengthInMeasures) * Double(beatsPerMeasure)
