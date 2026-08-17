@@ -13,6 +13,7 @@ import RecognitionEngine
 import LLMEngine
 import NetEngine
 import WebConsole
+import ScoreImport
 import GameKit
 
 /// The whole app's state and behavior, independent of any presentation layer. A CLI
@@ -456,6 +457,8 @@ public final class ImprovSession: @unchecked Sendable {
         case noSourceText
         case noLLMConnectionSelected
         case llmComposeFailed([String])
+        case scoreImportFailed([String])
+        case unsupportedScoreFileExtension(String)
         case unknownTrack(String)
         case trackCannotHaveSound
         case recognitionModeOnlyForMicrophone
@@ -504,6 +507,8 @@ public final class ImprovSession: @unchecked Sendable {
             case .noSourceText: return "no source text set — try 'paste-text' first"
             case .noLLMConnectionSelected: return "no LLM connection selected — try 'use-llm <n|name>' first"
             case .llmComposeFailed(let warnings): return "composition failed: \(warnings.joined(separator: "; "))"
+            case .scoreImportFailed(let warnings): return "import failed: \(warnings.joined(separator: "; "))"
+            case .unsupportedScoreFileExtension(let ext): return "unsupported file type '\(ext)' — only .mid/.midi can be imported for now"
             case .unknownTrack(let text): return "no such track '\(text)' — try 'tracks' first"
             case .trackCannotHaveSound: return "this track can't produce sound (the microphone is never sounded through the app, to avoid feedback)"
             case .recognitionModeOnlyForMicrophone: return "recognition mode only applies to the microphone track"
@@ -1347,6 +1352,38 @@ public final class ImprovSession: @unchecked Sendable {
         piece = composedPiece
         currentPieceRecordID = nil
         append("Composed '\(composedPiece.title)' from text (\(composedPiece.sections.count) section(s)).")
+    }
+
+    /// Imports an external score file (`.fileImporter`, drag & drop — see `PiecesFileView`) as
+    /// the current working piece, mirroring `composeFromText`'s own "replace `piece`, clear
+    /// `currentPieceRecordID`" shape: an import is not yet saved to the piece store, exactly
+    /// like a freshly LLM-composed piece isn't — `savePiece(as:)` is the existing, unchanged
+    /// way to persist it afterward.
+    ///
+    /// Only Standard MIDI Files are supported so far (`SMFReader`) — MusicXML/MuseScore parsing
+    /// is a later phase of the score-import feature (see the project plan); anything else
+    /// throws `.unsupportedScoreFileExtension` before ever touching the file. The parsed
+    /// `RawScore` (tick-based, format-faithful) is deliberately NOT persisted yet — that's what
+    /// a future "afficher le fichier brut" view will need, not the composed `Piece` alone.
+    public func importScore(at url: URL) throws {
+        let rawScore: RawScore
+        switch url.pathExtension.lowercased() {
+        case "mid", "midi":
+            rawScore = try SMFReader.parse(contentsOf: url)
+        default:
+            throw SessionError.unsupportedScoreFileExtension(url.pathExtension)
+        }
+
+        let (composedPieceOpt, warnings) = RawScoreComposer.compose(from: rawScore)
+        for warning in warnings { append("Import warning: \(warning)") }
+        guard var composedPiece = composedPieceOpt else { throw SessionError.scoreImportFailed(warnings) }
+        if composedPiece.title == "Imported piece" {
+            composedPiece.title = url.deletingPathExtension().lastPathComponent
+        }
+
+        piece = composedPiece
+        currentPieceRecordID = nil
+        append("Imported '\(composedPiece.title)' from \(url.lastPathComponent) (\(composedPiece.sections.count) section(s)).")
     }
 
     /// Raw file I/O, unchanged in behavior — kept for the CLI's explicit-path `load

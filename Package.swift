@@ -79,7 +79,7 @@ let package = Package(
         // SwiftUI front-end can bind to the same `ImprovSession` instance later.
         .target(name: "AppCore", dependencies: [
             "MusicTheoryKit", "PieceModel", "SoundTrackModel", "SoundFontModel", "AudioEngine",
-            "MIDIEngine", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole", "Localization",
+            "MIDIEngine", "RecognitionEngine", "LLMEngine", "NetEngine", "WebConsole", "Localization", "ScoreImport",
             // The embedded MCP server (macOS only, see `MCPServer.swift`) — the `MCP` product
             // itself pulls in only `swift-system`/`swift-log`/`eventsource`, never SwiftNIO
             // (that's only a dependency of the SDK's own example conformance-test executables,
