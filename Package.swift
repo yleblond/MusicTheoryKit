@@ -112,7 +112,12 @@ let package = Package(
         // and testable without opening Xcode. Named JamShackUI rather than "JamShack" since
         // that name is already taken by the CLI executableTarget above (SPM target names must
         // be unique) — same disambiguation-by-suffix convention as MusicTheoryKit itself.
-        .target(name: "JamShackUI", dependencies: ["AppCore", "Localization", "RecognitionEngine"]),
+        // `Resources/ScoreEngraving` vendors VexFlow (MIT, https://vexflow.com) as a single
+        // self-contained UMD build (fonts embedded, no CDN/network fetch) plus our own
+        // score.html/bridge.js — loaded into a WKWebView by ScoreEngravingView for imported-score
+        // display (see the score-import plan). Kept as plain bundled files, not Swift source,
+        // since none of it is app logic — only score.html/bridge.js are ours to maintain.
+        .target(name: "JamShackUI", dependencies: ["AppCore", "Localization", "RecognitionEngine", "ScoreImport"], resources: [.copy("Resources/ScoreEngraving")]),
         .testTarget(name: "JamShackUITests", dependencies: ["JamShackUI"]),
     ]
 )
