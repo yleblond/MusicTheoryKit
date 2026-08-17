@@ -1,5 +1,6 @@
 import Foundation
 import MusicTheoryKit
+import PieceModel
 
 /// Converts a `RawScore` (tick-based, not-yet-notated) into a `NotatedScore` (measures of
 /// discrete note durations + VexFlow key strings) for display. This is display quantization,
@@ -15,6 +16,67 @@ import MusicTheoryKit
 ///   separated into distinct notated voices, they render sequentially instead.
 /// - Always treble clef; multi-staff/clef-per-part is not modeled yet.
 public enum ScoreEngravingAdapter {
+    /// Renders an already-composed `Piece` (hand-authored, LLM-composed, or the result of
+    /// `RawScoreComposer.compose`) the same way an imported file is rendered — rather than
+    /// re-implementing measure-segmentation/rest-filling/duration-quantization a second time for
+    /// `Piece`'s measure/beat shape, this converts each track's events into synthetic
+    /// tick-based `RawNote`s (an arbitrary but internally-consistent 480 ticks/quarter) and
+    /// reuses the same `buildMeasures` helper `build(from: RawScore)` is built on. `Piece`'s own
+    /// "one time signature/tempo for the whole piece" shape means only one `RawTimeSignatureEvent`
+    /// at tick 0 is ever needed here, unlike a real imported file's map.
+    public static func build(from piece: Piece) -> NotatedScore {
+        let ticksPerQuarter = 480
+        let beatsPerMeasure = max(piece.timeSignature.beatsPerMeasure, 1)
+        let beatUnit = max(piece.timeSignature.beatUnit, 1)
+        let ticksPerBeatUnit = ticksPerQuarter * 4 / beatUnit
+        let measureLengthTicks = beatsPerMeasure * ticksPerBeatUnit
+        let totalMeasures = piece.sections.reduce(0) { $0 + $1.lengthInMeasures }
+        let totalTicks = totalMeasures * measureLengthTicks
+        let timeSignatures = [RawTimeSignatureEvent(tick: 0, beatsPerMeasure: beatsPerMeasure, beatUnit: beatUnit)]
+
+        // `minimumTicks: totalTicks` below is what makes a track absent from a LATER section
+        // still get that section's worth of silent measures, rather than the part simply
+        // ending early and every other part's measures no longer lining up with it.
+        let parts = rawParts(from: piece, ticksPerQuarter: ticksPerQuarter, ticksPerBeatUnit: ticksPerBeatUnit, beatsPerMeasure: beatsPerMeasure).map { rawPart in
+            NotatedPart(
+                id: rawPart.id, name: rawPart.name,
+                measures: buildMeasures(notes: rawPart.notes, timeSignatures: timeSignatures, ticksPerQuarter: ticksPerQuarter, minimumTicks: totalTicks)
+            )
+        }
+        return NotatedScore(parts: parts)
+    }
+
+    /// Tracks are matched across sections by name (first-seen order) so a multi-section piece's
+    /// timeline stays aligned; a section missing a given name contributes no notes of its own
+    /// here — the silence for its span comes from `build(from: Piece)`'s `minimumTicks`, passed
+    /// to `buildMeasures` so that section's measures still get generated (as rests) for every
+    /// part, not just the ones with real notes in it.
+    private static func rawParts(from piece: Piece, ticksPerQuarter: Int, ticksPerBeatUnit: Int, beatsPerMeasure: Int) -> [RawPart] {
+        var order: [String] = []
+        for section in piece.sections {
+            for track in section.tracks where !order.contains(track.name) { order.append(track.name) }
+        }
+
+        var notesByName: [String: [RawNote]] = Dictionary(uniqueKeysWithValues: order.map { ($0, []) })
+        var sectionStartBeat = 0.0
+        for section in piece.sections {
+            for track in section.tracks {
+                let notes = track.melodyEvents.map { event -> RawNote in
+                    let localBeat = section.absoluteBeat(measure: event.measure, beat: event.beat, beatsPerMeasure: beatsPerMeasure)
+                    let startTick = Int(((sectionStartBeat + localBeat) * Double(ticksPerBeatUnit)).rounded())
+                    let durationTicks = max(Int((event.durationBeats * Double(ticksPerBeatUnit)).rounded()), 1)
+                    return RawNote(startTick: startTick, durationTicks: durationTicks, pitch: event.pitch, velocity: event.velocity)
+                }
+                notesByName[track.name, default: []].append(contentsOf: notes)
+            }
+            sectionStartBeat += Double(section.lengthInMeasures * beatsPerMeasure)
+        }
+
+        return order.map { name in
+            RawPart(id: name, name: name, notes: (notesByName[name] ?? []).sorted { $0.startTick < $1.startTick })
+        }
+    }
+
     public static func build(from rawScore: RawScore) -> NotatedScore {
         let ticksPerQuarter = max(rawScore.divisionsPerQuarterNote, 1)
         let timeSignatures = rawScore.timeSignatureMap.isEmpty
@@ -32,21 +94,28 @@ public enum ScoreEngravingAdapter {
 
     // MARK: - Measure segmentation
 
-    private static func buildMeasures(notes: [RawNote], timeSignatures: [RawTimeSignatureEvent], ticksPerQuarter: Int) -> [NotatedMeasure] {
+    /// `minimumTicks` (default 0, i.e. no effect on the real-import path in `build(from:
+    /// RawScore)`) forces at least that many ticks' worth of measures to be generated even past
+    /// this part's own last note — used only by `build(from: Piece)`, so a track absent from a
+    /// later section still gets that section's silent measures instead of ending early and
+    /// throwing every other part's measure alignment off.
+    private static func buildMeasures(notes: [RawNote], timeSignatures: [RawTimeSignatureEvent], ticksPerQuarter: Int, minimumTicks: Int = 0) -> [NotatedMeasure] {
         let sortedNotes = notes.filter { !$0.isRest }.sorted { $0.startTick < $1.startTick }
-        guard !sortedNotes.isEmpty else { return [] }
+        guard !sortedNotes.isEmpty || minimumTicks > 0 else { return [] }
 
         var measures: [NotatedMeasure] = []
         var measureStart = 0
         var noteIndex = 0
         var timeSignatureIndex = 0
 
-        // Driven by how many *notes* remain, not by their (possibly long, since-clipped) raw
-        // end ticks — a note that would have spanned past a measure gets clipped to fit
-        // (see the type's doc comment on ties), so its discarded tail must NOT spawn extra
-        // trailing rest-only measures. Each iteration is guaranteed to consume at least the
-        // next unconsumed note once `measureEnd` grows past its start tick, so this terminates.
-        while noteIndex < sortedNotes.count {
+        // Driven by how many *notes* remain (or `minimumTicks`, for a Piece part with no notes
+        // at all in one or more sections), not by notes' (possibly long, since-clipped) raw end
+        // ticks — a note that would have spanned past a measure gets clipped to fit (see the
+        // type's doc comment on ties), so its discarded tail must NOT spawn extra trailing
+        // rest-only measures. Each iteration is guaranteed to make progress: either it consumes
+        // the next unconsumed note once `measureEnd` grows past its start tick, or `measureEnd`
+        // itself keeps growing toward `minimumTicks`, so this always terminates.
+        while noteIndex < sortedNotes.count || measureStart < minimumTicks {
             while timeSignatureIndex + 1 < timeSignatures.count, timeSignatures[timeSignatureIndex + 1].tick <= measureStart {
                 timeSignatureIndex += 1
             }

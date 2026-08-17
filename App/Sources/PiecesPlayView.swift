@@ -1,5 +1,7 @@
 import SwiftUI
 import AppCore
+import JamShackUI
+import ScoreImport
 import Localization
 
 /// Screen 2 of the Morceaux tab: play/stop the currently-loaded piece, and pick which sound it
@@ -14,6 +16,7 @@ struct PiecesPlayView: View {
     /// folder not yet downloaded locally, a real network wait) — must not run on the main
     /// thread. Also the currently-loading sound's id, so only that one row shows a spinner.
     @State private var loadingSoundID: String?
+    @State private var showScore = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -38,6 +41,11 @@ struct PiecesPlayView: View {
             .formStyle(.grouped)
             #endif
         }
+        .sheet(isPresented: $showScore) {
+            if let piece = session.piece {
+                PieceScoreSheet(piece: piece, language: session.currentLanguage)
+            }
+        }
     }
 
     @ViewBuilder
@@ -57,6 +65,9 @@ struct PiecesPlayView: View {
                     },
                     onStop: { session.stopPlayback() }
                 )
+                Button(L10n.string(.appButtonVoirPartition, session.currentLanguage)) {
+                    showScore = true
+                }
             } else {
                 Text(L10n.string(.appPlaceholderAucunMorceauChargeOnglet, session.currentLanguage)).foregroundStyle(.secondary)
             }

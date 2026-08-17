@@ -816,6 +816,17 @@
   "ru": "Открыть гид",
   "zhHans": "查看引导"
  },
+ "appButtonVoirPartition": {
+  "de": "Partitur anzeigen",
+  "en": "View score",
+  "es": "Ver partitura",
+  "fr": "Voir la partition",
+  "it": "Visualizza spartito",
+  "ja": "楽譜を表示",
+  "pt": "Ver partitura",
+  "ru": "Показать партитуру",
+  "zhHans": "查看乐谱"
+ },
  "appButtonEditerLeGuide": {
   "de": "Guide bearbeiten",
   "en": "Edit the guide",
@@ -1926,6 +1937,17 @@
   "pt": "Órbita funcional",
   "ru": "Функциональная орбита",
   "zhHans": "功能轨道"
+ },
+ "appHeadingPartition": {
+  "de": "Partitur",
+  "en": "Score",
+  "es": "Partitura",
+  "fr": "Partition",
+  "it": "Spartito",
+  "ja": "楽譜",
+  "pt": "Partitura",
+  "ru": "Партитура",
+  "zhHans": "乐谱"
  },
  "appHeadingProfilStockage": {
   "de": "Speicherprofil",

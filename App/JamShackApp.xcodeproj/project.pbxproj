@@ -13,6 +13,7 @@
 		03434124F882655EA74ED88D /* ProgressionLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A804FA9376E50827AA8019F /* ProgressionLibraryView.swift */; };
 		05A55780712E1D194CD9FB87 /* StudioGuidePlayTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84823DDF6207C0D0213DBD87 /* StudioGuidePlayTabContent.swift */; };
 		066DB6ECE6F1061FC797DF56 /* PiecesPlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7171E005C138F689954FCE0 /* PiecesPlayView.swift */; };
+		9ACD2A0D5ACB7578A9019849 /* PieceScoreSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24AA4EA377C987FE205B8A11 /* PieceScoreSheet.swift */; };
 		06CEF7FF7580C390D568769E /* ComputerKeyboardWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 425EE89B1471CD7198F934E0 /* ComputerKeyboardWindow.swift */; };
 		0700456063A09994A4633452 /* IntonationWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DAC551C3F6FAEFBE4687F11 /* IntonationWindow.swift */; };
 		07C4C1FBFD056EEC2670D1C0 /* DissonancesTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23E8ED947369F4995D97D4BF /* DissonancesTabContent.swift */; };
@@ -69,6 +70,7 @@
 		3A8E64861B3EE2B4FE083D76 /* SessionGatedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE90A4A7D561D191DF3EDBE8 /* SessionGatedView.swift */; };
 		3B9243B29A433229B6D11F53 /* SceneLayoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC498287531CCB5772C1258B /* SceneLayoutView.swift */; };
 		3C05FE05BFF6CFA16E5225D0 /* PiecesPlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7171E005C138F689954FCE0 /* PiecesPlayView.swift */; };
+		4A55327CB8061DEE98C221F0 /* PieceScoreSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24AA4EA377C987FE205B8A11 /* PieceScoreSheet.swift */; };
 		3D11A2463C903C824EA09722 /* RemoteNotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61EB999B2BB050D2A3FD5F3B /* RemoteNotificationDelegate.swift */; };
 		3D9A4A9A9A91CE71B7CD7525 /* GuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AE61DA02F48C19951B955F1 /* GuideView.swift */; };
 		3E29CB3D8764DCD6CE9D0155 /* MIDIKeyboardSplitEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFC15C49AF9935E58EE8F865 /* MIDIKeyboardSplitEditorView.swift */; };
@@ -215,6 +217,7 @@
 		B1582EDCECFBFA0602F14007 /* JamShackLanguageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE39EAC785B1BF4AA9F44EDE /* JamShackLanguageView.swift */; };
 		B28B49B66968B01115887F36 /* DissonancesWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B433A34E42AC9FDA82D6597A /* DissonancesWindow.swift */; };
 		B3BEFD433A0B1B32F423302A /* PiecesPlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7171E005C138F689954FCE0 /* PiecesPlayView.swift */; };
+		44DB5DBC01EBBDF984D1FED5 /* PieceScoreSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24AA4EA377C987FE205B8A11 /* PieceScoreSheet.swift */; };
 		B58D6F16866C835C999DFA92 /* JamShackUI in Frameworks */ = {isa = PBXBuildFile; productRef = 87F816FA700F02A4EAC0B7EC /* JamShackUI */; };
 		B77FE8D91A8CF489D4064315 /* StaffCenterAlignment.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDE04732A393585E44C7EB82 /* StaffCenterAlignment.swift */; };
 		B82F181EB1C90DFFBBCAD927 /* SceneLayoutWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3D77E2216CC7C9B43720B44 /* SceneLayoutWindow.swift */; };
@@ -351,6 +354,7 @@
 		9DF506E12A5E6829884DCE65 /* IconAssignmentButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconAssignmentButton.swift; sourceTree = "<group>"; };
 		A2F5B84BE365D23928D663D1 /* ContextualHelp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextualHelp.swift; sourceTree = "<group>"; };
 		A7171E005C138F689954FCE0 /* PiecesPlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiecesPlayView.swift; sourceTree = "<group>"; };
+		24AA4EA377C987FE205B8A11 /* PieceScoreSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PieceScoreSheet.swift; sourceTree = "<group>"; };
 		A80BD5958DD843BF49738DE9 /* ColorHex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorHex.swift; sourceTree = "<group>"; };
 		A848FC0E680010358B07FF10 /* FavoriteSoundsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteSoundsView.swift; sourceTree = "<group>"; };
 		A8542DB3109F0EE2C04FFBC1 /* SoundFontCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundFontCatalogView.swift; sourceTree = "<group>"; };
@@ -499,6 +503,7 @@
 				8D58534383002A55C5D49F9D /* PaletteEditorView.swift */,
 				FC0DA62416ED6B405EBDF8DF /* PiecesFileView.swift */,
 				A7171E005C138F689954FCE0 /* PiecesPlayView.swift */,
+				24AA4EA377C987FE205B8A11 /* PieceScoreSheet.swift */,
 				1DAE2E35B014C09B62C4CE0A /* PiecesView.swift */,
 				61DBB868E875C6BD24CEA099 /* PlainDataDocument.swift */,
 				FA393FDD6590DDE0D1E4FAEF /* PlaybackControlButton.swift */,
@@ -750,6 +755,7 @@
 				303D7201D5131E7A9DF4AAD6 /* PaletteEditorView.swift in Sources */,
 				F069C2E7AFFA1D00E85D6D76 /* PiecesFileView.swift in Sources */,
 				066DB6ECE6F1061FC797DF56 /* PiecesPlayView.swift in Sources */,
+				9ACD2A0D5ACB7578A9019849 /* PieceScoreSheet.swift in Sources */,
 				F08F348DB63C1F25930AC00D /* PiecesView.swift in Sources */,
 				F1B775220E08B345D98C1E69 /* PlainDataDocument.swift in Sources */,
 				2636F5B565CF2E54B614292F /* PlaybackControlButton.swift in Sources */,
@@ -847,6 +853,7 @@
 				750CC9F9D1A1A0F79D3219FE /* PaletteEditorView.swift in Sources */,
 				555D9CC774486846D6BFE0B0 /* PiecesFileView.swift in Sources */,
 				3C05FE05BFF6CFA16E5225D0 /* PiecesPlayView.swift in Sources */,
+				4A55327CB8061DEE98C221F0 /* PieceScoreSheet.swift in Sources */,
 				E4741CC44CDC1C3A7E6701C8 /* PiecesView.swift in Sources */,
 				F386C7B3E174F8629694C909 /* PlainDataDocument.swift in Sources */,
 				DD7A83AB76208132AF099757 /* PlaybackControlButton.swift in Sources */,
@@ -944,6 +951,7 @@
 				AE9F39EB072B95572BAAB60C /* PaletteEditorView.swift in Sources */,
 				12B769366D7FED7F404F8EF2 /* PiecesFileView.swift in Sources */,
 				B3BEFD433A0B1B32F423302A /* PiecesPlayView.swift in Sources */,
+				44DB5DBC01EBBDF984D1FED5 /* PieceScoreSheet.swift in Sources */,
 				5E26D90A74444A5D8BB4504E /* PiecesView.swift in Sources */,
 				38F537A45F6133BAC6560CE5 /* PlainDataDocument.swift in Sources */,
 				59C2A00572CF722DEE6994C6 /* PlaybackControlButton.swift in Sources */,

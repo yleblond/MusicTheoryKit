@@ -257,6 +257,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHeadingJouer, appPlaceholderAucunSonFavori, appHeadingSonDeLecture, appHintSonParDefaut
     case appPlaceholderAucunMorceauChargeOnglet, appPlaceholderAucunMorceauChargePoint
     case appButtonChargerLaDemo, appHeadingMorceauCharge
+    case appButtonVoirPartition, appHeadingPartition
     case appPlaceholderAucunDossierMorceaux, appHeadingDossierMorceaux
     case appFormatFragmentsBPM
 
