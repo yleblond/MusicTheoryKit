@@ -37,25 +37,51 @@ struct PieceDetailView: View {
             if let actionError {
                 Text(actionError).foregroundStyle(.red).font(.caption).padding(.horizontal)
             }
-            TabView(selection: $selectedTab) {
-                Tab(L10n.string(.appTabInfos, session.currentLanguage), systemImage: "info.circle", value: DetailTab.infos) {
-                    infosTab
-                }
-                Tab(L10n.string(.appHeadingJouer, session.currentLanguage), systemImage: "play.circle", value: DetailTab.play) {
-                    playTab
-                }
-                Tab(L10n.string(.appTabAnalyse, session.currentLanguage), systemImage: "function", value: DetailTab.analyse) {
-                    analyseTab
+            tabBar
+            Divider()
+            Group {
+                switch selectedTab {
+                case .infos: infosTab
+                case .play: playTab
+                case .analyse: analyseTab
                 }
             }
-            // Without this, `TabView` + the value-based `Tab(_:systemImage:value:)` API falls
-            // back to a vertical sidebar-style presentation on macOS — same fix, same reasoning,
-            // as `ContentView`'s own top-level tab sets (see its doc comment on this exact
-            // modifier): `.sidebarAdaptable` is the style that actually renders as horizontal
-            // pills with both icon and label, confirmed empirically there.
-            .tabViewStyle(.sidebarAdaptable)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// A plain, deterministic horizontal switcher — NOT `TabView` + `.tabViewStyle(.sidebarAdaptable)`
+    /// (tried first, matching `ContentView`'s own top-level tab sets): unlike there, this view is
+    /// nested inside the Morceaux catalog→detail flow rather than being the window's own top-level
+    /// content, and in that narrower/nested context `.sidebarAdaptable` rendered as an actual
+    /// vertical sidebar with a wide unexplained gap before the tab content — not the horizontal
+    /// pills it reliably gives `ContentView`. A manually-drawn row of buttons has no such
+    /// adaptive, context-dependent behavior to fight.
+    private var tabBar: some View {
+        HStack(spacing: 4) {
+            tabBarButton(.infos, label: L10n.string(.appTabInfos, session.currentLanguage), systemImage: "info.circle")
+            tabBarButton(.play, label: L10n.string(.appHeadingJouer, session.currentLanguage), systemImage: "play.circle")
+            tabBarButton(.analyse, label: L10n.string(.appTabAnalyse, session.currentLanguage), systemImage: "function")
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.top, 8)
+    }
+
+    private func tabBarButton(_ tab: DetailTab, label: String, systemImage: String) -> some View {
+        Button {
+            selectedTab = tab
+        } label: {
+            Label(label, systemImage: systemImage)
+                .font(.subheadline.weight(selectedTab == tab ? .semibold : .regular))
+                .padding(.vertical, 6)
+                .padding(.horizontal, 12)
+                .background(selectedTab == tab ? Color.accentColor.opacity(0.15) : Color.clear)
+                .foregroundStyle(selectedTab == tab ? Color.accentColor : Color.primary)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -258,6 +284,7 @@ struct PieceDetailView: View {
             // when it overflows this frame — nesting a SwiftUI ScrollView around it risks
             // gesture conflicts between the two scroll surfaces.
             ScoreEngravingView(score: ScoreEngravingAdapter.build(from: piece), highlightedPitches: session.playbackHeldPitches)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding()
         } else {
             VStack {

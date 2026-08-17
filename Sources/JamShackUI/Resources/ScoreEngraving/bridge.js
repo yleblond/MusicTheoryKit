@@ -417,37 +417,30 @@ window.renderScore = function (score) {
 // `renderScore`'s own layout passes: re-running the whole 3-pass render on every note
 // onset/offset would be far too heavy for something that can fire many times a second.
 //
-// Draws ONE greyed vertical band per currently-sounding SYSTEM (not a colored circle per note,
-// which read as visually busy) — a cursor sweeping across that system's x-range, spanning its
-// FULL height rather than just the sounding note(s)' own bounding boxes. `[minX, maxX]` across
-// every currently-held note's bbox handles the (usual, since harmony parts move together) case
-// where several simultaneous notes share one system; a genuinely syncopated note ringing over
-// in a different system just grows this to 2 bands, which is still a truthful picture of what's
-// sounding right now.
+// Draws one greyed vertical band per matching note — a narrow cursor at that note's own x,
+// spanning its system's FULL height (not just the note's own bounding box). Deliberately NOT
+// merged into one [minX, maxX] span per system (an earlier version did this): matching is by
+// bare absolute pitch alone (`pitches: Set<Int>` carries no note-identity/timing), and the SAME
+// pitch commonly recurs many times within one measure in exactly the arpeggiated-accompaniment
+// texture this app's own real test file uses — merging turned that into one giant band
+// swallowing the whole repeating pattern instead of a moving cursor. Multiple simultaneous
+// chord tones still get several bands close together, close enough to read as one thicker cursor;
+// a same-pitch false match elsewhere just draws a second, separate, still-narrow band rather than
+// stretching to meet it.
 window.highlightPitches = function (pitches) {
     window.__lastHighlightedPitches = pitches;
     const layer = window.__highlightLayer;
     if (!layer) return;
     while (layer.firstChild) layer.removeChild(layer.firstChild);
     const active = new Set(pitches);
-    const sounding = (window.__noteEntries || []).filter((entry) => entry.pitches.some((p) => active.has(p)));
-
-    const bySystem = new Map(); // systemTop -> { minX, maxX, systemTop, systemHeight }
-    sounding.forEach((entry) => {
-        const key = entry.systemTop;
-        const band = bySystem.get(key) || { minX: Infinity, maxX: -Infinity, systemTop: entry.systemTop, systemHeight: entry.systemHeight };
-        band.minX = Math.min(band.minX, entry.bbox.x);
-        band.maxX = Math.max(band.maxX, entry.bbox.x + entry.bbox.w);
-        bySystem.set(key, band);
-    });
-
-    bySystem.forEach((band) => {
+    const padding = 4;
+    (window.__noteEntries || []).forEach((entry) => {
+        if (!entry.pitches.some((p) => active.has(p))) return;
         const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        const padding = 6;
-        rect.setAttribute("x", band.minX - padding);
-        rect.setAttribute("y", band.systemTop);
-        rect.setAttribute("width", band.maxX - band.minX + 2 * padding);
-        rect.setAttribute("height", band.systemHeight);
+        rect.setAttribute("x", entry.bbox.x - padding);
+        rect.setAttribute("y", entry.systemTop);
+        rect.setAttribute("width", entry.bbox.w + 2 * padding);
+        rect.setAttribute("height", entry.systemHeight);
         rect.setAttribute("fill", "#888888");
         rect.setAttribute("fill-opacity", "0.25");
         layer.appendChild(rect);
