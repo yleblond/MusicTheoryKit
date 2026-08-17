@@ -103,18 +103,23 @@ window.renderScore = function (score) {
     VF = window.VexFlow;
     window.__lastRenderedScore = score; // re-drawn on resize, see the listener at the bottom
 
-    // VexFlow's own `Formatter.preCalculateMinTotalWidth` is generous by design (default glyph/
-    // modifier spacing, no compression) — a dense piano measure (an arpeggiated accompaniment,
-    // 8-11 notes) can ask for 700-1100 logical px on its own. Without a zoom-out, that's wider
-    // than most window widths, so NO two measures ever fit on the same system: every measure
-    // ends up alone on its own line, forcing a horizontal scrollbar per line — a real bug, not
-    // just a cosmetic "too big" complaint (found rendering the real *An die Musik* import: 43
-    // measures, 43 one-measure systems). All layout math below stays in these same "logical"
-    // units throughout (nothing here needs to change); only the very last step — sizing the
-    // real `VF.Renderer` and scaling its context right before drawing — converts down to
-    // physical pixels, so the whole score (glyphs, spacing, everything proportionally) ends up
-    // visually smaller instead of just repositioned.
-    const RENDER_SCALE = 0.72;
+    // Overall zoom-out, applied by scaling the final render context (see the real `VF.Renderer`
+    // setup below) rather than touching any layout constant — every measurement everywhere else
+    // in this function stays in the same "logical" units it always has.
+    //
+    // Note: this does NOT fix the deeper reason a dense piano measure (an arpeggiated
+    // accompaniment, 8-11 notes) can need 700-1100 logical px on its own via VexFlow's
+    // `Formatter.preCalculateMinTotalWidth` — confirmed against the real *An die Musik* import,
+    // whose 43 measures each land in their own single-measure system regardless of a reasonable
+    // scale, since even two of the piece's SMALLEST measures combined already exceed a typical
+    // window's available width. About a third of that per-measure width turns out to be
+    // accidentals VexFlow draws for every single F#/C# occurrence (confirmed empirically: total
+    // minWidth across the piece drops ~30% with accidentals stripped) — because nothing in this
+    // pipeline draws an actual key signature (`stave.addKeySignature`) or suppresses the
+    // redundant accidentals a key signature would normally imply. That's a real, separate
+    // engraving feature (computing the key signature from `section.mode`, suppressing/
+    // re-introducing accidentals per measure), tracked in the backlog rather than fixed here.
+    const RENDER_SCALE = 0.82;
 
     const minMeasureWidth = 120;
     const notePadding = 40; // breathing room for the note area inside a measure

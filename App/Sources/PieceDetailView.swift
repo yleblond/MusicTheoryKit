@@ -48,6 +48,12 @@ struct PieceDetailView: View {
                     analyseTab
                 }
             }
+            // Without this, `TabView` + the value-based `Tab(_:systemImage:value:)` API falls
+            // back to a vertical sidebar-style presentation on macOS — same fix, same reasoning,
+            // as `ContentView`'s own top-level tab sets (see its doc comment on this exact
+            // modifier): `.sidebarAdaptable` is the style that actually renders as horizontal
+            // pills with both icon and label, confirmed empirically there.
+            .tabViewStyle(.sidebarAdaptable)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
