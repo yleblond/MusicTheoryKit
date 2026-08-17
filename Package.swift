@@ -18,6 +18,7 @@ let package = Package(
         .library(name: "AppCore", targets: ["AppCore"]),
         .library(name: "RecognitionEngine", targets: ["RecognitionEngine"]),
         .library(name: "LLMEngine", targets: ["LLMEngine"]),
+        .library(name: "ScoreImport", targets: ["ScoreImport"]),
         .library(name: "NetEngine", targets: ["NetEngine"]),
         .library(name: "WebConsole", targets: ["WebConsole"]),
         .library(name: "Localization", targets: ["Localization"]),
@@ -58,6 +59,13 @@ let package = Package(
         .testTarget(name: "RecognitionEngineTests", dependencies: ["RecognitionEngine"]),
         .target(name: "LLMEngine", dependencies: ["MusicTheoryKit", "PieceModel", "SoundTrackModel"]),
         .testTarget(name: "LLMEngineTests", dependencies: ["LLMEngine", "MusicTheoryKit", "PieceModel", "SoundTrackModel"]),
+        // Import of external score files (MIDI/MusicXML/MuseScore .mscx) into a `Piece`, in two
+        // steps: a format-agnostic `RawScore` (tick-based, format-faithful) parsed from the
+        // source file, then a deterministic quantization/chord-and-key-inference pass onto
+        // `Piece`'s measure/beat model. Pure logic, no `AppCore`/SwiftData/CoreMIDI dependency —
+        // testable standalone, same boundary as `LLMEngine`.
+        .target(name: "ScoreImport", dependencies: ["MusicTheoryKit", "PieceModel", "RecognitionEngine"]),
+        .testTarget(name: "ScoreImportTests", dependencies: ["ScoreImport"]),
         // Collaborative-session transport: a flat Codable message type plus a hand-rolled
         // length-prefixed TCP framing over Network.framework — no third-party dependency.
         .target(name: "NetEngine"),
