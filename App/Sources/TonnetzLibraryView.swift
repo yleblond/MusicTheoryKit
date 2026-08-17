@@ -56,7 +56,18 @@ struct TonnetzLibraryView: View {
     /// (their own existing `familyID == 1` guard), with a small inline notice instead so it
     /// reads as "not supported here" rather than "nothing happened."
     private var isSharedModeSupported: Bool {
-        (ScaleLibrary.byID(appModel.sharedMode.scaleID)?.familyID ?? 1) == 1
+        let scaleID = session.theoryDisplayModeReference?.scaleID ?? appModel.sharedMode.scaleID
+        return (ScaleLibrary.byID(scaleID)?.familyID ?? 1) == 1
+    }
+
+    /// Whether `selectedMode` below is currently following piece playback rather than the manual
+    /// "Mode optionnel" toggle/tonic/scale pickers — deliberately independent of `isModeEnabled`
+    /// (a mode being OBSERVED from playback is shown regardless of whether the user separately
+    /// flipped that manual toggle on — see `selectedMode`'s own doc comment for why the two used
+    /// to conflict). `controlsRow` disables the toggle/pickers and shows a hint when this is
+    /// `true`, since changing them would otherwise silently do nothing.
+    private var modeFollowsPlayback: Bool {
+        session.theoryDisplayModeReference != nil
     }
 
     private var sharedTonicBinding: Binding<Int> {
@@ -83,7 +94,17 @@ struct TonnetzLibraryView: View {
     /// on whichever track is picked, so simply having a source picked is enough.
     private var canPlay: Bool { sourceID != nil }
 
+    /// A piece being observed for playback (`theoryDisplayModeReference`) always wins over the
+    /// manual "Mode optionnel" toggle — checked FIRST, unconditionally, rather than only once
+    /// `isModeEnabled` is separately turned on. Before this, the two were combined
+    /// (`isModeEnabled && theoryDisplayModeReference`), so observing a piece silently did nothing
+    /// here unless the user ALSO happened to flip that toggle on — confirmed as the actual reason
+    /// "the mode doesn't reach Tonnetz" even though it correctly reached Exploration fonctionnelle
+    /// (which has no such gate of its own).
     private var selectedMode: Mode? {
+        if let ref = session.theoryDisplayModeReference {
+            return Mode(tonic: PitchClass(ref.tonic), scale: ScaleLibrary.byID(ref.scaleID) ?? ScaleLibrary.scales(inFamily: 1)[0])
+        }
         guard isModeEnabled else { return nil }
         return Mode(tonic: PitchClass(appModel.sharedMode.tonic), scale: ScaleLibrary.byID(appModel.sharedMode.scaleID) ?? ScaleLibrary.scales(inFamily: 1)[0])
     }
@@ -92,12 +113,13 @@ struct TonnetzLibraryView: View {
     /// request/verification: with no mode, the Tonnetz always shows the standard per-pitch-class
     /// palette (the same one the Circle-of-fifths uses), i.e. exactly what `colorByIdentity: true`
     /// already produces — so this forces `true` rather than `false` whenever no mode is active,
-    /// the opposite of an earlier (wrong) version of this property. Once a mode IS active, the
-    /// checked (default) state keeps that same palette coloring plus a contrast highlight for the
-    /// mode's own notes/chords (`nodeAppearance`/`triangleAppearance`'s own `role`/`isDiatonic`
-    /// handling); unchecking it switches to the role-based blue scheme (mode root/tone notes,
-    /// light-sky-blue diatonic triangles) instead.
-    private var effectiveColorByIdentity: Bool { !isModeEnabled || colorByIdentity }
+    /// the opposite of an earlier (wrong) version of this property. Once a mode IS active
+    /// (manually or via `modeFollowsPlayback`), the checked (default) state keeps that same
+    /// palette coloring plus a contrast highlight for the mode's own notes/chords
+    /// (`nodeAppearance`/`triangleAppearance`'s own `role`/`isDiatonic` handling); unchecking it
+    /// switches to the role-based blue scheme (mode root/tone notes, light-sky-blue diatonic
+    /// triangles) instead.
+    private var effectiveColorByIdentity: Bool { !(isModeEnabled || modeFollowsPlayback) || colorByIdentity }
 
     /// The mode's own diatonic major/minor triads, outlined on both lattices — `"dim"` (the vii°)
     /// is excluded, since no lattice triangle can represent a diminished triad (no perfect fifth
@@ -196,7 +218,8 @@ struct TonnetzLibraryView: View {
             Toggle(L10n.string(.appLabelModeOptionnel, session.currentLanguage), isOn: $isModeEnabled)
                 .toggleStyle(.switch)
                 .fixedSize()
-            if isModeEnabled {
+                .disabled(modeFollowsPlayback)
+            if isModeEnabled || modeFollowsPlayback {
                 Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: sharedTonicBinding) {
                     ForEach(0..<12, id: \.self) { pitchClass in
                         Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
@@ -204,6 +227,7 @@ struct TonnetzLibraryView: View {
                 }
                 .pickerStyle(.menu)
                 .fixedSize()
+                .disabled(modeFollowsPlayback)
                 Picker(L10n.string(.fieldGamme, session.currentLanguage), selection: sharedScaleIDBinding) {
                     ForEach(ScaleLibrary.scales(inFamily: 1), id: \.id) { scale in
                         Text(scale.popularName).tag(scale.id)
@@ -211,12 +235,16 @@ struct TonnetzLibraryView: View {
                 }
                 .pickerStyle(.menu)
                 .fixedSize()
+                .disabled(modeFollowsPlayback)
                 // Stuck to the mode controls, and only shown once a mode is active — see
                 // `effectiveColorByIdentity`'s own doc comment.
                 Toggle(L10n.string(.appToggleTonnetzCouleursIdentite, session.currentLanguage), isOn: $colorByIdentity)
                     .toggleStyle(.switch)
                     .fixedSize()
-                if !isSharedModeSupported {
+                if modeFollowsPlayback {
+                    Text(L10n.string(.appHintModeSuitLecture, session.currentLanguage))
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else if !isSharedModeSupported {
                     Text(L10n.string(.appHintExplorationFamilleUn, session.currentLanguage))
                         .font(.caption2).foregroundStyle(.secondary)
                 }

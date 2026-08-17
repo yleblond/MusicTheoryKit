@@ -306,7 +306,11 @@ final class ScoreEngravingAdapterPieceTests: XCTestCase {
 
     // MARK: - Chord/Roman-numeral annotations
 
-    func testChordAnnotationsAttachOnlyToTheTopStaff() {
+    /// Attached to the LAST (bottom-most) staff of the system — not the first — so it prints
+    /// below every track in a multi-track piece instead of reading as "the first track's own
+    /// annotation" (per explicit request/verification: with 3 tracks, it used to visually sit
+    /// between the first and second staves).
+    func testChordAnnotationsAttachOnlyToTheBottomStaff() {
         let piece = Piece(
             title: "Test", timeSignature: TimeSignature(beatsPerMeasure: 4, beatUnit: 4),
             tempoBPM: 120, key: ModeReference(tonic: 2, scaleID: "ionian"),
@@ -325,10 +329,10 @@ final class ScoreEngravingAdapterPieceTests: XCTestCase {
         let parts = ScoreEngravingAdapter.build(from: piece).parts
         let melody = parts.first { $0.name == "Melody" }
         let bass = parts.first { $0.name == "Bass" }
-        XCTAssertEqual(melody?.measures[0].chordAnnotations.map(\.romanNumeral), ["I"])
-        XCTAssertEqual(melody?.measures[0].chordAnnotations.first?.chordSymbol, "D")
-        XCTAssertEqual(melody?.measures[0].chordAnnotations.first?.isLowConfidence, false)
-        XCTAssertEqual(bass?.measures[0].chordAnnotations, [], "chord symbols are a harmonic event, not repeated on every staff")
+        XCTAssertEqual(melody?.measures[0].chordAnnotations, [], "chord symbols are a harmonic event, not repeated on every staff")
+        XCTAssertEqual(bass?.measures[0].chordAnnotations.map(\.romanNumeral), ["I"])
+        XCTAssertEqual(bass?.measures[0].chordAnnotations.first?.chordSymbol, "D")
+        XCTAssertEqual(bass?.measures[0].chordAnnotations.first?.isLowConfidence, false)
     }
 
     // MARK: - Playback-time note positions

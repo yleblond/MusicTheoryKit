@@ -139,8 +139,27 @@ struct ModeLibraryView: View {
 
     private var usesTwoColumns: Bool { TheoryLibraryLayoutMode.usesTwoColumns(horizontalSizeClass: horizontalSizeClass) }
 
+    /// Follows the piece's own ground-truth mode (`session.theoryDisplayModeReference`) instead of
+    /// the manually-picked `tonicBinding`/`scaleIDBinding` while playback is being observed — for
+    /// BOTH `.overview` ("Modes") and `.exploration`, per explicit request. This is also what lets
+    /// `reactToLiveChordMatch` (fed by `theoryLiveInputRecognizedChord`, which returns the piece's
+    /// own ground-truth chord while observing) actually find a match in `diatonicChordReferences`:
+    /// that lookup is keyed by (root, quality) against THIS mode's own diatonic chords, so a
+    /// mismatched tonic/scale would silently never match anything, even with the chord data itself
+    /// correct — matches `theoryLiveInputRecognizedChord`'s note about the mode-following fix.
     private var mode: Mode {
-        Mode(tonic: PitchClass(tonicBinding.wrappedValue), scale: ScaleLibrary.byID(scaleIDBinding.wrappedValue) ?? ScaleLibrary.all[0])
+        if let ref = session.theoryDisplayModeReference {
+            return Mode(tonic: PitchClass(ref.tonic), scale: ScaleLibrary.byID(ref.scaleID) ?? ScaleLibrary.all[0])
+        }
+        return Mode(tonic: PitchClass(tonicBinding.wrappedValue), scale: ScaleLibrary.byID(scaleIDBinding.wrappedValue) ?? ScaleLibrary.all[0])
+    }
+
+    /// Whether `mode` above is currently following piece playback rather than the manual picker —
+    /// `overviewContent`/`functionalExplorationSection` show a small hint, and `listContent`
+    /// disables its tonic/scale pickers, when this is `true`, since changing them wouldn't
+    /// actually change what's displayed while a piece is being observed.
+    private var modeFollowsPlayback: Bool {
+        session.theoryDisplayModeReference != nil
     }
 
     /// Whichever live track is the app's current "source principale" — same convention
@@ -260,6 +279,7 @@ struct ModeLibraryView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .disabled(modeFollowsPlayback)
                 } else {
                     Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: tonicBinding) {
                         ForEach(0..<12, id: \.self) { pitchClass in
@@ -267,6 +287,11 @@ struct ModeLibraryView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .disabled(modeFollowsPlayback)
+                }
+                if modeFollowsPlayback {
+                    Text(L10n.string(.appHintModeSuitLecture, session.currentLanguage))
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
             } header: {
                 Text(L10n.string(.appHeadingBibliothequeModes, session.currentLanguage))
@@ -379,6 +404,10 @@ struct ModeLibraryView: View {
     @ViewBuilder
     private var overviewContent: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if modeFollowsPlayback {
+                Text(L10n.string(.appHintModeSuitLecture, session.currentLanguage))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
             octaveShiftControl
             // `.staffCenter` (not `.top`) — per explicit request, so the selected-chord keyboard
             // in `circleColumn` lines up on the two staffs' own shared height instead of the top
@@ -950,6 +979,10 @@ struct ModeLibraryView: View {
     /// request.
     private var functionalExplorationSection: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if modeFollowsPlayback {
+                Text(L10n.string(.appHintModeSuitLecture, session.currentLanguage))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
             // Row 1: a column stacking the mode's own name, the role-source toggle, the
             // progression picker, its chord-chip preview, and (per explicit request) the
             // role-color legend, each directly under the previous one — to the LEFT of the two

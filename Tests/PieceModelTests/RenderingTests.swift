@@ -235,7 +235,10 @@ final class RenderingTests: XCTestCase {
     /// `trackName` round-trips through `Track.scheduledNotes` -> `Piece.renderedNotes` so
     /// playback can report "which track(s)" are currently sounding — a chord-progression note
     /// has no track of its own, so it must stay `nil`.
-    func testPieceRenderedNotesCarryTrackNameForTrackNotesButNotChordNotes() {
+    /// Chord-progression notes carry `Section.chordProgressionObservationName`, not `nil` — a
+    /// real, stable "voice" name (distinct from any real track's own) so Music Lab's playback
+    /// observation feature can offer the chord progression as its own toggle, same as any track.
+    func testPieceRenderedNotesCarryTrackNameForTrackNotesAndTheChordProgressionSentinelForChordNotes() {
         let track = Track(name: "lead", instrument: "piano", melodyEvents: [MelodyEvent(measure: 1, beat: 1, durationBeats: 1, pitch: 72)])
         let section = Section(
             name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 0, scaleID: "ionian"),
@@ -246,7 +249,7 @@ final class RenderingTests: XCTestCase {
         let notes = piece.renderedNotes()
 
         XCTAssertEqual(notes.first { $0.pitch == 72 }?.trackName, "lead")
-        XCTAssertTrue(notes.filter { $0.pitch != 72 }.allSatisfy { $0.trackName == nil })
+        XCTAssertTrue(notes.filter { $0.pitch != 72 }.allSatisfy { $0.trackName == Section.chordProgressionObservationName })
     }
 
     func testPieceRenderedNotesOffsetsSecondSectionByFirstSectionsLength() {

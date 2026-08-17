@@ -1267,6 +1267,17 @@
   "ru": "Всё произведение",
   "zhHans": "整首曲子"
  },
+ "appHintModeSuitLecture": {
+  "de": "Folgt dem Modus des aktuell abgespielten Stücks.",
+  "en": "Following the mode of the piece currently playing.",
+  "es": "Siguiendo el modo de la pieza en reproducción.",
+  "fr": "Suit le mode du morceau en cours de lecture.",
+  "it": "Segue il modo del brano in riproduzione.",
+  "ja": "現在再生中の曲のモードに追従しています。",
+  "pt": "A seguir o modo da peça em reprodução.",
+  "ru": "Следует ладу воспроизводимого произведения.",
+  "zhHans": "正在跟随当前播放曲目的调式。"
+ },
  "appFormatGameCenterErreur": {
   "de": "Game Center: %@",
   "en": "Game Center: %@",

@@ -3070,7 +3070,7 @@ public final class ImprovSession: @unchecked Sendable {
             }
             let event = playbackTimeline[index]
             let (chordTones, modeTones) = Self.pitchClassSets(
-                forChordRoot: event.chord.root, chordTemplateID: event.chord.chordTemplateID,
+                forChordRoot: event.chord.root, chordTemplateID: Self.triadTemplateID(for: event.chord.chordTemplateID),
                 modeTonic: event.mode.tonic, scaleID: event.mode.scaleID
             )
             return (held, event.chord.root, chordTones, modeTones)
@@ -3099,11 +3099,23 @@ public final class ImprovSession: @unchecked Sendable {
             guard let index = playbackCurrentChordIndex, playbackTimeline.indices.contains(index) else { return nil }
             let event = playbackTimeline[index]
             return RecognizedChord(
-                root: PitchClass(event.chord.root), chordTemplateID: event.chord.chordTemplateID,
+                root: PitchClass(event.chord.root), chordTemplateID: Self.triadTemplateID(for: event.chord.chordTemplateID),
                 bass: PitchClass(event.chord.root), confidence: 1.0
             )
         }
         return tracks.first { $0.id == theoryLiveInputSourceID }?.recognizedChord
+    }
+
+    /// The piece's own ground-truth mode (`Section.mode`, via `playbackTimeline`) at the current
+    /// playback position, when `piecePlaybackObservationScope` is set — `nil` otherwise (including
+    /// while observing but nothing is currently playing/positioned). Exploration fonctionnelle and
+    /// Tonnetz read this to auto-follow the piece's actual mode instead of staying on whatever
+    /// tonic/scale was last picked manually (`AppModel.sharedMode`) — per explicit request, since a
+    /// manually-picked mode has no reason to match what's actually sounding.
+    public var theoryDisplayModeReference: ModeReference? {
+        guard piecePlaybackObservationScope != nil,
+              let index = playbackCurrentChordIndex, playbackTimeline.indices.contains(index) else { return nil }
+        return playbackTimeline[index].mode
     }
 
     /// Whatever's currently held that Théorie should visually reflect — piece-playback notes
@@ -6803,6 +6815,27 @@ public final class ImprovSession: @unchecked Sendable {
             modeTones = Mode(tonic: PitchClass(modeTonic), scale: scale).pitchClasses.map(\.value)
         }
         return (chordTones, modeTones)
+    }
+
+    /// Reduces a `ChordVocabulary` template ID down to its plain-triad equivalent (root position
+    /// major/minor/diminished/augmented, or itself when it has no third to reduce) — used only
+    /// when feeding a piece's own ground-truth chord into Exploration fonctionnelle/Tonnetz's
+    /// recognition (`ImprovSession.matchingChordIndex`, `Tonnetz.matchingEdge`), which both match
+    /// by exact `chordTemplateID` string equality against that library's own plain-triad reference
+    /// IDs ("Ma"/"mi"/"dim"/"aug"). A composed piece routinely uses 7ths/9ths/6ths
+    /// ("Ma7"/"mi7"/"9"/"6"...), which would otherwise never match anything and silently break that
+    /// recognition — per explicit request/verification, rather than the alternative (making the
+    /// matching itself quality-fuzzy, a larger change deferred for now). Unmapped IDs (unknown, or
+    /// already a triad/dyad with nothing to reduce, e.g. "5"/"sus2"/"sus4") pass through unchanged.
+    private static let triadReductionByTemplateID: [String: String] = [
+        "Ma7": "Ma", "6": "Ma", "add9": "Ma", "9": "Ma", "Ma9": "Ma", "7": "Ma", "7b5": "Ma",
+        "mi7": "mi", "mi6": "mi", "miAdd9": "mi", "mi9": "mi", "miMa7": "mi",
+        "mi7b5": "dim", "dim7": "dim",
+        "Ma7#5": "aug", "7#5": "aug",
+    ]
+
+    private static func triadTemplateID(for chordTemplateID: String) -> String {
+        triadReductionByTemplateID[chordTemplateID] ?? chordTemplateID
     }
 
     /// Connects to a collaborative session at a known host/port. Every local track already

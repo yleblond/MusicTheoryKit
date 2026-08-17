@@ -164,8 +164,8 @@ struct PieceDetailView: View {
                         Text(piece.sections.count > 1 ? section.name : L10n.string(.appHeadingPisteMIDI, session.currentLanguage))
                     }
                 }
-                defaultSoundSection
                 playbackObservationSection(piece: piece)
+                defaultSoundSection
             } else {
                 Text(L10n.string(.appPlaceholderAucunMorceauChargeOnglet, session.currentLanguage)).foregroundStyle(.secondary)
             }
@@ -288,7 +288,7 @@ struct PieceDetailView: View {
                 set: { session.setPiecePlaybackObservationScope($0 ? .wholePiece : nil) }
             ))
             ForEach(orderedTrackNames(in: piece), id: \.self) { trackName in
-                Toggle(trackName, isOn: Binding(
+                Toggle(observationLabel(for: trackName), isOn: Binding(
                     get: { observedTrackNames.contains(trackName) },
                     set: { isOn in
                         var names = observedTrackNames
@@ -308,10 +308,24 @@ struct PieceDetailView: View {
     }
 
     /// Every track name across every section, first-seen order, deduplicated — the same track
-    /// name (e.g. "Piano") can legitimately repeat across sections, but should appear once here.
+    /// name (e.g. "Piano") can legitimately repeat across sections, but should appear once here —
+    /// plus `Section.chordProgressionObservationName` last, when any section actually has a chord
+    /// progression to observe. Without this, the chord progression (shown as its own "Accords" row
+    /// in "Pistes MIDI" just above) would be the one row in that list with no matching toggle
+    /// here, reading as "the last one is missing" even though every real Track IS listed.
     private func orderedTrackNames(in piece: Piece) -> [String] {
         var seen = Set<String>()
-        return piece.sections.flatMap(\.tracks).map(\.name).filter { seen.insert($0).inserted }
+        var names = piece.sections.flatMap(\.tracks).map(\.name).filter { seen.insert($0).inserted }
+        if piece.sections.contains(where: { !$0.chordProgression.isEmpty }) {
+            names.append(Section.chordProgressionObservationName)
+        }
+        return names
+    }
+
+    private func observationLabel(for trackName: String) -> String {
+        trackName == Section.chordProgressionObservationName
+            ? L10n.string(.appHeadingAccordsSection, session.currentLanguage)
+            : trackName
     }
 
     // MARK: - Play tab

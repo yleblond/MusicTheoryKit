@@ -85,6 +85,26 @@ final class TheoryDisplayStateTests: XCTestCase {
         session.stopPlayback()
     }
 
+    /// The chord progression is its own observable "voice" (`Section.chordProgressionObservationName`),
+    /// distinct from real tracks — confirms the fix for "the last voice is missing" from the
+    /// observation toggle list: the chord progression previously had no `trackName` at all, so it
+    /// could never be selected on its own even though it visually appears as its own row
+    /// ("Accords") in the Infos tab's instrument list right above the observation toggles.
+    func testTracksScopeCanIsolateJustTheChordProgression() throws {
+        let session = makeTestSession()
+        try session.start()
+        try loadTemporaryPiece(twoTrackPiece(), into: session)
+        session.setPiecePlaybackObservationScope(.tracks([Section.chordProgressionObservationName]))
+
+        try session.play()
+        Thread.sleep(forTimeInterval: 0.15)
+        let state = try XCTUnwrap(session.theoryDisplayState)
+        XCTAssertFalse(state.heldPitches.contains(74), "Melody's own note excluded")
+        XCTAssertFalse(state.heldPitches.contains(38), "Bass's own note excluded")
+        XCTAssertFalse(state.heldPitches.isEmpty, "the D major chord progression's own notes ARE included")
+        session.stopPlayback()
+    }
+
     func testPlaybackScopeTakesPriorityOverALiveTrackWhenBothAreSet() throws {
         let session = makeTestSession()
         try session.start()
@@ -96,6 +116,50 @@ final class TheoryDisplayStateTests: XCTestCase {
 
         let state = try XCTUnwrap(session.theoryDisplayState)
         XCTAssertEqual(state.chordRoot, 2, "playback ground truth wins over the live track's own recognition")
+        session.stopPlayback()
+    }
+
+    /// A section whose chord progression uses a dominant 7th ("Ma7") — real composed harmony
+    /// routinely does, but Exploration fonctionnelle/Tonnetz's recognition matches by exact
+    /// `chordTemplateID` string equality against the library's own plain-triad reference IDs
+    /// ("Ma"/"mi"/"dim"/"aug") and would otherwise never match a 7th chord at all.
+    private func seventhChordPiece() -> Piece {
+        let section = Section(
+            name: "A", lengthInMeasures: 1, mode: ModeReference(tonic: 2, scaleID: "ionian"),
+            chordProgression: [ChordEvent(measure: 1, beat: 1, durationBeats: 4, chord: ChordReference(root: 2, chordTemplateID: "Ma7"))],
+            tracks: []
+        )
+        return Piece(title: "t", tempoBPM: 60, key: ModeReference(tonic: 2, scaleID: "ionian"), sections: [section])
+    }
+
+    func testPlaybackChordToneAndSynthesizedChordAreReducedToPlainTriadForRecognition() throws {
+        let session = makeTestSession()
+        try session.start()
+        try loadTemporaryPiece(seventhChordPiece(), into: session)
+        session.setPiecePlaybackObservationScope(.wholePiece)
+        try session.play()
+
+        let state = try XCTUnwrap(session.theoryDisplayState)
+        XCTAssertEqual(Set(state.chordTones), Set([2, 6, 9]), "D major TRIAD tones only, no major 7th (1)")
+
+        let recognized = try XCTUnwrap(session.theoryLiveInputRecognizedChord)
+        XCTAssertEqual(recognized.chordTemplateID, "Ma", "synthesized chord reduced to the plain-triad ID the library's recognition expects")
+        session.stopPlayback()
+    }
+
+    func testTheoryDisplayModeReferenceFollowsPlaybackAndIsNilOtherwise() throws {
+        let session = makeTestSession()
+        XCTAssertNil(session.theoryDisplayModeReference, "not observing playback at all")
+
+        try session.start()
+        try loadTemporaryPiece(twoTrackPiece(), into: session)
+        XCTAssertNil(session.theoryDisplayModeReference, "piece loaded but observation scope not set")
+
+        session.setPiecePlaybackObservationScope(.wholePiece)
+        try session.play()
+        let ref = try XCTUnwrap(session.theoryDisplayModeReference)
+        XCTAssertEqual(ref.tonic, 2)
+        XCTAssertEqual(ref.scaleID, "ionian")
         session.stopPlayback()
     }
 }

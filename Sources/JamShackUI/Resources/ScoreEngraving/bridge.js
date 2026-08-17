@@ -155,7 +155,13 @@ window.renderScore = function (score) {
     // redundant accidentals (every single F#/C# occurrence, even ones the key signature already
     // implies) — `ScoreEngravingAdapter` now draws a real key signature and suppresses those, but
     // that alone doesn't fully close the gap for this piece's own dense arpeggios.
-    const RENDER_SCALE = 0.82;
+    const RENDER_SCALE = 0.66; // ~20% denser than the previous 0.82 — same on-screen footprint, more content visible
+    // Exposed for `window.highlightPitches`'s own auto-scroll — `systemTop`/`systemHeight` on
+    // each `noteEntries` entry are in LOGICAL (pre-scale) units, but `window.scrollTo` needs real
+    // page/CSS-pixel coordinates, which are the logical ones shrunk by this same factor (the SVG
+    // element's own laid-out size is the PHYSICAL, already-scaled dimensions).
+    window.__renderScale = RENDER_SCALE;
+    window.__lastScrolledSystemTop = null; // fresh render (new score, or a resize) -> re-arm auto-scroll
 
     const minMeasureWidth = 120;
     const notePadding = 40; // breathing room for the note area inside a measure
@@ -449,6 +455,14 @@ window.highlightPitches = function (pitches, elapsedSeconds) {
     // own real test file) both match at their shared boundary instant — an exclusive upper bound
     // resolves that ambiguity in favor of the note that's just starting.
     const epsilon = 0.001;
+    // The LATEST matching entry, not the first: `noteEntries` is pushed in musical (system) order,
+    // so when a long-held note (a sustained bass/pedal tone, or a held chord-progression chord)
+    // is still sounding alongside a freshly-onset note in a LATER system, both match — picking the
+    // first (earliest/topmost) one used to pin the scroll target back at the sustained note's own,
+    // earlier system for as long as it kept ringing, then snap forward the instant it released,
+    // producing a constant back-and-forth jitter. The latest match is always the temporally
+    // current one, which is what auto-scroll should actually follow.
+    let latestMatchSystemTop = null;
     (window.__noteEntries || []).forEach((entry) => {
         if (!entry.pitches.some((p) => active.has(p))) return;
         if (entry.startSeconds !== undefined && entry.durationSeconds !== undefined) {
@@ -456,6 +470,7 @@ window.highlightPitches = function (pitches, elapsedSeconds) {
                 && elapsedSeconds < entry.startSeconds + entry.durationSeconds;
             if (!withinWindow) return;
         }
+        latestMatchSystemTop = entry.systemTop;
         const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
         rect.setAttribute("x", entry.bbox.x - padding);
         rect.setAttribute("y", entry.systemTop);
@@ -465,6 +480,17 @@ window.highlightPitches = function (pitches, elapsedSeconds) {
         rect.setAttribute("fill-opacity", "0.25");
         layer.appendChild(rect);
     });
+
+    // Auto-scroll to the currently-playing system — only when it actually CHANGES (not on every
+    // matching note within the same system), so this doesn't fight the user's own scrolling or
+    // jitter needlessly. `systemTop` is in logical (pre-scale) units; the page's own real scroll
+    // coordinates are that shrunk by `RENDER_SCALE` (the SVG's laid-out size is already-scaled).
+    if (latestMatchSystemTop !== null && latestMatchSystemTop !== window.__lastScrolledSystemTop) {
+        window.__lastScrolledSystemTop = latestMatchSystemTop;
+        const scale = window.__renderScale || 1;
+        const topMarginPx = 20 * scale; // small comfortable margin above the system, matches `topMargin`
+        window.scrollTo({ top: Math.max(0, latestMatchSystemTop * scale - topMarginPx), behavior: "smooth" });
+    }
 };
 
 // A real, non-modal screen can resize (window resize on macOS, rotation on iOS/iPadOS) — the

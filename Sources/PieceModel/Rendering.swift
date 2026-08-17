@@ -14,9 +14,10 @@ public struct ScheduledNote: Equatable, Sendable {
     /// Which preset within `instrumentName`, when it names a multi-preset `.sf2` — `nil`
     /// alongside a non-nil `instrumentName` means that file's own default sound.
     public var instrumentPreset: SoundFontPresetIdentity?
-    /// The originating `Track.name`, when this note came from one — `nil` for a chord-progression
-    /// note (`Section.chordScheduledNotes`, which has no track of its own). Lets playback report
-    /// "which track(s)" are currently sounding, e.g. for observing a specific track's notes in
+    /// The originating `Track.name` for a real track's note, or `Section.chordProgressionObservationName`
+    /// for a chord-progression note (`Section.chordScheduledNotes`, which has no `Track` of its
+    /// own) — never `nil` in practice, both paths always set it. Lets playback report "which
+    /// track(s)/voice(s)" are currently sounding, e.g. for observing a specific one's notes in
     /// Music Lab (see `ImprovSession.playbackHeldPitchesByTrack`).
     public var trackName: String?
 
@@ -144,6 +145,13 @@ extension ChordEvent {
 }
 
 public extension Section {
+    /// Sentinel `ScheduledNote.trackName` chord-progression notes carry — the chord progression
+    /// isn't a real `Track` (no `Track` object of its own), but it's still a "voice" the app lets
+    /// Music Lab observe on its own (`ImprovSession.piecePlaybackObservationScope`), so it needs
+    /// some stable name distinct from any real track's own. Never shown to the user raw — UI
+    /// callers (`PieceDetailView`) pair it with their own localized label.
+    static let chordProgressionObservationName = "__chordProgression__"
+
     /// Flattens this section's chord progression into scheduled notes (beat offsets
     /// relative to the section start), resolving each chord's inversion/bass/playing style.
     func chordScheduledNotes(beatsPerMeasure: Int, octaveBase: Int = 48, velocity: Int = 90) -> [ScheduledNote] {
@@ -157,7 +165,8 @@ public extension Section {
                     pitch: voiced.pitch,
                     velocity: velocity,
                     instrumentName: instrumentName,
-                    instrumentPreset: instrumentPreset
+                    instrumentPreset: instrumentPreset,
+                    trackName: Section.chordProgressionObservationName
                 )
             }
         }.sorted { $0.startBeat < $1.startBeat }

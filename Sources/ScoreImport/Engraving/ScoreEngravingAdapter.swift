@@ -56,15 +56,24 @@ public enum ScoreEngravingAdapter {
         // `minimumTicks: totalTicks` below is what makes a track absent from a LATER section
         // still get that section's worth of silent measures, rather than the part simply
         // ending early and every other part's measures no longer lining up with it.
-        let parts = rawParts(from: piece, ticksPerQuarter: ticksPerQuarter, ticksPerBeatUnit: ticksPerBeatUnit, beatsPerMeasure: beatsPerMeasure)
-            .enumerated().flatMap { index, rawPart in
+        var parts = rawParts(from: piece, ticksPerQuarter: ticksPerQuarter, ticksPerBeatUnit: ticksPerBeatUnit, beatsPerMeasure: beatsPerMeasure)
+            .flatMap { rawPart in
                 notatedParts(
                     for: rawPart, timeSignatures: timeSignatures, ticksPerQuarter: ticksPerQuarter, minimumTicks: totalTicks,
                     colorLookup: colorLookup, keySignature: keyContext?.signature, keySignatureName: keyContext?.keyName,
-                    diatonicSpelling: keyContext?.diatonicSpellingByPitchClass,
-                    chordAnnotationsByMeasure: index == 0 ? chordAnnotations : nil, secondsForTick: secondsForTick
+                    diatonicSpelling: keyContext?.diatonicSpellingByPitchClass, secondsForTick: secondsForTick
                 )
             }
+        // Attached to the LAST staff of the system (bottom-most, whichever track that happens to
+        // be) rather than baked into a specific track's own `notatedParts` build above — a chord
+        // symbol is a harmonic event belonging to the whole system, not to any one instrument's
+        // part, and printing it under the last staff (not the first) keeps it visually separate
+        // from that first track's own notation instead of reading as "this track's annotation".
+        if let lastIndex = parts.indices.last {
+            for (measureIndex, annotations) in chordAnnotations where parts[lastIndex].measures.indices.contains(measureIndex) {
+                parts[lastIndex].measures[measureIndex].chordAnnotations = annotations
+            }
+        }
         return NotatedScore(parts: parts)
     }
 
