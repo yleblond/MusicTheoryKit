@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import ScoreImport
 import MusicTheoryKit
 import Localization
 

@@ -1,6 +1,7 @@
 import XCTest
 @testable import AppCore
 @testable import MusicTheoryKit
+@testable import ScoreImport
 
 final class ModalFunctionalMapTests: XCTestCase {
     private let family1Degrees = 1...7

@@ -88,7 +88,7 @@ let package = Package(
             // comment).
             .product(name: "MCP", package: "swift-sdk", condition: .when(platforms: [.macOS])),
         ]),
-        .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit", "LLMEngine", "NetEngine", "SoundTrackModel", "SoundFontModel", "AudioEngine"], resources: [.copy("Fixtures")]),
+        .testTarget(name: "AppCoreTests", dependencies: ["AppCore", "MIDIEngine", "MusicTheoryKit", "LLMEngine", "NetEngine", "SoundTrackModel", "SoundFontModel", "AudioEngine", "ScoreImport"], resources: [.copy("Fixtures")]),
         .executableTarget(name: "JamShack", dependencies: ["AppCore", "Localization"]),
         // Standalone hardware-validation CLI for the ROLI LUMI Keys' reverse-engineered LED
         // SysEx protocol (see MIDIEngine's LumiSysex/MIDIOutputPort) — kept separate from

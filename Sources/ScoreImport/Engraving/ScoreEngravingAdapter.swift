@@ -39,13 +39,57 @@ public enum ScoreEngravingAdapter {
         let timeline = harmonicTimeline(from: piece, ticksPerBeatUnit: ticksPerBeatUnit, beatsPerMeasure: beatsPerMeasure)
         let colorLookup: (Int, Int) -> String? = { pitch, tick in color(forPitch: pitch, atTick: tick, in: timeline) }
 
+        // One key signature for the whole score — same "one detected mode for the whole piece"
+        // v1 simplification `RawScoreComposer` already documents; `nil` (no signature, today's
+        // un-suppressed-accidentals behavior) for anything outside the 7 classic modes.
+        let keyContext = keySignatureContext(for: piece)
+        let chordAnnotations = chordAnnotationsByMeasure(
+            from: timeline, measureLengthTicks: measureLengthTicks, ticksPerBeatUnit: ticksPerBeatUnit
+        )
+
         // `minimumTicks: totalTicks` below is what makes a track absent from a LATER section
         // still get that section's worth of silent measures, rather than the part simply
         // ending early and every other part's measures no longer lining up with it.
-        let parts = rawParts(from: piece, ticksPerQuarter: ticksPerQuarter, ticksPerBeatUnit: ticksPerBeatUnit, beatsPerMeasure: beatsPerMeasure).flatMap { rawPart in
-            notatedParts(for: rawPart, timeSignatures: timeSignatures, ticksPerQuarter: ticksPerQuarter, minimumTicks: totalTicks, colorLookup: colorLookup)
-        }
+        let parts = rawParts(from: piece, ticksPerQuarter: ticksPerQuarter, ticksPerBeatUnit: ticksPerBeatUnit, beatsPerMeasure: beatsPerMeasure)
+            .enumerated().flatMap { index, rawPart in
+                notatedParts(
+                    for: rawPart, timeSignatures: timeSignatures, ticksPerQuarter: ticksPerQuarter, minimumTicks: totalTicks,
+                    colorLookup: colorLookup, keySignature: keyContext?.signature, keySignatureName: keyContext?.keyName,
+                    diatonicSpelling: keyContext?.diatonicSpellingByPitchClass,
+                    chordAnnotationsByMeasure: index == 0 ? chordAnnotations : nil
+                )
+            }
         return NotatedScore(parts: parts)
+    }
+
+    private struct KeySignatureContext {
+        let keyName: String
+        let signature: MajorKeySignature
+        /// The mode's own 7 diatonic degrees, correctly spelled per the key signature (e.g. C#,
+        /// not the context-free canonical table's "Db") — keyed by pitch class. Only the 7
+        /// diatonic degrees are covered; a genuinely chromatic note still falls back to
+        /// `DiatonicSpelling.canonicalSpelling(forPitchClass:)` (see `spelledPitch`).
+        let diatonicSpellingByPitchClass: [Int: SpelledPitch]
+    }
+
+    /// The VexFlow key-name spec (e.g. `"D"`, `"F#"`, `"Bb"`) plus the underlying
+    /// `MajorKeySignature` (which letters it affects, needed for per-note accidental
+    /// suppression) for the whole score — derived from the first section whose mode resolves to
+    /// one of the 7 classic modes (`CircleOfFifths.parentTonic(for:)`, `familyID == 1`); `nil`
+    /// for anything else (non-family-1 modes have no conventional key signature).
+    private static func keySignatureContext(for piece: Piece) -> KeySignatureContext? {
+        for section in piece.sections {
+            guard let mode = section.mode.resolve(), let parentTonic = CircleOfFifths.parentTonic(for: mode) else { continue }
+            let signature = MajorKeySignature.forMajorTonic(parentTonic.value)
+            let spelled = DiatonicSpelling.canonicalSpelling(forPitchClass: parentTonic)
+            let accidentalSuffix = spelled.accidental == .sharp ? "#" : (spelled.accidental == .flat ? "b" : "")
+            var byPitchClass: [Int: SpelledPitch] = [:]
+            for degree in DiatonicSpelling.spelledDegrees(for: mode) ?? [] {
+                byPitchClass[degree.pitchClass.value] = degree
+            }
+            return KeySignatureContext(keyName: "\(spelled.letter)\(accidentalSuffix)", signature: signature, diatonicSpellingByPitchClass: byPitchClass)
+        }
+        return nil
     }
 
     // MARK: - Clef / staff layout
@@ -57,23 +101,36 @@ public enum ScoreEngravingAdapter {
     /// reused unchanged: wherever one staff has no notes at a given moment because they're all on
     /// the other staff, `buildMeasures` naturally fills that gap with a rest, exactly as it
     /// already does for a genuinely silent stretch.
-    private static func notatedParts(for rawPart: RawPart, timeSignatures: [RawTimeSignatureEvent], ticksPerQuarter: Int, minimumTicks: Int = 0, colorLookup: ((Int, Int) -> String?)? = nil) -> [NotatedPart] {
+    private static func notatedParts(
+        for rawPart: RawPart, timeSignatures: [RawTimeSignatureEvent], ticksPerQuarter: Int, minimumTicks: Int = 0,
+        colorLookup: ((Int, Int) -> String?)? = nil, keySignature: MajorKeySignature? = nil, keySignatureName: String? = nil,
+        diatonicSpelling: [Int: SpelledPitch]? = nil, chordAnnotationsByMeasure: [Int: [ChordAnnotationEntry]]? = nil
+    ) -> [NotatedPart] {
         let realNotes = rawPart.notes.filter { !$0.isRest }
         let plan = staffPlan(forPitches: realNotes.map(\.pitch))
         guard plan.count > 1 else {
             return [NotatedPart(
-                id: rawPart.id, name: rawPart.name, clef: plan.first ?? .treble,
-                measures: buildMeasures(notes: rawPart.notes, timeSignatures: timeSignatures, ticksPerQuarter: ticksPerQuarter, minimumTicks: minimumTicks, colorLookup: colorLookup)
+                id: rawPart.id, name: rawPart.name, clef: plan.first ?? .treble, keySignature: keySignatureName,
+                measures: buildMeasures(
+                    notes: rawPart.notes, timeSignatures: timeSignatures, ticksPerQuarter: ticksPerQuarter, minimumTicks: minimumTicks,
+                    colorLookup: colorLookup, keySignature: keySignature, diatonicSpelling: diatonicSpelling, chordAnnotationsByMeasure: chordAnnotationsByMeasure
+                )
             )]
         }
         return [
             NotatedPart(
-                id: "\(rawPart.id)-treble", name: rawPart.name, clef: .treble, staffGroupID: rawPart.id,
-                measures: buildMeasures(notes: realNotes.filter { $0.pitch >= 60 }, timeSignatures: timeSignatures, ticksPerQuarter: ticksPerQuarter, minimumTicks: minimumTicks, colorLookup: colorLookup)
+                id: "\(rawPart.id)-treble", name: rawPart.name, clef: .treble, staffGroupID: rawPart.id, keySignature: keySignatureName,
+                measures: buildMeasures(
+                    notes: realNotes.filter { $0.pitch >= 60 }, timeSignatures: timeSignatures, ticksPerQuarter: ticksPerQuarter, minimumTicks: minimumTicks,
+                    colorLookup: colorLookup, keySignature: keySignature, diatonicSpelling: diatonicSpelling, chordAnnotationsByMeasure: chordAnnotationsByMeasure
+                )
             ),
             NotatedPart(
-                id: "\(rawPart.id)-bass", name: rawPart.name, clef: .bass, staffGroupID: rawPart.id,
-                measures: buildMeasures(notes: realNotes.filter { $0.pitch < 60 }, timeSignatures: timeSignatures, ticksPerQuarter: ticksPerQuarter, minimumTicks: minimumTicks, colorLookup: colorLookup)
+                id: "\(rawPart.id)-bass", name: rawPart.name, clef: .bass, staffGroupID: rawPart.id, keySignature: keySignatureName,
+                measures: buildMeasures(
+                    notes: realNotes.filter { $0.pitch < 60 }, timeSignatures: timeSignatures, ticksPerQuarter: ticksPerQuarter, minimumTicks: minimumTicks,
+                    colorLookup: colorLookup, keySignature: keySignature, diatonicSpelling: diatonicSpelling, chordAnnotationsByMeasure: nil // top staff (treble half) only
+                )
             ),
         ]
     }
@@ -108,8 +165,18 @@ public enum ScoreEngravingAdapter {
         let startTick: Int
         let endTick: Int
         let modeTones: [Int]
+        /// Kept alongside `modeTones` (rather than re-resolving `Section.mode` later) for the
+        /// functional-role coloring's own `familyID`/`scale.degree` lookup (see
+        /// `functionalRoleColor(forChordRoot:modeTones:mode:)`) — `nil` exactly when
+        /// `section.mode.resolve()` itself failed.
+        let mode: Mode?
         let chordRoot: Int?
         let chordTones: [Int]
+        /// `ChordVocabulary` id, e.g. `"Ma7"` — `nil` exactly when `chordRoot` is, kept alongside
+        /// it (rather than re-resolving `chordRoot`'s `ChordReference` later) for
+        /// `RomanNumeralAnalyzer.label`'s per-measure annotations (see
+        /// `chordAnnotationsByMeasure(from:measureLengthTicks:ticksPerBeatUnit:)`).
+        let chordTemplateID: String?
     }
 
     /// Mirrors `rawParts(from:)`'s own `sectionStartBeat` accumulation so a chord event's
@@ -118,7 +185,8 @@ public enum ScoreEngravingAdapter {
         var windows: [HarmonicWindow] = []
         var sectionStartBeat = 0.0
         for section in piece.sections {
-            let modeTones = section.mode.resolve()?.pitchClasses.map(\.value) ?? []
+            let mode = section.mode.resolve()
+            let modeTones = mode?.pitchClasses.map(\.value) ?? []
             let sectionLengthBeats = Double(section.lengthInMeasures * beatsPerMeasure)
             let sectionStartTick = Int((sectionStartBeat * Double(ticksPerBeatUnit)).rounded())
             let sectionEndTick = Int(((sectionStartBeat + sectionLengthBeats) * Double(ticksPerBeatUnit)).rounded())
@@ -128,7 +196,7 @@ public enum ScoreEngravingAdapter {
                 .sorted { $0.localBeat < $1.localBeat }
 
             if sortedChords.isEmpty {
-                windows.append(HarmonicWindow(startTick: sectionStartTick, endTick: sectionEndTick, modeTones: modeTones, chordRoot: nil, chordTones: []))
+                windows.append(HarmonicWindow(startTick: sectionStartTick, endTick: sectionEndTick, modeTones: modeTones, mode: mode, chordRoot: nil, chordTones: [], chordTemplateID: nil))
             } else {
                 for (index, entry) in sortedChords.enumerated() {
                     let startTick = Int(((sectionStartBeat + entry.localBeat) * Double(ticksPerBeatUnit)).rounded())
@@ -136,7 +204,10 @@ public enum ScoreEngravingAdapter {
                         ? Int(((sectionStartBeat + sortedChords[index + 1].localBeat) * Double(ticksPerBeatUnit)).rounded())
                         : sectionEndTick
                     let chordTones = entry.event.chord.resolve()?.pitchClasses.map(\.value) ?? []
-                    windows.append(HarmonicWindow(startTick: startTick, endTick: endTick, modeTones: modeTones, chordRoot: entry.event.chord.root, chordTones: chordTones))
+                    windows.append(HarmonicWindow(
+                        startTick: startTick, endTick: endTick, modeTones: modeTones, mode: mode,
+                        chordRoot: entry.event.chord.root, chordTones: chordTones, chordTemplateID: entry.event.chord.chordTemplateID
+                    ))
                 }
             }
             sectionStartBeat += sectionLengthBeats
@@ -144,15 +215,72 @@ public enum ScoreEngravingAdapter {
         return windows
     }
 
-    /// Softened (mixed ~35% toward white, per explicit user feedback that the original fully-
-    /// saturated hex values were tiring to read) versions of `Sources/WebConsole/
-    /// StaticAssets.swift`'s `renderStaffSVG` palette (`.staff-note-root`/`.staff-note-tone`/
-    /// `--mode-root-color`/`--mode-tone-color`) — same formula as `Color.pastel(hex:fraction:)`
-    /// in `Sources/JamShackUI/Tonnetz.swift`, computed once and hardcoded here since this is a
-    /// pure-Swift/JS module with no SwiftUI `Color` of its own. Kept in sync with
-    /// `ScoreColorLegendView`'s swatches. This now DIVERGES from `StaticAssets.swift`'s own
-    /// still fully-saturated palette (deliberately matched when role-coloring first shipped,
-    /// for cross-surface consistency) — not softened there too since it wasn't asked.
+    /// Roman-numeral + chord-symbol annotations, keyed by 0-based GLOBAL measure index (matches
+    /// the running counter `buildMeasures` increments once per measure, consistent across every
+    /// part's own call since `build(from: Piece)` uses one fixed time signature throughout — see
+    /// that function's own `minimumTicks` comment). Reuses the exact `RomanNumeralAnalyzer.label`
+    /// lookahead-window shape already validated by the Analyse tab's own golden test
+    /// (`HarmonicAnalysisReportTests`) — a second, independent call site over the same pure
+    /// function, not a duplicated algorithm (see this feature's own plan for why `AppCore`'s
+    /// `HarmonicAnalysisReport`, which walks measure/beat for that tab, isn't reused directly:
+    /// `ScoreImport` can't reach `AppCore`).
+    private static func chordAnnotationsByMeasure(
+        from timeline: [HarmonicWindow], measureLengthTicks: Int, ticksPerBeatUnit: Int
+    ) -> [Int: [ChordAnnotationEntry]] {
+        guard measureLengthTicks > 0, ticksPerBeatUnit > 0 else { return [:] }
+        let chordWindows = timeline.filter { $0.chordRoot != nil && $0.chordTemplateID != nil }
+        var result: [Int: [ChordAnnotationEntry]] = [:]
+        for (position, window) in chordWindows.enumerated() {
+            guard let chordRoot = window.chordRoot, let chordTemplateID = window.chordTemplateID else { continue }
+            let lookaheadCount = min(3, chordWindows.count - position - 1)
+            let lookahead = (0..<lookaheadCount).compactMap { chordWindows[position + 1 + $0].chordRoot }
+            let label = RomanNumeralAnalyzer.label(
+                chordRoot: chordRoot, chordTemplateID: chordTemplateID,
+                keyTonic: window.modeTones.first ?? 0, modeTones: window.modeTones, lookahead: lookahead
+            )
+            let measureIndex = window.startTick / measureLengthTicks
+            let beat = Double(window.startTick % measureLengthTicks) / Double(ticksPerBeatUnit) + 1.0
+            let entry = ChordAnnotationEntry(
+                beat: beat, chordSymbol: chordSymbol(forRoot: chordRoot, chordTemplateID: chordTemplateID),
+                romanNumeral: label.numeral, isLowConfidence: label.confidence == .low
+            )
+            result[measureIndex, default: []].append(entry)
+        }
+        return result
+    }
+
+    private static let pitchNamesForChordSymbol = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+    /// A short letter-name chord symbol (e.g. "G#m7b5") — mirrors `AppCore`'s
+    /// `HarmonicAnalysisReport.chordSymbol(for:)` formatting verbatim (that function itself isn't
+    /// reachable from here — see `chordAnnotationsByMeasure`'s own doc comment); keep both in
+    /// sync if the format ever changes.
+    private static func chordSymbol(forRoot root: Int, chordTemplateID: String) -> String {
+        let rootName = pitchNamesForChordSymbol[((root % 12) + 12) % 12]
+        let suffix: String
+        switch chordTemplateID {
+        case "Ma": suffix = ""
+        case "mi": suffix = "m"
+        case "dim": suffix = "dim"
+        case "aug": suffix = "+"
+        case "7": suffix = "7"
+        case "Ma7": suffix = "Ma7"
+        case "mi7": suffix = "m7"
+        case "mi7b5": suffix = "m7b5"
+        case "dim7": suffix = "dim7"
+        case "7#5": suffix = "+7"
+        case "Ma7#5": suffix = "+Ma7"
+        case "miMa7": suffix = "mMa7"
+        default: suffix = chordTemplateID
+        }
+        return rootName + suffix
+    }
+
+    /// Colors by the CURRENT CHORD's functional role in its mode (home/away/tension/neutral —
+    /// same 4-color classification "Exploration fonctionnelle" already uses, see
+    /// `ModalFunctionalRoleTable`), not a fixed 4-hue table per structural role like before: the
+    /// note-role *classification* itself (`pitchDisplayState`, `RecognitionEngine`) is unchanged,
+    /// only which color each role maps to.
     private static func color(forPitch pitch: Int, atTick tick: Int, in timeline: [HarmonicWindow]) -> String? {
         guard let window = timeline.first(where: { tick >= $0.startTick && tick < $0.endTick }) ?? timeline.last else { return nil }
         let state = pitchDisplayState(
@@ -160,12 +288,72 @@ public enum ScoreEngravingAdapter {
             modeTones: window.modeTones, alwaysShowChord: true, showModeColoring: true
         )
         switch state.role {
-        case .chordRoot: return "#f16d9a"
-        case .chordTone: return "#fee67c"
-        case .modeRoot: return "#ffbc59"
-        case .modeTone: return "#59d3e3"
-        default: return nil
+        case .chordRoot:
+            return mixHex(functionalRoleColor(forChordRoot: window.chordRoot, modeTones: window.modeTones, mode: window.mode), towardBlack: 0.3)
+        case .chordTone:
+            return mixHex(functionalRoleColor(forChordRoot: window.chordRoot, modeTones: window.modeTones, mode: window.mode), towardWhite: 0.45)
+        case .modeRoot:
+            // The piece's own tonic, held but not currently part of the chord — "the tonic is
+            // always the ultimate home," reusing the home hue rather than inventing a new one.
+            return mixHex(functionalRoleHex(for: .home), towardWhite: 0.45)
+        case .modeTone:
+            // Any other scale degree, held but not in the current chord — not creating or
+            // resolving tension right now, "neutral" fits.
+            return mixHex(functionalRoleHex(for: .neutral), towardWhite: 0.45)
+        default:
+            return nil
         }
+    }
+
+    /// The chord currently sounding's `ModalFunctionalRole` color (green/amber/orange-red/blue,
+    /// matching `FunctionalRoleColors.fill(for:)` in `Sources/JamShackUI/FunctionalChordGraph.swift`
+    /// exactly — duplicated as plain hex here since this pure-Swift/JS module has no SwiftUI
+    /// `Color` of its own). Defaults to `.tension`'s color for anything without a plain diatonic
+    /// role: a chromatic/secondary-dominant root (not one of the mode's own 7 pitch classes), a
+    /// mode outside the 7 classic modes (`familyID != 1`, no defined role table at all), or no
+    /// chord sounding yet — all of these ARE (or read visually like) harmonic tension/deviation,
+    /// so defaulting there is musically apt rather than an arbitrary catch-all.
+    private static func functionalRoleColor(forChordRoot chordRoot: Int?, modeTones: [Int], mode: Mode?) -> String {
+        guard let chordRoot, let mode, mode.scale.familyID == 1,
+              let degreeIndex = modeTones.firstIndex(of: chordRoot) else {
+            return functionalRoleHex(for: .tension)
+        }
+        let (role, _) = ModalFunctionalRoleTable.standardRole(forScaleDegree: mode.scale.degree, chordDegree: degreeIndex + 1)
+        return functionalRoleHex(for: role)
+    }
+
+    private static func functionalRoleHex(for role: ModalFunctionalRole) -> String {
+        switch role {
+        case .home: return "#2e7d32"
+        case .away: return "#f9a825"
+        case .tension: return "#e64a19"
+        case .neutral: return "#1565c0"
+        }
+    }
+
+    /// Plain hex-string RGB blending (no SwiftUI `Color` in this module) — same "toward white"
+    /// formula `Color.pastel(hex:fraction:)` (`Sources/JamShackUI/Tonnetz.swift`) already uses;
+    /// `towardBlack` is the same idea run the other direction, for the chord root's darker tone.
+    private static func mixHex(_ hex: String, towardWhite fraction: Double) -> String {
+        guard let (r, g, b) = rgbComponents(hex) else { return hex }
+        return hexString(r: r + (255 - r) * fraction, g: g + (255 - g) * fraction, b: b + (255 - b) * fraction)
+    }
+
+    private static func mixHex(_ hex: String, towardBlack fraction: Double) -> String {
+        guard let (r, g, b) = rgbComponents(hex) else { return hex }
+        return hexString(r: r * (1 - fraction), g: g * (1 - fraction), b: b * (1 - fraction))
+    }
+
+    private static func rgbComponents(_ hex: String) -> (r: Double, g: Double, b: Double)? {
+        var text = hex
+        if text.hasPrefix("#") { text.removeFirst() }
+        guard text.count == 6, let value = UInt32(text, radix: 16) else { return nil }
+        return (Double((value >> 16) & 0xFF), Double((value >> 8) & 0xFF), Double(value & 0xFF))
+    }
+
+    private static func hexString(r: Double, g: Double, b: Double) -> String {
+        func clamp(_ v: Double) -> Int { max(0, min(255, Int(v.rounded()))) }
+        return String(format: "#%02x%02x%02x", clamp(r), clamp(g), clamp(b))
     }
 
     /// Tracks are matched across sections by name (first-seen order) so a multi-section piece's
@@ -218,7 +406,11 @@ public enum ScoreEngravingAdapter {
     /// this part's own last note — used only by `build(from: Piece)`, so a track absent from a
     /// later section still gets that section's silent measures instead of ending early and
     /// throwing every other part's measure alignment off.
-    private static func buildMeasures(notes: [RawNote], timeSignatures: [RawTimeSignatureEvent], ticksPerQuarter: Int, minimumTicks: Int = 0, colorLookup: ((Int, Int) -> String?)? = nil) -> [NotatedMeasure] {
+    private static func buildMeasures(
+        notes: [RawNote], timeSignatures: [RawTimeSignatureEvent], ticksPerQuarter: Int, minimumTicks: Int = 0,
+        colorLookup: ((Int, Int) -> String?)? = nil, keySignature: MajorKeySignature? = nil,
+        diatonicSpelling: [Int: SpelledPitch]? = nil, chordAnnotationsByMeasure: [Int: [ChordAnnotationEntry]]? = nil
+    ) -> [NotatedMeasure] {
         let sortedNotes = notes.filter { !$0.isRest }.sorted { $0.startTick < $1.startTick }
         guard !sortedNotes.isEmpty || minimumTicks > 0 else { return [] }
 
@@ -226,6 +418,7 @@ public enum ScoreEngravingAdapter {
         var measureStart = 0
         var noteIndex = 0
         var timeSignatureIndex = 0
+        var measureIndex = 0
 
         // Driven by how many *notes* remain (or `minimumTicks`, for a Piece part with no notes
         // at all in one or more sections), not by notes' (possibly long, since-clipped) raw end
@@ -257,6 +450,9 @@ public enum ScoreEngravingAdapter {
 
             var measureNotes: [NotatedNote] = []
             var cursor = measureStart
+            // Reset every measure — an accidental (or the key signature's own implied
+            // alteration) only holds for the rest of the SAME measure, standard engraving rule.
+            var accidentalTracker: [String: Int] = [:]
             for position in positions {
                 if position.startTick > cursor {
                     measureNotes.append(contentsOf: rests(from: cursor, to: position.startTick, ticksPerQuarter: ticksPerQuarter))
@@ -264,10 +460,15 @@ public enum ScoreEngravingAdapter {
                 let clippedDuration = min(position.durationTicks, measureEnd - position.startTick)
                 measureNotes.append(NotatedNote(
                     id: UUID().uuidString, isRest: false,
-                    keys: position.notes.map { vexFlowKey(forPitch: $0.pitch, spelling: $0.spelling) },
+                    keys: position.notes.map { vexFlowKey(forPitch: $0.pitch, spelling: $0.spelling, diatonicSpelling: diatonicSpelling) },
                     duration: quantizedDuration(ticks: clippedDuration, ticksPerQuarter: ticksPerQuarter),
                     pitches: position.notes.map(\.pitch),
-                    colors: colorLookup.map { lookup in position.notes.map { lookup($0.pitch, position.startTick) } }
+                    colors: colorLookup.map { lookup in position.notes.map { lookup($0.pitch, position.startTick) } },
+                    accidentals: keySignature.map { signature in
+                        position.notes.map {
+                            accidentalGlyph(forPitch: $0.pitch, spelling: $0.spelling, diatonicSpelling: diatonicSpelling, keySignature: signature, tracker: &accidentalTracker)
+                        }
+                    }
                 ))
                 cursor = position.startTick + clippedDuration
             }
@@ -275,8 +476,12 @@ public enum ScoreEngravingAdapter {
                 measureNotes.append(contentsOf: rests(from: cursor, to: measureEnd, ticksPerQuarter: ticksPerQuarter))
             }
 
-            measures.append(NotatedMeasure(beatsPerMeasure: timeSignature.beatsPerMeasure, beatUnit: timeSignature.beatUnit, notes: measureNotes))
+            measures.append(NotatedMeasure(
+                beatsPerMeasure: timeSignature.beatsPerMeasure, beatUnit: timeSignature.beatUnit, notes: measureNotes,
+                chordAnnotations: chordAnnotationsByMeasure?[measureIndex] ?? []
+            ))
             measureStart = measureEnd
+            measureIndex += 1
         }
         return measures
     }
@@ -332,21 +537,60 @@ public enum ScoreEngravingAdapter {
         }
     }
 
-    private static func vexFlowAccidentalCode(_ accidental: Accidental) -> String {
-        vexFlowAccidentalCode(fromAlter: accidental.rawValue)
+    private static let noteLetterByStep: [String: NoteLetter] = ["C": .C, "D": .D, "E": .E, "F": .F, "G": .G, "A": .A, "B": .B]
+
+    /// The source's own spelling when available (MusicXML/MuseScore); otherwise `diatonicSpelling`
+    /// (the mode's own 7 degrees correctly spelled against the key signature, e.g. C# rather than
+    /// the context-free canonical table's "Db") for a diatonic pitch class, falling back to
+    /// `DiatonicSpelling.canonicalSpelling` only for a genuinely chromatic one — shared by
+    /// `vexFlowKey` (the "keys" string) and `accidentalGlyph` (the key-signature-aware accidental
+    /// decision), so both always agree on what a note IS.
+    private static func spelledPitch(forPitch pitch: Int, spelling: RawSpelling?, diatonicSpelling: [Int: SpelledPitch]?) -> (letter: NoteLetter, alter: Int, octave: Int) {
+        if let spelling, let letter = noteLetterByStep[spelling.step.uppercased()] {
+            return (letter, spelling.alter, spelling.octave)
+        }
+        let pitchClassValue = ((pitch % 12) + 12) % 12
+        let octave = pitch / 12 - 1
+        if let diatonic = diatonicSpelling?[pitchClassValue] {
+            return (diatonic.letter, diatonic.accidental.rawValue, octave)
+        }
+        let spelled = DiatonicSpelling.canonicalSpelling(forPitchClass: PitchClass(pitchClassValue))
+        return (spelled.letter, spelled.accidental.rawValue, octave)
     }
 
-    /// The source's own spelling when available (MusicXML/MuseScore); otherwise a best-guess
-    /// canonical spelling computed from the bare MIDI pitch class (MIDI has no letter-name
-    /// notion of its own).
-    private static func vexFlowKey(forPitch pitch: Int, spelling: RawSpelling?) -> String {
-        if let spelling {
-            return "\(spelling.step.lowercased())\(vexFlowAccidentalCode(fromAlter: spelling.alter))/\(spelling.octave)"
-        }
-        let pitchClass = PitchClass(((pitch % 12) + 12) % 12)
-        let spelled = DiatonicSpelling.canonicalSpelling(forPitchClass: pitchClass)
-        let octave = pitch / 12 - 1
+    private static func vexFlowKey(forPitch pitch: Int, spelling: RawSpelling?, diatonicSpelling: [Int: SpelledPitch]? = nil) -> String {
+        let spelled = spelledPitch(forPitch: pitch, spelling: spelling, diatonicSpelling: diatonicSpelling)
         let letter = String(describing: spelled.letter).lowercased()
-        return "\(letter)\(vexFlowAccidentalCode(spelled.accidental))/\(octave)"
+        return "\(letter)\(vexFlowAccidentalCode(fromAlter: spelled.alter))/\(spelled.octave)"
+    }
+
+    private static func accidentalSymbol(forAlter alter: Int) -> String {
+        switch alter {
+        case -2: return "bb"
+        case -1: return "b"
+        case 1: return "#"
+        case 2: return "##"
+        default: return "n"
+        }
+    }
+
+    /// Whether (and what) accidental glyph a specific stacked pitch should show, given the
+    /// score's key signature and whatever's already been shown for that exact (letter, octave)
+    /// earlier in the SAME measure (`tracker`, reset once per measure by the caller) — standard
+    /// engraving rule: an accidental (or the key signature's own implied alteration) holds until
+    /// the next barline. Returns `nil` when nothing needs drawing (the note already matches
+    /// what's currently in effect for its letter+octave).
+    private static func accidentalGlyph(
+        forPitch pitch: Int, spelling: RawSpelling?, diatonicSpelling: [Int: SpelledPitch]?, keySignature: MajorKeySignature, tracker: inout [String: Int]
+    ) -> String? {
+        let spelled = spelledPitch(forPitch: pitch, spelling: spelling, diatonicSpelling: diatonicSpelling)
+        let impliedAlter = keySignature.affectedLetters.contains(spelled.letter)
+            ? (keySignature.accidentalDirection == .sharp ? 1 : -1)
+            : 0
+        let trackerKey = "\(spelled.letter.rawValue)\(spelled.octave)"
+        let currentlyInEffect = tracker[trackerKey] ?? impliedAlter
+        guard spelled.alter != currentlyInEffect else { return nil }
+        tracker[trackerKey] = spelled.alter
+        return accidentalSymbol(forAlter: spelled.alter)
     }
 }

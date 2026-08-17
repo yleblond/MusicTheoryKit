@@ -1,5 +1,6 @@
 import SwiftUI
 import AppCore
+import ScoreImport
 import Localization
 
 /// Always-visible color/role key for the "Exploration fonctionnelle" panel — per the original

@@ -2093,15 +2093,15 @@
   "zhHans": "试听音色"
  },
  "appHeadingSonDeLecture": {
-  "de": "Wiedergabeklang",
-  "en": "Playback sound",
-  "es": "Sonido de reproducción",
-  "fr": "Son de lecture",
-  "it": "Suono di riproduzione",
-  "ja": "再生音",
-  "pt": "Som de reprodução",
-  "ru": "Звук воспроизведения",
-  "zhHans": "播放声音"
+  "de": "Standardklang",
+  "en": "Default sound",
+  "es": "Sonido predeterminado",
+  "fr": "Son par défaut",
+  "it": "Suono predefinito",
+  "ja": "既定の音",
+  "pt": "Som padrão",
+  "ru": "Звук по умолчанию",
+  "zhHans": "默认声音"
  },
  "appHeadingSourcesMidiVisibles": {
   "de": "Sichtbare MIDI-Quellen",
@@ -8798,49 +8798,16 @@
   "ru": "Bibliothèque des morceaux composés (structurés en mesures et accords) — chargez-en un pour le rejouer ou le modifier, ou repartez d'un nouveau.",
   "zhHans": "Bibliothèque des morceaux composés (structurés en mesures et accords) — chargez-en un pour le rejouer ou le modifier, ou repartez d'un nouveau."
  },
- "appScoreLegendChordRoot": {
-  "de": "Fondamentale de l'accord",
-  "en": "Fondamentale de l'accord",
-  "es": "Fondamentale de l'accord",
-  "fr": "Fondamentale de l'accord",
-  "it": "Fondamentale de l'accord",
-  "ja": "Fondamentale de l'accord",
-  "pt": "Fondamentale de l'accord",
-  "ru": "Fondamentale de l'accord",
-  "zhHans": "Fondamentale de l'accord"
- },
- "appScoreLegendChordTone": {
-  "de": "Note de l'accord",
-  "en": "Note de l'accord",
-  "es": "Note de l'accord",
-  "fr": "Note de l'accord",
-  "it": "Note de l'accord",
-  "ja": "Note de l'accord",
-  "pt": "Note de l'accord",
-  "ru": "Note de l'accord",
-  "zhHans": "Note de l'accord"
- },
- "appScoreLegendModeRoot": {
-  "de": "Tonique de la tonalité",
-  "en": "Tonique de la tonalité",
-  "es": "Tonique de la tonalité",
-  "fr": "Tonique de la tonalité",
-  "it": "Tonique de la tonalité",
-  "ja": "Tonique de la tonalité",
-  "pt": "Tonique de la tonalité",
-  "ru": "Tonique de la tonalité",
-  "zhHans": "Tonique de la tonalité"
- },
- "appScoreLegendModeTone": {
-  "de": "Degré de la tonalité",
-  "en": "Degré de la tonalité",
-  "es": "Degré de la tonalité",
-  "fr": "Degré de la tonalité",
-  "it": "Degré de la tonalité",
-  "ja": "Degré de la tonalité",
-  "pt": "Degré de la tonalité",
-  "ru": "Degré de la tonalité",
-  "zhHans": "Degré de la tonalité"
+ "appScoreLegendShadingExplanation": {
+  "de": "Fondamentale der Akkorde: dunkler Ton · andere Akkordtöne: heller Ton",
+  "en": "Chord root: darker shade · other chord notes: lighter shade",
+  "es": "Fundamental del acorde: tono oscuro · otras notas del acorde: tono claro",
+  "fr": "Fondamentale de l'accord : teinte foncée · autres notes de l'accord : teinte claire",
+  "it": "Fondamentale dell'accordo: tono scuro · altre note dell'accordo: tono chiaro",
+  "ja": "コードのルート: 濃い色 ・ その他のコード構成音: 薄い色",
+  "pt": "Fundamental do acorde: tom escuro · outras notas do acorde: tom claro",
+  "ru": "Основной тон аккорда: тёмный оттенок · другие ноты аккорда: светлый оттенок",
+  "zhHans": "和弦根音：深色 · 和弦其他音：浅色"
  },
  "appHelpAccordsTitle": {
   "de": "Bibliothèque d'accords",

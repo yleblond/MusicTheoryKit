@@ -464,8 +464,11 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHelpCompositionTitle, appHelpCompositionBody
     case appHelpPiecesTitle, appHelpPiecesBody
     // Score-view role-coloring legend (`ScoreColorLegendView`, mirrors `TonnetzLegendView`'s own
-    // placement pattern: a live-content component embedded in this screen's help, not prose).
-    case appScoreLegendChordRoot, appScoreLegendChordTone, appScoreLegendModeRoot, appScoreLegendModeTone
+    // placement pattern: a live-content component embedded in this screen's help, not prose) —
+    // the 4 role swatches themselves reuse `appRoleHome`/`appRoleAway`/`appRoleTension`/
+    // `appRoleNeutral` (same labels "Exploration fonctionnelle" uses), only the shading
+    // convention (dark chord root / light chord tone) needs its own caption.
+    case appScoreLegendShadingExplanation
     case appHelpAccordsTitle, appHelpAccordsBody
     case appHelpModesTitle, appHelpModesBody
     case appHelpProgressionsTitle, appHelpProgressionsBody

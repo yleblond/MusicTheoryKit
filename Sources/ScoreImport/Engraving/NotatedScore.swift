@@ -33,14 +33,38 @@ public struct NotatedPart: Codable, Equatable, Sendable {
     /// engraving, not every part that dips outside its main register needs a grand staff; see
     /// `staffPlan(forPitches:)`'s own doc comment for the threshold).
     public var staffGroupID: String?
+    /// A VexFlow key-signature spec string (e.g. `"D"`, `"F#"`, `"Bb"`) drawn at the start of
+    /// every system, right after the clef — `nil` (the default, and what every existing score
+    /// decodes to) means no signature, exactly like today's behavior. Only ever set by
+    /// `ScoreEngravingAdapter.build(from: Piece)` (the raw-file preview path has no mode context
+    /// to derive one from).
+    public var keySignature: String?
     public var measures: [NotatedMeasure]
 
-    public init(id: String, name: String? = nil, clef: Clef = .treble, staffGroupID: String? = nil, measures: [NotatedMeasure] = []) {
+    public init(id: String, name: String? = nil, clef: Clef = .treble, staffGroupID: String? = nil, keySignature: String? = nil, measures: [NotatedMeasure] = []) {
         self.id = id
         self.name = name
         self.clef = clef
         self.staffGroupID = staffGroupID
+        self.keySignature = keySignature
         self.measures = measures
+    }
+}
+
+/// A chord's roman-numeral analysis, positioned to print under a specific beat of a measure —
+/// see `ScoreEngravingAdapter`'s own `harmonicTimeline`, the source of these entries.
+public struct ChordAnnotationEntry: Codable, Equatable, Sendable {
+    /// 1-based position within the measure (matches `ChordEvent.beat`'s own convention).
+    public var beat: Double
+    public var chordSymbol: String
+    public var romanNumeral: String
+    public var isLowConfidence: Bool
+
+    public init(beat: Double, chordSymbol: String, romanNumeral: String, isLowConfidence: Bool) {
+        self.beat = beat
+        self.chordSymbol = chordSymbol
+        self.romanNumeral = romanNumeral
+        self.isLowConfidence = isLowConfidence
     }
 }
 
@@ -48,11 +72,15 @@ public struct NotatedMeasure: Codable, Equatable, Sendable {
     public var beatsPerMeasure: Int
     public var beatUnit: Int
     public var notes: [NotatedNote]
+    /// Populated only on the top staff of a section (see `ScoreEngravingAdapter`) — a chord
+    /// symbol is a harmonic event, not tied to any one instrument's own part.
+    public var chordAnnotations: [ChordAnnotationEntry]
 
-    public init(beatsPerMeasure: Int, beatUnit: Int, notes: [NotatedNote] = []) {
+    public init(beatsPerMeasure: Int, beatUnit: Int, notes: [NotatedNote] = [], chordAnnotations: [ChordAnnotationEntry] = []) {
         self.beatsPerMeasure = beatsPerMeasure
         self.beatUnit = beatUnit
         self.notes = notes
+        self.chordAnnotations = chordAnnotations
     }
 }
 
@@ -74,13 +102,22 @@ public struct NotatedNote: Codable, Equatable, Sendable {
     /// (black); the whole array is `nil` for a rest or when no role analysis was run (e.g. the
     /// raw-file preview in `ScoreEngravingAdapter.build(from: RawScore)`).
     public var colors: [String?]?
+    /// Explicit accidental glyph to draw per stacked pitch — one of `"#"`/`"b"`/`"##"`/`"bb"`/
+    /// `"n"` (natural), or `nil` (nothing to draw, either because the pitch is unaltered or
+    /// because the key signature already implies it and no earlier note this measure showed a
+    /// different one). Parallel to `keys`/`pitches`/`colors`. The whole array is `nil` (not just
+    /// each entry) when no key-signature-aware decision was made at all (the raw-file preview,
+    /// `ScoreEngravingAdapter.build(from: RawScore)`) — `bridge.js` falls back to its own
+    /// derive-from-the-key-string behavior in that case, exactly like before this field existed.
+    public var accidentals: [String?]?
 
-    public init(id: String, isRest: Bool, keys: [String] = [], duration: String, pitches: [Int] = [], colors: [String?]? = nil) {
+    public init(id: String, isRest: Bool, keys: [String] = [], duration: String, pitches: [Int] = [], colors: [String?]? = nil, accidentals: [String?]? = nil) {
         self.id = id
         self.isRest = isRest
         self.keys = keys
         self.duration = duration
         self.pitches = pitches
         self.colors = colors
+        self.accidentals = accidentals
     }
 }

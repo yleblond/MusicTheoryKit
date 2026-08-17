@@ -4,6 +4,7 @@ import JamShackUI
 import MusicTheoryKit
 import PieceModel
 import RecognitionEngine
+import ScoreImport
 import Localization
 
 /// Which of the two peer Théorie tabs this instance is — see `ContentView.TheorieTab`. Both

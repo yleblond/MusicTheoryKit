@@ -27,22 +27,61 @@ function restKeyForClef(clef) {
     return clef === "bass" ? "d/3" : "b/4";
 }
 
+// Same (quarters, code) table `ScoreEngravingAdapter.standardDurations` (Swift) uses — needed
+// here to find which note a `NotatedMeasure.chordAnnotations` entry's `beat` lands closest to
+// (VexFlow has no "beat position of tickable N" query before formatting has actually run).
+const DURATION_BEATS = { w: 4, hd: 3, h: 2, qd: 1.5, q: 1, "8d": 0.75, "8": 0.5, "16d": 0.375, "16": 0.25, "32": 0.125 };
+
 function buildVoice(part, measure) {
+    let cumulativeBeat = 1; // 1-based, matches `ChordAnnotationEntry.beat`'s own convention
+    const noteStartBeats = measure.notes.map((n) => {
+        const startBeat = cumulativeBeat;
+        cumulativeBeat += DURATION_BEATS[n.duration] || 1;
+        return startBeat;
+    });
+
     const vfNotes = measure.notes.map((n) => {
         const note = new VF.StaveNote({
             keys: n.isRest ? [restKeyForClef(part.clef)] : n.keys,
             duration: n.duration + (n.isRest ? "r" : ""),
             clef: part.clef || "treble",
+            autoStem: true, // conventional up-for-low/down-for-high stem direction, not a fixed one
         });
         if (!n.isRest) {
             n.keys.forEach((key, i) => {
-                const code = accidentalCodeFromKey(key);
+                // `n.accidentals[i]` (Swift-computed, key-signature-aware) takes priority when
+                // present; falls back to deriving one from the key string itself (every non-
+                // natural letter gets its own accidental, today's raw-file-preview behavior) only
+                // when Swift did no such analysis at all (`n.accidentals` absent, not just this
+                // entry `null` — a `null` entry there is a real, deliberate "nothing to draw").
+                const code = n.accidentals ? n.accidentals[i] : accidentalCodeFromKey(key);
                 if (code) note.addModifier(new VF.Accidental(code), i);
                 const color = n.colors && n.colors[i];
                 if (color) note.setKeyStyle(i, { fillStyle: color, strokeStyle: color });
             });
         }
         return note;
+    });
+
+    // Chord/Roman-numeral annotations (only ever present on the top staff's own measures — see
+    // `ScoreEngravingAdapter`) — attached to whichever note starts closest to the entry's own
+    // beat, as two stacked `VF.Annotation` modifiers (VexFlow spaces them vertically on its own).
+    (measure.chordAnnotations || []).forEach((annotation) => {
+        let bestIndex = 0, bestDiff = Infinity;
+        noteStartBeats.forEach((beat, i) => {
+            const diff = Math.abs(beat - annotation.beat);
+            if (diff < bestDiff) { bestDiff = diff; bestIndex = i; }
+        });
+        const note = vfNotes[bestIndex];
+        const weight = annotation.isLowConfidence ? "italic" : "";
+        const color = annotation.isLowConfidence ? "#b0672a" : "#333333"; // muted/amber = needs review, matching the Analyse tab's own marker
+        [annotation.chordSymbol, annotation.romanNumeral].forEach((text) => {
+            const label = new VF.Annotation(text)
+                .setFont("Arial", 10, weight)
+                .setVerticalJustification(VF.Annotation.VerticalJustify.BOTTOM);
+            label.setStyle({ fillStyle: color, strokeStyle: color });
+            note.addModifier(label, 0);
+        });
     });
 
     const voice = new VF.Voice({
@@ -112,19 +151,23 @@ window.renderScore = function (score) {
     // `Formatter.preCalculateMinTotalWidth` — confirmed against the real *An die Musik* import,
     // whose 43 measures each land in their own single-measure system regardless of a reasonable
     // scale, since even two of the piece's SMALLEST measures combined already exceed a typical
-    // window's available width. About a third of that per-measure width turns out to be
-    // accidentals VexFlow draws for every single F#/C# occurrence (confirmed empirically: total
-    // minWidth across the piece drops ~30% with accidentals stripped) — because nothing in this
-    // pipeline draws an actual key signature (`stave.addKeySignature`) or suppresses the
-    // redundant accidentals a key signature would normally imply. That's a real, separate
-    // engraving feature (computing the key signature from `section.mode`, suppressing/
-    // re-introducing accidentals per measure), tracked in the backlog rather than fixed here.
+    // window's available width. A meaningful chunk of that per-measure width used to be
+    // redundant accidentals (every single F#/C# occurrence, even ones the key signature already
+    // implies) — `ScoreEngravingAdapter` now draws a real key signature and suppresses those, but
+    // that alone doesn't fully close the gap for this piece's own dense arpeggios.
     const RENDER_SCALE = 0.82;
 
     const minMeasureWidth = 120;
     const notePadding = 40; // breathing room for the note area inside a measure
     const clefPadding = 30; // extra room for a clef repeated at the start of every system
     const timeSigPadding = 30; // extra room for the time signature, first measure of the piece only
+    // ~1 accidental's worth of extra room per system start, when a key signature is drawn there —
+    // an approximation (VexFlow's own `getNoteStartX()` is the real source of truth, consulted via
+    // `equalizeNoteStartX` at actual draw time either way), just enough that the packing pass
+    // above doesn't systematically under-budget a keyed system's first measure.
+    function keySigPadding(part) {
+        return part.keySignature ? 30 : 0;
+    }
     const defaultStaveSpan = 40; // a standard 5-line stave, top line to bottom line
     const staveMargin = 20; // minimum breathing room above/below a stave before the next one
     const interSystemGap = 30;
@@ -160,24 +203,31 @@ window.renderScore = function (score) {
         measureWidths.push(Math.max(minMeasureWidth, minWidth + notePadding));
     }
 
+    // All parts share the same key signature (one per whole score, see `ScoreEngravingAdapter`),
+    // so a single shared padding value is enough for the width/packing estimate below.
+    const sharedKeySigPadding = score.parts.length ? keySigPadding(score.parts[0]) : 0;
+    function firstInSystemPadding(measureIndex) {
+        return clefPadding + sharedKeySigPadding + (measureIndex === 0 ? timeSigPadding : 0);
+    }
+
     // In logical units — divide the physical container width by the scale so packing decisions
     // account for the fact that the final render will be smaller than these logical pixels.
-    const availableWidth = Math.max(container.clientWidth / RENDER_SCALE - 2 * leftMargin, minMeasureWidth + clefPadding + timeSigPadding);
+    const availableWidth = Math.max(container.clientWidth / RENDER_SCALE - 2 * leftMargin, minMeasureWidth + clefPadding + sharedKeySigPadding + timeSigPadding);
     const systems = []; // { start, end (exclusive) } measure-index ranges
     let systemStart = 0, systemWidth = 0;
     for (let m = 0; m < totalMeasures; m++) {
-        const w = measureWidths[m] + (m === systemStart ? clefPadding + (m === 0 ? timeSigPadding : 0) : 0);
+        const w = measureWidths[m] + (m === systemStart ? firstInSystemPadding(m) : 0);
         if (systemWidth > 0 && systemWidth + w > availableWidth) {
             systems.push({ start: systemStart, end: m });
             systemStart = m;
             systemWidth = 0;
         }
-        systemWidth += measureWidths[m] + (m === systemStart ? clefPadding + (m === 0 ? timeSigPadding : 0) : 0);
+        systemWidth += measureWidths[m] + (m === systemStart ? firstInSystemPadding(m) : 0);
     }
     systems.push({ start: systemStart, end: totalMeasures });
 
     function renderedWidth(measureIndex, isFirstInSystem) {
-        return measureWidths[measureIndex] + (isFirstInSystem ? clefPadding + (measureIndex === 0 ? timeSigPadding : 0) : 0);
+        return measureWidths[measureIndex] + (isFirstInSystem ? firstInSystemPadding(measureIndex) : 0);
     }
 
     // Pass 1: draw once into a detached (never-appended) SVG at the default row spacing, purely
@@ -201,7 +251,10 @@ window.renderScore = function (score) {
         const staves = entries.map(({ partIndex }) => {
             const part = score.parts[partIndex];
             const stave = new VF.Stave(probeX[partIndex], probeY[partIndex], width);
-            if (isFirstInSystem) stave.addClef(part.clef || "treble");
+            if (isFirstInSystem) {
+                stave.addClef(part.clef || "treble");
+                if (part.keySignature) stave.addKeySignature(part.keySignature);
+            }
             return stave;
         });
         equalizeNoteStartX(staves);
@@ -275,12 +328,26 @@ window.renderScore = function (score) {
                 const stave = new VF.Stave(partX[partIndex], y, width);
                 if (isFirstInSystem) {
                     stave.addClef(part.clef || "treble");
+                    if (part.keySignature) stave.addKeySignature(part.keySignature);
                     if (m === 0) stave.addTimeSignature(measure.beatsPerMeasure + "/" + measure.beatUnit);
                 }
                 return stave;
             });
-            equalizeNoteStartX(staves); // must run AFTER every modifier (clef, time sig) is added — see its own doc comment
+            equalizeNoteStartX(staves); // must run AFTER every modifier (clef, key/time sig) is added — see its own doc comment
             if (voices.length) formatter.format(voices, width - notePadding);
+
+            // Measure number, above the top staff's own stave — no VexFlow API for this (grepped
+            // vexflow.js: `Note.setMeasure` is an unrelated plain data field, no glyph), so drawn
+            // with the same raw context text primitive the rest of this function already relies
+            // on for non-note-modifier drawing. Every measure, not just each system's first — most
+            // systems here hold only 1-2 measures (see `RENDER_SCALE`'s own doc comment), so
+            // numbering only the first would leave most measures unlabeled.
+            if (staves.length) {
+                context.save();
+                context.setFont("10px Arial");
+                context.fillText(String(m + 1), staves[0].getX() + 2, staves[0].getYForLine(0) - 6);
+                context.restore();
+            }
 
             entries.forEach(({ partIndex, measure, vfNotes, voice }, entryIndex) => {
                 const stave = staves[entryIndex];
@@ -300,7 +367,10 @@ window.renderScore = function (score) {
                     }
                     if (!meta.isRest && meta.pitches && meta.pitches.length) {
                         const bb = note.getBoundingBox();
-                        if (bb) noteEntries.push({ pitches: meta.pitches, bbox: bb });
+                        // `systemY`/`systemHeight` (this system's own top y and total height) let
+                        // `window.highlightPitches` draw a playhead band spanning the WHOLE
+                        // system, not just this one note's own bounding box.
+                        if (bb) noteEntries.push({ pitches: meta.pitches, bbox: bb, systemTop: systemY, systemHeight: systemHeight });
                     }
                 });
 
@@ -346,22 +416,41 @@ window.renderScore = function (score) {
 // playback (see `ScoreEngravingCoordinator.highlight(_:in:)`) — deliberately NOT part of
 // `renderScore`'s own layout passes: re-running the whole 3-pass render on every note
 // onset/offset would be far too heavy for something that can fire many times a second.
+//
+// Draws ONE greyed vertical band per currently-sounding SYSTEM (not a colored circle per note,
+// which read as visually busy) — a cursor sweeping across that system's x-range, spanning its
+// FULL height rather than just the sounding note(s)' own bounding boxes. `[minX, maxX]` across
+// every currently-held note's bbox handles the (usual, since harmony parts move together) case
+// where several simultaneous notes share one system; a genuinely syncopated note ringing over
+// in a different system just grows this to 2 bands, which is still a truthful picture of what's
+// sounding right now.
 window.highlightPitches = function (pitches) {
     window.__lastHighlightedPitches = pitches;
     const layer = window.__highlightLayer;
     if (!layer) return;
     while (layer.firstChild) layer.removeChild(layer.firstChild);
     const active = new Set(pitches);
-    (window.__noteEntries || []).forEach((entry) => {
-        if (!entry.pitches.some((p) => active.has(p))) return;
-        const ellipse = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
-        ellipse.setAttribute("cx", entry.bbox.x + entry.bbox.w / 2);
-        ellipse.setAttribute("cy", entry.bbox.y + entry.bbox.h / 2);
-        ellipse.setAttribute("rx", Math.max(entry.bbox.w / 2 + 5, 9));
-        ellipse.setAttribute("ry", Math.max(entry.bbox.h / 2 + 5, 9));
-        ellipse.setAttribute("fill", "#4caf50");
-        ellipse.setAttribute("fill-opacity", "0.35");
-        layer.appendChild(ellipse);
+    const sounding = (window.__noteEntries || []).filter((entry) => entry.pitches.some((p) => active.has(p)));
+
+    const bySystem = new Map(); // systemTop -> { minX, maxX, systemTop, systemHeight }
+    sounding.forEach((entry) => {
+        const key = entry.systemTop;
+        const band = bySystem.get(key) || { minX: Infinity, maxX: -Infinity, systemTop: entry.systemTop, systemHeight: entry.systemHeight };
+        band.minX = Math.min(band.minX, entry.bbox.x);
+        band.maxX = Math.max(band.maxX, entry.bbox.x + entry.bbox.w);
+        bySystem.set(key, band);
+    });
+
+    bySystem.forEach((band) => {
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        const padding = 6;
+        rect.setAttribute("x", band.minX - padding);
+        rect.setAttribute("y", band.systemTop);
+        rect.setAttribute("width", band.maxX - band.minX + 2 * padding);
+        rect.setAttribute("height", band.systemHeight);
+        rect.setAttribute("fill", "#888888");
+        rect.setAttribute("fill-opacity", "0.25");
+        layer.appendChild(rect);
     });
 };
 

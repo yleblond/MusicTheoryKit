@@ -294,3 +294,24 @@ vérifié dans le code au 2026-08-16).
     précédent, et l'ignorer même si elle porte la tranche à ≥3 classes. Documenté (pas juste
     contourné) dans `Tests/AppCoreTests/HarmonicAnalysisReportTests.swift`, dont le test golden
     n'affirme volontairement rien sur ces 4 mesures précises.
+
+39. **Volet "Remarque" textuel pour l'analyse harmonique (par mesure + pour le morceau entier) —
+    nécessite le LLM déjà intégré (`LLMEngine`)**. Discuté le 2026-08-17 en marge de l'ajout des
+    annotations accord/chiffrage sous la portée (item ci-dessus, `ScoreEngravingAdapter`) et du
+    coloriage fonctionnel des accords (`ModalFunctionalRoleTable`). Le document de référence
+    (`analyse_harmonique.md`) a une colonne "Remarque" par mesure (ex. "G#m7(b5) est l'accord de
+    septième de sensible appliqué à V", "Sommet mélodique de la strophe", "Accord augmenté très
+    expressif ('ich danke dir dafür')") plus un paragraphe de synthèse pour le morceau entier.
+    Distinction faite à la discussion : les remarques purement structurelles (dominantes
+    secondaires/sensibles appliquées, passages chromatiques signalés en confiance faible) sont
+    déjà dérivables SANS LLM à partir de ce que `RomanNumeralAnalyzer`/`HarmonicAnalysisReport`
+    calculent — un simple gabarit de phrase par cas suffit, et ça pourrait se greffer sur les
+    entrées de `ChordAnnotationEntry`/`HarmonicAnalysisEntry` déjà en place. En revanche les
+    remarques éditoriales/expressives (climax mélodique, lien au texte/aux paroles, jugement
+    esthétique) et la synthèse de morceau entier demandent un vrai jugement qu'une table de
+    règles ne produira pas — ça correspond exactement à ce que `LLMEngine` fait déjà ailleurs
+    dans l'app (composition IA, suggestions de scène), pas une nouvelle intégration. Approche
+    suggérée si repris : faire d'abord la moitié déterministe (peu coûteuse, réutilise les
+    données déjà calculées), traiter la moitié qualitative comme un appel LLM séparé prenant en
+    entrée le tableau structuré (mesure/accord/chiffrage/confiance) et éventuellement les paroles
+    si disponibles.

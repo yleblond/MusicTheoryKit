@@ -1,15 +1,11 @@
 import MusicTheoryKit
 import PieceModel
+import ScoreImport
 
-/// A diatonic chord's functional color in the Mode Library's "Exploration fonctionnelle" panel
-/// — deliberately NOT named after classical scale-degree numbers (see `FunctionalHarmonyTable`'s
-/// own `familyID == 1`-only restriction): the same scale degree can be `.home` in one mode and
-/// `.tension` in another, since what matters is a chord's relationship to the mode's own tonic,
-/// not its degree number. See `ModalFunctionalMapBuilder`'s own doc comment for how each role is
-/// actually decided.
-public enum ModalFunctionalRole: String, Codable, CaseIterable, Sendable {
-    case home, away, tension, neutral
-}
+/// `ModalFunctionalRole` itself now lives in `ScoreImport` (see that type's own doc comment for
+/// why) — re-used here via the `import` above, not redefined. See `ModalFunctionalMapBuilder`'s
+/// own doc comment for how each role is actually decided in this "Exploration fonctionnelle"
+/// context specifically.
 
 /// Which of the (currently two) ways to classify a mode's chords into `ModalFunctionalRole` is
 /// active — exposed as a user-facing picker rather than a single hardcoded rule, since neither
@@ -104,7 +100,7 @@ public enum ModalFunctionalMapBuilder {
             let (role, intensity): (ModalFunctionalRole, Double)
             switch source {
             case .computed: (role, intensity) = computedRole(for: reference, degree: degree, in: mode, tonicChord: tonicChord)
-            case .standardTable: (role, intensity) = standardRole(forScaleDegree: mode.scale.degree, chordDegree: degree)
+            case .standardTable: (role, intensity) = ModalFunctionalRoleTable.standardRole(forScaleDegree: mode.scale.degree, chordDegree: degree)
             }
             return ModalChordFunction(
                 reference: reference, degree: degree, role: role, functionalIntensity: intensity,
@@ -189,34 +185,6 @@ public enum ModalFunctionalMapBuilder {
         return intervals.map { mode.tonic + $0 }
     }
 
-    /// One hand-reasoned (role, intensity) per (mode, diatonic degree) — see this file's own doc
-    /// comment for the general reasoning (root motion by fifths, shared tones with the tonic,
-    /// half-step pulls, diminished quality) applied by ear/analysis to each of the 7 modes
-    /// individually, rather than copied from classical major/minor functional harmony. Degree 1
-    /// is always `.home` (Locrian's is intentionally non-zero — see `computedRole`'s own comment
-    /// on the same quirk).
-    private static func standardRole(forScaleDegree scaleDegree: Int, chordDegree: Int) -> (ModalFunctionalRole, Double) {
-        // [degree1, degree2, ..., degree7]
-        let table: [(ModalFunctionalRole, Double)]
-        switch scaleDegree {
-        case 1: // Ionian: I ii iii IV V vi vii°
-            table = [(.home, 0.0), (.away, 0.35), (.away, 0.3), (.away, 0.35), (.tension, 0.85), (.away, 0.3), (.tension, 0.95)]
-        case 2: // Dorian: i ii III IV v vi° VII — no half-step pull anywhere, deliberately flatter
-            table = [(.home, 0.0), (.away, 0.4), (.away, 0.3), (.away, 0.35), (.neutral, 0.5), (.tension, 0.7), (.away, 0.45)]
-        case 3: // Phrygian: i II III iv v° VI vii — the Phrygian ii=bII cadence is the strongest pull
-            table = [(.home, 0.0), (.tension, 0.75), (.away, 0.3), (.away, 0.4), (.tension, 0.7), (.away, 0.3), (.away, 0.45)]
-        case 4: // Lydian: I II iii #iv° V vi vii — keeps Ionian's leading tone AND gains #4's own color
-            table = [(.home, 0.0), (.away, 0.4), (.away, 0.35), (.tension, 0.85), (.tension, 0.8), (.away, 0.3), (.tension, 0.7)]
-        case 5: // Mixolydian: I ii iii° IV v vi VII — the 5th degree is minor, deliberately NOT a "dominant"
-            table = [(.home, 0.0), (.away, 0.4), (.tension, 0.65), (.away, 0.35), (.neutral, 0.5), (.away, 0.3), (.away, 0.45)]
-        case 6: // Aeolian: i ii° III iv v VI VII — natural minor's own v is minor, no true leading tone
-            table = [(.home, 0.0), (.tension, 0.65), (.away, 0.3), (.away, 0.35), (.neutral, 0.5), (.away, 0.35), (.away, 0.45)]
-        case 7: // Locrian: i° II iii iv V VI vii — even home is diminished; V carries both characteristic notes
-            table = [(.home, 0.2), (.tension, 0.8), (.away, 0.35), (.away, 0.4), (.tension, 0.9), (.away, 0.35), (.away, 0.45)]
-        default:
-            table = Array(repeating: (.neutral, 0.5), count: 7)
-        }
-        let wrapped = ((chordDegree - 1) % 7 + 7) % 7
-        return table[wrapped]
-    }
+    // `standardRole` moved to `ModalFunctionalRoleTable.standardRole(forScaleDegree:chordDegree:)`
+    // in `ScoreImport` (see this file's own top-of-file note) — called directly above.
 }
