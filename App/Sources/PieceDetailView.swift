@@ -84,6 +84,20 @@ struct PieceDetailView: View {
         .buttonStyle(.plain)
     }
 
+    /// A loaded piece never yet written to the SwiftData store (freshly imported or
+    /// LLM-composed) — mirrors `PiecesFileView`'s own `isUnsavedPiece`.
+    private var isUnsavedPiece: Bool {
+        session.piece != nil && session.currentPieceRecordID == nil
+    }
+
+    private func saveUnsavedPiece() {
+        do {
+            try session.savePiece(as: session.piece?.title ?? L10n.string(.appDefaultMorceauFilename, session.currentLanguage))
+        } catch {
+            actionError = "\(error)"
+        }
+    }
+
     @ViewBuilder
     private var header: some View {
         HStack {
@@ -99,6 +113,17 @@ struct PieceDetailView: View {
             }
             if let piece = session.piece {
                 Text(piece.title).font(.headline)
+                if isUnsavedPiece {
+                    Text(L10n.string(.appBadgeNonSauvegarde, session.currentLanguage))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.15), in: Capsule())
+                    Button(L10n.string(.appButtonSauvegarderDansCeDossier, session.currentLanguage), action: saveUnsavedPiece)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
             }
             Spacer()
             if session.piece != nil {

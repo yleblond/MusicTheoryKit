@@ -212,26 +212,10 @@ struct ProgressionLibraryView: View {
     private var listContent: some View {
         Form {
             Section {
-                if usesTwoColumns {
-                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: sharedTonicBinding) {
-                        ForEach(0..<12, id: \.self) { pitchClass in
-                            Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                } else {
-                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: sharedTonicBinding) {
-                        ForEach(0..<12, id: \.self) { pitchClass in
-                            Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-                Picker(L10n.string(.fieldGamme, session.currentLanguage), selection: sharedScaleIDBinding) {
-                    ForEach(ScaleLibrary.scales(inFamily: 1), id: \.id) { scale in
-                        Text(scale.popularName).tag(scale.id)
-                    }
-                }
+                ModePickerBadge(
+                    session: session, tonic: sharedTonicBinding, scaleID: sharedScaleIDBinding,
+                    allowedScales: ScaleLibrary.scales(inFamily: 1), fillsAvailableWidth: true
+                )
                 chordQualityTierPicker
             } header: {
                 Text(L10n.string(.appHeadingBibliothequeProgressions, session.currentLanguage))

@@ -229,6 +229,9 @@ struct ContentView: View {
                                     DissonancesTabContent(session: session, isActive: appModel.mode == .theorie && selectedTheorieTab == .dissonances)
                                 }
                             }
+                            // Narrower than the system default sidebar width — this menu's labels
+                            // ("Progressions", "Intonations") are short enough not to need it.
+                            .navigationSplitViewColumnWidth(min: 130, ideal: 150, max: 180)
                         case .settings:
                             TabView(selection: $appModel.selectedSettingsTab) {
                                 Tab(SettingsTab.sons.label(session.currentLanguage), systemImage: SettingsTab.sons.systemImage, value: SettingsTab.sons) {

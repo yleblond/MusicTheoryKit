@@ -78,6 +78,13 @@ struct DissonancesLibraryView: View {
     /// C4 — "un do médian" — the explicit default, immediately analyzed on first appearance (see
     /// the `.onChange(of: baseMidiPitch, initial: true)` below).
     @State private var baseMidiPitch = 60
+    /// The "Gamme" legend's own tonic — deliberately INDEPENDENT of `basePitchClass`/
+    /// `appModel.sharedMode` (see `legendMode`'s own doc comment for why: item 40 was exactly
+    /// this control silently being anchored to the examined chord's root instead of its own
+    /// pick). Defaults to match `baseMidiPitch`'s own default (60 → pitch class 0) so first
+    /// appearance looks unchanged; never resynced afterward.
+    @State private var legendTonic: Int = 0
+    @State private var legendScaleID: String = ScaleLibrary.all[0].id
     @State private var samplesPerOctave = 24
     @State private var grid: OctaveSpectrumGrid?
     @State private var isBuilding = false
@@ -103,20 +110,26 @@ struct DissonancesLibraryView: View {
 
     private var baseNoteLabel: String { noteLabel(forMidiPitch: baseMidiPitch) }
 
+    /// Feeds `session.setContextualMode`/Intonations' fixed-temperament correction — anchored at
+    /// the examined chord's own root (`basePitchClass`), scale from the SHARED cross-screen pick
+    /// (`appModel.sharedMode.scaleID`), exactly as before. Deliberately UNRELATED to `legendMode`
+    /// below (item 40's fix): this drives tuning correction for the notes actually being played,
+    /// not the "Gamme" legend overlay, and stays tied to the shared mode like every other screen.
     private var mode: Mode {
         Mode(tonic: basePitchClass, scale: ScaleLibrary.byID(appModel.sharedMode.scaleID) ?? ScaleLibrary.all[0])
     }
 
-    /// Reads/writes the ONE shared scale selection (`AppModel.sharedMode`) instead of a local
-    /// `@State`, so picking a mode here is reflected on every other MusicLab screen, including
-    /// detached windows — per explicit request. The tonic half of `AppModel.sharedMode` is
-    /// mirrored bidirectionally with `baseMidiPitch`'s own pitch class instead (see
-    /// `onChange(of: appModel.sharedMode.tonic)` in `body` and the base-note tap handler in
-    /// `baseNoteKeyboardSection`) rather than replacing it outright, since `baseMidiPitch` also
-    /// carries this screen's own octave — information the shared tonic (a bare pitch class)
-    /// doesn't have.
-    private var scaleIDBinding: Binding<String> {
-        Binding(get: { appModel.sharedMode.scaleID }, set: { appModel.sharedMode.scaleID = $0 })
+    /// The "Gamme" legend's own mode — purely graphical (see `axisTicks`' own doc comment: it
+    /// only ever decides which axis ticks draw as "in scale," never the graph's data), and on
+    /// purpose NOT anchored at the examined chord's root. Item 40's actual bug: previously this
+    /// legend was `Mode(tonic: basePitchClass, scale: ...)`, i.e. it silently assumed the
+    /// legend's tonic == the examined root — so asking for "the Bb-minor scale's notes" while
+    /// examining chords rooted at A was impossible, since the legend had no tonic of its own to
+    /// pick. `legendTonic`/`legendScaleID` are fully independent `@State` now: changing the
+    /// examined root (`baseMidiPitch`, a tap or a live-recognized triad) never touches them, and
+    /// picking a legend tonic/scale here never writes back into `appModel.sharedMode`.
+    private var legendMode: Mode {
+        Mode(tonic: PitchClass(legendTonic), scale: ScaleLibrary.byID(legendScaleID) ?? ScaleLibrary.all[0])
     }
 
     /// The root + middle + top absolute MIDI pitches of whatever's currently selected/playing.
@@ -137,16 +150,18 @@ struct DissonancesLibraryView: View {
 
     /// One tick per chromatic semitone `[0, 12]` above the root (the octave-up tonic included) —
     /// shared by both heatmap axes, which cover the exact same `[1, 2]` ratio range. `isInScale`
-    /// flags the current mode's own notes, so the rendering views can draw the OTHER (altered/
-    /// chromatic, outside the scale) notes as lighter secondary ticks rather than omitting them
-    /// entirely — per explicit request, so e.g. a Dorian mode's own natural 3rd/7th are still
-    /// visible even though they're not part of that mode's scale. The scale picker driving this
-    /// only ever affects these tick labels (and the persistent main-keyboard-bar coloring
-    /// elsewhere) — never the landscape's own data — per explicit clarification.
+    /// flags `legendMode`'s own notes (by ABSOLUTE pitch class, not offset-from-root — see that
+    /// property's own doc comment: the legend's tonic is independent of `baseMidiPitch`, so "in
+    /// scale" can no longer be a simple root-relative offset check), so the rendering views can
+    /// draw the OTHER (altered/chromatic, outside the scale) notes as lighter secondary ticks
+    /// rather than omitting them entirely. The "Gamme" picker driving this only ever affects
+    /// these tick labels (and the persistent main-keyboard-bar coloring elsewhere) — never the
+    /// landscape's own data — per explicit clarification.
     private var axisTicks: [(ratio: Double, label: String, isInScale: Bool)] {
-        let scaleOffsets = Set(mode.scale.pitchClassesFromRoot + [12])
+        let legendPitchClasses = Set(legendMode.pitchClasses.map(\.value))
         return (0...12).map { offset in
-            (ratio(forSemitonesAboveRoot: offset), noteLabel(forMidiPitch: baseMidiPitch + offset), scaleOffsets.contains(offset))
+            let absolutePitchClass = ((basePitchClass.value + offset) % 12 + 12) % 12
+            return (ratio(forSemitonesAboveRoot: offset), noteLabel(forMidiPitch: baseMidiPitch + offset), legendPitchClasses.contains(absolutePitchClass))
         }
     }
 
@@ -186,6 +201,13 @@ struct DissonancesLibraryView: View {
         baseMidiPitch = root
         selectedSemitones = (x, y)
         selectionSource = .triad(template)
+        // Keeps the shared mode tonic (`AppModel.sharedMode`, read by every other MusicLab screen)
+        // in lockstep with the chord this screen just started examining — the base-note keyboard's
+        // own `onNoteOn` above already does this; without it here too, playing a live triad moved
+        // `baseMidiPitch` (this screen's own "mode" tonic, see `mode`'s own doc comment/`axisTicks`)
+        // without the OTHER screens' shared tonic following along, so they'd disagree about which
+        // note is actually the mode's base.
+        appModel.sharedMode.tonic = ((root % 12) + 12) % 12
     }
 
     var body: some View {
@@ -228,9 +250,9 @@ struct DissonancesLibraryView: View {
             guard isActive else { return }
             session.setContextualMode(mode)
         }
-        // Keeps `baseMidiPitch`'s pitch class following the shared tonic (picked here or on
-        // another screen) while preserving this screen's own octave — see `scaleIDBinding`'s
-        // own doc comment.
+        // Keeps `baseMidiPitch`'s pitch class following the shared tonic (picked here — via
+        // `baseNoteKeyboardSection`'s tap handler — or on another screen) while preserving this
+        // screen's own octave; unrelated to `legendMode`, which never reads/writes this.
         .onChange(of: appModel.sharedMode.tonic) { _, newTonic in
             let currentPitchClass = ((baseMidiPitch % 12) + 12) % 12
             baseMidiPitch = baseMidiPitch - currentPitchClass + newTonic
@@ -432,7 +454,13 @@ struct DissonancesLibraryView: View {
             densityPickerSection
             drawingModePicker
             scalePickerRow
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // Pinned to the graph's own width (per explicit request: "élargir le bouton pour qu'il
+        // aille jusqu'à la limite droite du graphe") so `scalePickerRow`'s `.infinity` above
+        // resolves to exactly "everything left over after density/2D-3D," not the HStack's own
+        // intrinsic content width.
+        .frame(width: Self.heatmapSize.width, alignment: .leading)
     }
 
     private var drawingModePicker: some View {
@@ -445,11 +473,7 @@ struct DissonancesLibraryView: View {
     }
 
     private var scalePickerRow: some View {
-        Picker(L10n.string(.fieldGamme, session.currentLanguage), selection: scaleIDBinding) {
-            ForEach(ScaleLibrary.all) { scale in Text(scale.popularName).tag(scale.id) }
-        }
-        .pickerStyle(.menu)
-        .fixedSize()
+        ModePickerBadge(session: session, tonic: $legendTonic, scaleID: $legendScaleID, allowedScales: ScaleLibrary.all, fillsAvailableWidth: true)
     }
 
     @ViewBuilder

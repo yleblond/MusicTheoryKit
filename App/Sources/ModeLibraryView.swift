@@ -67,7 +67,6 @@ struct ModeLibraryView: View {
     #endif
     @Environment(AppModel.self) private var appModel
 
-    @State private var screen: TheoryLibraryScreen = .list
     /// Backing storage used only when `usesSharedModeSelection` is `false` — otherwise
     /// `tonicBinding`/`scaleIDBinding` below route to `appModel.sharedMode` instead. Kept (rather
     /// than removed) so `ExplorationTabContent`'s independent instance still has somewhere to
@@ -93,6 +92,25 @@ struct ModeLibraryView: View {
         usesSharedModeSelection
             ? Binding(get: { appModel.sharedMode.scaleID }, set: { appModel.sharedMode.scaleID = $0 })
             : $selectedScaleID
+    }
+
+    /// What the tonic picker should actually DISPLAY as selected — `mode.tonic` (the piece's own
+    /// ground truth) while `modeFollowsPlayback`, since `tonicBinding` itself is never written to
+    /// while following (see `mode`'s own doc comment) and would otherwise keep showing whatever
+    /// tonic was last manually picked, disagreeing with the mode actually in effect. Writes still
+    /// go through `tonicBinding` — irrelevant in practice since the picker is `.disabled` whenever
+    /// this diverges from it, kept only so the type-checker has a real setter.
+    private var displayedTonicBinding: Binding<Int> {
+        Binding(get: { modeFollowsPlayback ? mode.tonic.value : tonicBinding.wrappedValue }, set: { tonicBinding.wrappedValue = $0 })
+    }
+    /// Same reasoning as `displayedTonicBinding`, for the scale list's own highlighted row.
+    private var displayedScaleID: String {
+        modeFollowsPlayback ? mode.scale.id : scaleIDBinding.wrappedValue
+    }
+    /// Same reasoning as `displayedTonicBinding`, as a `Binding` for `ModePickerBadge` (which
+    /// needs read/write even though writes are moot while `.disabled`).
+    private var displayedScaleIDBinding: Binding<String> {
+        Binding(get: { displayedScaleID }, set: { scaleIDBinding.wrappedValue = $0 })
     }
     /// Which of `diatonicChordReferences` the right column's mini keyboard currently shows —
     /// defaults to the tonic chord (index 0), same "always populated" convention the other
@@ -186,11 +204,13 @@ struct ModeLibraryView: View {
     }
 
     var body: some View {
-        TheoryLibraryLayout(screen: $screen, sidebarWidth: 320) {
-            listContent
-        } detailContent: { showBackButton, onBack in
-            detailContent(showBackButton: showBackButton, onBack: onBack)
-        }
+        // Used to be `TheoryLibraryLayout`'s sidebar+detail split (a "pick a mode from the full
+        // list" column next to this content) — the full list is now redundant with
+        // `ModePickerBadge`'s own popover list, and the badge itself moved INTO this content
+        // (next to `octaveShiftControl` for `.overview`, above `roleSourceBlock` for
+        // `.exploration`), so there's nothing left for a separate list column to do. Removed per
+        // explicit request rather than kept as an empty sidebar.
+        detailContent(showBackButton: false, onBack: {})
         #if os(macOS) || os(visionOS)
         // Floats over the screen's own top-right corner instead of reserving a whole extra row
         // above everything else just for one small icon — per explicit request ("on perd encore
@@ -254,74 +274,6 @@ struct ModeLibraryView: View {
         }
     }
     #endif
-
-    // MARK: - List
-
-    private struct FamilyGroup: Identifiable {
-        let family: ScaleFamily
-        let scales: [ScaleDefinition]
-        var id: Int { family.id }
-    }
-
-    private var familyGroups: [FamilyGroup] {
-        ScaleFamilies.all.keys.sorted().map { id in
-            FamilyGroup(family: ScaleFamilies.family(id), scales: ScaleLibrary.scales(inFamily: id))
-        }
-    }
-
-    private var listContent: some View {
-        Form {
-            Section {
-                if usesTwoColumns {
-                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: tonicBinding) {
-                        ForEach(0..<12, id: \.self) { pitchClass in
-                            Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .disabled(modeFollowsPlayback)
-                } else {
-                    Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: tonicBinding) {
-                        ForEach(0..<12, id: \.self) { pitchClass in
-                            Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .disabled(modeFollowsPlayback)
-                }
-                if modeFollowsPlayback {
-                    Text(L10n.string(.appHintModeSuitLecture, session.currentLanguage))
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-            } header: {
-                Text(L10n.string(.appHeadingBibliothequeModes, session.currentLanguage))
-            }
-            ForEach(familyGroups) { group in
-                Section {
-                    ForEach(group.scales, id: \.id) { scale in
-                        Button {
-                            scaleIDBinding.wrappedValue = scale.id
-                            selectedChordIndex = 0
-                            screen = .detail
-                        } label: {
-                            HStack {
-                                Text("\(scale.popularName) (\(scale.systematicName))")
-                                    .foregroundStyle(scale.id == scaleIDBinding.wrappedValue ? Color.accentColor : .primary)
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    Text(group.family.name)
-                }
-            }
-        }
-        #if os(macOS)
-        .formStyle(.grouped)
-        #endif
-    }
 
     // MARK: - Detail
 
@@ -408,7 +360,13 @@ struct ModeLibraryView: View {
                 Text(L10n.string(.appHintModeSuitLecture, session.currentLanguage))
                     .font(.caption2).foregroundStyle(.secondary)
             }
-            octaveShiftControl
+            HStack(spacing: 12) {
+                ModePickerBadge(
+                    session: session, tonic: displayedTonicBinding, scaleID: displayedScaleIDBinding,
+                    allowedScales: ScaleLibrary.all, isEnabled: !modeFollowsPlayback
+                )
+                octaveShiftControl
+            }
             // `.staffCenter` (not `.top`) — per explicit request, so the selected-chord keyboard
             // in `circleColumn` lines up on the two staffs' own shared height instead of the top
             // of whatever happens to sit above it (`selectedChordKeyboard`'s own title text).
@@ -1052,6 +1010,10 @@ struct ModeLibraryView: View {
             // title's own suppression above) — sized up from a plain `.headline` to carry that
             // weight on its own, per explicit request.
             Text(mode.displayName).font(.title2).bold()
+            ModePickerBadge(
+                session: session, tonic: displayedTonicBinding, scaleID: displayedScaleIDBinding,
+                allowedScales: ScaleLibrary.all, isEnabled: !modeFollowsPlayback, fillsAvailableWidth: true
+            )
             roleSourceBlock
             progressionPicker
             progressionChordChipsRow

@@ -80,13 +80,48 @@ struct PiecesFileView: View {
         }
     }
 
+    /// A loaded piece that has never been written to the SwiftData store yet (freshly imported
+    /// or LLM-composed) — mirrors the `currentPieceRecordID == nil` convention set by
+    /// `ImprovSession.importScore`/`composeFromText`/`savePiece(as:)`.
+    private var isUnsavedPiece: Bool {
+        session.piece != nil && session.currentPieceRecordID == nil
+    }
+
+    private func savePiece() {
+        do {
+            try session.savePiece(as: session.piece?.title ?? L10n.string(.appDefaultMorceauFilename, session.currentLanguage))
+        } catch {
+            actionError = "\(error)"
+        }
+    }
+
     @ViewBuilder
     private var pieceSection: some View {
         Section {
             if let piece = session.piece {
-                Text(piece.title).font(.headline)
-                Text(L10n.string(.appFormatFragmentsBPM, session.currentLanguage, "\(piece.fragments.count)", String(format: "%.0f", piece.tempoBPM)))
-                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(piece.title).font(.headline)
+                            if isUnsavedPiece {
+                                Text(L10n.string(.appBadgeNonSauvegarde, session.currentLanguage))
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.orange)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.orange.opacity(0.15), in: Capsule())
+                            }
+                        }
+                        Text(L10n.string(.appFormatFragmentsBPM, session.currentLanguage, "\(piece.fragments.count)", String(format: "%.0f", piece.tempoBPM)))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if isUnsavedPiece {
+                        Spacer()
+                        Button(L10n.string(.appButtonSauvegarderDansCeDossier, session.currentLanguage), action: savePiece)
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                    }
+                }
             } else {
                 Text(L10n.string(.appPlaceholderAucunMorceauChargePoint, session.currentLanguage)).foregroundStyle(.secondary)
             }
@@ -134,15 +169,6 @@ struct PiecesFileView: View {
                         }
                         .buttonStyle(.borderless)
                         .foregroundStyle(.red)
-                    }
-                }
-            }
-            if session.piece != nil {
-                Button(L10n.string(.appButtonSauvegarderDansCeDossier, session.currentLanguage)) {
-                    do {
-                        try session.savePiece(as: session.piece?.title ?? L10n.string(.appDefaultMorceauFilename, session.currentLanguage))
-                    } catch {
-                        actionError = "\(error)"
                     }
                 }
             }

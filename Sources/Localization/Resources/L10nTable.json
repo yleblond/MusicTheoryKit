@@ -640,6 +640,17 @@
   "ru": "Изменить порядок",
   "zhHans": "重新排序"
  },
+ "appBadgeNonSauvegarde": {
+  "de": "Non sauvegardé",
+  "en": "Non sauvegardé",
+  "es": "Non sauvegardé",
+  "fr": "Non sauvegardé",
+  "it": "Non sauvegardé",
+  "ja": "Non sauvegardé",
+  "pt": "Non sauvegardé",
+  "ru": "Non sauvegardé",
+  "zhHans": "Non sauvegardé"
+ },
  "appButtonSauvegarderDansCeDossier": {
   "de": "Speichern",
   "en": "Save",
@@ -1807,15 +1818,15 @@
   "zhHans": "步骤"
  },
  "appHeadingExplorationFonctionnelle": {
-  "de": "Funktionale Erkundung",
-  "en": "Functional exploration",
-  "es": "Exploración funcional",
-  "fr": "Exploration fonctionnelle",
-  "it": "Esplorazione funzionale",
-  "ja": "機能的探索",
-  "pt": "Exploração funcional",
-  "ru": "Функциональное исследование",
-  "zhHans": "功能探索"
+  "de": "Exploration",
+  "en": "Exploration",
+  "es": "Exploración",
+  "fr": "Exploration",
+  "it": "Esplorazione",
+  "ja": "探索",
+  "pt": "Exploração",
+  "ru": "Исследование",
+  "zhHans": "探索"
  },
  "appHeadingFichiersSoundfont": {
   "de": "SoundFont-Dateien",

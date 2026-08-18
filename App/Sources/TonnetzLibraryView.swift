@@ -77,6 +77,24 @@ struct TonnetzLibraryView: View {
         Binding(get: { appModel.sharedMode.scaleID }, set: { appModel.sharedMode.scaleID = $0 })
     }
 
+    /// What the tonic/scale pickers should actually DISPLAY while `modeFollowsPlayback` — the
+    /// piece's own ground-truth mode (`selectedMode`), never `sharedTonicBinding`/
+    /// `sharedScaleIDBinding` themselves (untouched while following, so they'd otherwise keep
+    /// showing whatever was last manually picked). Writes still go through the shared binding —
+    /// moot in practice since both pickers are `.disabled` whenever this diverges from them.
+    private var displayedTonicBinding: Binding<Int> {
+        Binding(
+            get: { modeFollowsPlayback ? (selectedMode?.tonic.value ?? sharedTonicBinding.wrappedValue) : sharedTonicBinding.wrappedValue },
+            set: { sharedTonicBinding.wrappedValue = $0 }
+        )
+    }
+    private var displayedScaleIDBinding: Binding<String> {
+        Binding(
+            get: { modeFollowsPlayback ? (selectedMode?.scale.id ?? sharedScaleIDBinding.wrappedValue) : sharedScaleIDBinding.wrappedValue },
+            set: { sharedScaleIDBinding.wrappedValue = $0 }
+        )
+    }
+
     private var sourceID: TrackID? { session.theoryLiveInputSourceID }
 
     /// Includes piece-playback notes when `session.piecePlaybackObservationScope` is set (Music
@@ -220,22 +238,10 @@ struct TonnetzLibraryView: View {
                 .fixedSize()
                 .disabled(modeFollowsPlayback)
             if isModeEnabled || modeFollowsPlayback {
-                Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: sharedTonicBinding) {
-                    ForEach(0..<12, id: \.self) { pitchClass in
-                        Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
-                    }
-                }
-                .pickerStyle(.menu)
-                .fixedSize()
-                .disabled(modeFollowsPlayback)
-                Picker(L10n.string(.fieldGamme, session.currentLanguage), selection: sharedScaleIDBinding) {
-                    ForEach(ScaleLibrary.scales(inFamily: 1), id: \.id) { scale in
-                        Text(scale.popularName).tag(scale.id)
-                    }
-                }
-                .pickerStyle(.menu)
-                .fixedSize()
-                .disabled(modeFollowsPlayback)
+                ModePickerBadge(
+                    session: session, tonic: displayedTonicBinding, scaleID: displayedScaleIDBinding,
+                    allowedScales: ScaleLibrary.scales(inFamily: 1), isEnabled: !modeFollowsPlayback
+                )
                 // Stuck to the mode controls, and only shown once a mode is active — see
                 // `effectiveColorByIdentity`'s own doc comment.
                 Toggle(L10n.string(.appToggleTonnetzCouleursIdentite, session.currentLanguage), isOn: $colorByIdentity)

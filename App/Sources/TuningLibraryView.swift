@@ -322,21 +322,10 @@ struct TuningLibraryView: View {
                         #endif
                 }
 
-                Picker(L10n.string(.fieldTonique, session.currentLanguage), selection: sharedTonicBinding) {
-                    ForEach(0..<12, id: \.self) { pitchClass in
-                        Text(session.notationStyle.rootName(PitchClass(pitchClass), preferFlats: false)).tag(pitchClass)
-                    }
-                }
-                .pickerStyle(.menu)
-                .fixedSize()
-
-                Picker(L10n.string(.fieldGamme, session.currentLanguage), selection: sharedScaleIDBinding) {
-                    ForEach(ScaleLibrary.scales(inFamily: 1), id: \.id) { scale in
-                        Text(scale.popularName).tag(scale.id)
-                    }
-                }
-                .pickerStyle(.menu)
-                .fixedSize()
+                ModePickerBadge(
+                    session: session, tonic: sharedTonicBinding, scaleID: sharedScaleIDBinding,
+                    allowedScales: ScaleLibrary.scales(inFamily: 1)
+                )
 
                 Spacer()
 

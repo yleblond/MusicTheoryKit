@@ -196,7 +196,9 @@ vérifié dans le code au 2026-08-16).
     défiler ?) et de clarifier l'interaction avec le mode clavier ordinateur déjà présent dans
     l'app (`ComputerKeyboardInputBar`/`MainKeyboardMode` — les touches physiques jouent déjà des
     notes, un conflit de modificateur est possible). Sujet à part, pas traité avec le reste du
-    Tonnetz cette session.
+    Tonnetz cette session. Redemandé le 2026-08-18 (toujours pertinent, même préoccupation
+    d'interférence clavier ordinateur) — voir aussi item 45 (visualisation d'accords étendus,
+    distinct de la saisie couverte ici).
 
 35. ~~Bouton "Théorie" (légende en pop-up) — rétrofit sur les autres écrans Théorie~~ **FAIT et
     ÉLARGI le 2026-08-16** : la demande initiale (4 écrans Théorie) a été étendue par l'utilisateur
@@ -315,3 +317,39 @@ vérifié dans le code au 2026-08-16).
     données déjà calculées), traiter la moitié qualitative comme un appel LLM séparé prenant en
     entrée le tableau structuré (mesure/accord/chiffrage/confiance) et éventuellement les paroles
     si disponibles.
+
+40. **[BUG] Dissonances — tonique du mode ≠ tonique de l'accord examiné.** Sur les écrans MusicLab,
+    la note de base utilisée par l'onglet "Dissonances" ne correspond pas à la note de base de
+    l'accord réellement examiné pour le mode choisi. Signalé le 2026-08-18, pas encore investigué.
+    ⚠️ vérifier l'implémentation ET le point de saisie (peut être un bug d'affichage seul, ou une
+    vraie divergence de valeur utilisée dans le calcul).
+
+41. **[BUG ?] Import de morceau — pas persisté ?** Un morceau importé (MIDI/MusicXML/MuseScore)
+    semble rester en mémoire seulement, pas ajouté à la base (SwiftData/CloudKit) — à vérifier ; si
+    confirmé, il doit être sauvegardé à l'import comme les autres entités persistées.
+
+42. **[PERF] Lecture d'un morceau — Dissonances doit rester inactif.** Pendant le jeu d'un morceau,
+    vérifier que seuls Tonnetz / Modes / Analyse fonctionnelle restent actifs en mode "suivi du
+    morceau", et que Dissonances (calcul spectral coûteux) est bien désactivé/en pause pendant la
+    lecture — trop de calcul sinon.
+
+43. **[BUG] Sélecteur de mode désynchronisé quand le mode suit le morceau.** Sur les écrans
+    MusicLab, quand le mode affiché provient du morceau en cours de jeu (mode-following), le
+    sélecteur de mode de l'écran n'affiche pas la sélection correspondant au mode réellement actif.
+
+44. **Standardiser la saisie des modes musicaux entre écrans de Théorie/MusicLab** — actuellement
+    disparate et confuse d'un écran à l'autre.
+
+45. **Tonnetz — visualiser un accord au-delà de la triade (saisi ou reçu)** — distinct de l'item 34
+    (qui couvre la saisie d'extensions via modificateur clavier) : ici, comment représenter
+    visuellement au Tonnetz un accord étendu (7e, 9e...) déjà présent/reçu (ex. via MIDI ou réseau),
+    pas seulement au moment de la saisie.
+
+46. **Écran "accords intelligents" façon GarageBand Smart Chords** — mais en indiquant plus
+    explicitement dans la représentation ce que produit chaque case/pad (GarageBand reste vague sur
+    ce point).
+
+47. **Sortie audio non standard — possible ?** Utiliser une sortie audio autre que celle par défaut :
+    à investiguer sous deux angles — modification de l'app (sélecteur de device audio type
+    `AVAudioSession`/`AudioDeviceID`) vs. réglages système/device déjà suffisants (macOS/iOS Réglages
+    Son, MIDI/Audio setup).

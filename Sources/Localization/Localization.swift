@@ -257,6 +257,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case appHeadingJouer, appPlaceholderAucunSonFavori, appHeadingSonDeLecture, appHintSonParDefaut
     case appPlaceholderAucunMorceauChargeOnglet, appPlaceholderAucunMorceauChargePoint
     case appButtonChargerLaDemo, appHeadingMorceauCharge
+    case appBadgeNonSauvegarde
     // Piece detail screen (catalog → detail, `PieceDetailView`): "Infos" tab (file info + per-track sound) / "Play" tab (`appHeadingJouer`, notation + live highlight).
     case appTabInfos, appHeadingPisteMIDI, appHeadingAccordsSection
     // "Analyse" tab (harmonic/Roman-numeral analysis table).
